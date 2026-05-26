@@ -103,15 +103,19 @@ Array.from(document.querySelectorAll("#extra-teams option"))
 
 // Dark Mode Logic
 const themeToggle = document.getElementById("theme-toggle");
+if (themeToggle) {
 themeToggle.addEventListener("click", () => {
 document.body.classList.toggle("dark-mode");
 const isDark = document.body.classList.contains("dark-mode");
 themeToggle.textContent = isDark ? "Light Mode" : "Dark Mode";
 localStorage.setItem("theme", isDark ? "dark" : "light");
 });
+}
 if (localStorage.getItem("theme") === "dark") {
 document.body.classList.add("dark-mode");
-themeToggle.textContent = "Light Mode";
+if (themeToggle) {
+    themeToggle.textContent = "Light Mode";
+}
 }
 
 function showNotification(message) {
@@ -205,26 +209,13 @@ targetResult.innerHTML = html;
 }
 
 function activateTab(tab) {
-tabHome.classList.remove("active");
-tabPredictor.classList.remove("active");
-tabGlobal.classList.remove("active");
-tabCups.classList.remove("active");
-tabH2H.classList.remove("active");
-tabMarket.classList.remove("active");
-tabLeagueTable.classList.remove("active");
-tabPositionOdds.classList.remove("active");
-tabPlayers.classList.remove("active");
-tabAbout.classList.remove("active");
-panelHome.classList.add("hidden");
-panelPredictor.classList.add("hidden");
-panelGlobal.classList.add("hidden");
-panelCups.classList.add("hidden");
-panelH2H.classList.add("hidden");
-panelMarket.classList.add("hidden");
-panelLeagueTable.classList.add("hidden");
-panelPositionOdds.classList.add("hidden");
-panelPlayers.classList.add("hidden");
-panelAbout.classList.add("hidden");
+// safely reset all tabs/panels so per-page templates without every section do not throw
+[tabHome, tabPredictor, tabGlobal, tabCups, tabH2H, tabMarket, tabLeagueTable, tabPositionOdds, tabPlayers, tabAbout]
+    .filter(Boolean)
+    .forEach((node) => node.classList.remove("active"));
+[panelHome, panelPredictor, panelGlobal, panelCups, panelH2H, panelMarket, panelLeagueTable, panelPositionOdds, panelPlayers, panelAbout]
+    .filter(Boolean)
+    .forEach((node) => node.classList.add("hidden"));
 
 if (tab === "home") {
     tabHome.classList.add("active");
@@ -263,6 +254,9 @@ if (tab === "home") {
 }
 
 function setPredictorMode(mode) {
+if (!subtabPredictorEuro || !subtabPredictorMls || !subtabPredictorExtra || !predictorEuroBody || !predictorMlsBody || !predictorExtraBody) {
+    return;
+}
 if (mode === "mls") {
     subtabPredictorEuro.classList.remove("active");
     subtabPredictorMls.classList.add("active");
@@ -508,6 +502,9 @@ return html;
 }
 
 function updateTableViewToggleLabel() {
+if (!tableViewToggle) {
+    return;
+}
 tableViewToggle.textContent = tableViewMode === "standings"
     ? "Show Probability View"
     : "Show Standings View";
@@ -582,6 +579,10 @@ positionOddsView.innerHTML = `<h3>${selectedLeague}</h3>${renderPositionOddsRows
 }
 
 function renderWinnerView() {
+// guard: this shared script is loaded on pages that may not include the winner module
+if (!winnerDataset || !winnerView) {
+    return;
+}
 const mode = winnerDataset.value;
 const payload = leagueTablesCache[mode];
 if (!payload || !payload.tables) {
@@ -953,6 +954,9 @@ if (!leagues.length && !(mode === "cups" && cupBracketCount)) {
     return;
 }
 setLeagueSelectOptions(tableLeague, leagues, mode === "mls", mode === "cups" ? data.cup_brackets : null);
+if ((!tableLeague.value || !tableLeague.value.trim()) && tableLeague.options.length > 0) {
+    tableLeague.selectedIndex = 0;
+}
 if (positionOddsDataset.value === mode) {
     setLeagueSelectOptions(positionOddsLeague, leagues, false);
 }
@@ -1014,6 +1018,7 @@ return String(value || "")
 }
 
 function currentUpcomingSource() {
+if (!globalSourceFilter) return "global";
 if (globalSourceFilter.value === "mls") return "mls";
 if (globalSourceFilter.value === "extra") return "extra";
 if (globalSourceFilter.value === "cups") return "cups";
@@ -1196,8 +1201,15 @@ return out;
 
 
 
-function populateUpcomingLeagueFilter(selectEl, rows) {
-const leagues = [...new Set(rows.map((r) => r.competition))];
+function populateUpcomingLeagueFilter(selectEl, rows, availableLeagues = []) {
+// build league list from both API metadata and row competitions so initial load is never empty
+const rowLeagues = rows
+    .map((row) => String(row?.competition || "").trim())
+    .filter(Boolean);
+const apiLeagues = (availableLeagues || [])
+    .map((league) => String(league || "").trim())
+    .filter(Boolean);
+const leagues = [...new Set([...apiLeagues, ...rowLeagues])];
 const priorityLeagues = [
     "England/Premier League",
     "England/Championship"
@@ -1234,7 +1246,8 @@ target.textContent = "Loading...";
 statsTarget.textContent = "Loading...";
 const isCupMode = mode === "cups";
 cupTabs.classList.toggle("hidden", !isCupMode);
-globalLeagueFilterCard.classList.toggle("hidden", isCupMode);
+// keep league/cup dropdown visible for all sources, including cups
+globalLeagueFilterCard.classList.remove("hidden");
 const resp = await fetch(url);
 const data = await resp.json();
 if (!resp.ok || !data.ok) {
@@ -1249,14 +1262,13 @@ const stats = data.stats || {
 };
 const leagueStats = data.league_stats || [];
 upcomingStatsCache[mode] = { stats: stats, league_stats: leagueStats };
-const selectedLeague = populateUpcomingLeagueFilter(filterEl, rows);
+// use API-provided league list when available to keep dropdown populated on first render
+const selectedLeague = populateUpcomingLeagueFilter(filterEl, rows, data.available_leagues || []);
 if (isCupMode) {
     renderCupTabs();
-    renderActiveCupTab();
-} else {
-    renderUpcoming(target, rows, selectedLeague);
-    renderStats(statsTarget, stats, leagueStats, selectedLeague);
 }
+renderUpcoming(target, rows, selectedLeague);
+renderStats(statsTarget, stats, leagueStats, selectedLeague);
 renderTopPicks();
 }
 
@@ -1289,7 +1301,9 @@ document.getElementById("btn-compare").click();
 }
 
 // H2H Logic
-document.getElementById("btn-compare").addEventListener("click", async () => {
+const h2hCompareButton = document.getElementById("btn-compare");
+if (h2hCompareButton) {
+h2hCompareButton.addEventListener("click", async () => {
     const t1 = h2hTeam1Input.value;
     const t2 = h2hTeam2Input.value;
     if(!t1 || !t2) return showNotification("Please select two teams.");
@@ -1369,11 +1383,15 @@ document.getElementById("btn-compare").addEventListener("click", async () => {
         h2hResults.innerHTML = `<p class="error">Error: ${e.message}</p>`;
     }
 });
+}
 
+if (h2hDataset) {
 h2hDataset.addEventListener("change", () => {
 applyH2HDataset(h2hDataset.value);
 });
+}
 
+if (form) {
 form.addEventListener("submit", async (e) => {
 e.preventDefault();
 const formData = new FormData(form);
@@ -1394,7 +1412,9 @@ if (!resp.ok || !data.ok) {
 }
 showResult(errorEl, resultEl, data.prediction);
 });
+}
 
+if (formMls) {
 formMls.addEventListener("submit", async (e) => {
 e.preventDefault();
 const formData = new FormData(formMls);
@@ -1415,7 +1435,9 @@ if (!resp.ok || !data.ok) {
 }
 showResult(errorMlsEl, resultMlsEl, data.prediction, false);
 });
+}
 
+if (formExtra) {
 formExtra.addEventListener("submit", async (e) => {
 e.preventDefault();
 const formData = new FormData(formExtra);
@@ -1436,25 +1458,49 @@ if (!resp.ok || !data.ok) {
 }
 showResult(errorExtraEl, resultExtraEl, data.prediction, true);
 });
+}
 
+if (tabHome) {
 tabHome.addEventListener("click", () => activateTab("home"));
+}
+if (brandHomeBtn && tabHome) {
 brandHomeBtn.addEventListener("click", () => tabHome.click());
+}
+if (tabPredictor) {
 tabPredictor.addEventListener("click", () => activateTab("predictor"));
+}
+if (subtabPredictorEuro) {
 subtabPredictorEuro.addEventListener("click", () => setPredictorMode("euro"));
+}
+if (subtabPredictorMls) {
 subtabPredictorMls.addEventListener("click", () => setPredictorMode("mls"));
+}
+if (subtabPredictorExtra) {
 subtabPredictorExtra.addEventListener("click", () => setPredictorMode("extra"));
+}
+if (feedbackSubmit) {
 feedbackSubmit.addEventListener("click", submitFeedback);
+}
+if (tabGlobal) {
 tabGlobal.addEventListener("click", async () => {
 activateTab("global");
 const source = currentUpcomingSource();
 await loadUpcoming(source, upcomingUrlForSource(source), globalList, globalStats, globalLeagueFilter);
 });
+}
+if (tabCups) {
 tabCups.addEventListener("click", async () => {
 activateTab("cups");
 await loadCupProjections();
 });
+}
+if (tabH2H) {
 tabH2H.addEventListener("click", () => activateTab("h2h"));
+}
+if (tabMarket) {
 tabMarket.addEventListener("click", () => activateTab("market"));
+}
+if (tabLeagueTable) {
 tabLeagueTable.addEventListener("click", async () => {
 activateTab("league-table");
 if (!leagueTablesCache[tableDataset.value]) {
@@ -1479,6 +1525,8 @@ if (!leagueTablesCache[tableDataset.value]) {
     }
 }
 });
+}
+if (tabPositionOdds) {
 tabPositionOdds.addEventListener("click", async () => {
 activateTab("position-odds");
 if (!leagueTablesCache[positionOddsDataset.value]) {
@@ -1488,28 +1536,45 @@ if (!leagueTablesCache[positionOddsDataset.value]) {
     renderPositionOddsView();
 }
 });
+}
+if (tabPlayers) {
 tabPlayers.addEventListener("click", () => {
 window.location.href = "/players";
 });
+}
+if (tabTactics) {
 tabTactics.addEventListener("click", () => {
 window.location.href = "/tactics";
 });
+}
+if (tabAbout) {
 tabAbout.addEventListener("click", () => activateTab("about"));
+}
+if (tableDataset) {
 tableDataset.addEventListener("change", async () => {
 await loadLeagueTables(tableDataset.value);
 });
+}
+if (positionOddsDataset) {
 positionOddsDataset.addEventListener("change", async () => {
 await loadLeagueTables(positionOddsDataset.value);
 });
+}
+if (positionOddsLeague) {
 positionOddsLeague.addEventListener("change", () => {
 renderPositionOddsView();
 });
-winnerDataset.addEventListener("change", async () => {
-if (!leagueTablesCache[winnerDataset.value]) {
-    await loadLeagueTables(winnerDataset.value);
 }
-renderWinnerView();
+// bind winner change handler only on pages that render the winner widget
+if (winnerDataset) {
+winnerDataset.addEventListener("change", async () => {
+    if (!leagueTablesCache[winnerDataset.value]) {
+    await loadLeagueTables(winnerDataset.value);
+    }
+    renderWinnerView();
 });
+}
+if (tableLeague) {
 tableLeague.addEventListener("change", async () => {
 if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
     tableViewToggle.disabled = true;
@@ -1522,6 +1587,8 @@ if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
     renderSelectedLeagueTable();
 }
 });
+}
+if (tableViewToggle) {
 tableViewToggle.addEventListener("click", () => {
 tableViewMode = tableViewMode === "standings" ? "probability" : "standings";
 updateTableViewToggleLabel();
@@ -1530,6 +1597,8 @@ if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
 }
 renderSelectedLeagueTable();
 });
+}
+if (cupProjectionTabs) {
 cupProjectionTabs.addEventListener("click", async (event) => {
 const btn = event.target.closest("[data-cup-projection]");
 if (!btn) return;
@@ -1540,15 +1609,21 @@ if (!config.hasTable) {
 }
 await loadCupProjections();
 });
+}
+if (cupViewTable) {
 cupViewTable.addEventListener("click", () => {
 const config = cupConfigForCompetition(activeCupProjectionCompetition);
 activeCupProjectionView = config.hasTable ? "table" : "bracket";
 renderCupProjectionViews();
 });
+}
+if (cupViewBracket) {
 cupViewBracket.addEventListener("click", () => {
 activeCupProjectionView = "bracket";
 renderCupProjectionViews();
 });
+}
+if (globalLeagueFilter) {
 globalLeagueFilter.addEventListener("change", () => {
 const source = currentUpcomingSource();
 if (source === "cups") {
@@ -1564,10 +1639,14 @@ renderStats(
     globalLeagueFilter.value
 );
 });
+}
+if (globalSourceFilter) {
 globalSourceFilter.addEventListener("change", async () => {
 const source = currentUpcomingSource();
 await loadUpcoming(source, upcomingUrlForSource(source), globalList, globalStats, globalLeagueFilter);
 });
+}
+if (cupTabs) {
 cupTabs.addEventListener("click", (event) => {
 const btn = event.target.closest("[data-cup-tab]");
 if (!btn) return;
@@ -1575,14 +1654,46 @@ activeCupTab = btn.getAttribute("data-cup-tab") || "all";
 renderCupTabs();
 renderActiveCupTab();
 });
+}
 
+if (globalList) {
 globalList.addEventListener("click", (event) => {
 const btn = event.target.closest(".match-toggle");
 if (!btn) return;
 openMatchupInH2H(btn.getAttribute("data-home-team"), btn.getAttribute("data-away-team"));
 });
+}
+if (topPicksList) {
 topPicksList.addEventListener("click", (event) => {
 const btn = event.target.closest(".match-toggle");
 if (!btn) return;
 openMatchupInH2H(btn.getAttribute("data-home-team"), btn.getAttribute("data-away-team"));
 });
+}
+
+// Page bootstrap so direct page loads hydrate their own data without manual tab toggles.
+const ACTIVE_PAGE = (document.body?.dataset?.activePage || "home").trim();
+updateTableViewToggleLabel();
+activateTab(ACTIVE_PAGE);
+
+async function initializeActivePage() {
+if (ACTIVE_PAGE === "global") {
+    if (!globalList || !globalStats || !globalLeagueFilter || !globalSourceFilter) return;
+    const source = currentUpcomingSource();
+    await loadUpcoming(source, upcomingUrlForSource(source), globalList, globalStats, globalLeagueFilter);
+} else if (ACTIVE_PAGE === "cups") {
+    if (!cupProjectionTabs) return;
+    await loadCupProjections();
+} else if (ACTIVE_PAGE === "league-table") {
+    if (!tableDataset || !tableLeague) return;
+    await loadLeagueTables(tableDataset.value);
+    if (tableLeague.value) {
+        renderSelectedLeagueTable();
+    }
+} else if (ACTIVE_PAGE === "position-odds") {
+    if (!positionOddsDataset) return;
+    await loadLeagueTables(positionOddsDataset.value);
+}
+}
+
+initializeActivePage();

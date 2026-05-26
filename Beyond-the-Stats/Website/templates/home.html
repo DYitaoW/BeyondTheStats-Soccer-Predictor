@@ -87,8 +87,11 @@
     </footer>
   </main>
 
-  <script src="../static/shared.js"></script>
-  <script src="../static/home.js"></script>
+  <script src="{{ url_for('static', filename='shared.js') }}"></script>
+  <script src="{{ url_for('static', filename='home.js') }}"></script>
 
 </body>
 </html>
+
+
+

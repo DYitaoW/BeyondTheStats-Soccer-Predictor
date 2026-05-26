@@ -10,20 +10,25 @@
     "Crystal Palace FC": "Crystal Palace",
     "Everton FC": "Everton",
     "Fulham FC": "Fulham",
+    "Leeds United": "Leeds",
     "Leeds United FC": "Leeds",
     "Liverpool FC": "Liverpool",
     "Manchester City": "Man City",
     "Manchester City FC": "Man City",
     "Manchester United FC": "",
+    "Newcastle United": "Newcastle",
     "Newcastle United FC": "Newcastle",
     "Nottingham Forest FC": "",
     "Sunderland AFC": "Sunderland",
     "Tottenham Hotspur": "Tottenham",
     "Tottenham Hotspur FC": "Tottenham",
+    "West Ham United": "West Ham",
     "West Ham United FC": "West Ham",
+    "Wolverhampton Wanderers": "Wolves",
     "Wolverhampton Wanderers FC": "Wolves"
   },
   "Spain/La Liga": {
+    "Alavés": "Alaves",
     "Athletic Club": "",
     "CA Osasuna": "Osasuna",
     "Club Atlético de Madrid": "",
@@ -56,6 +61,7 @@
     "Como 1907": "Como",
     "FC Internazionale Milano": "Inter",
     "Genoa CFC": "Genoa",
+    "Hellas Verona": "Verona",
     "Hellas Verona FC": "Verona",
     "Juventus FC": "Juventus",
     "Parma Calcio 1913": "Parma",
@@ -68,6 +74,7 @@
     "US Sassuolo Calcio": "Sassuolo"
   },
   "England/Championship": {
+    "Hull City": "Hull",
     "Hull City AFC": "Hull",
     "Southampton FC": "Southampton"
   },

@@ -1,19 +1,19 @@
 {
-  "updated_at_utc": "2026-05-20T19:55:41+00:00",
+  "updated_at_utc": "2026-05-26T21:54:38+00:00",
   "overall": {
-    "correct_total": 66,
-    "total_predictions": 135,
-    "accuracy_pct": 48.9
+    "correct_total": 76,
+    "total_predictions": 159,
+    "accuracy_pct": 47.8
   },
   "by_league": {
     "Italy/Serie A": {
-      "correct_total": 9,
-      "total_predictions": 16,
-      "accuracy_pct": 56.2
+      "correct_total": 11,
+      "total_predictions": 25,
+      "accuracy_pct": 44.0
     },
     "England/Premier League": {
-      "correct_total": 9,
-      "total_predictions": 18,
+      "correct_total": 13,
+      "total_predictions": 26,
       "accuracy_pct": 50.0
     },
     "Portugal/Liga Portugal": {
@@ -22,9 +22,9 @@
       "accuracy_pct": 66.7
     },
     "Spain/La Liga": {
-      "correct_total": 8,
-      "total_predictions": 12,
-      "accuracy_pct": 66.7
+      "correct_total": 10,
+      "total_predictions": 16,
+      "accuracy_pct": 62.5
     },
     "England/Championship": {
       "correct_total": 11,
@@ -42,9 +42,9 @@
       "accuracy_pct": 46.2
     },
     "United States/MLS": {
-      "correct_total": 13,
-      "total_predictions": 28,
-      "accuracy_pct": 46.4
+      "correct_total": 15,
+      "total_predictions": 31,
+      "accuracy_pct": 48.4
     }
   },
   "counted_prediction_keys": {
@@ -857,6 +857,150 @@
       "predicted_result": "H",
       "actual_result": "D",
       "is_correct": 0
+    },
+    "2026-05-22|Italy/Serie A|atalanta|fiorentina": {
+      "competition": "Italy/Serie A",
+      "predicted_result": "A",
+      "actual_result": "D",
+      "is_correct": 0
+    },
+    "2026-05-23|Italy/Serie A|lazio|pisa": {
+      "competition": "Italy/Serie A",
+      "predicted_result": "D",
+      "actual_result": "H",
+      "is_correct": 0
+    },
+    "2026-05-23|Spain/La Liga|getafe|osasuna": {
+      "competition": "Spain/La Liga",
+      "predicted_result": "H",
+      "actual_result": "H",
+      "is_correct": 1
+    },
+    "2026-05-23|Spain/La Liga|elche|girona": {
+      "competition": "Spain/La Liga",
+      "predicted_result": "A",
+      "actual_result": "D",
+      "is_correct": 0
+    },
+    "2026-05-23|Spain/La Liga|mallorca|oviedo": {
+      "competition": "Spain/La Liga",
+      "predicted_result": "H",
+      "actual_result": "H",
+      "is_correct": 1
+    },
+    "2026-05-23|Spain/La Liga|barcelona|valencia": {
+      "competition": "Spain/La Liga",
+      "predicted_result": "A",
+      "actual_result": "H",
+      "is_correct": 0
+    },
+    "2026-05-24|England/Premier League|burnley|wolves": {
+      "competition": "England/Premier League",
+      "predicted_result": "H",
+      "actual_result": "D",
+      "is_correct": 0
+    },
+    "2026-05-24|England/Premier League|arsenal|crystalpalace": {
+      "competition": "England/Premier League",
+      "predicted_result": "A",
+      "actual_result": "A",
+      "is_correct": 1
+    },
+    "2026-05-24|England/Premier League|fulham|newcastle": {
+      "competition": "England/Premier League",
+      "predicted_result": "H",
+      "actual_result": "H",
+      "is_correct": 1
+    },
+    "2026-05-24|England/Premier League|brentford|liverpool": {
+      "competition": "England/Premier League",
+      "predicted_result": "H",
+      "actual_result": "D",
+      "is_correct": 0
+    },
+    "2026-05-24|England/Premier League|astonvilla|mancity": {
+      "competition": "England/Premier League",
+      "predicted_result": "H",
+      "actual_result": "A",
+      "is_correct": 0
+    },
+    "2026-05-24|England/Premier League|chelsea|sunderland": {
+      "competition": "England/Premier League",
+      "predicted_result": "A",
+      "actual_result": "H",
+      "is_correct": 0
+    },
+    "2026-05-24|England/Premier League|everton|tottenham": {
+      "competition": "England/Premier League",
+      "predicted_result": "H",
+      "actual_result": "H",
+      "is_correct": 1
+    },
+    "2026-05-24|England/Premier League|leeds|westham": {
+      "competition": "England/Premier League",
+      "predicted_result": "H",
+      "actual_result": "H",
+      "is_correct": 1
+    },
+    "2026-05-24|Italy/Serie A|como|cremonese": {
+      "competition": "Italy/Serie A",
+      "predicted_result": "H",
+      "actual_result": "A",
+      "is_correct": 0
+    },
+    "2026-05-24|Italy/Serie A|genoa|lecce": {
+      "competition": "Italy/Serie A",
+      "predicted_result": "A",
+      "actual_result": "H",
+      "is_correct": 0
+    },
+    "2026-05-24|Italy/Serie A|cagliari|milan": {
+      "competition": "Italy/Serie A",
+      "predicted_result": "H",
+      "actual_result": "A",
+      "is_correct": 0
+    },
+    "2026-05-24|Italy/Serie A|napoli|udinese": {
+      "competition": "Italy/Serie A",
+      "predicted_result": "H",
+      "actual_result": "H",
+      "is_correct": 1
+    },
+    "2026-05-24|Italy/Serie A|parma|sassuolo": {
+      "competition": "Italy/Serie A",
+      "predicted_result": "A",
+      "actual_result": "H",
+      "is_correct": 0
+    },
+    "2026-05-24|Italy/Serie A|juventus|torino": {
+      "competition": "Italy/Serie A",
+      "predicted_result": "A",
+      "actual_result": "D",
+      "is_correct": 0
+    },
+    "2026-05-24|Italy/Serie A|roma|verona": {
+      "competition": "Italy/Serie A",
+      "predicted_result": "A",
+      "actual_result": "A",
+      "is_correct": 1
+    },
+    "2026-05-23|United States/MLS|coloradorapids|dallas": {
+      "competition": "United States/MLS",
+      "predicted_result": "A",
+      "actual_result": "A",
+      "is_correct": 1
+    },
+    "2026-05-23|United States/MLS|portlandtimbers|sanjoseearthquakes": {
+      "competition": "United States/MLS",
+      "predicted_result": "H",
+      "actual_result": "A",
+      "is_correct": 0
+    },
+    "2026-05-23|United States/MLS|sandiego|vancouverwhitecaps": {
+      "competition": "United States/MLS",
+      "predicted_result": "A",
+      "actual_result": "A",
+      "is_correct": 1
     }
   }
 }

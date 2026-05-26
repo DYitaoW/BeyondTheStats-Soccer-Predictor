@@ -848,6 +848,38 @@ body:not(.dark-mode) .confidence-pill {
     grid-template-columns: 1fr;
   }
 
+
+.error-message {
+  color: #ff6b6b;
+  background-color: rgba(255, 107, 107, 0.1);
+  border-left: 4px solid #ff6b6b;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: 0.95rem;
+}
+
+.info-message {
+  color: #4ecdc4;
+  background-color: rgba(78, 205, 196, 0.1);
+  border-left: 4px solid #4ecdc4;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: 0.95rem;
+}
+
+.loading-message {
+  color: var(--muted);
+  background-color: rgba(155, 155, 155, 0.1);
+  border-left: 4px solid var(--muted);
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: 0.95rem;
+  font-style: italic;
+}
+
   .kick-card-grid {
     grid-template-columns: 1fr;
   }
