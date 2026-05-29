@@ -1580,6 +1580,20 @@ def api_teams():
     return jsonify({"teams": display_teams})
 
 
+@app.get("/api/world-cup")
+def api_world_cup():
+    """Return the World Cup projection data."""
+    world_cup_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+    if not os.path.exists(world_cup_file):
+        return jsonify({"ok": False, "error": "World Cup projection not available"}), 404
+    try:
+        with open(world_cup_file, "r") as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @app.post("/api/refresh")
 def api_refresh():
     """Trigger a full pipeline refresh in the background."""

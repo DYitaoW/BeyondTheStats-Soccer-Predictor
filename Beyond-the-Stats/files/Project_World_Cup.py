@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import random
 import re
 from collections import defaultdict, deque
 from datetime import UTC, date, datetime, timedelta
@@ -227,12 +228,19 @@ def coerce_scoreline(prediction, allow_draw=True):
     elif result == "D" and allow_draw:
         ag = hg
     elif result == "D" and not allow_draw:
-        if float(prediction.get("prob_home", 0.0) or 0.0) >= float(prediction.get("prob_away", 0.0) or 0.0):
+        # For knockout rounds, resolve draws using higher non-draw probability
+        prob_home = float(prediction.get("prob_home", 0.0) or 0.0)
+        prob_away = float(prediction.get("prob_away", 0.0) or 0.0)
+        if prob_home > prob_away:
             result = "H"
             hg = ag + 1
-        else:
+        elif prob_away > prob_home:
             result = "A"
             ag = hg + 1
+        else:
+            # Exact tie: use deterministic tie-breaker (home team advantage)
+            result = "H"
+            hg = ag + 1
     return result, hg, ag
 
 
@@ -261,8 +269,20 @@ def predict_team_match(bundle, home, away, stage, match_datetime="", venue="", a
     if not prediction:
         raise ValueError(f"Could not predict World Cup match: {home} vs {away}")
     result, hg, ag = coerce_scoreline(prediction, allow_draw=allow_draw)
+    # Ensure no draws in knockout rounds (secondary safety check)
     if not allow_draw and result == "D":
-        result = "H" if prediction["prob_home"] >= prediction["prob_away"] else "A"
+        prob_home = float(prediction.get("prob_home", 0.0) or 0.0)
+        prob_away = float(prediction.get("prob_away", 0.0) or 0.0)
+        if prob_home > prob_away:
+            result = "H"
+            hg = max(hg, ag + 1)
+        elif prob_away > prob_home:
+            result = "A"
+            ag = max(ag, hg + 1)
+        else:
+            # Exact tie: use home team advantage
+            result = "H"
+            hg = max(hg, ag + 1)
     prediction["predicted_result"] = result
     prediction["pred_home_goals"] = hg
     prediction["pred_away_goals"] = ag
@@ -609,7 +629,14 @@ def project_knockout(bundle, knockout_fixtures, group_tables, third_place_table)
                     fixture.get("venue", ""),
                     allow_draw=False,
                 )
-                winner = home if prediction["predicted_result"] == "H" else away
+                # Determine winner: should never be a draw in knockout rounds
+                if prediction["predicted_result"] == "H":
+                    winner = home
+                elif prediction["predicted_result"] == "A":
+                    winner = away
+                else:
+                    # Safety check - should not happen
+                    raise ValueError(f"Unexpected draw result in knockout match: {home} vs {away}")
                 winners[label] = winner
                 row = {
                     "label": label,
@@ -634,6 +661,259 @@ def project_knockout(bundle, knockout_fixtures, group_tables, third_place_table)
     return projected, winners
 
 
+def simulate_match_result(prediction):
+    """Simulate a match result based on probabilities. Returns 'H', 'D', or 'A'."""
+    outcomes = ['H', 'D', 'A']
+    probabilities = [
+        float(prediction.get("prob_home", 0.0)),
+        float(prediction.get("prob_draw", 0.0)),
+        float(prediction.get("prob_away", 0.0)),
+    ]
+    # Normalize probabilities in case they don't sum to 1.0
+    total = sum(probabilities)
+    if total > 0:
+        probabilities = [p / total for p in probabilities]
+    else:
+        probabilities = [0.33, 0.34, 0.33]
+    return random.choices(outcomes, weights=probabilities, k=1)[0]
+
+
+def simulate_group_stage(group_fixture_predictions, groups, team_to_group):
+    """Simulate group stage and return final group tables. Returns dict of group -> list of teams ranked."""
+    tables = {}
+    for group in groups:
+        tables[group] = {team: empty_table_row(team) for team in groups[group]}
+    
+    # Simulate each fixture
+    for fixture in group_fixture_predictions:
+        home = fixture["home_team"]
+        away = fixture["away_team"]
+        group = team_to_group.get(home) or team_to_group.get(away)
+        if not group:
+            continue
+        
+        # Simulate the match
+        result = simulate_match_result(fixture)
+        hg = int(fixture.get("pred_home_goals", 0))
+        ag = int(fixture.get("pred_away_goals", 0))
+        
+        # Update tables
+        tables[group][home]["P"] += 1
+        tables[group][away]["P"] += 1
+        tables[group][home]["GF"] += hg
+        tables[group][home]["GA"] += ag
+        tables[group][away]["GF"] += ag
+        tables[group][away]["GA"] += hg
+        
+        if result == "H":
+            tables[group][home]["W"] += 1
+            tables[group][home]["Pts"] += 3
+            tables[group][away]["L"] += 1
+        elif result == "A":
+            tables[group][away]["W"] += 1
+            tables[group][away]["Pts"] += 3
+            tables[group][home]["L"] += 1
+        else:  # Draw
+            tables[group][home]["D"] += 1
+            tables[group][away]["D"] += 1
+            tables[group][home]["Pts"] += 1
+            tables[group][away]["Pts"] += 1
+    
+    # Rank teams in each group
+    final_tables = {}
+    for group, group_tables in tables.items():
+        team_rows = list(group_tables.values())
+        ranked = rank_group_rows(team_rows, [])  # Empty fixture list for h2h (not needed for simulation)
+        final_tables[group] = ranked
+    
+    return final_tables
+
+
+def simulate_knockout_match(match_prediction, allow_draw=False):
+    """Simulate a knockout match. Return winner ('H' or 'A') and goals."""
+    result = simulate_match_result(match_prediction)
+    
+    # If draw in knockout, resolve it
+    if result == "D" and not allow_draw:
+        prob_home = float(match_prediction.get("prob_home", 0.0))
+        prob_away = float(match_prediction.get("prob_away", 0.0))
+        if prob_home > prob_away:
+            result = "H"
+        elif prob_away > prob_home:
+            result = "A"
+        else:
+            result = "H"  # Default to home on tie
+    
+    hg = int(match_prediction.get("pred_home_goals", 0))
+    ag = int(match_prediction.get("pred_away_goals", 0))
+    
+    # Ensure goals differ for knockout
+    if result == "H" and hg <= ag:
+        hg = ag + 1
+    elif result == "A" and ag <= hg:
+        ag = hg + 1
+    
+    return result, hg, ag
+
+
+def simulate_knockout_stage(bundle, knockout_fixtures, group_tables, third_place_table):
+    """Simulate knockout rounds and return winners advancing to each stage."""
+    fixtures_by_stage = defaultdict(list)
+    for fixture in knockout_fixtures:
+        stage = str(fixture.get("stage", "")).strip().lower()
+        if stage in STAGE_ORDER:
+            fixtures_by_stage[stage].append(fixture)
+    
+    for stage in fixtures_by_stage:
+        fixtures_by_stage[stage].sort(key=lambda row: (row.get("match_datetime_utc", ""), row.get("event_id", "")))
+    
+    group_lookup = group_qualifier_lookup(group_tables)
+    third_assignments = resolve_third_place_slots(fixtures_by_stage.get("round-of-32", []), third_place_table)
+    winners = {}
+    stage_participants = {stage: set() for stage in STAGE_ORDER}
+    
+    for stage in sorted(fixtures_by_stage.keys(), key=lambda value: STAGE_ORDER[value]):
+        for idx, fixture in enumerate(fixtures_by_stage[stage], start=1):
+            match_idx_zero = idx - 1
+            home_slot, away_slot = extract_competitor_slots(fixture)
+            home = resolve_slot(
+                home_slot, match_idx_zero, "home_team", group_lookup, third_assignments, third_place_table, winners
+            )
+            away = resolve_slot(
+                away_slot, match_idx_zero, "away_team", group_lookup, third_assignments, third_place_table, winners
+            )
+            
+            if not home or not away:
+                continue
+            
+            # Predict the match
+            prediction = predict_team_match(
+                bundle, home, away, stage, fixture.get("match_datetime_utc", ""), fixture.get("venue", ""), allow_draw=False
+            )
+            
+            # Simulate result
+            result, hg, ag = simulate_knockout_match(prediction, allow_draw=False)
+            winner = home if result == "H" else away
+            winners[f"{stage}_{idx}"] = winner
+            stage_participants[stage].add(home)
+            stage_participants[stage].add(away)
+    
+    # Return only the winners at each stage
+    return {
+        "round-of-32": set(),
+        "round-of-16": set(),
+        "quarterfinals": set(),
+        "semifinals": set(),
+        "final": set(),
+        "winner": list(winners.values())[-1] if winners else ""
+    }, winners
+
+
+def run_tournament_simulation(bundle, group_fixtures, knockout_fixtures, groups, team_to_group):
+    """Run a single tournament simulation. Returns stats dict."""
+    # Simulate group stage
+    try:
+        simulated_groups = simulate_group_stage(group_fixtures, groups, team_to_group)
+    except Exception as e:
+        print(f"Error simulating group stage: {e}")
+        return None
+    
+    # Convert simulated_groups to the format expected by rank_third_place_teams
+    # Format: [{group: str, teams: [team_rows]}, ...]
+    group_tables_for_ranking = []
+    for group in sorted(simulated_groups.keys()):
+        group_tables_for_ranking.append({
+            "group": group,
+            "teams": simulated_groups[group]
+        })
+    
+    # Get properly ranked third-place teams with "group" and "qualified" fields
+    third_place_table = rank_third_place_teams(group_tables_for_ranking)
+    
+    # Simulate knockout
+    try:
+        stage_results, knockout_winners = simulate_knockout_stage(
+            bundle, knockout_fixtures, group_tables_for_ranking, third_place_table
+        )
+    except Exception as e:
+        print(f"Error simulating knockout: {e}")
+        return None
+    
+    # Compile stats for this simulation
+    stats = {
+        "groups": {},
+        "knockout_advancement": {
+            "round_of_32": set(),
+            "round_of_16": set(),
+            "quarterfinals": set(),
+            "semifinals": set(),
+            "finals": set(),
+        },
+        "champion": stage_results.get("winner", ""),
+    }
+    
+    # Track group positions
+    for group, group_table in simulated_groups.items():
+        stats["groups"][group] = {}
+        for position, team_row in enumerate(group_table, start=1):
+            team = team_row["team"]
+            stats["groups"][group][team] = position
+    
+    return stats
+
+
+def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group, num_simulations=500):
+    """Run multiple tournament simulations and aggregate results."""
+    print(f"Running {num_simulations} tournament simulations...")
+    
+    # Aggregation structures
+    position_counts = defaultdict(lambda: defaultdict(int))  # team -> position -> count
+    stage_counts = defaultdict(lambda: defaultdict(int))  # team -> stage -> count
+    winner_counts = defaultdict(int)  # team -> count
+    
+    successful_sims = 0
+    
+    for sim_num in range(num_simulations):
+        if (sim_num + 1) % 100 == 0:
+            print(f"  Progress: {sim_num + 1}/{num_simulations} simulations...")
+        
+        stats = run_tournament_simulation(bundle, group_fixtures, knockout_fixtures, groups, team_to_group)
+        if not stats:
+            continue
+        
+        successful_sims += 1
+        
+        # Count group positions
+        for group, group_stats in stats.get("groups", {}).items():
+            for team, position in group_stats.items():
+                position_counts[team][f"group_position_{position}"] += 1
+        
+        # Count champion
+        if stats.get("champion"):
+            winner_counts[stats["champion"]] += 1
+    
+    print(f"  Completed {successful_sims} successful simulations")
+    
+    # Convert to percentages
+    position_probabilities = {}
+    for team, positions in position_counts.items():
+        position_probabilities[team] = {}
+        for position_key, count in positions.items():
+            percentage = (count / successful_sims * 100) if successful_sims > 0 else 0
+            position_probabilities[team][position_key] = round(percentage, 2)
+    
+    winner_probabilities = {}
+    for team, count in winner_counts.items():
+        percentage = (count / successful_sims * 100) if successful_sims > 0 else 0
+        winner_probabilities[team] = round(percentage, 2)
+    
+    return {
+        "simulations_run": successful_sims,
+        "position_probabilities": position_probabilities,
+        "winner_probabilities": winner_probabilities,
+    }
+
+
 def build_projection(args):
     bundle = ensure_model_bundle(args.rebuild_national_model, args.api_token)
     fixtures = fetch_world_cup_fixtures(args.start_date, args.end_date)
@@ -649,6 +929,11 @@ def build_projection(args):
 
     final_rows = knockout.get("final", [])
     champion = final_rows[0]["winner"] if final_rows else ""
+    
+    # Run 500 simulations to calculate probabilities
+    print("Generating tournament simulations...")
+    simulation_stats = run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group, num_simulations=500)
+    
     payload = {
         "ok": True,
         "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
@@ -672,6 +957,7 @@ def build_projection(args):
         ],
         "knockout": knockout,
         "champion": champion,
+        "simulations": simulation_stats,
     }
     return payload
 

@@ -189,9 +189,9 @@ Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,HS,HST,AS,AST,AvgH,AvgD,AvgA,HomePointsBefo
 2026-04-12,Atl. Tucuman,Tigre,0,0,D,NA,NA,NA,NA,2.37,2.89,3.24,9,17,27,16,1
 2026-04-12,Huracan,Rosario Central,3,1,H,NA,NA,NA,NA,2.33,2.78,3.42,17,21,17,8,2
 2026-04-13,Lanus,Banfield,1,0,H,NA,NA,NA,NA,1.86,3.08,4.63,16,13,19,23,2
+2026-04-13,Sarmiento Junin,Gimnasia L.P.,1,2,A,NA,NA,NA,NA,2.63,2.76,2.95,16,14,21,22,0
 2026-04-13,Defensa y Justicia,Talleres Cordoba,1,2,A,NA,NA,NA,NA,2.91,2.73,2.7,19,18,11,17,0
 2026-04-13,Racing Club,River Plate,0,2,A,NA,NA,NA,NA,2.54,2.93,2.91,18,23,16,3,0
-2026-04-13,Sarmiento Junin,Gimnasia L.P.,1,2,A,NA,NA,NA,NA,2.63,2.76,2.95,16,14,21,22,0
 2026-04-14,Velez Sarsfield,Central Cordoba,1,0,H,NA,NA,NA,NA,1.35,4.29,9.73,22,12,5,25,2
 2026-04-18,Union de Santa Fe,Newells Old Boys,2,3,A,NA,NA,NA,NA,1.59,3.59,5.84,19,10,11,27,0
 2026-04-18,Gimnasia L.P.,Estudiantes Rio Cuarto,1,0,H,NA,NA,NA,NA,1.79,3.14,4.92,17,5,20,30,2
@@ -228,15 +228,15 @@ Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,HS,HST,AS,AST,AvgH,AvgD,AvgA,HomePointsBefo
 2026-05-02,Central Cordoba,Boca Juniors,1,2,A,NA,NA,NA,NA,4.97,3.17,1.76,16,27,25,5,0
 2026-05-02,San Lorenzo,Independiente,1,2,A,NA,NA,NA,NA,3.09,2.61,2.68,22,21,11,13,0
 2026-05-02,Union de Santa Fe,Talleres Cordoba,1,1,D,NA,NA,NA,NA,2.02,3.11,3.78,20,25,16,8,1
-2026-05-03,Rosario Central,Tigre,1,1,D,NA,NA,NA,NA,2.97,2.79,2.58,27,19,7,18,1
-2026-05-03,Racing Club,Huracan,0,0,D,NA,NA,NA,NA,1.94,2.97,4.39,20,21,18,14,1
-2026-05-03,Gimnasia L.P.,Argentinos Jrs,2,0,H,NA,NA,NA,NA,3.38,2.98,2.22,23,29,11,4,2
-2026-05-03,River Plate,Atl. Tucuman,0,1,A,NA,NA,NA,NA,1.52,3.81,6.16,29,11,3,27,0
-2026-05-03,Aldosivi,Ind. Rivadavia,1,1,D,NA,NA,NA,NA,2.52,2.92,2.92,7,33,29,1,1
 2026-05-03,Platense,Estudiantes L.P.,0,2,A,NA,NA,NA,NA,2.82,2.72,2.76,16,28,23,5,0
-2026-05-03,Belgrano,Sarmiento Junin,4,0,H,NA,NA,NA,NA,1.83,3.09,4.74,23,19,11,20,2
-2026-05-04,Gimnasia Mendoza,Defensa y Justicia,2,1,H,NA,NA,NA,NA,2.25,2.93,3.38,16,19,24,19,2
+2026-05-03,Aldosivi,Ind. Rivadavia,1,1,D,NA,NA,NA,NA,2.52,2.92,2.92,7,33,29,1,1
+2026-05-03,Belgrano,Sarmiento Junin,4,0,H,NA,NA,NA,NA,1.83,3.09,4.74,23,19,10,20,2
+2026-05-03,Gimnasia L.P.,Argentinos Jrs,2,0,H,NA,NA,NA,NA,3.38,2.98,2.22,23,29,11,5,2
+2026-05-03,Racing Club,Huracan,0,0,D,NA,NA,NA,NA,1.94,2.97,4.39,20,21,17,14,1
+2026-05-03,Rosario Central,Tigre,1,1,D,NA,NA,NA,NA,2.97,2.79,2.58,27,19,7,18,1
+2026-05-03,River Plate,Atl. Tucuman,0,1,A,NA,NA,NA,NA,1.52,3.81,6.16,29,11,4,27,0
 2026-05-04,Velez Sarsfield,Newells Old Boys,1,1,D,NA,NA,NA,NA,1.82,3.31,4.34,27,14,7,27,1
+2026-05-04,Gimnasia Mendoza,Defensa y Justicia,2,1,H,NA,NA,NA,NA,2.25,2.93,3.38,16,19,24,19,2
 2026-05-05,Estudiantes Rio Cuarto,Instituto,0,2,A,NA,NA,NA,NA,3.43,2.89,2.25,5,18,30,23,0
 2026-05-09,Talleres Cordoba,Belgrano,0,1,A,NA,NA,NA,NA,2.41,2.76,3.28,26,26,9,8,0
 2026-05-09,Boca Juniors,Huracan,1,1,D,NA,NA,NA,NA,1.75,3.09,5.4,30,22,3,12,1
@@ -247,8 +247,9 @@ Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,HS,HST,AS,AST,AvgH,AvgD,AvgA,HomePointsBefo
 2026-05-10,River Plate,San Lorenzo,1,1,D,NA,NA,NA,NA,1.52,3.52,7.18,29,22,6,15,1
 2026-05-11,Velez Sarsfield,Gimnasia L.P.,0,1,A,NA,NA,NA,NA,1.97,3.04,4.08,28,26,8,10,0
 2026-05-12,Belgrano,Union de Santa Fe,2,0,H,NA,NA,NA,NA,2.47,2.89,3.01,29,24,7,11,2
-2026-05-13,Rosario Central,Racing Club,1,1,D,NA,NA,NA,NA,2.22,2.94,3.43,31,24,6,12,1
-2026-05-13,Argentinos Jrs,Huracan,0,0,D,NA,NA,NA,NA,1.84,2.95,5.01,32,23,4,14,1
+2026-05-13,Argentinos Jrs,Huracan,0,0,D,NA,NA,NA,NA,1.84,2.95,5.01,32,23,3,14,1
+2026-05-13,Rosario Central,Racing Club,1,1,D,NA,NA,NA,NA,2.22,2.94,3.43,31,24,6,13,1
 2026-05-14,River Plate,Gimnasia L.P.,2,0,H,NA,NA,NA,NA,1.53,3.65,6.56,30,29,7,8,2
 2026-05-16,River Plate,Rosario Central,1,0,H,NA,NA,NA,NA,2.1,2.9,3.81,33,32,2,5,2
 2026-05-17,Argentinos Jrs,Belgrano,1,1,D,NA,NA,NA,NA,1.94,2.86,4.56,33,32,3,4,1
+2026-05-24,River Plate,Belgrano,2,3,A,NA,NA,NA,NA,2.15,2.79,3.9,36,33,1,4,0

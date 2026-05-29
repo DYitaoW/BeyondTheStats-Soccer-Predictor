@@ -1,57 +1,14 @@
 competition,match_date,home_team,away_team,predicted_result,pred_home_goals,pred_away_goals,prob_home,prob_draw,prob_away
-England/Premier League,,Bournemouth,Man City,H,3,2,0.18525,0.175636,0.639113
-England/Premier League,,Brighton,Man United,H,2,1,0.505364,0.184,0.310636
-England/Premier League,,Burnley,Wolves,A,1,2,0.450234,0.192364,0.357402
-England/Premier League,,Chelsea,Tottenham,D,1,1,0.375836,0.271818,0.352346
-England/Premier League,,Crystal Palace,Arsenal,A,1,2,0.10747,0.238364,0.654166
-England/Premier League,,Fulham,Newcastle,H,2,1,0.525411,0.204909,0.26968
-England/Premier League,,Liverpool,Brentford,D,2,2,0.694688,0.175636,0.129675
-England/Premier League,,Man City,Aston Villa,D,3,3,0.773282,0.125455,0.101263
-England/Premier League,,Nott'm Forest,Bournemouth,D,1,1,0.154709,0.259273,0.586018
-England/Premier League,,Sunderland,Chelsea,A,1,2,0.248991,0.271818,0.479191
-England/Premier League,,Tottenham,Everton,D,1,1,0.41053,0.296909,0.292561
-England/Premier League,,West Ham,Leeds,A,2,3,0.45475,0.259273,0.285977
-France/Ligue 1,,Nantes,Toulouse,D,1,1,0.298455,0.317818,0.383727
-France/Ligue 2,2025-12-05,Bastia,Red Star,A,1,2,0.279734,0.322,0.398266
-Italy/Serie A,,Bologna,Inter,H,2,1,0.214667,0.23,0.555333
-Italy/Serie A,,Cremonese,Como,D,2,2,0.449455,0.250909,0.299636
-Italy/Serie A,,Fiorentina,Atalanta,H,2,1,0.359791,0.238364,0.401845
-Italy/Serie A,,Lazio,Pisa,H,2,1,0.324534,0.487027,0.188439
-Italy/Serie A,,Lecce,Genoa,A,1,2,0.170324,0.406299,0.423377
-Italy/Serie A,,Milan,Cagliari,H,2,1,0.720275,0.200727,0.078998
-Italy/Serie A,,Napoli,Udinese,H,2,1,0.526037,0.213273,0.260691
-Italy/Serie A,,Parma,Sassuolo,H,3,2,0.428799,0.221636,0.349565
-Italy/Serie A,,Torino,Juventus,D,1,1,0.162834,0.209091,0.628075
-Italy/Serie A,,Verona,Roma,A,1,2,0.145952,0.284364,0.569684
-Spain/La Liga,,Alaves,Vallecano,H,2,1,0.353167,0.200727,0.446106
-Spain/La Liga,,Betis,Levante,H,2,1,0.62626,0.188182,0.185558
-Spain/La Liga,,Celta,Sevilla,D,2,2,0.448,0.23,0.322
-Spain/La Liga,,Espanol,Sociedad,H,2,1,0.291329,0.402775,0.305896
-Spain/La Liga,,Getafe,Osasuna,H,2,1,0.506489,0.313636,0.179875
-Spain/La Liga,,Girona,Elche,H,3,2,0.440455,0.184,0.375545
-Spain/La Liga,,Mallorca,Oviedo,H,2,1,0.504904,0.296909,0.198187
-Spain/La Liga,,Real Madrid,Ath Bilbao,H,3,1,0.842325,0.125455,0.03222
-Spain/La Liga,,Valencia,Barcelona,H,3,2,0.264875,0.200727,0.534397
-Spain/La Liga,,Villarreal,Ath Madrid,H,2,1,0.445991,0.267636,0.286373
-Spain/La Liga 2,,Albacete,Sociedad B,D,1,1,0.268114,0.474085,0.257802
-Spain/La Liga 2,,Almeria,Valladolid,D,2,2,0.421647,0.255091,0.323262
-Spain/La Liga 2,,Andorra,Ceuta,H,3,2,0.167193,0.196545,0.636262
-Spain/La Liga 2,,Burgos,Andorra,A,1,2,0.439511,0.242545,0.317944
-Spain/La Liga 2,,Cadiz,Leganes,A,1,2,0.253568,0.47734,0.269093
-Spain/La Liga 2,,Castellon,Eibar,H,2,1,0.446305,0.271818,0.281877
-Spain/La Liga 2,,Ceuta,Albacete,A,1,2,0.210351,0.509181,0.280468
-Spain/La Liga 2,,Cordoba,Huesca,H,3,2,0.268364,0.284364,0.447273
-Spain/La Liga 2,,Cultural Leonesa,Burgos,A,1,3,0.051,0.184,0.765
-Spain/La Liga 2,,Eibar,Cordoba,D,2,2,0.676534,0.179818,0.143648
-Spain/La Liga 2,,Granada,Sp Gijon,D,1,1,0.412841,0.263455,0.323705
-Spain/La Liga 2,,Huesca,Castellon,D,1,1,0.267974,0.276,0.456026
-Spain/La Liga 2,,La Coruna,Las Palmas,H,2,1,0.490008,0.288545,0.221446
-Spain/La Liga 2,,Las Palmas,Zaragoza,D,1,1,0.24921,0.372182,0.378608
-Spain/La Liga 2,,Leganes,Mirandes,H,2,1,0.654094,0.188182,0.157725
-Spain/La Liga 2,,Malaga,Santander,H,3,2,0.531459,0.158909,0.309632
-Spain/La Liga 2,,Mirandes,Granada,H,3,2,0.261666,0.238364,0.49997
-Spain/La Liga 2,,Santander,Cadiz,H,3,2,0.394909,0.276,0.329091
-Spain/La Liga 2,,Sociedad B,Cultural Leonesa,A,1,2,0.254604,0.548657,0.196739
-Spain/La Liga 2,,Sp Gijon,Almeria,H,2,1,0.484583,0.280182,0.235235
-Spain/La Liga 2,,Valladolid,La Coruna,A,1,2,0.390208,0.276,0.333792
-Spain/La Liga 2,,Zaragoza,Malaga,H,3,2,0.314322,0.263455,0.422224
+France/Ligue 1,,Nantes,Toulouse,H,2,1,0.34295,0.271818,0.385232
+France/Ligue 2,2025-12-05,Bastia,Red Star,A,1,2,0.31051,0.280182,0.409308
+Spain/La Liga 2,,Almeria,Valladolid,H,3,2,0.425484,0.242545,0.331971
+Spain/La Liga 2,,Burgos,Andorra,H,2,1,0.454441,0.255091,0.290468
+Spain/La Liga 2,,Castellon,Eibar,A,2,3,0.463887,0.313636,0.222476
+Spain/La Liga 2,,Ceuta,Albacete,H,2,1,0.235512,0.467537,0.29695
+Spain/La Liga 2,,Cordoba,Huesca,H,3,2,0.312087,0.217455,0.470459
+Spain/La Liga 2,,Granada,Sp Gijon,H,2,1,0.427513,0.271818,0.300669
+Spain/La Liga 2,,La Coruna,Las Palmas,H,2,1,0.469464,0.267636,0.2629
+Spain/La Liga 2,,Leganes,Mirandes,H,2,1,0.62106,0.234182,0.144758
+Spain/La Liga 2,,Santander,Cadiz,A,2,3,0.416552,0.313636,0.269812
+Spain/La Liga 2,,Sociedad B,Cultural Leonesa,D,1,1,0.218189,0.499763,0.282049
+Spain/La Liga 2,,Zaragoza,Malaga,A,1,2,0.294956,0.338727,0.366317

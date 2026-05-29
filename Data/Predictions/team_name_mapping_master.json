@@ -723,5 +723,13 @@
   "France/Coupe de France": {
     "Lens": "",
     "Nice": ""
+  },
+  "UEFA/Champions League": {
+    "Paris SG": "",
+    "Arsenal": ""
+  },
+  "UEFA/Conference League": {
+    "Crystal Palace": "",
+    "Rayo Vallecano": ""
   }
 }
