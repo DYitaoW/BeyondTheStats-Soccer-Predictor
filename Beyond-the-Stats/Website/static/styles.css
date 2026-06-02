@@ -785,6 +785,149 @@ body:not(.dark-mode) .confidence-pill {
   margin-bottom: 9px;
 }
 
+/* World Cup summary cards keep key projection facts visible above the long tables. */
+.world-cup-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.world-cup-summary-item,
+.world-cup-odds-card,
+.world-cup-table-card,
+.world-cup-match-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #111922;
+  padding: 12px;
+}
+
+.summary-label {
+  color: var(--muted);
+  display: block;
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+}
+
+/* World Cup sections separate standings, fixtures, and knockout rounds without nested cards. */
+.world-cup-section {
+  border-top: 1px solid var(--border);
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
+.world-cup-section h4,
+.world-cup-round h5,
+.world-cup-table-card h5 {
+  margin: 0 0 10px;
+}
+
+.world-cup-rules {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.world-cup-odds-grid,
+.world-cup-group-grid,
+.world-cup-fixture-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.world-cup-odds-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.world-cup-group-grid {
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+}
+
+.world-cup-fixture-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.world-cup-odds-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* World Cup tables use compact cells so all football stats remain scannable. */
+.world-cup-table th,
+.world-cup-table td {
+  padding: 7px 6px;
+  text-align: center;
+}
+
+.world-cup-table th:first-child,
+.world-cup-table td:first-child {
+  text-align: left;
+}
+
+.qualified-row td:first-child,
+.winner-team {
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* World Cup match cards show scorelines and probability splits in a stable layout. */
+.match-card-top,
+.match-card-score,
+.match-card-meta {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.match-card-top {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+.match-card-score {
+  align-items: center;
+  font-size: 0.95rem;
+}
+
+.match-card-score strong {
+  color: var(--primary);
+  font-size: 1.15rem;
+  white-space: nowrap;
+}
+
+.match-card-meta {
+  color: var(--muted);
+  font-size: 0.84rem;
+  margin-top: 8px;
+}
+
+.world-cup-probabilities {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #233141;
+  margin-top: 10px;
+}
+
+.world-cup-probabilities span:nth-child(1) {
+  background: #55d37a;
+}
+
+.world-cup-probabilities span:nth-child(2) {
+  background: #93a4b3;
+}
+
+.world-cup-probabilities span:nth-child(3) {
+  background: #7297ff;
+}
+
 .pred-options {
   display: flex;
   flex-wrap: wrap;

@@ -15,6 +15,7 @@ const predictorExtraBody = document.getElementById("predictor-extra-body");
 const panelGlobal = document.getElementById("panel-global");
 const panelCups = document.getElementById("panel-cups");
 const panelLeagueTable = document.getElementById("panel-league-table");
+const panelWorldCup = document.getElementById("panel-world-cup");
 const panelPositionOdds = document.getElementById("panel-position-odds");
 const panelPlayers = document.getElementById("panel-players");
 const panelAbout = document.getElementById("panel-about");
@@ -28,6 +29,7 @@ const tabCups = document.getElementById("tab-cups");
 const tabH2H = document.getElementById("tab-h2h");
 const tabMarket = document.getElementById("tab-market");
 const tabLeagueTable = document.getElementById("tab-league-table");
+const tabWorldCup = document.getElementById("tab-world-cup");
 const tabPositionOdds = document.getElementById("tab-position-odds");
 const tabPlayers = document.getElementById("tab-players");
 const tabTactics = document.getElementById("tab-tactics");
@@ -210,10 +212,10 @@ targetResult.innerHTML = html;
 
 function activateTab(tab) {
 // safely reset all tabs/panels so per-page templates without every section do not throw
-[tabHome, tabPredictor, tabGlobal, tabCups, tabH2H, tabMarket, tabLeagueTable, tabPositionOdds, tabPlayers, tabAbout]
+[tabHome, tabPredictor, tabGlobal, tabCups, tabH2H, tabMarket, tabLeagueTable, tabWorldCup, tabPositionOdds, tabPlayers, tabAbout]
     .filter(Boolean)
     .forEach((node) => node.classList.remove("active"));
-[panelHome, panelPredictor, panelGlobal, panelCups, panelH2H, panelMarket, panelLeagueTable, panelPositionOdds, panelPlayers, panelAbout]
+[panelHome, panelPredictor, panelGlobal, panelCups, panelH2H, panelMarket, panelLeagueTable, panelWorldCup, panelPositionOdds, panelPlayers, panelAbout]
     .filter(Boolean)
     .forEach((node) => node.classList.add("hidden"));
 
@@ -238,6 +240,9 @@ if (tab === "home") {
 } else if (tab === "league-table") {
     tabLeagueTable.classList.add("active");
     panelLeagueTable.classList.remove("hidden");
+} else if (tab === "world-cup") {
+    tabWorldCup.classList.add("active");
+    panelWorldCup.classList.remove("hidden");
 } else if (tab === "position-odds") {
     tabPositionOdds.classList.add("active");
     panelPositionOdds.classList.remove("hidden");

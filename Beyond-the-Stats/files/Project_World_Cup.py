@@ -88,13 +88,8 @@ def ensure_model_bundle(rebuild, api_token):
 def fetch_world_cup_fixtures(start_date, end_date):
     rows = []
     seen_ids = set()
-    for day in iter_dates(start_date, end_date):
-        url = national.ESPN_SCOREBOARD_API.format(espn_id=WORLD_CUP_ESPN_ID) + f"?dates={day.strftime('%Y%m%d')}"
-        try:
-            payload = national.fetch_json(url, timeout=30)
-        except Exception as exc:
-            print(f"World Cup ESPN fetch failed for {day}: {exc}")
-            continue
+    # Fetch tournament days concurrently, then parse in date order to keep output deterministic.
+    for _, payload in national.fetch_espn_scoreboard_days(WORLD_CUP_ESPN_ID, iter_dates(start_date, end_date), timeout=30):
         for event in payload.get("events") or []:
             event_id = str(event.get("id", "")).strip()
             if event_id and event_id in seen_ids:
