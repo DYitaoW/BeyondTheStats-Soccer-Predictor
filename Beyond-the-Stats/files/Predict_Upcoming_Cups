@@ -16,6 +16,8 @@ import Predict_Match as pm
 
 # --- CONFIGURATION CONSTANTS ---
 
+#needs to be changed in the future for predictions using sklearn before next season start!!!
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")

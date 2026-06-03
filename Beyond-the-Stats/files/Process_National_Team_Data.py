@@ -6,15 +6,26 @@ import os
 import random
 import re
 import sys
+import time
 import urllib.parse
 import urllib.request
 import unicodedata
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
+import requests
+from bs4 import BeautifulSoup
 
 import joblib
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.preprocessing import LabelEncoder
+
+try:
+    from xgboost import XGBClassifier, XGBRegressor
+except ImportError:
+    XGBClassifier = None
+    XGBRegressor = None
 
 
 if __name__ == "__main__":
@@ -29,7 +40,7 @@ RAW_MATCHES_FILE = os.path.join(NATIONAL_DATA_DIR, "national_team_recent_matches
 PROCESSED_MATCHES_FILE = os.path.join(NATIONAL_DATA_DIR, "national_team_recent_context.csv")
 MODEL_CACHE = os.path.join(NATIONAL_DATA_DIR, "national_team_model_cache.pkl")
 API_REPORT_FILE = os.path.join(NATIONAL_DATA_DIR, "national_team_api_sources.json")
-FIFA_RANKINGS_FILE = os.path.join(NATIONAL_DATA_DIR, "fifa_rankings.json")
+FIFA_RANKINGS_FILE = os.path.join(NATIONAL_DATA_DIR, "all_team_rankings.json")
 SQUAD_VALUES_FILE = os.path.join(NATIONAL_DATA_DIR, "national_team_squad_values.json")
 
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
@@ -37,11 +48,64 @@ FOOTBALL_DATA_API_BASE = "https://api.football-data.org/v4"
 FOOTBALLDATA_IO_BASE = "https://footballdata.io/api/v1"
 SPORTRADAR_FIFA_RANKINGS_URL = "https://api.sportradar.com/soccer-extended/trial/v4/en/fifa_rankings.json"
 TRANSFERMARKT_CACHE_HOURS = max(0.0, float(os.getenv("TRANSFERMARKT_CACHE_HOURS", "24") or "24"))  # 24-hour cache (squad values change less frequently)
+TRANSFERMARKT_BASE_URL = "https://www.transfermarkt.com"
+TRANSFERMARKT_SEARCH_URL = "https://www.transfermarkt.com/schnellsuche/ergebnis/schnellsuche?query={query}"
+TRANSFERMARKT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive",
+    "Referer": "https://www.transfermarkt.com/",
+}
+TRANSFERMARKT_FETCH_WORKERS = max(1, int(os.getenv("NATIONAL_TRANSFERMARKT_FETCH_WORKERS", "4") or "4"))
+# Squad market values change slowly; refresh the aggregated file at most
+# every SQUAD_VALUES_MAX_AGE_DAYS days (overridden via --squad-cache-days).
+SQUAD_VALUES_MAX_AGE_DAYS = max(0, int(float(os.getenv("NATIONAL_SQUAD_CACHE_DAYS", "30") or "30")))
+NATIONAL_TEAM_QUERY_ALIASES = {
+    "United States": "USA",
+    "USA": "USA",
+    "Czechia": "Czech Republic",
+    "Turkey": "Turkiye",
+    "Turkiye": "Turkiye",
+    "South Korea": "Korea Republic",
+    "Korea Republic": "Korea Republic",
+    "Bosnia-Herzegovina": "Bosnia-Herzegovina",
+    "Ivory Coast": "Cote d'Ivoire",
+    "Cote d'Ivoire": "Cote d'Ivoire",
+    "Curacao": "Curacao",
+    "Curaçao": "Curacao",
+    "Cape Verde": "Cape Verde",
+    "Cabo Verde": "Cape Verde",
+    "Republic of Ireland": "Ireland",
+    "Iran": "IR Iran",
+    "FYR Macedonia": "North Macedonia",
+    "DR Congo": "DR Congo",
+    "Congo DR": "DR Congo",
+    "Democratic Republic of the Congo": "DR Congo",
+    "Congo, Democratic Republic of the": "DR Congo",
+    "UAE": "United Arab Emirates",
+    "China PR": "China",
+    "Hong Kong": "Hongkong",
+    "China": "China",
+}
 LAST_N_MATCHES = 15
 DEFAULT_LOOKBACK_DAYS = 900
 RESULT_LABELS = {"H", "D", "A"}
 ESPN_FETCH_WORKERS = max(1, int(os.getenv("NATIONAL_ESPN_FETCH_WORKERS", "8") or "8"))
 ESPN_CACHE_HOURS = max(0.0, float(os.getenv("NATIONAL_ESPN_CACHE_HOURS", "6") or "6"))
+# Sklearn training knobs (mirrors Predict_Match.py).
+CPU_COUNT = max(1, (os.cpu_count() or 1))
+NATIONAL_TRAIN_WORKERS = int(os.getenv("NATIONAL_TRAIN_WORKERS", str(max(1, min(4, CPU_COUNT // 2)))))
+NATIONAL_MODEL_THREADS = int(os.getenv("NATIONAL_MODEL_THREADS", str(max(1, CPU_COUNT // NATIONAL_TRAIN_WORKERS))))
+EU_RANDOMIZER_MAX_DELTA = 0.08
+DRAW_REDUCTION_FACTOR = 0.08
+HIGH_DRAW_THRESHOLD = 0.42
+HIGH_DRAW_EXTRA_REDUCTION_MAX = 0.18
+CATEGORICAL_FEATURE_COLUMNS = ["competition", "stage"]
+# Below this many completed recent matches we fall back to the current-context
+# heuristic instead of training a sklearn model (too little data to learn from).
+MIN_TRAINING_ROWS = 24
 
 
 def d(start, end):
@@ -109,6 +173,17 @@ def parse_cli_args():
         "--sportradar-api-key",
         default=os.getenv("SPORTRADAR_API_KEY", "").strip(),
         help="Optional Sportradar API key for current FIFA ranking refresh.",
+    )
+    parser.add_argument(
+        "--refresh-squad-values",
+        action="store_true",
+        help="Search Transfermarkt for each target team and refresh national_team_squad_values.json before processing.",
+    )
+    parser.add_argument(
+        "--squad-cache-days",
+        type=int,
+        default=SQUAD_VALUES_MAX_AGE_DAYS,
+        help="Force a Transfermarkt refresh when the squad-values file is older than this many days. Set to 0 to disable the staleness override (the file is only refreshed when --refresh-squad-values is passed).",
     )
     return parser.parse_args()
 
@@ -207,6 +282,64 @@ def fetch_json_cached(url, headers=None, timeout=30, max_age_hours=ESPN_CACHE_HO
     if headers is None:
         write_cached_json(url, payload)
     return payload
+
+
+def transfermarkt_cache_path_for_url(url):
+    # Hash the URL so each Transfermarkt search/squad page gets a stable filesystem-safe cache file.
+    digest = hashlib.sha256(str(url).encode("utf-8")).hexdigest()
+    return os.path.join(TRANSFERMARKT_CACHE_DIR, f"{digest}.html")
+
+
+def load_cached_transfermarkt_html(url, max_age_hours=TRANSFERMARKT_CACHE_HOURS):
+    cache_path = transfermarkt_cache_path_for_url(url)
+    if max_age_hours <= 0 or not os.path.exists(cache_path):
+        return None
+    cache_age_hours = (datetime.now(UTC).timestamp() - os.path.getmtime(cache_path)) / 3600.0
+    if cache_age_hours > max_age_hours:
+        return None
+    try:
+        with open(cache_path, "r", encoding="utf-8") as file:
+            return file.read()
+    except Exception:
+        return None
+
+
+def write_cached_transfermarkt_html(url, html):
+    os.makedirs(TRANSFERMARKT_CACHE_DIR, exist_ok=True)
+    cache_path = transfermarkt_cache_path_for_url(url)
+    temp_path = f"{cache_path}.tmp"
+    with open(temp_path, "w", encoding="utf-8") as file:
+        file.write(html)
+    os.replace(temp_path, cache_path)
+
+
+def fetch_transfermarkt_html(url, retries=2, pause_seconds=1.5, timeout=30):
+    last_exc = None
+    for attempt in range(max(1, int(retries))):
+        try:
+            request = urllib.request.Request(url, headers=TRANSFERMARKT_HEADERS)
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read().decode("utf-8", errors="ignore")
+        except Exception as exc:
+            last_exc = exc
+            if attempt + 1 < retries:
+                time.sleep(pause_seconds)
+                continue
+            break
+    if last_exc is not None:
+        print(f"  Transfermarkt fetch failed for {url}: {last_exc}")
+    return ""
+
+
+def fetch_cached_transfermarkt_html(url, max_age_hours=TRANSFERMARKT_CACHE_HOURS, retries=2, pause_seconds=1.5, timeout=30):
+    if max_age_hours > 0:
+        cached = load_cached_transfermarkt_html(url, max_age_hours=max_age_hours)
+        if cached is not None:
+            return cached
+    html = fetch_transfermarkt_html(url, retries=retries, pause_seconds=pause_seconds, timeout=timeout)
+    if html and max_age_hours > 0:
+        write_cached_transfermarkt_html(url, html)
+    return html
 
 
 def fetch_espn_scoreboard_day(espn_id, day, timeout=30, max_age_hours=ESPN_CACHE_HOURS):
@@ -506,12 +639,10 @@ def fetch_rankings_from_sportradar(api_key):
     return normalize_rankings_payload(payload)
 
 
-def fetch_rankings_from_fifa_official():
-    """
-    Fetch current FIFA rankings from the official FIFA website.
-    Scrapes https://inside.fifa.com/fifa-world-ranking/men
-    This is the REAL, official source.
-    """
+""" def fetch_rankings_from_fifa_official():
+    
+
+    
     try:
         print("Fetching official FIFA rankings from inside.fifa.com...")
         url = "https://inside.fifa.com/fifa-world-ranking/men"
@@ -565,10 +696,9 @@ def fetch_rankings_from_fifa_official():
     except Exception as e:
         print(f"ERROR fetching official FIFA rankings: {e}")
         return {}
-    """
-    Compute real FIFA-style rankings from actual match results using an Elo-based approach.
-    This uses REAL data (actual match outcomes) rather than external APIs.
-    """
+    
+
+    
     try:
         print("Computing team rankings from actual ESPN match data...")
         # We'll compute this from the match history we fetch
@@ -576,7 +706,97 @@ def fetch_rankings_from_fifa_official():
         return compute_elo_rankings_from_matches()
     except Exception as e:
         print(f"Match-based ranking computation failed: {e}")
-    return {}
+    return {} """
+
+def fetch_rankings_from_fifa_official():
+    """
+    Scrape FIFA Men's World Rankings from the official FIFA page
+    and return data in the format:
+
+    {
+        "Argentina": {
+            "rank": 1,
+            "points": 1886.16
+        },
+        ...
+    }
+    """
+
+    try:
+        print("Fetching FIFA rankings from official website...")
+
+        url = "https://inside.fifa.com/fifa-world-ranking/men"
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0 Safari/537.36"
+            )
+        }
+
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        rankings = {}
+
+        # Look for table rows
+        rows = soup.select("table tbody tr")
+
+        if not rows:
+            print("No ranking rows found on page.")
+            return {}
+
+        for row in rows:
+            cols = row.find_all(["td", "th"])
+
+            if len(cols) < 3:
+                continue
+
+            try:
+                rank_text = cols[0].get_text(strip=True)
+                team_text = cols[1].get_text(strip=True)
+                points_text = cols[2].get_text(strip=True)
+
+                # Extract numeric values
+                rank_match = re.search(r"\d+", rank_text)
+                points_match = re.search(
+                    r"[\d,.]+",
+                    points_text.replace(",", "")
+                )
+
+                if not rank_match or not team_text:
+                    continue
+
+                rank = int(rank_match.group())
+
+                points = (
+                    float(points_match.group())
+                    if points_match
+                    else 0.0
+                )
+
+                team_name = canonical_team_name(team_text)
+
+                rankings[team_name] = {
+                    "rank": rank,
+                    "points": points
+                }
+
+            except Exception as row_error:
+                print(f"Skipping row: {row_error}")
+                continue
+
+        print(f"✓ Scraped {len(rankings)} FIFA rankings")
+
+        return rankings
+
+    except Exception as e:
+        print(f"ERROR fetching FIFA rankings: {e}")
+        return {}
+
 
 
 def compute_elo_rankings_from_matches(start_days_back=730):
@@ -659,84 +879,37 @@ def compute_elo_rankings_from_matches(start_days_back=730):
 
 
 def load_fifa_rankings(path, footballdata_io_token="", sportradar_api_key=""):
-    # Priority: Official FIFA > External file > API tokens > Elo from matches
+    # Priority: pre-saved all_team_rankings.json > user-provided --rankings-file > API tokens
     rankings = {}
-    
-    # FIRST: Try official FIFA website (most authoritative source)
-    print("Attempting to fetch official FIFA rankings...")
-    fifa_official = fetch_rankings_from_fifa_official()
-    if fifa_official:
-        rankings.update(fifa_official)
-    
-    # Second: Try external file if provided
-    if not rankings or len(rankings) < 50:  # If FIFA fetch incomplete, try file
-        payload = load_json_or_csv_records(path)
-        if payload:
+    ALL_RANKINGS_FILE = os.path.join(NATIONAL_DATA_DIR, "all_team_rankings.json")
+    if os.path.exists(ALL_RANKINGS_FILE):
+        try:
+            with open(ALL_RANKINGS_FILE, "r", encoding="utf-8") as f:
+                payload = json.load(f)
             file_rankings = normalize_rankings_payload(payload)
             if file_rankings:
                 rankings.update(file_rankings)
-                print(f"Loaded {len(file_rankings)} rankings from {path}")
-    
-    # Third: Try API tokens if we don't have enough rankings
-    if not rankings or len(rankings) < 50:
-        if footballdata_io_token:
-            api_rankings = fetch_rankings_from_footballdata_io(footballdata_io_token)
-            if api_rankings:
-                rankings.update(api_rankings)
-                print(f"Loaded {len(api_rankings)} rankings from Footballdata.io")
-    
-    if not rankings or len(rankings) < 50:
-        if sportradar_api_key:
-            api_rankings = fetch_rankings_from_sportradar(sportradar_api_key)
-            if api_rankings:
-                rankings.update(api_rankings)
-                print(f"Loaded {len(api_rankings)} rankings from Sportradar")
-    
-    # Last resort: Compute from recent match results (Elo)
-    if not rankings or len(rankings) < 50:
-        print("Computing rankings from recent match data using Elo system...")
-        elo_rankings = compute_elo_rankings_from_matches()
-        if elo_rankings:
-            rankings.update(elo_rankings)
-    
-    if not rankings:
-        raise RuntimeError(
-            "FATAL: Could not obtain FIFA rankings from any source.\n"
-            "  Attempted sources (in order):\n"
-            "    1. Official FIFA website (inside.fifa.com) - requires internet\n"
-            "    2. Local file (--rankings-file) - not provided\n"
-            "    3. API tokens (--footballdata-io-token/--sportradar-api-key) - not provided\n"
-            "    4. Computed from recent matches (Elo system) - failed\n"
-            "  Solutions:\n"
-            "    • Check internet connection\n"
-            "    • Provide --rankings-file with {team: {rank, points}} JSON/CSV\n"
-            "    • Ensure ESPN API is reachable for match history\n"
-            "  The system REQUIRES real FIFA data for accurate predictions."
-        )
-    
-    normalized = {}
-    for team, row in rankings.items():
-        normalized[canonical_team_name(team)] = {"rank": int(row.get("rank", 999)), "points": float(row.get("points", 0.0) or 0.0)}
-    
-    # Save complete rankings list for reference
-    save_complete_rankings(normalized)
-    return normalized
+                print(f"Loaded {len(file_rankings)} rankings from all_team_rankings.json")
+        except Exception as e:
+            print(f"Warning: Could not load rankings from all_team_rankings.json: {e}")
+
+    if len(rankings) < 50 and path and os.path.exists(path) and os.path.abspath(path) != os.path.abspath(ALL_RANKINGS_FILE):
+        try:
+            payload = load_json_or_csv_records(path)
+            if payload:
+                file_rankings = normalize_rankings_payload(payload)
+                if file_rankings:
+                    rankings.update(file_rankings)
+                    print(f"Loaded {len(file_rankings)} rankings from {path}")
+        except Exception as e:
+            print(f"Warning: Could not load rankings from {path}: {e}")
+
+    return rankings
 
 
 def save_complete_rankings(rankings):
-    """Save all team rankings to a file for future reference."""
-    try:
-        output_file = os.path.join(NATIONAL_DATA_DIR, "all_team_rankings.json")
-        output_data = {
-            "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
-            "total_teams": len(rankings),
-            "rankings": rankings
-        }
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(output_data, f, indent=2, ensure_ascii=False)
-        print(f"Saved {len(rankings)} team rankings to {output_file}")
-    except Exception as exc:
-        print(f"Failed to save complete rankings: {exc}")
+    """should be removed when i have a chance*****"""
+    print(f"REMOVE LATER")
 
 
 def parse_value_to_eur_m(value):
@@ -745,10 +918,18 @@ def parse_value_to_eur_m(value):
     text = str(value).strip().replace(",", "")
     multiplier = 1.0
     lowered = text.lower()
-    if "bn" in lowered or "billion" in lowered or "b" in lowered:
+    # Match the unit only when it's preceded by a digit or whitespace and
+    # followed by a non-letter (or end of string). This avoids false matches
+    # like the "k" in "market" or the "b" in "bolivia".
+    if re.search(r"(?<=\d|\s)(bn|billion)\b", lowered):
         multiplier = 1000.0
-    elif "k" in lowered:
+    elif re.search(r"(?<=\d|\s)(thsd|thousand)\b", lowered):
         multiplier = 0.001
+    elif re.search(r"(?<=\d|\s)k\b", lowered):
+        multiplier = 0.001
+    # NOTE: bare "m" is ambiguous (matches "m" in "market"/"million"/etc.),
+    # so we don't treat it as a unit. Numbers without a recognised unit are
+    # assumed to already be in EUR millions.
     match = re.search(r"\d+(?:\.\d+)?", text)
     if not match:
         return 0.0
@@ -758,7 +939,12 @@ def parse_value_to_eur_m(value):
 def normalize_squad_values_payload(payload):
     values = {}
     if isinstance(payload, dict):
+        # New wrapped format: {"generated_at_utc": ..., "teams": {team: {...}}}
+        if isinstance(payload.get("teams"), dict):
+            payload = payload["teams"]
         for team, value in payload.items():
+            if team in {"generated_at_utc", "source", "cache_hours", "season", "source_file", "total_teams", "summary"}:
+                continue
             team_name = canonical_team_name(team)
             if isinstance(value, dict):
                 raw = value.get("squad_value_eur_m", value.get("market_value_eur_m", value.get("value", 0.0)))
@@ -779,8 +965,70 @@ def normalize_squad_values_payload(payload):
     return values
 
 
-def load_squad_values(path):
-    """Load squad market values from external sources (no hardcoded defaults)."""
+def _read_squad_values_payload(path):
+    """Read the raw JSON wrapper of the squad-values file (with `generated_at_utc`).
+
+    Returns an empty dict if the file is missing, empty, or unreadable.
+    """
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            payload = json.load(file)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _squad_values_age_days(payload, now=None):
+    """Return the age in days of the squad-values payload based on `generated_at_utc`.
+
+    Returns math.inf if the timestamp is missing or unparseable.
+    """
+    if not isinstance(payload, dict):
+        return math.inf
+    stamp = payload.get("generated_at_utc")
+    if not stamp:
+        return math.inf
+    try:
+        parsed = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except Exception:
+        return math.inf
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    reference = now or datetime.now(UTC)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=UTC)
+    return (reference - parsed).total_seconds() / 86400.0
+
+
+def load_squad_values(path, refresh=False, target_teams=None, max_workers=TRANSFERMARKT_FETCH_WORKERS, max_age_days=None):
+    """Load squad market values from external sources. Optionally refresh from Transfermarkt first.
+
+    When `max_age_days` is set and the existing file is older than that window,
+    `refresh` is forced on for the squad refresh step (the rest of the function
+    still reads the freshly written file). Pass `max_age_days=0` to disable the
+    staleness override.
+    """
+    if max_age_days is None:
+        max_age_days = SQUAD_VALUES_MAX_AGE_DAYS
+    effective_refresh = bool(refresh)
+    if not effective_refresh and max_age_days and max_age_days > 0:
+        existing = _read_squad_values_payload(path)
+        age_days = _squad_values_age_days(existing)
+        if age_days >= max_age_days:
+            existing_teams = existing.get("teams") if isinstance(existing, dict) else None
+            team_count = len(existing_teams) if isinstance(existing_teams, dict) else 0
+            print(
+                f"Squad values file is {age_days:.1f} days old (>{max_age_days}d threshold, "
+                f"{team_count} teams) — forcing a refresh from Transfermarkt."
+            )
+            effective_refresh = True
+    if effective_refresh and target_teams:
+        try:
+            build_squad_values_file(list(target_teams), refresh=True, max_workers=max_workers)
+        except Exception as exc:
+            print(f"WARNING: Failed to refresh squad values from Transfermarkt: {exc}")
     values = {}
     payload = load_json_or_csv_records(path)
     if payload:
@@ -789,6 +1037,288 @@ def load_squad_values(path):
         print("WARNING: No squad values loaded. Provide --squad-values-file or ensure it exists.")
         print("         Squad values are optional but improve prediction accuracy.")
     return {canonical_team_name(team): value for team, value in values.items()}
+
+
+_NATIONAL_TEAM_YOUTH_PATTERN = re.compile(r"\bU[\s\-]?(1[5-9]|2[0-3])\b", re.IGNORECASE)
+
+
+def _is_youth_national_team(name):
+    return bool(_NATIONAL_TEAM_YOUTH_PATTERN.search(str(name or "")))
+
+
+def _extract_search_candidates(soup):
+    # The Transfermarkt search results now live in <div id="club-grid"> wrapping
+    # a <table class="items">. The previous layout used <table id="club-grid">
+    # directly. Handle both.
+    grid = soup.find(id="club-grid")
+    table = None
+    if grid is not None:
+        table = grid.find("table") or (grid if grid.name == "table" else None)
+    if table is None:
+        table = soup.find("table", {"id": "club-grid"})
+    if table is None:
+        # Last-resort fallback: the items table that BOTH has flaggenrahmen
+        # images (the national-team signal) AND links to /startseite/verein/<id>.
+        for candidate in soup.find_all("table", class_="items"):
+            if (
+                candidate.find("img", class_="flaggenrahmen")
+                and candidate.find("a", href=re.compile(r"/startseite/verein/\d+"))
+            ):
+                table = candidate
+                break
+    if table is None:
+        return []
+
+    candidates = []
+    for row in table.find_all("tr"):
+        # In the new layout each row has a club/team logo as the first <img>
+        # and a separate <img class="flaggenrahmen"> for the country flag. We
+        # must look for the flag specifically, not the first image.
+        flag_img = row.find("img", class_="flaggenrahmen")
+        if flag_img is None:
+            continue
+        flag_src = flag_img.get("src", "")
+        if "flagge/" not in flag_src:
+            continue
+
+        link = row.find("a", href=re.compile(r"/startseite/verein/\d+"))
+        if link is None:
+            hauptlink_cell = row.find("td", class_="hauptlink")
+            if hauptlink_cell is not None:
+                link = hauptlink_cell.find("a", href=re.compile(r"/startseite/verein/\d+"))
+        if link is None:
+            continue
+
+        href = link.get("href", "")
+        name = link.get_text(strip=True) or flag_img.get("alt", "")
+        match = re.search(r"/startseite/verein/(\d+)", href)
+        if not match:
+            continue
+        team_id = match.group(1)
+        candidates.append({"name": name, "href": href, "team_id": team_id, "is_youth": _is_youth_national_team(name)})
+    return candidates
+
+
+def find_transfermarkt_national_team_link(team_name):
+    query = NATIONAL_TEAM_QUERY_ALIASES.get(team_name, team_name)
+    if not query:
+        return None, None
+    encoded = urllib.parse.quote(str(query))
+    url = TRANSFERMARKT_SEARCH_URL.format(query=encoded)
+    html = fetch_cached_transfermarkt_html(url)
+    if not html:
+        return None, None
+    soup = BeautifulSoup(html, "html.parser")
+    candidates = _extract_search_candidates(soup)
+    if not candidates:
+        return None, None
+    senior = [c for c in candidates if not c["is_youth"]]
+    pool = senior or candidates
+    target_key = normalize_team_key(query)
+    for candidate in pool:
+        if normalize_team_key(candidate["name"]) == target_key:
+            return f"{TRANSFERMARKT_BASE_URL}{candidate['href']}", candidate["team_id"]
+    name_key = normalize_team_key(team_name)
+    for candidate in pool:
+        if normalize_team_key(candidate["name"]) == name_key:
+            return f"{TRANSFERMARKT_BASE_URL}{candidate['href']}", candidate["team_id"]
+    chosen = pool[0]
+    return f"{TRANSFERMARKT_BASE_URL}{chosen['href']}", chosen["team_id"]
+
+
+def _parse_data_header_info_box(soup):
+    info = {"squad_size": None, "average_age": None, "foreigners": None, "fifa_world_ranking": None}
+    # New layout: each row is <li class="data-header__label"> containing the
+    # label text and a sibling <span class="data-header__content">. Older
+    # layouts had separate <span class="data-header__label">/content pairs;
+    # accept both.
+    for box in soup.find_all("div", class_="data-header__info-box"):
+        for label_el in box.find_all("li", class_="data-header__label"):
+            content_el = label_el.find("span", class_="data-header__content")
+            if content_el is None:
+                continue
+            label = label_el.get_text(" ", strip=True).lower()
+            value = content_el.get_text(" ", strip=True)
+            if "squad" in label and "size" in label:
+                match = re.search(r"\d+", value)
+                if match:
+                    info["squad_size"] = int(match.group(0))
+            elif "average age" in label:
+                try:
+                    info["average_age"] = float(value.replace(",", "."))
+                except ValueError:
+                    pass
+            elif "foreigners" in label:
+                match = re.search(r"\d+", value)
+                if match:
+                    info["foreigners"] = int(match.group(0))
+            elif "fifa" in label and "ranking" in label:
+                match = re.search(r"\d+", value)
+                if match:
+                    info["fifa_world_ranking"] = int(match.group(0))
+        if all(v is not None for v in info.values()):
+            break
+        for label_el in box.find_all("span", class_="data-header__label"):
+            content_el = label_el.find_next("span", class_="data-header__content")
+            if content_el is None:
+                continue
+            label = label_el.get_text(strip=True).lower()
+            value = content_el.get_text(strip=True)
+            if "squad" in label and "size" in label and info["squad_size"] is None:
+                match = re.search(r"\d+", value)
+                if match:
+                    info["squad_size"] = int(match.group(0))
+            elif "average age" in label and info["average_age"] is None:
+                try:
+                    info["average_age"] = float(value.replace(",", "."))
+                except ValueError:
+                    pass
+            elif "foreigners" in label and info["foreigners"] is None:
+                match = re.search(r"\d+", value)
+                if match:
+                    info["foreigners"] = int(match.group(0))
+            elif "fifa" in label and "ranking" in label and info["fifa_world_ranking"] is None:
+                match = re.search(r"\d+", value)
+                if match:
+                    info["fifa_world_ranking"] = int(match.group(0))
+    return info
+
+
+def fetch_national_team_squad_value(team_url, team_id=None):
+    if not team_url:
+        return None
+    html = fetch_cached_transfermarkt_html(team_url)
+    if not html:
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+    wrapper = soup.find("a", class_="data-header__market-value-wrapper")
+    if wrapper is None:
+        return None
+    currency_spans = wrapper.find_all("span", class_="waehrung")
+    raw_text = wrapper.get_text(" ", strip=True)
+    squad_value_eur_m = 0.0
+    if currency_spans:
+        try:
+            squad_value_eur_m = parse_value_to_eur_m(raw_text)
+        except Exception:
+            squad_value_eur_m = 0.0
+    if squad_value_eur_m <= 0:
+        return None
+    info = _parse_data_header_info_box(soup)
+    return {
+        "squad_value_eur_m": round(squad_value_eur_m, 2),
+        "raw_value_text": raw_text,
+        "squad_size": info["squad_size"],
+        "average_age": info["average_age"],
+        "foreigners": info["foreigners"],
+        "fifa_world_ranking_on_page": info["fifa_world_ranking"],
+        "team_id": str(team_id) if team_id else "",
+        "source_url": team_url,
+        "updated_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+    }
+
+
+def _load_existing_squad_values():
+    if not os.path.exists(SQUAD_VALUES_FILE):
+        return {}
+    try:
+        with open(SQUAD_VALUES_FILE, "r", encoding="utf-8") as file:
+            payload = json.load(file) or {}
+    except Exception:
+        return {}
+    teams = payload.get("teams", {}) if isinstance(payload, dict) else {}
+    if not isinstance(teams, dict):
+        return {}
+    return {canonical_team_name(name): value for name, value in teams.items() if isinstance(value, dict)}
+
+
+def _build_single_team_record(team_name, refresh=True):
+    if not refresh:
+        return None
+    team_url, team_id = find_transfermarkt_national_team_link(team_name)
+    if not team_url:
+        return None
+    return fetch_national_team_squad_value(team_url, team_id)
+
+
+def build_squad_values_file(target_teams, refresh=True, max_workers=TRANSFERMARKT_FETCH_WORKERS):
+    target_teams = [canonical_team_name(team) for team in target_teams if team]
+    target_teams = [team for team in target_teams if team]
+    if not target_teams:
+        print("WARNING: build_squad_values_file called with no teams.")
+        return None
+    os.makedirs(TRANSFERMARKT_CACHE_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(SQUAD_VALUES_FILE), exist_ok=True)
+    previous_values = _load_existing_squad_values()
+    results = {}
+    if not refresh:
+        output = {
+            "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+            "source": "transfermarkt.com",
+            "cache_hours": TRANSFERMARKT_CACHE_HOURS,
+            "teams": results,
+        }
+        with open(SQUAD_VALUES_FILE, "w", encoding="utf-8") as file:
+            json.dump(output, file, indent=2, ensure_ascii=False)
+        return output
+    print(f"Searching Transfermarkt for {len(target_teams)} national team squad values...")
+
+    def _resolve(team_name):
+        try:
+            value_data = _build_single_team_record(team_name, refresh=True)
+        except Exception as exc:
+            print(f"  Error fetching squad value for {team_name}: {exc}")
+            value_data = None
+        return team_name, value_data
+
+    max_workers = max(1, min(int(max_workers), max(1, len(target_teams))))
+    if max_workers == 1:
+        resolved = [_resolve(team) for team in target_teams]
+    else:
+        resolved = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_team = {executor.submit(_resolve, team): team for team in target_teams}
+            for future in as_completed(future_to_team):
+                try:
+                    resolved.append(future.result())
+                except Exception as exc:
+                    team = future_to_team[future]
+                    print(f"  Error fetching squad value for {team}: {exc}")
+                    resolved.append((team, None))
+
+    for team_name, value_data in resolved:
+        if value_data and value_data.get("squad_value_eur_m", 0) > 0:
+            results[team_name] = {**value_data, "status": "ok"}
+            print(f"  {team_name}: €{value_data['squad_value_eur_m']:.2f}m")
+        else:
+            previous = previous_values.get(team_name) or {}
+            if previous.get("squad_value_eur_m", 0) > 0:
+                results[team_name] = {
+                    "squad_value_eur_m": previous["squad_value_eur_m"],
+                    "updated_at": previous.get("updated_at", datetime.now(UTC).replace(microsecond=0).isoformat()),
+                    "status": "cached",
+                    "source_url": previous.get("source_url", ""),
+                    "team_id": previous.get("team_id", ""),
+                }
+                print(f"  {team_name}: cached (€{previous['squad_value_eur_m']:.2f}m)")
+            else:
+                results[team_name] = {
+                    "squad_value_eur_m": 0.0,
+                    "updated_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+                    "status": "fetch_failed",
+                }
+                print(f"  {team_name}: fetch failed")
+
+    output = {
+        "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+        "source": "transfermarkt.com",
+        "cache_hours": TRANSFERMARKT_CACHE_HOURS,
+        "teams": results,
+    }
+    with open(SQUAD_VALUES_FILE, "w", encoding="utf-8") as file:
+        json.dump(output, file, indent=2, ensure_ascii=False)
+    print(f"Saved national team squad values to {SQUAD_VALUES_FILE}")
+    return output
 
 
 def result_for_team(row, team):
@@ -1025,7 +1555,10 @@ def build_prediction_feature_frame(home_team, away_team, competition, stage, is_
         is_neutral_site,
         snapshot.get("team_context", {}),
     )
-    return pd.DataFrame([row]), home, away
+    frame = pd.DataFrame([row])
+    frame = pd.get_dummies(frame, columns=CATEGORICAL_FEATURE_COLUMNS, dtype=float)
+    frame = frame.fillna(0.0)
+    return frame, home, away
 
 
 def resolve_team_name(raw_name, known_teams):
@@ -1159,33 +1692,225 @@ ContextGoalRegressor.__module__ = "Process_National_Team_Data"
 ResultLabelEncoder.__module__ = "Process_National_Team_Data"
 
 
-def build_context_bundle(team_context, recent_rows, target_teams):
-    sample_rows = []
-    teams = list(target_teams)
-    if len(teams) >= 2:
-        sample_rows.append(
-            build_feature_row(teams[0], teams[1], "FIFA/World Cup", "group-stage", True, team_context)
+def build_training_dataset(team_context, recent_rows):
+    """Build a sklearn-ready feature frame + target vectors from completed recent matches.
+
+    The current team context is reused for every historical match (a static-context
+    approximation).  This matches the available data scale (the last-15 matches per
+    team across competitions) and gives the model a real, learnable signal even
+    without season-by-season history.
+    """
+    feature_rows = []
+    y_result = []
+    y_home_goals = []
+    y_away_goals = []
+
+    for match in recent_rows or []:
+        result = str(match.get("FTR", "")).strip().upper()
+        if result not in RESULT_LABELS:
+            continue
+        home_team = match.get("home_team")
+        away_team = match.get("away_team")
+        if not home_team or not away_team or home_team == away_team:
+            continue
+        try:
+            fthg = float(match.get("FTHG"))
+            ftag = float(match.get("FTAG"))
+        except (TypeError, ValueError):
+            continue
+
+        feature_rows.append(
+            build_feature_row(
+                home_team,
+                away_team,
+                match.get("competition", ""),
+                match.get("stage", "unknown"),
+                bool(match.get("is_neutral_site", True)),
+                team_context,
+            )
         )
-    train_columns = list(pd.DataFrame(sample_rows or [{}]).columns)
+        y_result.append(result)
+        y_home_goals.append(fthg)
+        y_away_goals.append(ftag)
+
+    if not feature_rows:
+        return None
+
+    frame = pd.DataFrame(feature_rows)
+    frame = pd.get_dummies(frame, columns=CATEGORICAL_FEATURE_COLUMNS, dtype=float)
+    frame = frame.fillna(0.0)
+    return {
+        "X": frame,
+        "y_result": y_result,
+        "y_home_goals": y_home_goals,
+        "y_away_goals": y_away_goals,
+    }
+
+
+def train_national_result_model(X, y):
+    label_encoder = LabelEncoder()
+    y_encoded = label_encoder.fit_transform(y)
+
+    if XGBClassifier is not None:
+        try:
+            model = XGBClassifier(
+                n_estimators=400,
+                max_depth=8,
+                learning_rate=0.05,
+                subsample=0.9,
+                colsample_bytree=0.9,
+                objective="multi:softprob",
+                num_class=len(label_encoder.classes_),
+                eval_metric="mlogloss",
+                random_state=42,
+                tree_method="hist",
+                device="cuda",
+                n_jobs=NATIONAL_MODEL_THREADS,
+            )
+            model.fit(X, y_encoded)
+            return model, label_encoder, "xgboost-gpu"
+        except Exception:
+            try:
+                model = XGBClassifier(
+                    n_estimators=400,
+                    max_depth=8,
+                    learning_rate=0.05,
+                    subsample=0.9,
+                    colsample_bytree=0.9,
+                    objective="multi:softprob",
+                    num_class=len(label_encoder.classes_),
+                    eval_metric="mlogloss",
+                    random_state=42,
+                    tree_method="hist",
+                    device="cpu",
+                    n_jobs=NATIONAL_MODEL_THREADS,
+                )
+                model.fit(X, y_encoded)
+                return model, label_encoder, "xgboost-cpu"
+            except Exception:
+                pass
+
+    model = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=12,
+        min_samples_leaf=2,
+        random_state=42,
+        n_jobs=NATIONAL_MODEL_THREADS,
+    )
+    model.fit(X, y_encoded)
+    return model, label_encoder, "random-forest-cpu"
+
+
+def train_national_goal_regressor(X, y, random_state):
+    if XGBRegressor is not None:
+        try:
+            model = XGBRegressor(
+                n_estimators=300,
+                max_depth=8,
+                learning_rate=0.05,
+                subsample=0.9,
+                colsample_bytree=0.9,
+                objective="reg:squarederror",
+                eval_metric="rmse",
+                random_state=random_state,
+                tree_method="hist",
+                device="cuda",
+                n_jobs=NATIONAL_MODEL_THREADS,
+            )
+            model.fit(X, y)
+            return model, "xgboost-gpu"
+        except Exception:
+            try:
+                model = XGBRegressor(
+                    n_estimators=300,
+                    max_depth=8,
+                    learning_rate=0.05,
+                    subsample=0.9,
+                    colsample_bytree=0.9,
+                    objective="reg:squarederror",
+                    eval_metric="rmse",
+                    random_state=random_state,
+                    tree_method="hist",
+                    device="cpu",
+                    n_jobs=NATIONAL_MODEL_THREADS,
+                )
+                model.fit(X, y)
+                return model, "xgboost-cpu"
+            except Exception:
+                pass
+
+    model = RandomForestRegressor(
+        n_estimators=160,
+        max_depth=10,
+        min_samples_leaf=2,
+        random_state=random_state,
+        n_jobs=NATIONAL_MODEL_THREADS,
+    )
+    model.fit(X, y)
+    return model, "random-forest-cpu"
+
+
+def _sample_train_columns(team_context, target_teams):
+    """Build the one-hot encoded training column list used when no real training is run."""
+    home = target_teams[0] if target_teams else "Home"
+    away = target_teams[1] if len(target_teams) >= 2 else (target_teams[0] if target_teams else "Away")
+    sample_row = build_feature_row(home, away, "FIFA/World Cup", "group-stage", True, team_context)
+    sample_frame = pd.DataFrame([sample_row])
+    sample_frame = pd.get_dummies(sample_frame, columns=CATEGORICAL_FEATURE_COLUMNS, dtype=float)
+    return list(sample_frame.columns)
+
+
+def build_context_bundle(team_context, recent_rows, target_teams):
     snapshot = {
         "team_context": team_context,
         "known_teams": sorted(team_context.keys()),
         "recent_matches": recent_rows,
-        "latest_match_datetime_utc": max((row.get("match_datetime_utc", "") for row in recent_rows), default=""),
+        "latest_match_datetime_utc": max(
+            (row.get("match_datetime_utc", "") for row in (recent_rows or [])),
+            default="",
+        ),
     }
+    fingerprint = hashlib.sha256(
+        json.dumps(team_context, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    training = build_training_dataset(team_context, recent_rows)
+    use_sklearn = training is not None and len(training["X"]) >= MIN_TRAINING_ROWS
+    training_rows = 0
+    backend = "current_context_heuristic"
+    train_columns = []
+
+    if use_sklearn:
+        X = training["X"]
+        train_columns = list(X.columns)
+        clf, label_encoder, backend = train_national_result_model(X, training["y_result"])
+        home_goal_reg, _ = train_national_goal_regressor(X, training["y_home_goals"], 42)
+        away_goal_reg, _ = train_national_goal_regressor(X, training["y_away_goals"], 43)
+        training_rows = len(X)
+        model_type = "sklearn"
+    else:
+        clf = CurrentContextClassifier(team_context)
+        label_encoder = ResultLabelEncoder()
+        home_goal_reg = ContextGoalRegressor("home")
+        away_goal_reg = ContextGoalRegressor("away")
+        train_columns = _sample_train_columns(team_context, target_teams)
+        model_type = "current_context"
+
     return {
-        "model_version": 2,
-        "model_type": "current_context",
+        "model_version": 3,
+        "model_type": model_type,
+        "backend": backend,
         "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
-        "fingerprint": hashlib.sha256(json.dumps(team_context, sort_keys=True).encode("utf-8")).hexdigest(),
-        "clf": CurrentContextClassifier(team_context),
-        "result_label_encoder": ResultLabelEncoder(),
-        "home_goal_reg": ContextGoalRegressor("home"),
-        "away_goal_reg": ContextGoalRegressor("away"),
+        "fingerprint": fingerprint,
+        "clf": clf,
+        "result_label_encoder": label_encoder,
+        "home_goal_reg": home_goal_reg,
+        "away_goal_reg": away_goal_reg,
         "train_columns": train_columns,
-        "categorical_feature_columns": [],
+        "categorical_feature_columns": list(CATEGORICAL_FEATURE_COLUMNS),
         "snapshot": snapshot,
-        "training_rows": 0,
+        "training_rows": training_rows,
+        "min_training_rows": MIN_TRAINING_ROWS,
         "data_basis": "current FIFA rankings, latest squad market values, ESPN last-15 matches across competitions and friendlies",
     }
 
@@ -1198,17 +1923,21 @@ def load_model_bundle(path=MODEL_CACHE):
     return joblib.load(path)
 
 
-def write_api_report(target_teams, ranking_source, value_source, recent_match_count):
+def write_api_report(target_teams, ranking_source, value_source, recent_match_count, model_type, backend, training_rows, min_training_rows):
     report = {
         "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
         "summary": [
-            "National predictions no longer train from previous World Cup tournament history.",
-            "ESPN scoreboard APIs provide last-15 match background across World Cup, qualifiers, continental tournaments, Nations League, and friendlies.",
+            f"National predictor trains a {backend} sklearn model on {training_rows} completed last-15 matches per team across competitions (World Cup, qualifiers, continental tournaments, Nations League, friendlies).",
+            "When fewer than the minimum training rows are available, the model falls back to a current-context heuristic using FIFA rank, FIFA points, and squad market value.",
             "Current FIFA rankings are loaded from a provided file or optional paid API credentials; seed rankings are used when no refresh source is configured.",
-            "Latest squad Transfermarkt-style market values are loaded from a provided JSON/CSV snapshot; seed values are used when no refresh source is configured.",
+            "Latest squad market values are scraped from Transfermarkt (schnellsuche + startseite) and stored in national_team_squad_values.json; cached HTML responses are reused for 24 hours between runs, and the aggregated squad file is auto-refreshed when older than the squad-cache-days window (default 30 days).",
         ],
         "target_team_count": len(target_teams),
         "recent_match_count": recent_match_count,
+        "model_type": model_type,
+        "model_backend": backend,
+        "training_rows": training_rows,
+        "min_training_rows": min_training_rows,
         "ranking_source": ranking_source,
         "squad_value_source": value_source,
         "outputs": {
@@ -1233,7 +1962,17 @@ def run_pipeline(args):
         footballdata_io_token=getattr(args, "footballdata_io_token", ""),
         sportradar_api_key=getattr(args, "sportradar_api_key", ""),
     )
-    squad_values = load_squad_values(args.squad_values_file)
+    refresh_squad = bool(getattr(args, "refresh_squad_values", False)) or not os.path.exists(args.squad_values_file)
+    squad_cache_days = getattr(args, "squad_cache_days", SQUAD_VALUES_MAX_AGE_DAYS)
+    if squad_cache_days is None:
+        squad_cache_days = SQUAD_VALUES_MAX_AGE_DAYS
+    squad_values = load_squad_values(
+        args.squad_values_file,
+        refresh=refresh_squad,
+        target_teams=target_teams,
+        max_workers=TRANSFERMARKT_FETCH_WORKERS,
+        max_age_days=squad_cache_days,
+    )
 
     if args.skip_fetch:
         recent_rows, by_team = load_existing_recent_matches()
@@ -1257,12 +1996,37 @@ def run_pipeline(args):
     bundle = build_context_bundle(team_context, recent_rows, target_teams)
     joblib.dump(bundle, MODEL_CACHE)
     ranking_source = "api_or_file" if os.path.exists(args.rankings_file) or getattr(args, "footballdata_io_token", "") or getattr(args, "sportradar_api_key", "") else "seed_snapshot"
-    value_source = "file" if os.path.exists(args.squad_values_file) else "seed_snapshot"
-    write_api_report(target_teams, ranking_source, value_source, len(recent_rows))
+    if refresh_squad and os.path.exists(args.squad_values_file):
+        value_source = "transfermarkt_live"
+    elif os.path.exists(args.squad_values_file):
+        value_source = "file"
+    else:
+        value_source = "seed_snapshot"
+    if (
+        value_source == "transfermarkt_live"
+        and not getattr(args, "refresh_squad_values", False)
+        and squad_cache_days
+        and squad_cache_days > 0
+    ):
+        value_source = f"transfermarkt_live (stale>{squad_cache_days}d)"
+    write_api_report(
+        target_teams,
+        ranking_source,
+        value_source,
+        len(recent_rows),
+        bundle.get("model_type", "unknown"),
+        bundle.get("backend", "unknown"),
+        bundle.get("training_rows", 0),
+        bundle.get("min_training_rows", MIN_TRAINING_ROWS),
+    )
 
     print("\nNational-team current-context predictor generated")
     print(f"Teams loaded: {len(target_teams)}")
     print(f"Recent ESPN matches loaded: {len(recent_rows)}")
+    print(f"Model type: {bundle.get('model_type', 'unknown')}")
+    print(f"Model backend: {bundle.get('backend', 'unknown')}")
+    print(f"Training rows: {bundle.get('training_rows', 0)} (min: {bundle.get('min_training_rows', MIN_TRAINING_ROWS)})")
+    print(f"Train feature columns: {len(bundle.get('train_columns', []))}")
     print(f"Ranking source: {ranking_source}")
     print(f"Squad value source: {value_source}")
     print(f"Context data: {PROCESSED_MATCHES_FILE}")
