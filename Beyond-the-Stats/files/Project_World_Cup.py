@@ -1,9 +1,10 @@
 import argparse
 import json
+import math
 import os
 import random
 import re
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
@@ -278,6 +279,33 @@ def actual_result_from_fixture(fixture):
     if ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag):
         return ftr, int(hg), int(ag)
     return None
+
+
+def _split_fixtures_by_status(fixtures):
+    """Partition group fixtures into (played, unplayed) using actual_result_from_fixture."""
+    played = []
+    unplayed = []
+    for fixture in fixtures:
+        if actual_result_from_fixture(fixture):
+            played.append(fixture)
+        else:
+            unplayed.append(fixture)
+    return played, unplayed
+
+
+def _count_real_fixtures_per_team(fixtures):
+    """Return {team: count} of real (already-played) fixtures per team across all given fixtures."""
+    counts = defaultdict(int)
+    for fixture in fixtures:
+        if not actual_result_from_fixture(fixture):
+            continue
+        home = str(fixture.get("home_team", "")).strip()
+        away = str(fixture.get("away_team", "")).strip()
+        if home:
+            counts[home] += 1
+        if away:
+            counts[away] += 1
+    return counts
 
 
 def predict_team_match(bundle, home, away, stage, match_datetime="", venue="", allow_draw=True):
@@ -585,6 +613,204 @@ def rank_third_place_teams(group_tables):
     return thirds
 
 
+def _round_group_stats(W_mean, D_mean, L_mean, P):
+    """Round sim-averaged W/D/L into integers that sum to P.
+
+    Rules:
+      - W is rounded up first (ceil), capped at P ("if possible").
+      - D and L are each rounded to the nearest integer (round-half-up).
+      - When the rounded D + L doesn't match P - W, the side with the largest
+        distance from its rounded value (the least certain) is adjusted: drop
+        if the sum overshoots, add if it undershoots. Ties break D-first.
+      - Pts = 3*W + D (self-consistent standard scoring).
+
+    Returns: (W, D, L, Pts) as integers.
+    """
+    W_mean = max(0.0, float(W_mean))
+    D_mean = max(0.0, float(D_mean))
+    L_mean = max(0.0, float(L_mean))
+    P = int(P)
+
+    # 1. Wins: round up first, cap at P.
+    W = min(int(math.ceil(W_mean)), P)
+    remaining = P - W
+
+    # 2. Round D and L to nearest (round-half-up).
+    def _round_half_up(x):
+        return int(math.floor(x + 0.5))
+
+    D = _round_half_up(D_mean)
+    L = _round_half_up(L_mean)
+    target = remaining
+
+    def _sorted_by_distance():
+        # Distance from each side's mean to its current rounded value.
+        # The "less certain" side is the one further from its rounded value.
+        D_frac = round(abs(D_mean - D), 10)
+        L_frac = round(abs(L_mean - L), 10)
+        return sorted(
+            [("D", D_frac), ("L", L_frac)],
+            key=lambda item: (-item[1], item[0]),  # largest distance first; D-first on tie
+        )
+
+    # Cap D + L at target by dropping the least certain side first.
+    while D + L > target:
+        dropped = False
+        for label, _ in _sorted_by_distance():
+            if label == "D" and D > 0:
+                D -= 1
+                dropped = True
+                break
+            if label == "L" and L > 0:
+                L -= 1
+                dropped = True
+                break
+        if not dropped:
+            break
+
+    # Fill D + L up to target by adding to the least certain side first.
+    while D + L < target:
+        for label, _ in _sorted_by_distance():
+            if label == "D":
+                D += 1
+                break
+            else:
+                L += 1
+                break
+
+    Pts = 3 * W + D
+    return W, D, L, Pts
+
+
+def aggregate_sim_group_tables(sims_group_tables, num_sims, real_fixture_counts=None):
+    """Aggregate per-simulation group tables into one set of group tables.
+
+    For each team across all sims, computes:
+      - `position`: mode (most common finishing position); final 1-4 ordering
+        breaks ties via rounded Pts/GD/GF, then team name.
+      - `W`, `D`, `L`, `Pts`: integers. W is rounded up first (ceil), then D
+        and L are allocated by the largest-remainder method so D + L = P - W,
+        and Pts = 3*W + D. See `_round_group_stats`.
+      - `GF`, `GA`, `GD`: integers (mean rounded to nearest).
+      - `P`, `PlayedReal`, `PlayedPred`: deterministic. PlayedReal comes from
+        the live ESPN fixture count; PlayedPred = 3 - PlayedReal (WC group
+        stage has 3 games per team).
+
+    Returns: list of {"group": g, "teams": [rows]} sorted by (position, -Pts, -GD, -GF, team).
+    """
+    real_fixture_counts = real_fixture_counts or {}
+    per_team_history = defaultdict(lambda: defaultdict(list))
+
+    for sim_tables in sims_group_tables:
+        for group_entry in sim_tables:
+            group = group_entry["group"]
+            for team_row in group_entry["teams"]:
+                team = team_row["team"]
+                per_team_history[group][team].append({
+                    "position": team_row.get("position", 99),
+                    "W": team_row.get("W", 0),
+                    "D": team_row.get("D", 0),
+                    "L": team_row.get("L", 0),
+                    "Pts": team_row.get("Pts", 0),
+                    "GF": team_row.get("GF", 0),
+                    "GA": team_row.get("GA", 0),
+                    "GD": team_row.get("GD", 0),
+                })
+
+    aggregated = []
+    for group in sorted(per_team_history.keys()):
+        team_rows = []
+        for team, history in per_team_history[group].items():
+            positions = [h["position"] for h in history]
+            position_counter = Counter(positions)
+            mode_position = position_counter.most_common(1)[0][0]
+            n = len(history)
+            mean_W = sum(h["W"] for h in history) / n
+            mean_D = sum(h["D"] for h in history) / n
+            mean_L = sum(h["L"] for h in history) / n
+            mean_GF = sum(h["GF"] for h in history) / n
+            mean_GA = sum(h["GA"] for h in history) / n
+            mean_GD = sum(h["GD"] for h in history) / n
+            played_real = real_fixture_counts.get(team, 0)
+            played_pred = 3 - played_real
+            P = played_real + played_pred
+            W, D, L, Pts = _round_group_stats(mean_W, mean_D, mean_L, P)
+            GF = int(round(mean_GF))
+            GA = int(round(mean_GA))
+            GD = GF - GA
+            team_rows.append({
+                "team": team,
+                "position": mode_position,
+                "P": P,
+                "W": W,
+                "D": D,
+                "L": L,
+                "Pts": Pts,
+                "GF": GF,
+                "GA": GA,
+                "GD": GD,
+                "PlayedReal": played_real,
+                "PlayedPred": played_pred,
+            })
+        # Break mode-position ties via rounded Pts/GD/GF (deterministic),
+        # then re-assign final 1-4 positions by sorted order.
+        team_rows.sort(key=lambda row: (row["position"], -row["Pts"], -row["GD"], -row["GF"], row["team"]))
+        for idx, row in enumerate(team_rows, start=1):
+            row["position"] = idx
+        aggregated.append({"group": group, "teams": team_rows})
+    return aggregated
+
+
+def aggregate_sim_third_place(sims_third_place, num_sims):
+    """Aggregate per-simulation 3rd-place tables.
+
+    For each group, find the most common 3rd-place team (mode across sims) and
+    report its sim-averaged Pts/GD/GF across all sims (regardless of whether
+    it actually finished 3rd in each sim — the average represents the team's
+    expected performance in that group slot). Rank all 12 across groups by
+    sim-averaged Pts/GD/GF; mark top 8 as qualified.
+    """
+    third_place_counts = defaultdict(Counter)
+    team_stats_by_group = defaultdict(lambda: defaultdict(list))
+
+    for sim_third in sims_third_place:
+        for row in sim_third:
+            group = row["group"]
+            team = row["team"]
+            third_place_counts[group][team] += 1
+            team_stats_by_group[group][team].append({
+                "Pts": row.get("Pts", 0),
+                "GD": row.get("GD", 0),
+                "GF": row.get("GF", 0),
+            })
+
+    aggregated_thirds = []
+    for group in sorted(third_place_counts.keys()):
+        counter = third_place_counts[group]
+        mode_team, _ = counter.most_common(1)[0]
+        history = team_stats_by_group[group][mode_team]
+        n = len(history)
+        if n:
+            mean_pts = sum(h["Pts"] for h in history) / n
+            mean_gd = sum(h["GD"] for h in history) / n
+            mean_gf = sum(h["GF"] for h in history) / n
+        else:
+            mean_pts = mean_gd = mean_gf = 0
+        aggregated_thirds.append({
+            "group": group,
+            "team": mode_team,
+            "Pts": round(mean_pts, 2),
+            "GD": round(mean_gd, 2),
+            "GF": round(mean_gf, 2),
+        })
+
+    aggregated_thirds.sort(key=lambda row: (-row["Pts"], -row["GD"], -row["GF"], row["group"], row["team"]))
+    for idx, row in enumerate(aggregated_thirds, start=1):
+        row["third_rank"] = idx
+        row["qualified"] = idx <= 8
+    return aggregated_thirds
+
+
 def parse_group_slot(slot_name):
     text = str(slot_name or "").strip()
     match = re.match(r"Group ([A-L]) (Winner|2nd Place)$", text, flags=re.IGNORECASE)
@@ -851,8 +1077,15 @@ def simulate_match_result(prob_tuple, rng=None):
     return "A"
 
 
-def simulate_group_stage(group_fixtures, groups, team_to_group, group_fixture_cache=None, bundle=None):
-    """Simulate group stage and return final group tables. Returns dict of group -> list of teams ranked."""
+def simulate_group_stage(group_fixtures, groups, team_to_group, group_fixture_cache=None, bundle=None, rng=None):
+    """Simulate group stage and return final group tables. Returns dict of group -> list of teams ranked.
+
+    For fixtures with a real result (live WC support via ESPN), the result is
+    applied deterministically (PlayedReal++). For unplayed fixtures, the
+    outcome is sampled from the precomputed cache (PlayedPred++). Sim-averaged
+    stats naturally reflect both the deterministic real results and the
+    sampled predictions.
+    """
     tables = {}
     for group in groups:
         tables[group] = {team: empty_table_row(team) for team in groups[group]}
@@ -862,6 +1095,14 @@ def simulate_group_stage(group_fixtures, groups, team_to_group, group_fixture_ca
         away = str(fixture.get("away_team", "")).strip()
         group = team_to_group.get(home) or team_to_group.get(away)
         if not group:
+            continue
+
+        # Apply real result directly if the fixture has already been played
+        # (live WC support — don't re-predict games that already happened).
+        actual = actual_result_from_fixture(fixture)
+        if actual is not None:
+            result, hg, ag = actual
+            apply_result(tables[group], home, away, hg, ag, source="real")
             continue
 
         probs = None
@@ -884,7 +1125,7 @@ def simulate_group_stage(group_fixtures, groups, team_to_group, group_fixture_ca
         if probs is None:
             continue
 
-        result = simulate_match_result(probs)
+        result = simulate_match_result(probs, rng=rng)
         # Apply coerce_scoreline-style adjustment to the raw regressor goals so the
         # sim standings stay consistent with the deterministic projection's
         # behavior (sampled result drives a consistent scoreline).
@@ -902,26 +1143,7 @@ def simulate_group_stage(group_fixtures, groups, team_to_group, group_fixture_ca
         elif result == "A" and ag <= hg:
             ag = hg + 1
 
-        tables[group][home]["P"] += 1
-        tables[group][away]["P"] += 1
-        tables[group][home]["GF"] += hg
-        tables[group][home]["GA"] += ag
-        tables[group][away]["GF"] += ag
-        tables[group][away]["GA"] += hg
-
-        if result == "H":
-            tables[group][home]["W"] += 1
-            tables[group][home]["Pts"] += 3
-            tables[group][away]["L"] += 1
-        elif result == "A":
-            tables[group][away]["W"] += 1
-            tables[group][away]["Pts"] += 3
-            tables[group][home]["L"] += 1
-        else:
-            tables[group][home]["D"] += 1
-            tables[group][away]["D"] += 1
-            tables[group][home]["Pts"] += 1
-            tables[group][away]["Pts"] += 1
+        apply_result(tables[group], home, away, hg, ag, source="predicted")
 
     final_tables = {}
     for group, group_tables in tables.items():
@@ -932,9 +1154,9 @@ def simulate_group_stage(group_fixtures, groups, team_to_group, group_fixture_ca
     return final_tables
 
 
-def simulate_knockout_match(probs, raw_hg, raw_ag, allow_draw=False):
+def simulate_knockout_match(probs, raw_hg, raw_ag, allow_draw=False, rng=None):
     """Simulate a knockout match using precomputed probs + raw goals. Returns (result, hg, ag)."""
-    result = simulate_match_result(probs)
+    result = simulate_match_result(probs, rng=rng)
     if result == "D" and not allow_draw:
         p_home = float(probs[0])
         p_away = float(probs[2])
@@ -1001,7 +1223,7 @@ def simulate_knockout_stage(knockout_fixtures, group_tables, third_place_table, 
             if cache_entry is not None:
                 p_home, p_draw, p_away, raw_hg, raw_ag = cache_entry
                 probs = (p_home, p_draw, p_away)
-                result, hg, ag = simulate_knockout_match(probs, raw_hg, raw_ag, allow_draw=False)
+                result, hg, ag = simulate_knockout_match(probs, raw_hg, raw_ag, allow_draw=False, rng=rng)
             elif bundle is not None:
                 prediction = predict_team_match(
                     bundle, home, away, stage, fixture.get("match_datetime_utc", ""), fixture.get("venue", ""), allow_draw=False
@@ -1067,6 +1289,8 @@ def run_tournament_simulation(group_fixtures, knockout_fixtures, groups, team_to
             "finals": set(),
         },
         "champion": stage_results.get("winner", ""),
+        "group_tables": group_tables_for_ranking,
+        "third_place_table": third_place_table,
     }
 
     for group, group_table in simulated_groups.items():
@@ -1078,11 +1302,15 @@ def run_tournament_simulation(group_fixtures, knockout_fixtures, groups, team_to
     return stats
 
 
-def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group, num_simulations=500):
+def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group, num_simulations=1000):
     """Run multiple tournament simulations and aggregate results.
 
     Pre-computes every possible (home, away) knockout matchup so the inner
     loop is a dict lookup + sampling rather than a full model inference.
+
+    Returns aggregated position/winner probabilities plus the raw per-sim
+    group_tables and third_place_table lists so `build_projection` can
+    produce sim-aggregated group standings.
     """
     print(f"Running {num_simulations} tournament simulations...")
 
@@ -1103,6 +1331,8 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
 
     position_counts = defaultdict(lambda: defaultdict(int))
     winner_counts = defaultdict(int)
+    sim_group_tables = []
+    sim_third_place = []
 
     successful_sims = 0
     rng = np.random.default_rng(20260611)
@@ -1119,6 +1349,9 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
             continue
 
         successful_sims += 1
+
+        sim_group_tables.append(stats["group_tables"])
+        sim_third_place.append(stats["third_place_table"])
 
         for group, group_stats in stats.get("groups", {}).items():
             for team, position in group_stats.items():
@@ -1145,6 +1378,8 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
         "simulations_run": successful_sims,
         "position_probabilities": position_probabilities,
         "winner_probabilities": winner_probabilities,
+        "sim_group_tables": sim_group_tables,
+        "sim_third_place": sim_third_place,
     }
 
 
@@ -1157,17 +1392,38 @@ def build_projection(args):
     group_fixtures = [row for row in fixtures if row.get("stage") == "group-stage"]
     knockout_fixtures = [row for row in fixtures if row.get("stage") in STAGE_ORDER]
     groups, team_to_group = infer_groups(group_fixtures)
-    group_tables, group_fixture_predictions = project_groups(bundle, group_fixtures, groups, team_to_group)
-    third_place_table = rank_third_place_teams(group_tables)
-    knockout, winners = project_knockout(bundle, knockout_fixtures, group_tables, third_place_table)
+
+    # Run 1000 simulations FIRST so we can use sim-aggregated qualifiers for
+    # the deterministic knockout projection. Group-stage output uses the
+    # sim-aggregated tables; knockout still uses the deterministic prediction
+    # model fed with sim-derived qualifiers. Live WC results (if any) are
+    # applied deterministically inside each sim's group stage.
+    print("Generating tournament simulations...")
+    simulation_stats = run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group)
+
+    real_fixture_counts = _count_real_fixtures_per_team(group_fixtures)
+    aggregated_group_tables = aggregate_sim_group_tables(
+        simulation_stats["sim_group_tables"],
+        simulation_stats["simulations_run"],
+        real_fixture_counts,
+    )
+    aggregated_third_place = aggregate_sim_third_place(
+        simulation_stats["sim_third_place"],
+        simulation_stats["simulations_run"],
+    )
+
+    knockout, winners = project_knockout(
+        bundle, knockout_fixtures, aggregated_group_tables, aggregated_third_place
+    )
 
     final_rows = knockout.get("final", [])
     champion = final_rows[0]["winner"] if final_rows else ""
-    
-    # Run 500 simulations to calculate probabilities
-    print("Generating tournament simulations...")
-    simulation_stats = run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group, num_simulations=500)
-    
+
+    # Deterministic per-fixture predictions (for the website display) — these
+    # include actual results for played fixtures (source: "real") and
+    # deterministic predictions for unplayed ones.
+    _, group_fixture_predictions = project_groups(bundle, group_fixtures, groups, team_to_group)
+
     payload = {
         "ok": True,
         "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
@@ -1180,10 +1436,11 @@ def build_projection(args):
             "The eight best third-place teams qualify using points, goal difference, goals scored, then deterministic fallback.",
             "Round-of-32 third-place slots follow ESPN/FIFA published candidate group constraints for the 2026 bracket.",
             "Knockout rounds are projected without draws; tied model outcomes advance the side with the higher non-draw probability.",
+            "Group-stage standings are aggregated across 1000 tournament simulations; mode position + sim-averaged W/D/L/Pts/GD/GF/GA, with PlayedReal/PlayedPred derived deterministically from live ESPN results.",
         ],
         "groups_inferred_from_schedule": True,
-        "group_tables": group_tables,
-        "third_place_table": third_place_table,
+        "group_tables": aggregated_group_tables,
+        "third_place_table": aggregated_third_place,
         "group_fixtures": [
             item
             for group in GROUP_LABELS
