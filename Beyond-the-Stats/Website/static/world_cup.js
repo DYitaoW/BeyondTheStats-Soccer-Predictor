@@ -28,13 +28,14 @@ function displayWorldCupData(data, container) {
 
   html += renderProjectionSummary(data, champion);
   html += renderWinnerOdds(data.simulations?.winner_probabilities || {});
-  html += renderRules(data.rules_summary || []);
-  html += renderGroupTables(data.group_tables || []);
+  html += renderGroupTablesWithToggle(data, container);
   html += renderBestThirdTable(data.third_place_table || data.best_third_place || data.best_third_teams || []);
   html += renderGroupFixtures(data.group_fixtures || []);
   html += renderKnockoutRounds(knockout);
 
   container.innerHTML = html || '<p class="info-message">No World Cup projection data is available yet.</p>';
+  // Wire up the projected-tables <-> position-odds toggle after the HTML is in the DOM.
+  wireGroupTablesToggle(container);
 }
 
 // Summary card: surfaces the fields users care about before the long tables.
@@ -85,19 +86,6 @@ function renderWinnerOdds(winnerProbabilities) {
   `;
 }
 
-// Rules summary: keeps the generator assumptions visible on the page.
-function renderRules(rules) {
-  if (!rules.length) return "";
-  return `
-    <div class="world-cup-section">
-      <h4>Tournament Rules</h4>
-      <ul class="world-cup-rules">
-        ${rules.map((rule) => `<li>${escapeHtml(rule)}</li>`).join("")}
-      </ul>
-    </div>
-  `;
-}
-
 // Group standings: renders all inferred World Cup groups in compact tables.
 function renderGroupTables(groupTables) {
   if (!groupTables.length) return "";
@@ -109,6 +97,126 @@ function renderGroupTables(groupTables) {
       </div>
     </div>
   `;
+}
+
+// Toggle wrapper: shows the single-sim projected tables by default and lets the
+// user flip to a per-group position-odds view (chance each team finishes 1st/2nd/3rd/4th).
+function renderGroupTablesWithToggle(data, container) {
+  const groupTables = data.group_tables || [];
+  if (!groupTables.length) return "";
+
+  // Build a per-team position-odds map grouped by group letter for the toggle.
+  const positionProbabilities = data.simulations?.position_probabilities || {};
+  const teamToGroup = {};
+  for (const group of groupTables) {
+    for (const team of (group.teams || [])) {
+      if (team && team.team) teamToGroup[team.team] = group.group;
+    }
+  }
+  const positionOddsByGroup = groupTables.map((group) => {
+    const teams = (group.teams || []).map((team) => {
+      const probs = positionProbabilities[team.team] || {};
+      return {
+        team: team.team,
+        positions: {
+          1: Number(probs.group_position_1) || 0,
+          2: Number(probs.group_position_2) || 0,
+          3: Number(probs.group_position_3) || 0,
+          4: Number(probs.group_position_4) || 0,
+        },
+      };
+    });
+    // Order rows by most-likely finishing position: highest P(1st) first, then P(2nd), etc.
+    teams.sort((a, b) => {
+      if (b.positions[1] !== a.positions[1]) return b.positions[1] - a.positions[1];
+      if (b.positions[2] !== a.positions[2]) return b.positions[2] - a.positions[2];
+      if (b.positions[3] !== a.positions[3]) return b.positions[3] - a.positions[3];
+      return b.positions[4] - a.positions[4];
+    });
+    return { group: group.group, teams };
+  });
+
+  // Stash the alternate view on the data so the click handler can render it without re-deriving.
+  data.__positionOddsByGroup = positionOddsByGroup;
+  data.__teamToGroup = teamToGroup;
+
+  return `
+    <div class="world-cup-section" data-group-tables-section>
+      <div class="world-cup-section-header">
+        <h4 id="group-tables-heading">Projected Group Tables</h4>
+        <button id="group-tables-toggle" type="button" class="tab-btn active" data-view="tables">
+          Show Position Odds
+        </button>
+      </div>
+      <div class="world-cup-group-grid" data-group-tables-view="tables">
+        ${groupTables.map(renderGroupTable).join("")}
+      </div>
+      <div class="world-cup-group-grid hidden" data-group-tables-view="odds">
+        ${positionOddsByGroup.map(renderPositionOddsTable).join("")}
+      </div>
+    </div>
+  `;
+}
+
+// Per-team position-odds card: 4 columns (1st / 2nd / 3rd / 4th) with a probability bar.
+function renderPositionOddsTable(groupEntry) {
+  return `
+    <div class="world-cup-table-card">
+      <h5>Group ${escapeHtml(groupEntry.group)}</h5>
+      <div class="table-scroll">
+        <table class="standings-table world-cup-table position-odds-table">
+          <thead>
+            <tr>
+              <th>Team</th><th>1st</th><th>2nd</th><th>3rd</th><th>4th</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${groupEntry.teams.map((team) => `
+              <tr>
+                <td>${escapeHtml(team.team)}</td>
+                <td>${renderPositionOddsCell(team.positions[1])}</td>
+                <td>${renderPositionOddsCell(team.positions[2])}</td>
+                <td>${renderPositionOddsCell(team.positions[3])}</td>
+                <td>${renderPositionOddsCell(team.positions[4])}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderPositionOddsCell(probability) {
+  const pct = Number(probability) || 0;
+  return `<div class="position-odds-cell"><span class="position-odds-bar" style="width: ${pct.toFixed(1)}%;"></span><span class="position-odds-label">${pct.toFixed(1)}%</span></div>`;
+}
+
+// Wires the projected-tables <-> position-odds toggle button.
+function wireGroupTablesToggle(container) {
+  const section = container.querySelector("[data-group-tables-section]");
+  if (!section) return;
+  const button = section.querySelector("#group-tables-toggle");
+  const heading = section.querySelector("#group-tables-heading");
+  if (!button || !heading) return;
+  const tablesView = section.querySelector('[data-group-tables-view="tables"]');
+  const oddsView = section.querySelector('[data-group-tables-view="odds"]');
+  button.addEventListener("click", () => {
+    const showOdds = button.getAttribute("data-view") === "tables";
+    if (showOdds) {
+      button.setAttribute("data-view", "odds");
+      button.textContent = "Show Projected Tables";
+      heading.textContent = "Group Position Odds";
+      if (tablesView) tablesView.classList.add("hidden");
+      if (oddsView) oddsView.classList.remove("hidden");
+    } else {
+      button.setAttribute("data-view", "tables");
+      button.textContent = "Show Position Odds";
+      heading.textContent = "Projected Group Tables";
+      if (oddsView) oddsView.classList.add("hidden");
+      if (tablesView) tablesView.classList.remove("hidden");
+    }
+  });
 }
 
 // Single group table: marks the top two and qualifying third-place teams.

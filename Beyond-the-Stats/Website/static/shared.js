@@ -69,7 +69,7 @@ const leagueTablesCache = { global: null, mls: null, extra: null, cups: null };
 let tableViewMode = "standings";
 let activeCupProjectionCompetition = "UEFA/Champions League";
 let activeCupProjectionView = "table";
-//const upcomingCache = { global: [], mls: [], extra: [], cups: [] };
+const upcomingCache = { global: [], mls: [], extra: [], cups: [] };
 const upcomingStatsCache = {
 global: { stats: null, league_stats: [] },
 mls: { stats: null, league_stats: [] },
@@ -1027,6 +1027,7 @@ if (!globalSourceFilter) return "global";
 if (globalSourceFilter.value === "mls") return "mls";
 if (globalSourceFilter.value === "extra") return "extra";
 if (globalSourceFilter.value === "cups") return "cups";
+if (globalSourceFilter.value === "world-cup") return "world-cup";
 return "global";
 }
 
@@ -1034,6 +1035,7 @@ function upcomingUrlForSource(source) {
 if (source === "mls") return "/api/upcoming/mls";
 if (source === "extra") return "/api/upcoming/extra";
 if (source === "cups") return "/api/upcoming/cups";
+if (source === "world-cup") return "/api/upcoming/world-cup";
 return "/api/upcoming/global";
 }
 
@@ -1204,6 +1206,98 @@ for (const r of rows) {
 return out;
 }
 
+function renderTopPicks() {
+    const allRows = dedupeFixtures(
+    [
+        ...(upcomingCache.global || []),
+        ...(upcomingCache.mls || []),
+        ...(upcomingCache.extra || []),
+        ...(upcomingCache.cups || []),
+    ]
+        .filter(isValidProbabilityRow)
+    );
+    const futureRows = allRows.filter(isLikelyFutureFixture);
+    const sourceRows = futureRows.length ? futureRows : allRows;
+    const picks = pickRandomRows(sourceRows, 12);
+    if (!topPicksList) return;
+    if (!picks.length) {
+    topPicksList.innerHTML = "<p class=\"muted-placeholder\">No upcoming games</p>";
+    return;
+    }
+    topPicksList.innerHTML = picks.map((r) => `
+    <button
+        class="pick-card match-toggle"
+        type="button"
+        data-home-team="${escapeHtml(r.home_team)}"
+        data-away-team="${escapeHtml(r.away_team)}"
+        aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head"
+    >
+        <p class="pick-league">${escapeHtml(r.competition)}</p>
+        <p class="pick-match">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</p>
+        <p class="match-meta">${escapeHtml(`${r.weekday || ""} ${r.date_label || ""}`.trim())}${r.time_label ? ` - ${escapeHtml(r.time_label)}` : ""}</p>
+        <p class="pick-prediction">Prediction: ${escapeHtml(r.winner_label)}</p>
+        <div class="probability-track">
+        <div style="width: ${Number(r.prob_home) || 0}%; background-color: #55d37a;" title="${escapeHtml(r.home_team)}"></div>
+        <div style="width: ${Number(r.prob_draw) || 0}%; background-color: #93a4b3;" title="Draw"></div>
+        <div style="width: ${Number(r.prob_away) || 0}%; background-color: #7297ff;" title="${escapeHtml(r.away_team)}"></div>
+        </div>
+        <div class="probability-labels">
+        <span>H: ${pctLabel(r.prob_home)}%</span>
+        <span>D: ${pctLabel(r.prob_draw)}%</span>
+        <span>A: ${pctLabel(r.prob_away)}%</span>
+        </div>
+        <p class="pick-confidence">Confidence: ${pctLabel(toConfidence(r))}%</p>
+    </button>
+    `).join("");
+}
+
+async function preloadHomeData() {
+    if (!upcomingCache.global.length) {
+    try {
+        const respGlobal = await fetch("/api/upcoming/global");
+        const dataGlobal = await respGlobal.json();
+        if (respGlobal.ok && dataGlobal.ok) {
+        upcomingCache.global = dataGlobal.rows || [];
+        }
+    } catch (err) {
+        console.error("Failed to preload global upcoming rows", err);
+    }
+    }
+    if (!upcomingCache.mls.length) {
+    try {
+        const respMls = await fetch("/api/upcoming/mls");
+        const dataMls = await respMls.json();
+        if (respMls.ok && dataMls.ok) {
+        upcomingCache.mls = dataMls.rows || [];
+        }
+    } catch (err) {
+        console.error("Failed to preload MLS upcoming rows", err);
+    }
+    }
+    if (!upcomingCache.extra.length) {
+    try {
+        const respExtra = await fetch("/api/upcoming/extra");
+        const dataExtra = await respExtra.json();
+        if (respExtra.ok && dataExtra.ok) {
+        upcomingCache.extra = dataExtra.rows || [];
+        }
+    } catch (err) {
+        console.error("Failed to preload extra upcoming rows", err);
+    }
+    }
+    if (!upcomingCache.cups.length) {
+    try {
+        const respCups = await fetch("/api/upcoming/cups");
+        const dataCups = await respCups.json();
+        if (respCups.ok && dataCups.ok) {
+        upcomingCache.cups = dataCups.rows || [];
+        }
+    } catch (err) {
+        console.error("Failed to preload cup upcoming rows", err);
+    }
+    }
+    renderTopPicks();
+}
 
 
 function populateUpcomingLeagueFilter(selectEl, rows, availableLeagues = []) {
@@ -1702,3 +1796,4 @@ if (ACTIVE_PAGE === "global") {
 }
 
 initializeActivePage();
+preloadHomeData();

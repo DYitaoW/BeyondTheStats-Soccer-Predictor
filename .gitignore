@@ -42,6 +42,9 @@ old_*.py
 old_*.html
 old_*.htm
 
+# Website scratch JS (the `tesmp` file was an unfinished refactor of home.js)
+Beyond-the-Stats/Website/static/tesmp
+
 # =============================================================================
 # Pipeline data (regenerated each run)
 #

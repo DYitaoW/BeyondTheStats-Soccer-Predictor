@@ -1202,8 +1202,13 @@ def simulate_knockout_stage(knockout_fixtures, group_tables, third_place_table, 
     winners = {}
     stage_participants = {stage: set() for stage in STAGE_ORDER}
     last_winner = ""
+    # Per-fixture rows in the same shape as project_knockout so a single sim's
+    # bracket can drive the website display when the sim's champion matches the
+    # 1000-sim aggregate's highest-odds winner.
+    projected = {}
 
     for stage in sorted(fixtures_by_stage.keys(), key=lambda value: STAGE_ORDER[value]):
+        round_rows = []
         for idx, fixture in enumerate(fixtures_by_stage[stage], start=1):
             match_idx_zero = idx - 1
             home_slot, away_slot = extract_competitor_slots(fixture)
@@ -1213,11 +1218,31 @@ def simulate_knockout_stage(knockout_fixtures, group_tables, third_place_table, 
             away = resolve_slot(
                 away_slot, match_idx_zero, "away_team", group_lookup, third_assignments, third_place_table, winners
             )
-
+            label = f"{STAGE_DISPLAY[stage]} {idx}"
             if not home or not away:
+                round_rows.append({
+                    "label": label,
+                    "stage": stage,
+                    "match_date": fixture.get("match_date", ""),
+                    "match_datetime_utc": fixture.get("match_datetime_utc", ""),
+                    "venue": fixture.get("venue", ""),
+                    "home_slot": home_slot,
+                    "away_slot": away_slot,
+                    "home_team": home or home_slot,
+                    "away_team": away or away_slot,
+                    "winner": "",
+                    "predicted_result": "",
+                    "prob_home": 0.0,
+                    "prob_draw": 0.0,
+                    "prob_away": 0.0,
+                    "pred_home_goals": None,
+                    "pred_away_goals": None,
+                })
                 continue
 
             cache_entry = None
+            p_home = p_draw = p_away = 0.0
+            raw_hg = raw_ag = 0
             if pair_cache is not None:
                 cache_entry = pair_cache.get((home, away))
             if cache_entry is not None:
@@ -1229,18 +1254,37 @@ def simulate_knockout_stage(knockout_fixtures, group_tables, third_place_table, 
                     bundle, home, away, stage, fixture.get("match_datetime_utc", ""), fixture.get("venue", ""), allow_draw=False
                 )
                 probs = (prediction.get("prob_home", 0.0), prediction.get("prob_draw", 0.0), prediction.get("prob_away", 0.0))
-                result, hg, ag = simulate_knockout_match(
-                    probs, int(prediction.get("pred_home_goals", 0)), int(prediction.get("pred_away_goals", 0)), allow_draw=False
-                )
+                raw_hg = int(prediction.get("pred_home_goals", 0))
+                raw_ag = int(prediction.get("pred_away_goals", 0))
+                p_home, p_draw, p_away = probs
+                result, hg, ag = simulate_knockout_match(probs, raw_hg, raw_ag, allow_draw=False, rng=rng)
             else:
                 continue
 
             winner = home if result == "H" else away
-            label = f"{STAGE_DISPLAY[stage]} {idx}"
             winners[label] = winner
             stage_participants[stage].add(home)
             stage_participants[stage].add(away)
             last_winner = winner
+            round_rows.append({
+                "label": label,
+                "stage": stage,
+                "match_date": fixture.get("match_date", ""),
+                "match_datetime_utc": fixture.get("match_datetime_utc", ""),
+                "venue": fixture.get("venue", ""),
+                "home_slot": home_slot,
+                "away_slot": away_slot,
+                "home_team": home,
+                "away_team": away,
+                "winner": winner,
+                "predicted_result": result,
+                "prob_home": round(float(p_home), 6),
+                "prob_draw": round(float(p_draw), 6),
+                "prob_away": round(float(p_away), 6),
+                "pred_home_goals": int(hg),
+                "pred_away_goals": int(ag),
+            })
+        projected[knockout_round_key(stage)] = round_rows
 
     return {
         "round-of-32": set(),
@@ -1249,7 +1293,7 @@ def simulate_knockout_stage(knockout_fixtures, group_tables, third_place_table, 
         "semifinals": set(),
         "final": set(),
         "winner": last_winner,
-    }, winners
+    }, winners, projected
 
 
 def run_tournament_simulation(group_fixtures, knockout_fixtures, groups, team_to_group, group_fixture_cache=None, pair_cache=None, rng=None, bundle=None):
@@ -1272,7 +1316,7 @@ def run_tournament_simulation(group_fixtures, knockout_fixtures, groups, team_to
     third_place_table = rank_third_place_teams(group_tables_for_ranking)
 
     try:
-        stage_results, knockout_winners = simulate_knockout_stage(
+        stage_results, knockout_winners, knockout_rows = simulate_knockout_stage(
             knockout_fixtures, group_tables_for_ranking, third_place_table, pair_cache=pair_cache, rng=rng, bundle=bundle
         )
     except Exception as e:
@@ -1291,6 +1335,7 @@ def run_tournament_simulation(group_fixtures, knockout_fixtures, groups, team_to
         "champion": stage_results.get("winner", ""),
         "group_tables": group_tables_for_ranking,
         "third_place_table": third_place_table,
+        "knockout": knockout_rows,
     }
 
     for group, group_table in simulated_groups.items():
@@ -1333,17 +1378,26 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
     winner_counts = defaultdict(int)
     sim_group_tables = []
     sim_third_place = []
+    # Per-sim results (group_tables, third_place_table, knockout, champion) keyed
+    # by the sim's RNG seed. The `display_sim` key stores the sim selected as the
+    # website display (its champion matches the highest-odds winner from the
+    # 1000-sim aggregate). Default -1 indicates none chosen yet.
+    per_sim_results = []
+    display_sim_index = -1
 
     successful_sims = 0
-    rng = np.random.default_rng(20260611)
+    base_seed = 20260611
 
     for sim_num in range(num_simulations):
         if (sim_num + 1) % 100 == 0:
             print(f"  Progress: {sim_num + 1}/{num_simulations} simulations...")
 
+        sim_seed = base_seed + sim_num
+        sim_rng = np.random.default_rng(sim_seed)
+
         stats = run_tournament_simulation(
             group_fixtures, knockout_fixtures, groups, team_to_group,
-            group_fixture_cache=group_fixture_cache, pair_cache=pair_cache, rng=rng, bundle=bundle,
+            group_fixture_cache=group_fixture_cache, pair_cache=pair_cache, rng=sim_rng, bundle=bundle,
         )
         if not stats:
             continue
@@ -1352,6 +1406,14 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
 
         sim_group_tables.append(stats["group_tables"])
         sim_third_place.append(stats["third_place_table"])
+        per_sim_results.append({
+            "sim_index": sim_num,
+            "seed": sim_seed,
+            "champion": stats.get("champion", ""),
+            "group_tables": stats["group_tables"],
+            "third_place_table": stats["third_place_table"],
+            "knockout": stats.get("knockout", {}),
+        })
 
         for group, group_stats in stats.get("groups", {}).items():
             for team, position in group_stats.items():
@@ -1374,12 +1436,62 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
         percentage = (count / successful_sims * 100) if successful_sims > 0 else 0
         winner_probabilities[team] = round(percentage, 2)
 
+    # Pick the sim whose champion matches the highest-odds winner from the
+    # 1000-sim aggregate. If no sim in the 1000 produces that champion (rare
+    # when the top probability is low), run additional sims with new seeds
+    # until one matches, with a max-attempts cap.
+    target_champion = ""
+    top_pct = -1.0
+    for team, pct in winner_probabilities.items():
+        if pct > top_pct:
+            top_pct = pct
+            target_champion = team
+
+    display_sim = None
+    if target_champion:
+        for entry in per_sim_results:
+            if entry["champion"] == target_champion:
+                display_sim = entry
+                display_sim_index = entry["sim_index"]
+                break
+
+    if display_sim is None and target_champion:
+        print(f"  No sim in {num_simulations} produced highest-odds winner '{target_champion}'. Running extra sims...")
+        max_extra_attempts = 500
+        for attempt in range(max_extra_attempts):
+            extra_seed = base_seed + num_simulations + attempt
+            extra_rng = np.random.default_rng(extra_seed)
+            stats = run_tournament_simulation(
+                group_fixtures, knockout_fixtures, groups, team_to_group,
+                group_fixture_cache=group_fixture_cache, pair_cache=pair_cache, rng=extra_rng, bundle=bundle,
+            )
+            if not stats:
+                continue
+            if stats.get("champion") == target_champion:
+                display_sim = {
+                    "sim_index": num_simulations + attempt,
+                    "seed": extra_seed,
+                    "champion": stats.get("champion", ""),
+                    "group_tables": stats["group_tables"],
+                    "third_place_table": stats["third_place_table"],
+                    "knockout": stats.get("knockout", {}),
+                }
+                display_sim_index = display_sim["sim_index"]
+                print(f"    Match found on attempt {attempt + 1} (seed {extra_seed}).")
+                break
+        if display_sim is None:
+            print(f"    No match after {max_extra_attempts} extra attempts. Falling back to the 1000-sim aggregate for display.")
+
     return {
         "simulations_run": successful_sims,
         "position_probabilities": position_probabilities,
         "winner_probabilities": winner_probabilities,
         "sim_group_tables": sim_group_tables,
         "sim_third_place": sim_third_place,
+        "per_sim_results": per_sim_results,
+        "display_sim": display_sim,
+        "display_sim_index": display_sim_index,
+        "target_display_champion": target_champion,
     }
 
 
@@ -1394,10 +1506,15 @@ def build_projection(args):
     groups, team_to_group = infer_groups(group_fixtures)
 
     # Run 1000 simulations FIRST so we can use sim-aggregated qualifiers for
-    # the deterministic knockout projection. Group-stage output uses the
-    # sim-aggregated tables; knockout still uses the deterministic prediction
-    # model fed with sim-derived qualifiers. Live WC results (if any) are
-    # applied deterministically inside each sim's group stage.
+    # the deterministic knockout projection. Group-stage + third-place
+    # AGGREGATE output drives the winner/position probabilities (used by the
+    # website summary cards). The DISPLAYED group tables, third-place table,
+    # knockout bracket, and champion come from a SINGLE sim whose champion
+    # matches the highest-odds winner from the 1000-sim aggregate — so the
+    # website's "champion" card matches the displayed bracket end-to-end and
+    # the third-place Pts/GD/GF reflect the actual group results, not sim
+    # averages. Live WC results (if any) are applied deterministically inside
+    # each sim's group stage.
     print("Generating tournament simulations...")
     simulation_stats = run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group)
 
@@ -1412,12 +1529,27 @@ def build_projection(args):
         simulation_stats["simulations_run"],
     )
 
-    knockout, winners = project_knockout(
-        bundle, knockout_fixtures, aggregated_group_tables, aggregated_third_place
-    )
-
-    final_rows = knockout.get("final", [])
-    champion = final_rows[0]["winner"] if final_rows else ""
+    display_sim = simulation_stats.get("display_sim")
+    if display_sim is not None:
+        # Use the single sim's outputs for the displayed group tables, third
+        # place, and knockout bracket. The sim's champion == highest-odds
+        # winner by construction.
+        display_group_tables = display_sim["group_tables"]
+        display_third_place = display_sim["third_place_table"]
+        display_knockout = display_sim["knockout"]
+        display_champion = display_sim["champion"]
+    else:
+        # No sim produced the highest-odds winner (rare, only when the top
+        # probability is very low). Fall back to the 1000-sim aggregate for
+        # the displayed groups/third place + a deterministic knockout fed
+        # with the aggregate qualifiers.
+        display_group_tables = aggregated_group_tables
+        display_third_place = aggregated_third_place
+        display_knockout, _winners = project_knockout(
+            bundle, knockout_fixtures, aggregated_group_tables, aggregated_third_place
+        )
+        final_rows = display_knockout.get("final", [])
+        display_champion = final_rows[0]["winner"] if final_rows else ""
 
     # Deterministic per-fixture predictions (for the website display) — these
     # include actual results for played fixtures (source: "real") and
@@ -1436,18 +1568,32 @@ def build_projection(args):
             "The eight best third-place teams qualify using points, goal difference, goals scored, then deterministic fallback.",
             "Round-of-32 third-place slots follow ESPN/FIFA published candidate group constraints for the 2026 bracket.",
             "Knockout rounds are projected without draws; tied model outcomes advance the side with the higher non-draw probability.",
-            "Group-stage standings are aggregated across 1000 tournament simulations; mode position + sim-averaged W/D/L/Pts/GD/GF/GA, with PlayedReal/PlayedPred derived deterministically from live ESPN results.",
+            "Winner/position probabilities are aggregated across 1000 tournament simulations (mode position + sim-averaged W/D/L/Pts/GD/GF/GA).",
+            "The displayed group tables, third-place table, knockout bracket, and champion come from a SINGLE sim whose champion matches the highest-odds winner from the 1000-sim aggregate, so the bracket ends at the displayed champion and the third-place Pts/GD/GF reflect the actual group results (not sim averages). If no sim in the first 1000 produced that champion, additional sims are run (max 500 extra attempts) until one matches.",
         ],
         "groups_inferred_from_schedule": True,
-        "group_tables": aggregated_group_tables,
-        "third_place_table": aggregated_third_place,
+        # Primary fields rendered by the website (world_cup.js) come from a
+        # SINGLE sim whose champion matches the highest-odds winner from the
+        # 1000-sim aggregate. Internally consistent end-to-end: third-place
+        # Pts/GD/GF reflect the actual group results, and the displayed bracket
+        # leads to the displayed champion.
+        "group_tables": display_group_tables,
+        "third_place_table": display_third_place,
+        "knockout": display_knockout,
+        "champion": display_champion,
+        "display_sim_index": simulation_stats.get("display_sim_index", -1),
+        "display_sim_seed": display_sim.get("seed") if display_sim else None,
+        # 1000-sim aggregate (used for winner/position probability cards).
+        "aggregate_group_tables": aggregated_group_tables,
+        "aggregate_third_place_table": aggregated_third_place,
+        # Deterministic per-fixture predictions (played fixtures have source:
+        # "real" with actual goals; unplayed have source: "predicted" with the
+        # model's point estimate).
         "group_fixtures": [
             item
             for group in GROUP_LABELS
             for item in group_fixture_predictions.get(group, [])
         ],
-        "knockout": knockout,
-        "champion": champion,
         "simulations": simulation_stats,
     }
     return payload

@@ -1716,6 +1716,117 @@ def api_upcoming_cups():
     return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
 
 
+@app.get("/api/upcoming/world-cup")
+def api_upcoming_world_cup():
+    """Return upcoming World Cup GROUP-STAGE fixtures (not knockouts).
+
+    Knockout fixtures are excluded until the actual knockout teams are decided
+    (i.e. once the group stage is complete and the Round of 32 bracket is set).
+    """
+    world_cup_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+    if not os.path.exists(world_cup_file):
+        return jsonify({"ok": True, "rows": [], "stats": {}, "league_stats": []})
+    try:
+        with open(world_cup_file, "r", encoding="utf-8") as fh:
+            wc_data = json.load(fh)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Failed to load World Cup projection: {exc}"}), 500
+
+    # Only include group-stage fixtures for the upcoming list. Knockout matchups
+    # depend on group-stage outcomes that are not yet determined, so we leave
+    # the round-of-32 / round-of-16 / QF / SF / Final off the upcoming page
+    # until real match data confirms the teams.
+    raw_fixtures = wc_data.get("group_fixtures", [])
+    today = pd.Timestamp(datetime.now().date())
+    rows = []
+    for fixture in raw_fixtures:
+        match_date_str = str(fixture.get("match_date", "")).strip()
+        if not match_date_str:
+            continue
+        try:
+            match_date = pd.to_datetime(match_date_str, errors="coerce")
+        except Exception:
+            match_date = None
+        if match_date is None or pd.isna(match_date):
+            continue
+        if match_date < today:
+            continue
+
+        home = _team_name_for_display(str(fixture.get("display_home_team") or fixture.get("home_team") or "").strip())
+        away = _team_name_for_display(str(fixture.get("display_away_team") or fixture.get("away_team") or "").strip())
+        if not home or not away:
+            continue
+
+        try:
+            ph_raw = float(fixture.get("prob_home", 0.0)) * 100
+            pdv_raw = float(fixture.get("prob_draw", 0.0)) * 100
+            pa_raw = float(fixture.get("prob_away", 0.0)) * 100
+        except Exception:
+            ph_raw = pdv_raw = pa_raw = 0.0
+
+        utc_dt_raw = str(fixture.get("match_datetime_utc", "")).strip()
+        date_val = pd.to_datetime(utc_dt_raw, utc=True, errors="coerce") if utc_dt_raw else pd.NaT
+        if pd.isna(date_val):
+            weekday = ""
+            date_label = match_date_str
+            time_label = ""
+        else:
+            weekday = date_val.strftime("%A")
+            date_label = date_val.strftime("%B %d, %Y")
+            try:
+                time_label = date_val.strftime("%I:%M %p UTC").lstrip("0")
+            except Exception:
+                time_label = ""
+
+        # Score prediction: prefer the deterministic `pred_home_goals`/`pred_away_goals`
+        # already on the projection. If those are missing, fall back to a 0-0 placeholder.
+        ph_goals = fixture.get("pred_home_goals")
+        pa_goals = fixture.get("pred_away_goals")
+        try:
+            ph_goals_int = int(ph_goals) if ph_goals is not None and not pd.isna(ph_goals) else None
+        except Exception:
+            ph_goals_int = None
+        try:
+            pa_goals_int = int(pa_goals) if pa_goals is not None and not pd.isna(pa_goals) else None
+        except Exception:
+            pa_goals_int = None
+
+        rows.append({
+            "match_date": match_date_str,
+            "match_datetime_et": "",
+            "weekday": weekday,
+            "date_label": date_label,
+            "time_label": time_label,
+            "competition": str(fixture.get("competition", "FIFA/World Cup")),
+            "stage": str(fixture.get("stage", "group-stage")),
+            "group": str(fixture.get("group", "")),
+            "venue": str(fixture.get("venue", "")),
+            "home_team": home,
+            "away_team": away,
+            "winner_label": _winner_label(str(fixture.get("predicted_result", "")), home, away),
+            "prob_home": round(ph_raw, 3),
+            "prob_draw": round(pdv_raw, 3),
+            "prob_away": round(pa_raw, 3),
+            "prob_home_text": _format_percent_value(ph_raw),
+            "prob_draw_text": _format_percent_value(pdv_raw),
+            "prob_away_text": _format_percent_value(pa_raw),
+            "pred_home_goals": ph_goals_int,
+            "pred_away_goals": pa_goals_int,
+            "reasoning": "",
+            "actual_result": "",
+            "is_correct": "",
+        })
+
+    rows.sort(key=lambda r: (r["match_date"], r["competition"], r["home_team"]))
+    empty_frame = pd.DataFrame(rows)
+    return jsonify({
+        "ok": True,
+        "rows": rows,
+        "stats": _compute_accuracy_stats(empty_frame),
+        "league_stats": _compute_league_accuracy_stats(empty_frame),
+    })
+
+
 @app.get("/api/league-tables")
 def api_league_tables():
     """Return projected league tables (and MLS playoff bracket when requested)."""
