@@ -1,2 +1,0 @@
-prediction_key,created_at_utc,match_date,competition,home_team,away_team,predicted_result,prob_home,prob_draw,prob_away,pred_home_goals,pred_away_goals,pred_home_shots,pred_away_shots,pred_home_sot,pred_away_sot,actual_home_goals,actual_away_goals,actual_result,is_correct,settled_at_utc,correct_counter,total_counter,accuracy_pct_counter
-2026-02-20|France/Ligue 1|brest|marseille,2026-02-20T19:26:01,2026-02-20,France/Ligue 1,Brest,Marseille,A,0.204545,0.159091,0.636364,1.719,3.156,7.869,10.656,4.525,5.138,2.0,0.0,H,0.0,2026-02-22T05:25:55+00:00,0,1,0.0

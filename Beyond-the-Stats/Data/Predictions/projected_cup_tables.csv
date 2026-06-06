@@ -1,3 +1,0 @@
-competition,position,team,P,W,D,L,GF,GA,GD,Pts,PlayedReal,PlayedPred,win_league_pct,top4_pct,bottom3_pct,most_likely_position,most_likely_position_pct,position_odds_json,sim_runs
-UEFA/Champions League,1,Arsenal,1,0,1,0,1,1,0,1,0,1,100.0,100.0,100.0,1,100.0,"{""1"":100.0,""2"":0.0}",1
-UEFA/Champions League,2,Paris SG,1,0,1,0,1,1,0,1,0,1,0.0,100.0,100.0,2,100.0,"{""1"":0.0,""2"":100.0}",1

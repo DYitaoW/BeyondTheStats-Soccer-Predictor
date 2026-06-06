@@ -1,3 +1,0 @@
-prediction_key,created_at_utc,match_date,competition,home_team,away_team,predicted_result,prob_home,prob_draw,prob_away,pred_home_goals,pred_away_goals,pred_home_shots,pred_away_shots,pred_home_sot,pred_away_sot,actual_home_goals,actual_away_goals,actual_result,is_correct,settled_at_utc,correct_counter,total_counter,accuracy_pct_counter
-2026-02-21|Italy/Serie A|cagliari|lazio,2026-02-21T19:48:44+00:00,2026-02-21,Italy/Serie A,Cagliari,Lazio,A,0.2,0.318182,0.481818,0.569,1.188,12.662,10.694,3.388,3.95,0.0,0.0,D,0.0,2026-02-22T05:25:55+00:00,0,2,0.0
-2026-02-21|Italy/Serie A|como|juventus,2026-02-20T22:38:16+00:00,2026-02-21,Italy/Serie A,Juventus,Como,D,0.222727,0.454545,0.322727,1.031,1.006,10.838,11.481,3.819,3.369,0.0,2.0,A,0.0,2026-02-22T05:25:55+00:00,0,2,0.0
