@@ -21,21 +21,22 @@
     }
     .league-btn {
       padding: 0.5rem 1rem;
-      border: 2px solid #ccc;
-      background: transparent;
+      border: 2px solid var(--border);
+      background: var(--btn-secondary-bg);
+      color: var(--btn-secondary-text);
       border-radius: 4px;
       cursor: pointer;
       font-size: 0.95rem;
       transition: all 0.3s ease;
     }
     .league-btn:hover {
-      border-color: #0066cc;
-      color: #0066cc;
+      border-color: var(--primary);
+      color: var(--primary);
     }
     .league-btn.active {
-      background: #0066cc;
-      color: white;
-      border-color: #0066cc;
+      background: var(--primary);
+      color: var(--btn-text);
+      border-color: var(--primary);
     }
     .scorers-table {
       width: 100%;
@@ -46,19 +47,21 @@
     .scorers-table td {
       padding: 1rem;
       text-align: left;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
     }
     .scorers-table th {
-      background: #f5f5f5;
+      background: var(--table-header-bg);
+      color: var(--table-header-text);
       font-weight: 600;
       font-size: 0.95rem;
     }
     .scorers-table tr:hover {
-      background: #f9f9f9;
+      background: rgba(85, 211, 122, 0.08);
     }
     .rank {
       font-weight: 600;
-      color: #0066cc;
+      color: var(--primary);
       min-width: 30px;
     }
     .player-name {
@@ -67,113 +70,105 @@
     .goals {
       text-align: center;
       font-weight: 600;
-      color: #d9534f;
+      color: var(--danger);
     }
     .assists {
       text-align: center;
-      color: #5cb85c;
+      color: var(--primary);
     }
     .loading {
       text-align: center;
       padding: 2rem;
-      color: #999;
+      color: var(--muted);
     }
     .error {
-      color: #d9534f;
+      color: var(--danger);
       padding: 1rem;
-      background: #f8d7da;
-      border: 1px solid #f5c6cb;
+      background: rgba(217, 83, 79, 0.12);
+      border: 1px solid var(--danger);
       border-radius: 4px;
       margin: 1rem 0;
     }
     .last-updated {
       font-size: 0.85rem;
-      color: #999;
+      color: var(--muted);
       margin-top: 1rem;
     }
     .no-data {
       text-align: center;
       padding: 2rem;
-      color: #999;
+      color: var(--muted);
     }
   </style>
 </head>
-<body>
+<body class="dark-mode" data-active-page="players">
   <main class="page">
     <div id="notification-area" class="notification-area"></div>
     <header class="site-header">
       <div class="site-header-top">
-        <button id="brand-home-btn" class="brand brand-home-btn" type="button" aria-label="Go to home">
+        <a id="brand-home-btn" class="brand brand-home-btn" href="/" aria-label="Go to home">
           <img class="brand-mark" src="{{ url_for('serve_graphic', filename='BtSLogo.png') }}" alt="Beyond The Score logo">
           <div>
             <div class="brand-name">Beyond The Score</div>
             <div class="brand-sub">Matchday Predictor</div>
           </div>
-        </button>
-        <button id="theme-toggle" class="theme-toggle">Dark Mode</button>
+        </a>
+        <button id="theme-toggle" class="theme-toggle">Light Mode</button>
       </div>
 
-      <div id="main-tabs" class="tabs main-tabs">
-        <button id="tab-home" class="tab-btn" type="button">Home</button>
-        <button id="tab-predictor" class="tab-btn" type="button"> Custom Match Predictors (Experimental) </button>
-        <button id="tab-global" class="tab-btn" type="button">Upcoming Matches</button>
-        <button id="tab-h2h" class="tab-btn" type="button">Head to Head</button>
-        <button id="tab-market" class="tab-btn" type="button">Market & Odds (Coming Soon)</button>
-        <button id="tab-league-table" class="tab-btn" type="button">Projected League Tables</button>
-        <button id="tab-position-odds" class="tab-btn" type="button">Position Odds</button>
-        <button id="tab-players" class="tab-btn active" type="button">Players</button>
-        <button id="tab-tactics" class="tab-btn" type="button">Tactics Board</button>
-        <button id="tab-about" class="tab-btn" type="button">About</button>
-      </div>
+      <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
+        <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
+        <a id="tab-global" class="tab-btn {{ 'active' if active_page == 'global' else '' }}" href="/upcoming-matches">Upcoming Matches</a>
+        <a id="tab-cups" class="tab-btn {{ 'active' if active_page == 'cups' else '' }}" href="/cups">Cups</a>
+        <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Head to Head</a>
+        <a id="tab-market" class="tab-btn {{ 'active' if active_page == 'market' else '' }}" href="/market-odds">Market & Odds (Coming Soon)</a>
+        <a id="tab-league-table" class="tab-btn {{ 'active' if active_page == 'league-table' else '' }}" href="/league-tables">Projected League Tables</a>
+        <a id="tab-world-cup" class="tab-btn {{ 'active' if active_page == 'world-cup' else '' }}" href="/world-cup">World Cup</a>
+        <a id="tab-position-odds" class="tab-btn {{ 'active' if active_page == 'position-odds' else '' }}" href="/position-odds">Position Odds</a>
+        <a id="tab-players" class="tab-btn {{ 'active' if active_page == 'players' else '' }}" href="/players">Players</a>
+        <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
+        <a id="tab-about" class="tab-btn {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
+      </nav>
     </header>
 
-    <section class="hero">
-      <div class="hero-badge">Season Leaders</div>
-      <h1>Top Scorers By League</h1>
-      <p class="sub">Current season's leading goal scorers across major European leagues and competitions</p>
+    <section id="panel-players" class="content-panel">
+      <div class="card">
+        <h3>Top Scorers By League</h3>
+        <p class="section-subtitle">Current season's leading goal scorers across major European leagues and competitions.</p>
+      </div>
+      <div class="card">
+        <div id="loading" class="loading">Loading scorers data...</div>
+        <div id="error-message" style="display: none;" class="error"></div>
+        <div id="scorers-content" style="display: none;">
+          <div class="league-selector" id="league-selector"></div>
+          <table class="scorers-table" id="scorers-table">
+            <thead>
+              <tr>
+                <th style="width: 50px;">Rank</th>
+                <th style="width: 40%;">Player</th>
+                <th style="width: 40%;">Team</th>
+                <th style="width: 10%;">Goals</th>
+                <th style="width: 10%;">Assists</th>
+              </tr>
+            </thead>
+            <tbody id="scorers-body"></tbody>
+          </table>
+          <div class="last-updated" id="last-updated"></div>
+        </div>
+      </div>
     </section>
 
-    <div class="scorers-container">
-      <div id="loading" class="loading">Loading scorers data...</div>
-      <div id="error-message" style="display: none;" class="error"></div>
-      <div id="scorers-content" style="display: none;">
-        <div class="league-selector" id="league-selector"></div>
-        <table class="scorers-table" id="scorers-table">
-          <thead>
-            <tr>
-              <th style="width: 50px;">Rank</th>
-              <th style="width: 40%;">Player</th>
-              <th style="width: 40%;">Team</th>
-              <th style="width: 10%;">Goals</th>
-              <th style="width: 10%;">Assists</th>
-            </tr>
-          </thead>
-          <tbody id="scorers-body"></tbody>
-        </table>
-        <div class="last-updated" id="last-updated"></div>
-      </div>
-    </div>
+    <footer class="site-footer">
+      <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
+      <p>&copy; 2026 Beyond the Score</p>
+    </footer>
   </main>
 
+  <script src="{{ url_for('static', filename='shared.js') }}"></script>
   <script>
     const SCORERS_API_URL = '/api/scorers';
     let allScorersData = {};
     let selectedLeague = null;
-
-    document.getElementById('brand-home-btn').addEventListener('click', () => {
-      window.location.href = '/';
-    });
-
-    document.getElementById('theme-toggle').addEventListener('click', function() {
-      document.body.classList.toggle('dark-mode');
-      localStorage.setItem('theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
-    });
-
-    // Restore theme preference
-    if (localStorage.getItem('theme') === 'dark') {
-      document.body.classList.add('dark-mode');
-      document.getElementById('theme-toggle').textContent = 'Light Mode';
-    }
 
     async function loadScorersData() {
       try {
@@ -198,11 +193,10 @@
           return;
         }
 
-        // Populate league selector
         const leagues = Object.keys(allScorersData).sort();
         const selectorDiv = document.getElementById('league-selector');
         selectorDiv.innerHTML = '';
-        
+
         leagues.forEach((league, index) => {
           const btn = document.createElement('button');
           btn.className = 'league-btn' + (index === 0 ? ' active' : '');
@@ -211,13 +205,11 @@
           selectorDiv.appendChild(btn);
         });
 
-        // Select first league by default
         if (leagues.length > 0) {
           selectedLeague = leagues[0];
           displayScorers(selectedLeague);
         }
 
-        // Update "last updated" text
         if (lastUpdated) {
           const date = new Date(lastUpdated);
           const formatted = date.toLocaleString();
@@ -234,8 +226,7 @@
 
     function selectLeague(league) {
       selectedLeague = league;
-      
-      // Update active button
+
       document.querySelectorAll('.league-btn').forEach(btn => {
         btn.classList.remove('active');
         if (btn.textContent === league) {
@@ -252,7 +243,7 @@
       tbody.innerHTML = '';
 
       if (scorers.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999;">No scorers data for this league</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No scorers data for this league</td></tr>';
         return;
       }
 
@@ -269,34 +260,7 @@
       });
     }
 
-    // Load data on page load
     loadScorersData();
-
-    // Set up navigation tabs
-    document.getElementById('tab-home').addEventListener('click', () => {
-      window.location.href = '/';
-    });
-    document.getElementById('tab-predictor').addEventListener('click', () => {
-      window.location.href = '/#predictor';
-    });
-    document.getElementById('tab-global').addEventListener('click', () => {
-      window.location.href = '/#matches';
-    });
-    document.getElementById('tab-h2h').addEventListener('click', () => {
-      window.location.href = '/#h2h';
-    });
-    document.getElementById('tab-league-table').addEventListener('click', () => {
-      window.location.href = '/#league-table';
-    });
-    document.getElementById('tab-position-odds').addEventListener('click', () => {
-      window.location.href = '/#position-odds';
-    });
-    document.getElementById('tab-tactics').addEventListener('click', () => {
-      window.location.href = '/tactics';
-    });
-    document.getElementById('tab-about').addEventListener('click', () => {
-      window.location.href = '/#about';
-    });
   </script>
 </body>
 </html>

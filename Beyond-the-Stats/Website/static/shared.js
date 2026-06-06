@@ -1,17 +1,4 @@
-const form = document.getElementById("predict-form");
-const formMls = document.getElementById("predict-form-mls");
-const formExtra = document.getElementById("predict-form-extra");
-const resultEl = document.getElementById("result");
-const errorEl = document.getElementById("error");
-const resultMlsEl = document.getElementById("result-mls");
-const errorMlsEl = document.getElementById("error-mls");
-const resultExtraEl = document.getElementById("result-extra");
-const errorExtraEl = document.getElementById("error-extra");
 const panelHome = document.getElementById("panel-home");
-const panelPredictor = document.getElementById("panel-predictor");
-const predictorEuroBody = document.getElementById("predictor-euro-body");
-const predictorMlsBody = document.getElementById("predictor-mls-body");
-const predictorExtraBody = document.getElementById("predictor-extra-body");
 const panelGlobal = document.getElementById("panel-global");
 const panelCups = document.getElementById("panel-cups");
 const panelLeagueTable = document.getElementById("panel-league-table");
@@ -20,10 +7,6 @@ const panelPositionOdds = document.getElementById("panel-position-odds");
 const panelPlayers = document.getElementById("panel-players");
 const panelAbout = document.getElementById("panel-about");
 const tabHome = document.getElementById("tab-home");
-const tabPredictor = document.getElementById("tab-predictor");
-const subtabPredictorEuro = document.getElementById("subtab-predictor-euro");
-const subtabPredictorMls = document.getElementById("subtab-predictor-mls");
-const subtabPredictorExtra = document.getElementById("subtab-predictor-extra");
 const tabGlobal = document.getElementById("tab-global");
 const tabCups = document.getElementById("tab-cups");
 const tabH2H = document.getElementById("tab-h2h");
@@ -212,19 +195,16 @@ targetResult.innerHTML = html;
 
 function activateTab(tab) {
 // safely reset all tabs/panels so per-page templates without every section do not throw
-[tabHome, tabPredictor, tabGlobal, tabCups, tabH2H, tabMarket, tabLeagueTable, tabWorldCup, tabPositionOdds, tabPlayers, tabAbout]
+[tabHome, tabGlobal, tabCups, tabH2H, tabMarket, tabLeagueTable, tabWorldCup, tabPositionOdds, tabPlayers, tabAbout]
     .filter(Boolean)
     .forEach((node) => node.classList.remove("active"));
-[panelHome, panelPredictor, panelGlobal, panelCups, panelH2H, panelMarket, panelLeagueTable, panelWorldCup, panelPositionOdds, panelPlayers, panelAbout]
+[panelHome, panelGlobal, panelCups, panelH2H, panelMarket, panelLeagueTable, panelWorldCup, panelPositionOdds, panelPlayers, panelAbout]
     .filter(Boolean)
     .forEach((node) => node.classList.add("hidden"));
 
 if (tab === "home") {
     tabHome.classList.add("active");
     panelHome.classList.remove("hidden");
-} else if (tab === "predictor") {
-    tabPredictor.classList.add("active");
-    panelPredictor.classList.remove("hidden");
 } else if (tab === "global") {
     tabGlobal.classList.add("active");
     panelGlobal.classList.remove("hidden");
@@ -255,34 +235,6 @@ if (tab === "home") {
 } else {
     tabHome.classList.add("active");
     panelHome.classList.remove("hidden");
-}
-}
-
-function setPredictorMode(mode) {
-if (!subtabPredictorEuro || !subtabPredictorMls || !subtabPredictorExtra || !predictorEuroBody || !predictorMlsBody || !predictorExtraBody) {
-    return;
-}
-if (mode === "mls") {
-    subtabPredictorEuro.classList.remove("active");
-    subtabPredictorMls.classList.add("active");
-    subtabPredictorExtra.classList.remove("active");
-    predictorEuroBody.classList.add("hidden");
-    predictorMlsBody.classList.remove("hidden");
-    predictorExtraBody.classList.add("hidden");
-} else if (mode === "extra") {
-    subtabPredictorEuro.classList.remove("active");
-    subtabPredictorMls.classList.remove("active");
-    subtabPredictorExtra.classList.add("active");
-    predictorEuroBody.classList.add("hidden");
-    predictorMlsBody.classList.add("hidden");
-    predictorExtraBody.classList.remove("hidden");
-} else {
-    subtabPredictorMls.classList.remove("active");
-    subtabPredictorExtra.classList.remove("active");
-    subtabPredictorEuro.classList.add("active");
-    predictorMlsBody.classList.add("hidden");
-    predictorExtraBody.classList.add("hidden");
-    predictorEuroBody.classList.remove("hidden");
 }
 }
 
@@ -1054,12 +1006,9 @@ return rows.filter((r) => selectedLeagues.includes(r.competition));
 }
 
 function renderCupTabs() {
+if (!cupTabs) return;
 cupTabs.innerHTML = cupPredictionTabs.map((tab) => `
-    <button
-    class="tab-btn ${tab.key === activeCupTab ? "active" : ""}"
-    type="button"
-    data-cup-tab="${escapeHtml(tab.key)}"
-    >${escapeHtml(tab.label)}</button>
+    <option value="${escapeHtml(tab.key)}" ${tab.key === activeCupTab ? "selected" : ""}>${escapeHtml(tab.label)}</option>
 `).join("");
 }
 
@@ -1213,6 +1162,7 @@ function renderTopPicks() {
         ...(upcomingCache.mls || []),
         ...(upcomingCache.extra || []),
         ...(upcomingCache.cups || []),
+        ...(upcomingCache.worldcup || []),
     ]
         .filter(isValidProbabilityRow)
     );
@@ -1294,6 +1244,17 @@ async function preloadHomeData() {
         }
     } catch (err) {
         console.error("Failed to preload cup upcoming rows", err);
+    }
+    }
+    if (!upcomingCache.worldcup || !upcomingCache.worldcup.length) {
+    try {
+        const respWc = await fetch("/api/upcoming/world-cup");
+        const dataWc = await respWc.json();
+        if (respWc.ok && dataWc.ok) {
+        upcomingCache.worldcup = dataWc.rows || [];
+        }
+    } catch (err) {
+        console.error("Failed to preload World Cup upcoming rows", err);
     }
     }
     renderTopPicks();
@@ -1407,80 +1368,125 @@ h2hCompareButton.addEventListener("click", async () => {
     const t2 = h2hTeam2Input.value;
     if(!t1 || !t2) return showNotification("Please select two teams.");
     const dataset = h2hDataset.value || inferH2HMode(t1, t2);
-    
+
     h2hResults.innerHTML = "Loading...";
     h2hResults.classList.remove("hidden");
-    
-    try {
-        const resp = await fetch(`/api/h2h?team1=${encodeURIComponent(t1)}&team2=${encodeURIComponent(t2)}&mode=${encodeURIComponent(dataset)}`);
-        const data = await resp.json();
-        if(!data.ok) throw new Error(data.error);
-        
-        const f1 = data.team1_form || {};
-        const f2 = data.team2_form || {};
-        const h2h = data.h2h_data || {};
-        const h2hRev = data.h2h_data_reverse || {};
-        
-        const renderTeamHeaderRow = (leftName, rightName) => `
-            <div class="stat-row stat-header-row">
-                <span class="stat-val">${leftName || "-"}</span>
-                <span class="stat-label">Stat</span>
-                <span class="stat-val">${rightName || "-"}</span>
-            </div>`;
 
-        const renderStatRow = (label, v1, v2) => `
-            <div class="stat-row">
-                <span class="stat-val">${v1 !== undefined ? v1 : '-'}</span>
-                <span class="stat-label">${label}</span>
-                <span class="stat-val">${v2 !== undefined ? v2 : '-'}</span>
-            </div>`;
+    // Fetch head-to-head + match prediction in parallel so the user gets both at once.
+    let h2hData = null;
+    let prediction = null;
+    let h2hError = null;
+    let predictionError = null;
+    const requests = await Promise.allSettled([
+        fetch(`/api/h2h?team1=${encodeURIComponent(t1)}&team2=${encodeURIComponent(t2)}&mode=${encodeURIComponent(dataset)}`).then((r) => r.json()),
+        fetch("/api/predict", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ home_team: t1, away_team: t2 }),
+        }).then((r) => r.json()),
+    ]);
+    if (requests[0].status === "fulfilled" && requests[0].value && requests[0].value.ok) {
+        h2hData = requests[0].value;
+    } else {
+        h2hError = (requests[0].status === "fulfilled" && requests[0].value && requests[0].value.error) || (requests[0].reason && requests[0].reason.message) || "Failed to load head to head data.";
+    }
+    if (requests[1].status === "fulfilled" && requests[1].value && requests[1].value.ok) {
+        prediction = requests[1].value.prediction;
+    } else {
+        predictionError = (requests[1].status === "fulfilled" && requests[1].value && requests[1].value.error) || (requests[1].reason && requests[1].reason.message) || "Prediction unavailable for this matchup.";
+    }
 
-        h2hResults.innerHTML = `
-            <div class="h2h-container">
-                <div class="h2h-col card">
-                    <h3 style="text-align: center;">Recent Form Comparison</h3>
-                    ${renderTeamHeaderRow(t1, t2)}
-                    <h4 style="margin-top: 15px; text-align: center;">Recent Form (Last 10)</h4>
-                    ${renderStatRow("Points", f1.points_last_10, f2.points_last_10)}
-                    ${renderStatRow("Wins", f1.wins_last_10, f2.wins_last_10)}
-                    ${renderStatRow("Draws", f1.draws_last_10, f2.draws_last_10)}
-                    ${renderStatRow("Losses", f1.losses_last_10, f2.losses_last_10)}
-                    ${renderStatRow("Goals For (Avg)", f1.avg_goals_for_last_10, f2.avg_goals_for_last_10)}
-                    ${renderStatRow("Goals Against (Avg)", f1.avg_goals_against_last_10, f2.avg_goals_against_last_10)}
-                    ${(f1.avg_shots_for_last_10 !== null || f2.avg_shots_for_last_10 !== null)
-                    ? renderStatRow("Shots For (Avg)", f1.avg_shots_for_last_10, f2.avg_shots_for_last_10)
-                    : ""}
-                    ${(f1.avg_shots_against_last_10 !== null || f2.avg_shots_against_last_10 !== null)
-                    ? renderStatRow("Shots Against (Avg)", f1.avg_shots_against_last_10, f2.avg_shots_against_last_10)
-                    : ""}
+    const renderTeamHeaderRow = (leftName, rightName) => `
+        <div class="stat-row stat-header-row">
+            <span class="stat-val">${leftName || "-"}</span>
+            <span class="stat-label">Stat</span>
+            <span class="stat-val">${rightName || "-"}</span>
+        </div>`;
+
+    const renderStatRow = (label, v1, v2) => `
+        <div class="stat-row">
+            <span class="stat-val">${v1 !== undefined ? v1 : '-'}</span>
+            <span class="stat-label">${label}</span>
+            <span class="stat-val">${v2 !== undefined ? v2 : '-'}</span>
+        </div>`;
+
+    const renderH2HColumn = () => {
+        if (!h2hData) return `<div class="h2h-col card"><h3>Head to Head</h3><p class="error">${escapeHtml(h2hError || "Failed to load head to head data.")}</p></div>`;
+        const f1 = h2hData.team1_form || {};
+        const f2 = h2hData.team2_form || {};
+        const h2h = h2hData.h2h_data || {};
+        const h2hRev = h2hData.h2h_data_reverse || {};
+        return `
+            <div class="h2h-col card">
+                <h3 style="text-align: center;">Recent Form Comparison</h3>
+                ${renderTeamHeaderRow(t1, t2)}
+                <h4 style="margin-top: 15px; text-align: center;">Recent Form (Last 10)</h4>
+                ${renderStatRow("Points", f1.points_last_10, f2.points_last_10)}
+                ${renderStatRow("Wins", f1.wins_last_10, f2.wins_last_10)}
+                ${renderStatRow("Draws", f1.draws_last_10, f2.draws_last_10)}
+                ${renderStatRow("Losses", f1.losses_last_10, f2.losses_last_10)}
+                ${renderStatRow("Goals For (Avg)", f1.avg_goals_for_last_10, f2.avg_goals_for_last_10)}
+                ${renderStatRow("Goals Against (Avg)", f1.avg_goals_against_last_10, f2.avg_goals_against_last_10)}
+                ${(f1.avg_shots_for_last_10 !== null || f2.avg_shots_for_last_10 !== null)
+                ? renderStatRow("Shots For (Avg)", f1.avg_shots_for_last_10, f2.avg_shots_for_last_10)
+                : ""}
+                ${(f1.avg_shots_against_last_10 !== null || f2.avg_shots_against_last_10 !== null)
+                ? renderStatRow("Shots Against (Avg)", f1.avg_shots_against_last_10, f2.avg_shots_against_last_10)
+                : ""}
+            </div>
+            <div class="h2h-col card">
+                <h3>Head to Head History</h3>
+                <p><strong>${t1} vs ${t2}</strong></p>
+                <p><strong>Fixture Location:</strong> ${t1} (Home) vs ${t2} (Away)</p>
+                <p>Matches Recorded: ${h2hData.h2h_total_games || 0}</p>
+                <div style="margin-top: 10px;">
+                    <p>When ${t1} is Home:</p>
+                    <ul>
+                        <li>${t1} Wins: ${h2h.home_wins || 0}</li>
+                        <li>Draws: ${h2h.home_draws || 0}</li>
+                        <li>${t2} Wins: ${h2h.home_losses || 0}</li>
+                    </ul>
                 </div>
-                <div class="h2h-col card">
-                    <h3>Head to Head History</h3>
-                    <p><strong>${t1} vs ${t2}</strong></p>
-                    <p><strong>Fixture Location:</strong> ${t1} (Home) vs ${t2} (Away)</p>
-                    <p>Matches Recorded: ${data.h2h_total_games || 0}</p>
-                    <div style="margin-top: 10px;">
-                        <p>When ${t1} is Home:</p>
-                        <ul>
-                            <li>${t1} Wins: ${h2h.home_wins || 0}</li>
-                            <li>Draws: ${h2h.home_draws || 0}</li>
-                            <li>${t2} Wins: ${h2h.home_losses || 0}</li>
-                        </ul>
-                    </div>
-                    <div style="margin-top: 10px;">
-                        <p>When ${t2} is Home:</p>
-                        <ul>
-                            <li>${t2} Wins: ${h2hRev.home_wins || 0}</li>
-                            <li>Draws: ${h2hRev.home_draws || 0}</li>
-                            <li>${t1} Wins: ${h2hRev.home_losses || 0}</li>
-                        </ul>
-                    </div>
+                <div style="margin-top: 10px;">
+                    <p>When ${t2} is Home:</p>
+                    <ul>
+                        <li>${t2} Wins: ${h2hRev.home_wins || 0}</li>
+                        <li>Draws: ${h2hRev.home_draws || 0}</li>
+                        <li>${t1} Wins: ${h2hRev.home_losses || 0}</li>
+                    </ul>
                 </div>
             </div>
         `;
-    } catch(e) {
-        h2hResults.innerHTML = `<p class="error">Error: ${e.message}</p>`;
-    }
+    };
+
+    const renderPredictionCard = () => {
+        if (!prediction) {
+            return `<div class="h2h-col card"><h3>Match Prediction</h3><p class="muted-placeholder">${escapeHtml(predictionError || "Prediction unavailable.")}</p></div>`;
+        }
+        const confidence = Math.max(Number(prediction.prob_home) || 0, Number(prediction.prob_draw) || 0, Number(prediction.prob_away) || 0);
+        return `
+            <div class="h2h-col card">
+                <h3>Match Prediction</h3>
+                <p><strong>${escapeHtml(t1)} (H) vs ${escapeHtml(t2)} (A)</strong></p>
+                <p class="winner-line">${escapeHtml(prediction.winner_label || "Draw")}</p>
+                <p><strong>Predicted score:</strong> ${escapeHtml(prediction.home_team)} ${prediction.pred_home_goals} - ${prediction.pred_away_goals} ${escapeHtml(prediction.away_team)}</p>
+                <p><strong>Confidence:</strong> ${pctLabel(confidence)}%</p>
+                <div class="probability-track">
+                    <div style="width: ${prediction.prob_home}%; background-color: #55d37a;" title="${escapeHtml(prediction.home_team)}"></div>
+                    <div style="width: ${prediction.prob_draw}%; background-color: #93a4b3;" title="Draw"></div>
+                    <div style="width: ${prediction.prob_away}%; background-color: #7297ff;" title="${escapeHtml(prediction.away_team)}"></div>
+                </div>
+                <div class="probability-labels">
+                    <span>H: ${pctLabel(prediction.prob_home)}%</span>
+                    <span>D: ${pctLabel(prediction.prob_draw)}%</span>
+                    <span>A: ${pctLabel(prediction.prob_away)}%</span>
+                </div>
+                ${prediction.pred_home_shots !== undefined ? `<p><strong>Shots:</strong> ${prediction.pred_home_shots} - ${prediction.pred_away_shots}</p>` : ""}
+            </div>
+        `;
+    };
+
+    h2hResults.innerHTML = `<div class="h2h-container">${renderH2HColumn()}${renderPredictionCard()}</div>`;
 });
 }
 
@@ -1490,92 +1496,11 @@ applyH2HDataset(h2hDataset.value);
 });
 }
 
-if (form) {
-form.addEventListener("submit", async (e) => {
-e.preventDefault();
-const formData = new FormData(form);
-const payload = {
-    home_team: formData.get("home_team"),
-    away_team: formData.get("away_team"),
-};
-
-const resp = await fetch("/api/predict", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-});
-const data = await resp.json();
-if (!resp.ok || !data.ok) {
-    showError(errorEl, resultEl, data.error || "Prediction failed.");
-    return;
-}
-showResult(errorEl, resultEl, data.prediction);
-});
-}
-
-if (formMls) {
-formMls.addEventListener("submit", async (e) => {
-e.preventDefault();
-const formData = new FormData(formMls);
-const payload = {
-    home_team: formData.get("home_team"),
-    away_team: formData.get("away_team"),
-};
-
-const resp = await fetch("/api/predict/mls", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-});
-const data = await resp.json();
-if (!resp.ok || !data.ok) {
-    showError(errorMlsEl, resultMlsEl, data.error || "MLS prediction failed.");
-    return;
-}
-showResult(errorMlsEl, resultMlsEl, data.prediction, false);
-});
-}
-
-if (formExtra) {
-formExtra.addEventListener("submit", async (e) => {
-e.preventDefault();
-const formData = new FormData(formExtra);
-const payload = {
-    home_team: formData.get("home_team"),
-    away_team: formData.get("away_team"),
-};
-
-const resp = await fetch("/api/predict/extra", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-});
-const data = await resp.json();
-if (!resp.ok || !data.ok) {
-    showError(errorExtraEl, resultExtraEl, data.error || "Extra league prediction failed.");
-    return;
-}
-showResult(errorExtraEl, resultExtraEl, data.prediction, true);
-});
-}
-
 if (tabHome) {
 tabHome.addEventListener("click", () => activateTab("home"));
 }
 if (brandHomeBtn && tabHome) {
 brandHomeBtn.addEventListener("click", () => tabHome.click());
-}
-if (tabPredictor) {
-tabPredictor.addEventListener("click", () => activateTab("predictor"));
-}
-if (subtabPredictorEuro) {
-subtabPredictorEuro.addEventListener("click", () => setPredictorMode("euro"));
-}
-if (subtabPredictorMls) {
-subtabPredictorMls.addEventListener("click", () => setPredictorMode("mls"));
-}
-if (subtabPredictorExtra) {
-subtabPredictorExtra.addEventListener("click", () => setPredictorMode("extra"));
 }
 if (feedbackSubmit) {
 feedbackSubmit.addEventListener("click", submitFeedback);
@@ -1746,10 +1671,8 @@ await loadUpcoming(source, upcomingUrlForSource(source), globalList, globalStats
 });
 }
 if (cupTabs) {
-cupTabs.addEventListener("click", (event) => {
-const btn = event.target.closest("[data-cup-tab]");
-if (!btn) return;
-activeCupTab = btn.getAttribute("data-cup-tab") || "all";
+cupTabs.addEventListener("change", () => {
+activeCupTab = cupTabs.value || "all";
 renderCupTabs();
 renderActiveCupTab();
 });

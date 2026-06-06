@@ -64,11 +64,11 @@ function renderProjectionSummary(data, champion) {
   `;
 }
 
-// Winner odds: lists the highest simulated title chances when simulation output exists.
+// Winner odds: lists every team with a non-zero title chance from the simulation output.
 function renderWinnerOdds(winnerProbabilities) {
   const entries = Object.entries(winnerProbabilities)
-    .sort((left, right) => Number(right[1]) - Number(left[1]))
-    .slice(0, 12);
+    .filter(([, probability]) => Number(probability) > 0)
+    .sort((left, right) => Number(right[1]) - Number(left[1]));
   if (!entries.length) return "";
 
   return `
@@ -151,7 +151,7 @@ function renderGroupTablesWithToggle(data, container) {
       <div class="world-cup-group-grid" data-group-tables-view="tables">
         ${groupTables.map(renderGroupTable).join("")}
       </div>
-      <div class="world-cup-group-grid hidden" data-group-tables-view="odds">
+      <div class="world-cup-group-grid" data-group-tables-view="odds" style="display: none;">
         ${positionOddsByGroup.map(renderPositionOddsTable).join("")}
       </div>
     </div>
@@ -207,14 +207,14 @@ function wireGroupTablesToggle(container) {
       button.setAttribute("data-view", "odds");
       button.textContent = "Show Projected Tables";
       heading.textContent = "Group Position Odds";
-      if (tablesView) tablesView.classList.add("hidden");
-      if (oddsView) oddsView.classList.remove("hidden");
+      if (tablesView) tablesView.style.display = "none";
+      if (oddsView) oddsView.style.display = "";
     } else {
       button.setAttribute("data-view", "tables");
       button.textContent = "Show Position Odds";
       heading.textContent = "Projected Group Tables";
-      if (oddsView) oddsView.classList.add("hidden");
-      if (tablesView) tablesView.classList.remove("hidden");
+      if (oddsView) oddsView.style.display = "none";
+      if (tablesView) tablesView.style.display = "";
     }
   });
 }

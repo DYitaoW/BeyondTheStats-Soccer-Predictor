@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import joblib
 import pandas as pd
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
 
 
 class AveragedProbaClassifier:
@@ -1449,7 +1449,6 @@ def _render_site_page(template_name, active_page):
     # Shared route map used by template JS navigation helpers.
     page_routes = {
         "home": "/",
-        "predictor": "/custom-predictor",
         "global": "/upcoming-matches",
         "cups": "/cups",
         "h2h": "/head-to-head",
@@ -1503,8 +1502,8 @@ def _render_site_page(template_name, active_page):
 
 @app.get("/custom-predictor")
 def custom_predictor():
-    """Render the custom predictor tab page."""
-    return _render_site_page("predictor.html", active_page="predictor")
+    """Redirect to the head-to-head page now that predictor lives there."""
+    return redirect("/head-to-head")
 
 
 @app.get("/upcoming-matches")

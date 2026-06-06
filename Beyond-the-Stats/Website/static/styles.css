@@ -475,14 +475,92 @@ body:not(.dark-mode) .confidence-pill {
   background: rgba(47, 125, 79, 0.12);
 }
 
+body:not(.dark-mode) .pick-card {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .pick-card:hover {
+  background: #eef3f9;
+}
+
+body:not(.dark-mode) .match-card {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .player-card {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .prediction-card {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .conference-title {
+  background: #eef2f7;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .world-cup-summary-item,
+body:not(.dark-mode) .world-cup-odds-card,
+body:not(.dark-mode) .world-cup-table-card,
+body:not(.dark-mode) .world-cup-match-card {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .world-cup-probabilities {
+  background: #d6dde7;
+}
+
+body:not(.dark-mode) .probability-track {
+  background: #d6dde7;
+}
+
+body:not(.dark-mode) .notification {
+  background: #ffffff;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .position-odds-best {
+  background: rgba(76, 170, 104, 0.18);
+  color: #1e6a40;
+}
+
+body:not(.dark-mode) .position-odds-cell {
+  background: rgba(15, 26, 36, 0.06);
+}
+
 .match-row.match-correct {
   border-color: #3a7d51;
   background: #122118;
 }
 
+body:not(.dark-mode) .match-row.match-correct {
+  border-color: rgba(76, 170, 104, 0.55);
+  background: rgba(76, 170, 104, 0.12);
+  color: #0a1118;
+}
+
 .match-row.match-wrong {
   border-color: #824646;
   background: #291718;
+}
+
+body:not(.dark-mode) .match-row.match-wrong {
+  border-color: rgba(217, 83, 79, 0.55);
+  background: rgba(217, 83, 79, 0.12);
+  color: #0a1118;
 }
 
 .match-toggle {

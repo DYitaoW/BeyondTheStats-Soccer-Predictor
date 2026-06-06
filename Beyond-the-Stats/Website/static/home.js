@@ -11,36 +11,44 @@ function pickLeagueWinner(rows) {
     })[0];
 }
 
-// render winners directly from API data so home page is independent of shared tab logic
+// render winners from a single dataset payload.
 function renderHomeWinners(data) {
     if (!winnerView) return;
     const tables = data?.tables || {};
     const leagues = Object.keys(tables).filter((name) => name !== "__mls_bracket__").sort((a, b) => a.localeCompare(b));
-    if (!leagues.length) {
-        winnerView.innerHTML = "<p>No winner data available.</p>";
-        return;
-    }
-    let html = '<table class="league-table"><thead><tr><th>League</th><th>Predicted Winner</th><th>Win Chance</th></tr></thead><tbody>';
-    for (const league of leagues) {
+    if (!leagues.length) return "";
+    return leagues.map((league) => {
         const winner = pickLeagueWinner(tables[league]);
-        html += `<tr><td>${league}</td><td>${winner ? winner.team : "N/A"}</td><td>${winner ? asPct(winner.win_league_pct) : "0%"}</td></tr>`;
-    }
-    html += "</tbody></table>";
-    winnerView.innerHTML = html;
+        return `<tr><td>${escapeHtmlText(league)}</td><td>${winner ? escapeHtmlText(winner.team) : "N/A"}</td><td>${winner ? asPct(winner.win_league_pct) : "0%"}</td></tr>`;
+    }).join("");
 }
 
-// fetch and render winners for selected dataset
+// fetch every available dataset and render all winners into a single combined table.
 async function loadHomeWinners() {
-    if (!winnerDataset || !winnerView) return;
-    winnerView.textContent = "Loading league winners...";
+    if (!winnerView) return;
+    winnerView.innerHTML = "Loading league winners...";
+    const sources = ["global", "mls", "extra"];
     try {
-        const response = await fetch(`/api/league-tables?mode=${encodeURIComponent(winnerDataset.value)}`);
-        const data = await response.json();
-        if (!response.ok || !data?.ok) {
-            winnerView.textContent = "Failed to load league winners.";
+        const payloads = await Promise.all(sources.map(async (mode) => {
+            try {
+                const response = await fetch(`/api/league-tables?mode=${encodeURIComponent(mode)}`);
+                const data = await response.json();
+                if (!response.ok || !data?.ok) return null;
+                return { mode, data };
+            } catch (_error) {
+                return null;
+            }
+        }));
+        const rows = payloads
+            .filter((entry) => entry)
+            .map((entry) => renderHomeWinners(entry.data))
+            .filter(Boolean)
+            .join("");
+        if (!rows) {
+            winnerView.textContent = "No winner data available.";
             return;
         }
-        renderHomeWinners(data);
+        winnerView.innerHTML = `<table class="league-table"><thead><tr><th>League</th><th>Predicted Winner</th><th>Win Chance</th></tr></thead><tbody>${rows}</tbody></table>`;
     } catch (_error) {
         winnerView.textContent = "Failed to load league winners.";
     }
@@ -58,8 +66,9 @@ function renderHomeWcWinnerOdds(data) {
     if (!wcWinnerOddsView) return;
     const winnerProbabilities = data?.simulations?.winner_probabilities || {};
     const entries = Object.entries(winnerProbabilities)
+        .filter(([, probability]) => Number(probability) > 0)
         .sort((left, right) => Number(right[1]) - Number(left[1]))
-        .slice(0, 8);
+        .slice(0, 9);
     if (!entries.length) {
         wcWinnerOddsView.innerHTML = "<p class=\"muted-placeholder\">No World Cup projection data available.</p>";
         return;
@@ -153,9 +162,8 @@ function escapeHtmlText(value) {
     return String(value).replace(/[&<>"']/g, (character) => map[character]);
 }
 
-// bind home winner selector only on pages that include the control
-if (winnerDataset) {
-    winnerDataset.addEventListener("change", loadHomeWinners);
+// fetch and render winners for the single home-page block (no dataset dropdown)
+if (winnerView) {
     loadHomeWinners();
 }
 

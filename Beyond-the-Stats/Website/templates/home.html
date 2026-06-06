@@ -26,7 +26,6 @@
 
       <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
         <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
-        <a id="tab-predictor" class="tab-btn {{ 'active' if active_page == 'predictor' else '' }}" href="/custom-predictor">Custom Match Predictors (Experimental)</a>
         <a id="tab-global" class="tab-btn {{ 'active' if active_page == 'global' else '' }}" href="/upcoming-matches">Upcoming Matches</a>
         <a id="tab-cups" class="tab-btn {{ 'active' if active_page == 'cups' else '' }}" href="/cups">Cups</a>
         <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Head to Head</a>
@@ -41,7 +40,6 @@
     </header>
 
     <section class="hero">
-      <div class="hero-badge">AI-Powered Match Predictions</div>
       <h1>Machine Learning Algorithm Match Predictions</h1>
       <p class="sub">Advanced analytics and machine learning forecasts for top European leagues, MLS and more soon...</p>
       <div class="hero-stats">
@@ -63,7 +61,6 @@
     <section id="panel-home" class="content-panel">
       <div class="card">
         <h3>2026 FIFA World Cup Winner Odds</h3>
-        <p class="section-subtitle">Aggregate title chances from 1,000 tournament simulations.</p>
         <div id="wc-winner-odds" class="top-picks-grid">
           <p class="muted-placeholder">Loading World Cup winner odds...</p>
         </div>
@@ -84,16 +81,8 @@
       </div>
       <div class="card">
         <h3>Predicted League Winners</h3>
-        <div class="table-controls">
-          <label for="winner-dataset">Dataset</label>
-          <select id="winner-dataset">
-            <option value="global">European Leagues</option>
-            <option value="mls">MLS</option>
-            <option value="extra">Extra Leagues</option>
-          </select>
-        </div>
+        <div id="winner-view">Loading league winners...</div>
       </div>
-      <div id="winner-view" class="card">Loading league winners...</div>
     </section>
       <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
