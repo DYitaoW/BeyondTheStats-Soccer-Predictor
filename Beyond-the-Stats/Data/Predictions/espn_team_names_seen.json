@@ -1,12 +1,36 @@
 {
-  "generated_at_utc": "2026-05-19T21:41:41+00:00",
+  "generated_at_utc": "2026-06-06T05:05:21+00:00",
   "global": {
-    "England/Championship": [],
-    "England/Premier League": [],
-    "Italy/Serie A": [],
-    "Spain/La Liga": []
+    "England/Championship": [
+      "Hull City",
+      "Middlesbrough"
+    ],
+    "Italy/Serie A": [
+      "Bologna",
+      "Internazionale",
+      "Lazio",
+      "Pisa"
+    ],
+    "Spain/La Liga": [
+      "Alavés",
+      "Athletic Club",
+      "Barcelona",
+      "Celta Vigo",
+      "Elche",
+      "Espanyol",
+      "Getafe",
+      "Girona",
+      "Levante",
+      "Mallorca",
+      "Osasuna",
+      "Rayo Vallecano",
+      "Real Betis",
+      "Real Madrid",
+      "Real Oviedo",
+      "Real Sociedad",
+      "Sevilla",
+      "Valencia"
+    ]
   },
-  "mls": {
-    "United States/MLS": []
-  }
+  "mls": {}
 }

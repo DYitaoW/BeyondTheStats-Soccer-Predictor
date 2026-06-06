@@ -1,8 +1,11 @@
 import argparse
 import os
+import random
 import urllib.error
 import urllib.parse
 from datetime import UTC, datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 import pandas as pd
 
@@ -101,33 +104,75 @@ def parse_espn_fixture(event, competition_name):
         return None
     if match_dt < pd.Timestamp(datetime.now(UTC)):
         return None
-    return parsed
+    # Ensure all required fields are present for fixture compatibility
+    fixture = {
+        "match_id": parsed.get("match_id", ""),
+        "match_datetime_utc": parsed.get("match_datetime_utc", ""),
+        "match_date": parsed.get("match_date", ""),
+        "competition": parsed.get("competition", ""),
+        "stage": parsed.get("stage", "unknown"),
+        "home_team": parsed.get("home_team", ""),
+        "away_team": parsed.get("away_team", ""),
+        "is_neutral_site": parsed.get("is_neutral_site", True),
+        "venue": parsed.get("venue", ""),
+        "source": "espn",
+    }
+    return fixture
 
 
 def fetch_espn_upcoming_fixtures(window_days, world_cup_only=False):
     rows = []
     seen_event_ids = set()
+    rows_lock = threading.Lock()
+    
     configs = competition_configs(world_cup_only=world_cup_only)
+    
+    def fetch_competition_day(espn_id, competition_name, date):
+        """Fetch fixtures for a specific competition and date."""
+        try:
+            for _, payload in national.fetch_espn_scoreboard_days(espn_id, [date], timeout=30):
+                for event in payload.get("events") or []:
+                    event_id = str(event.get("id", "")).strip()
+                    with rows_lock:
+                        if event_id and event_id in seen_event_ids:
+                            continue
+                    fixture = parse_espn_fixture(event, competition_name)
+                    if not fixture:
+                        continue
+                    with rows_lock:
+                        if event_id and event_id not in seen_event_ids:
+                            if event_id:
+                                seen_event_ids.add(event_id)
+                            rows.append(fixture)
+        except Exception as e:
+            # Log errors but don't fail the entire fetch
+            print(f"[DEBUG] Error fetching {competition_name} on {date}: {e}")
+    
+    # Prepare all tasks
+    tasks = []
+    dates = list(iter_window_dates(window_days))
     for competition_name, config in sorted(configs.items(), key=lambda item: item[1]["priority"]):
         espn_id = config["espn_id"]
-        print(f"Checking ESPN fixtures for {competition_name} ({espn_id})")
-        for day in iter_window_dates(window_days):
-            url = national.ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
+        print(f"Scheduling ESPN fixtures for {competition_name} ({espn_id})")
+        for date in dates:
+            tasks.append((espn_id, competition_name, date))
+    
+    # Execute tasks concurrently
+    max_workers = min(8, len(tasks))  # Limit concurrent requests
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = []
+        for espn_id, competition_name, date in tasks:
+            future = executor.submit(fetch_competition_day, espn_id, competition_name, date)
+            futures.append(future)
+        
+        # Wait for all tasks to complete
+        for future in as_completed(futures):
             try:
-                payload = national.fetch_json(url, timeout=30)
-            except Exception:
-                continue
-            for event in payload.get("events") or []:
-                event_id = str(event.get("id", "")).strip()
-                if event_id and event_id in seen_event_ids:
-                    continue
-                fixture = parse_espn_fixture(event, competition_name)
-                if not fixture:
-                    continue
-                if event_id:
-                    seen_event_ids.add(event_id)
-                rows.append(fixture)
-    return pd.DataFrame(rows)
+                future.result()
+            except Exception as e:
+                print(f"[DEBUG] Task failed: {e}")
+    
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
 def parse_football_data_fixture(match, competition_name):
@@ -178,20 +223,46 @@ def fetch_football_data_upcoming_fixtures(api_token, window_days, world_cup_only
 
 def dedupe_fixtures(fixtures):
     if fixtures.empty:
-        return fixtures
+        return fixtures.copy()
     frame = fixtures.copy()
+    
+    # Ensure all required columns exist
+    required_cols = ["match_date", "competition", "home_team", "away_team", "source", "match_datetime_utc"]
+    for col in required_cols:
+        if col not in frame.columns:
+            frame[col] = "" if col != "match_datetime_utc" else pd.NaT
+    
+    # Validate and filter out invalid rows
+    frame = frame.dropna(subset=["home_team", "away_team"], how="any")
+    frame = frame[frame["home_team"].astype(str).str.strip() != ""]
+    frame = frame[frame["away_team"].astype(str).str.strip() != ""]
+    
+    if frame.empty:
+        return frame
+    
     source_order = {"espn": 0, "football-data.org": 1}
-    frame["source_order"] = frame["source"].map(source_order).fillna(99)
-    frame["prediction_key"] = frame.apply(
-        lambda row: national.make_prediction_key(
-            row["match_date"], row["competition"], row["home_team"], row["away_team"]
-        ),
-        axis=1,
-    )
-    frame = frame.sort_values(["source_order", "match_datetime_utc", "prediction_key"])
+    frame["source_order"] = frame["source"].astype(str).map(source_order).fillna(99)
+    
+    # Create prediction keys safely
+    try:
+        frame["prediction_key"] = frame.apply(
+            lambda row: national.make_prediction_key(
+                row.get("match_date", ""), 
+                row.get("competition", ""), 
+                row.get("home_team", ""), 
+                row.get("away_team", "")
+            ),
+            axis=1,
+        )
+    except Exception as e:
+        print(f"[ERROR] Failed to create prediction keys: {e}")
+        return pd.DataFrame()
+    
+    frame = frame.sort_values(["source_order", "match_datetime_utc", "prediction_key"], na_position="last")
     frame = frame.drop_duplicates(subset=["prediction_key"], keep="first")
-    frame = frame.drop(columns=["source_order"])
-    return frame.sort_values(["match_datetime_utc", "competition", "home_team"]).reset_index(drop=True)
+    frame = frame.drop(columns=["source_order"], errors="ignore")
+    
+    return frame.sort_values(["match_datetime_utc", "competition", "home_team"], na_position="last").reset_index(drop=True)
 
 
 def load_upcoming_fixtures(api_token, window_days, world_cup_only=False):
@@ -268,7 +339,11 @@ def predict_fixture(row, bundle):
 
     pred_home_goals = max(0.0, float(bundle["home_goal_reg"].predict(feature_frame)[0]))
     pred_away_goals = max(0.0, float(bundle["away_goal_reg"].predict(feature_frame)[0]))
-    predicted_result = max(probabilities, key=probabilities.get)
+    # Use probabilistic sampling instead of always taking the max
+    # This adds variation in group stage outcomes
+    results = list(probabilities.keys())
+    probs_list = [probabilities[r] for r in results]
+    predicted_result = random.choices(results, weights=probs_list, k=1)[0]
 
     parsed_dt = pd.to_datetime(row.get("match_datetime_utc"), utc=True, errors="coerce")
     match_date_text = (
@@ -333,6 +408,30 @@ def keep_only_current_fixtures(predictions_df, fixtures_df, bundle):
     return frame[frame["prediction_key"].astype(str).isin(fixture_keys)].copy()
 
 
+def merge_prediction_frames(existing_df, new_df):
+    if existing_df.empty and new_df.empty:
+        return pd.DataFrame(columns=RESULT_COLUMNS)
+    if existing_df.empty:
+        return new_df.copy()
+    if new_df.empty:
+        return existing_df.copy()
+    
+    # Ensure both DataFrames have the same columns before concat
+    for col in RESULT_COLUMNS:
+        if col not in existing_df.columns:
+            existing_df[col] = None
+        if col not in new_df.columns:
+            new_df[col] = None
+    
+    # Append new rows last so duplicate prediction keys keep the freshest prediction.
+    combined = pd.concat(
+        [existing_df[RESULT_COLUMNS], new_df[RESULT_COLUMNS]], 
+        ignore_index=True
+    )
+    combined = combined.drop_duplicates(subset=["prediction_key"], keep="last")
+    return combined.reset_index(drop=True)
+
+
 def main():
     args = parse_cli_args()
     bundle = national.load_model_bundle()
@@ -346,31 +445,49 @@ def main():
         return
 
     existing = load_prediction_store(PREDICTIONS_FILE)
-    existing = existing.set_index("prediction_key", drop=False) if not existing.empty else existing
     new_records = []
     skipped = 0
     for _, fixture in fixtures.iterrows():
-        prediction = predict_fixture(fixture, bundle)
-        if prediction is None:
+        try:
+            prediction = predict_fixture(fixture, bundle)
+            if prediction is None:
+                skipped += 1
+                continue
+            new_records.append(prediction)
+        except Exception as e:
             skipped += 1
+            print(f"[DEBUG] Prediction failed for {fixture.get('home_team')} vs {fixture.get('away_team')}: {e}")
             continue
-        new_records.append(prediction)
 
-    new_df = pd.DataFrame(new_records, columns=RESULT_COLUMNS).astype("object")
-    if new_df.empty and existing.empty:
-        print("No national-team predictions were generated.")
+    if not new_records:
+        if existing.empty:
+            print("No national-team predictions were generated.")
+        else:
+            print("No new predictions generated, keeping existing data.")
         return
 
-    if existing.empty:
-        combined = new_df.copy()
-    else:
-        combined = existing.copy().astype("object")
-        for _, row in new_df.iterrows():
-            combined.loc[row["prediction_key"]] = row
-        combined = combined.reset_index(drop=True)
+    # Create new predictions DataFrame with correct columns
+    new_df = pd.DataFrame(new_records)
+    for col in RESULT_COLUMNS:
+        if col not in new_df.columns:
+            new_df[col] = None
+    new_df = new_df[RESULT_COLUMNS].astype("object")
 
+    # Merge with existing predictions
+    combined = merge_prediction_frames(existing.astype("object"), new_df)
+
+    # Filter to keep only current fixtures
     combined = keep_only_current_fixtures(combined, fixtures, bundle)
-    combined = combined[RESULT_COLUMNS].sort_values(["match_date", "competition", "home_team", "away_team"])
+    combined = combined.drop_duplicates(subset=["prediction_key"], keep="last")
+    
+    # Ensure all columns exist and sort
+    for col in RESULT_COLUMNS:
+        if col not in combined.columns:
+            combined[col] = None
+    combined = combined[RESULT_COLUMNS].sort_values(
+        ["match_date", "competition", "home_team", "away_team"], 
+        na_position="last"
+    )
 
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
     combined.to_csv(PREDICTIONS_FILE, index=False)

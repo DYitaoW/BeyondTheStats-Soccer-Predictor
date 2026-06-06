@@ -1,5 +1,7 @@
+import argparse
 import os
 import json
+import multiprocessing as mp
 from collections import defaultdict
 from datetime import datetime
 import random
@@ -252,15 +254,33 @@ def run_monte_carlo(teams, base_table, future_predictions, runs):
 
 
 def predict_match(ctx, home_team, away_team, competition_hint):
-    prediction_season = pm.choose_season_for_teams(home_team, away_team, ctx["season_teams"], ctx["latest_season"])
+    return _predict_matches_batch(ctx, [(home_team, away_team)], competition_hint)[0]
+
+
+def _predict_matches_batch(ctx, fixture_pairs, competition_hint):
+    """Predict a batch of (home, away) fixtures sharing the same competition hint.
+
+    Returns a list of (pred_res, hg, ag, probs) tuples in input order.
+    """
+    if not fixture_pairs:
+        return []
+
+    n = len(fixture_pairs)
+    batch_input = pd.concat(
+        [pm.build_match_input(h, a) for h, a in fixture_pairs], ignore_index=True
+    )
+
+    prediction_season = pm.choose_season_for_teams(
+        fixture_pairs[0][0], fixture_pairs[0][1], ctx["season_teams"], ctx["latest_season"]
+    )
     competition_key = os.path.dirname(prediction_season).replace("\\", "/") or competition_hint
     start_year = pm.parse_start_year_from_key(prediction_season)
     season_coeff = pm.season_recency_coefficient(ctx["latest_start"], start_year)
-    home_comp = ctx["team_comp_map"].get(home_team, competition_key)
-    away_comp = ctx["team_comp_map"].get(away_team, competition_key)
+    home_comp = ctx["team_comp_map"].get(fixture_pairs[0][0], competition_key)
+    away_comp = ctx["team_comp_map"].get(fixture_pairs[0][1], competition_key)
 
     X = pm.build_features(
-        pm.build_match_input(home_team, away_team),
+        batch_input,
         prediction_season,
         competition_key,
         season_coeff,
@@ -275,37 +295,44 @@ def predict_match(ctx, home_team, away_team, competition_hint):
     X = pd.get_dummies(X, columns=["competition"], dtype=float)
     X = X.reindex(columns=ctx["train_columns"], fill_value=0.0)
 
-    probs = {"H": 0.0, "D": 0.0, "A": 0.0}
-    pvals = ctx["clf"].predict_proba(X)[0]
-    for idx, enc in enumerate(ctx["clf"].classes_):
-        lbl = ctx["result_le"].inverse_transform([enc])[0]
-        probs[lbl] = float(pvals[idx])
-    probs = pm.reduce_draw_probability(probs)
+    pvals = ctx["clf"].predict_proba(X)
+    hg_batch = ctx["home_goal_reg"].predict(X)
+    ag_batch = ctx["away_goal_reg"].predict(X)
 
-    labels = ["H", "D", "A"]
-    weights = [max(0.0, float(probs.get(label, 0.0))) for label in labels]
-    total = sum(weights)
-    if total <= 0:
-        pred_res = max(probs, key=probs.get)
-    else:
-        pred_res = RNG.choices(labels, weights=weights, k=1)[0]
-    phg = max(0.0, float(ctx["home_goal_reg"].predict(X)[0]))
-    pag = max(0.0, float(ctx["away_goal_reg"].predict(X)[0]))
-    hg = int(round(phg))
-    ag = int(round(pag))
+    classes = list(ctx["clf"].classes_)
+    class_labels = [ctx["result_le"].inverse_transform([enc])[0] for enc in classes]
 
-    # Keep scoreline direction consistent with predicted result label.
-    if pred_res == "H" and hg <= ag:
-        hg = ag + 1
-    elif pred_res == "A" and ag <= hg:
-        ag = hg + 1
-    elif pred_res == "D":
-        ag = hg
+    results = []
+    for i in range(n):
+        probs = {"H": 0.0, "D": 0.0, "A": 0.0}
+        for c_idx, lbl in enumerate(class_labels):
+            probs[lbl] = float(pvals[i, c_idx])
+        probs = pm.reduce_draw_probability(probs)
 
-    return pred_res, hg, ag, probs
+        labels = ["H", "D", "A"]
+        weights = [max(0.0, float(probs.get(label, 0.0))) for label in labels]
+        total = sum(weights)
+        if total <= 0:
+            pred_res = max(probs, key=probs.get)
+        else:
+            pred_res = RNG.choices(labels, weights=weights, k=1)[0]
+        hg = int(round(max(0.0, float(hg_batch[i]))))
+        ag = int(round(max(0.0, float(ag_batch[i]))))
+
+        if pred_res == "H" and hg <= ag:
+            hg = ag + 1
+        elif pred_res == "A" and ag <= hg:
+            ag = hg + 1
+        elif pred_res == "D":
+            ag = hg
+
+        results.append((pred_res, hg, ag, probs))
+    return results
 
 
-def project_competition(ctx, competition, raw_file):
+def project_competition(ctx, competition, raw_file, sim_runs=None):
+    if sim_runs is None:
+        sim_runs = SIMULATION_RUNS
     df = pd.read_csv(raw_file).copy()
     required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
     if not required.issubset(df.columns):
@@ -317,12 +344,51 @@ def project_competition(ctx, competition, raw_file):
 
     teams = sorted(set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip()))
     table = init_table(teams)
-    future_rows = []
-    future_predictions = []
+    future_pairs = []
+    future_dates = []
     seen_pairs = set()
 
-    def add_future_prediction(home, away, match_date=""):
-        pred_res, phg, pag, probs = predict_match(ctx, home, away, competition)
+    for _, row in df.iterrows():
+        raw_home = str(row["HomeTeam"]).strip()
+        raw_away = str(row["AwayTeam"]).strip()
+        home = pm.resolve_team_name(raw_home, ctx["available_teams"]) or raw_home
+        away = pm.resolve_team_name(raw_away, ctx["available_teams"]) or raw_away
+        seen_pairs.add((home, away))
+        ftr = str(row.get("FTR", "")).strip()
+        hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
+        ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
+        is_played = ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag)
+
+        if is_played:
+            apply_result(table, home, away, int(hg), int(ag), is_real=True)
+            continue
+
+        future_pairs.append((home, away))
+        future_dates.append(row["DateParsed"].date().isoformat() if pd.notna(row["DateParsed"]) else "")
+
+    # If the feed only has played matches, synthesize missing league fixtures so
+    # the projection represents a full double round-robin season.
+    for home in teams:
+        resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
+        for away in teams:
+            if home == away:
+                continue
+            resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
+            if (resolved_home, resolved_away) in seen_pairs:
+                continue
+            seen_pairs.add((resolved_home, resolved_away))
+            future_pairs.append((resolved_home, resolved_away))
+            future_dates.append("")
+
+    # Batch all future-fixture predictions into one vectorized call instead of N single-row
+    # calls — this avoids per-fixture pd.get_dummies/reindex/predict_proba overhead.
+    batched = _predict_matches_batch(ctx, future_pairs, competition) if future_pairs else []
+
+    future_predictions = []
+    future_rows = []
+    for i, (pred_res, phg, pag, probs) in enumerate(batched):
+        home, away = future_pairs[i]
+        match_date = future_dates[i]
         future_predictions.append(
             {
                 "home_team": home,
@@ -347,55 +413,21 @@ def project_competition(ctx, competition, raw_file):
             }
         )
 
-    for _, row in df.iterrows():
-        raw_home = str(row["HomeTeam"]).strip()
-        raw_away = str(row["AwayTeam"]).strip()
-        home = pm.resolve_team_name(raw_home, ctx["available_teams"]) or raw_home
-        away = pm.resolve_team_name(raw_away, ctx["available_teams"]) or raw_away
-        seen_pairs.add((home, away))
-        ftr = str(row.get("FTR", "")).strip()
-        hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
-        ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
-        is_played = ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag)
-
-        if is_played:
-            apply_result(table, home, away, int(hg), int(ag), is_real=True)
-            continue
-
-        add_future_prediction(
-            home,
-            away,
-            row["DateParsed"].date().isoformat() if pd.notna(row["DateParsed"]) else "",
-        )
-
-    # If the feed only has played matches, synthesize missing league fixtures so
-    # the projection represents a full double round-robin season.
-    for home in teams:
-        resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
-        for away in teams:
-            if home == away:
-                continue
-            resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
-            if (resolved_home, resolved_away) in seen_pairs:
-                continue
-            seen_pairs.add((resolved_home, resolved_away))
-            add_future_prediction(resolved_home, resolved_away, "")
-
-    stat_sums, position_counts = run_monte_carlo(teams, table, future_predictions, SIMULATION_RUNS)
+    stat_sums, position_counts = run_monte_carlo(teams, table, future_predictions, sim_runs)
     averaged = {}
     for team in teams:
         sums = stat_sums.get(team, {})
         averaged[team] = {
-            "P": int(round(sums.get("P", 0.0) / SIMULATION_RUNS)),
-            "W": int(round(sums.get("W", 0.0) / SIMULATION_RUNS)),
-            "D": int(round(sums.get("D", 0.0) / SIMULATION_RUNS)),
-            "L": int(round(sums.get("L", 0.0) / SIMULATION_RUNS)),
-            "GF": int(round(sums.get("GF", 0.0) / SIMULATION_RUNS)),
-            "GA": int(round(sums.get("GA", 0.0) / SIMULATION_RUNS)),
-            "GD": int(round(sums.get("GD", 0.0) / SIMULATION_RUNS)),
-            "Pts": int(round(sums.get("Pts", 0.0) / SIMULATION_RUNS)),
-            "PlayedReal": int(round(sums.get("PlayedReal", 0.0) / SIMULATION_RUNS)),
-            "PlayedPred": int(round(sums.get("PlayedPred", 0.0) / SIMULATION_RUNS)),
+            "P": int(round(sums.get("P", 0.0) / sim_runs)),
+            "W": int(round(sums.get("W", 0.0) / sim_runs)),
+            "D": int(round(sums.get("D", 0.0) / sim_runs)),
+            "L": int(round(sums.get("L", 0.0) / sim_runs)),
+            "GF": int(round(sums.get("GF", 0.0) / sim_runs)),
+            "GA": int(round(sums.get("GA", 0.0) / sim_runs)),
+            "GD": int(round(sums.get("GD", 0.0) / sim_runs)),
+            "Pts": int(round(sums.get("Pts", 0.0) / sim_runs)),
+            "PlayedReal": int(round(sums.get("PlayedReal", 0.0) / sim_runs)),
+            "PlayedPred": int(round(sums.get("PlayedPred", 0.0) / sim_runs)),
         }
 
     out_rows = []
@@ -406,11 +438,11 @@ def project_competition(ctx, competition, raw_file):
     for pos, (team, s) in enumerate(ranked, start=1):
         team_positions = position_counts.get(team, {})
         most_likely_pos, most_likely_count = max(team_positions.items(), key=lambda kv: kv[1], default=(pos, 0))
-        win_league_pct = (team_positions.get(1, 0) / SIMULATION_RUNS) * 100.0
-        top4_pct = (sum(v for k, v in team_positions.items() if k <= top_n) / SIMULATION_RUNS) * 100.0
-        bottom3_pct = (sum(v for k, v in team_positions.items() if k >= bottom_cutoff) / SIMULATION_RUNS) * 100.0
+        win_league_pct = (team_positions.get(1, 0) / sim_runs) * 100.0
+        top4_pct = (sum(v for k, v in team_positions.items() if k <= top_n) / sim_runs) * 100.0
+        bottom3_pct = (sum(v for k, v in team_positions.items() if k >= bottom_cutoff) / sim_runs) * 100.0
         position_odds = {
-            str(rank): round((team_positions.get(rank, 0) / SIMULATION_RUNS) * 100.0, 2)
+            str(rank): round((team_positions.get(rank, 0) / sim_runs) * 100.0, 2)
             for rank in range(1, n_teams + 1)
         }
         out_rows.append(
@@ -423,15 +455,38 @@ def project_competition(ctx, competition, raw_file):
                 "top4_pct": round(top4_pct, 2),
                 "bottom3_pct": round(bottom3_pct, 2),
                 "most_likely_position": int(most_likely_pos),
-                "most_likely_position_pct": round((most_likely_count / SIMULATION_RUNS) * 100.0, 2),
+                "most_likely_position_pct": round((most_likely_count / sim_runs) * 100.0, 2),
                 "position_odds_json": json.dumps(position_odds, separators=(",", ":"), sort_keys=True),
-                "sim_runs": int(SIMULATION_RUNS),
+                "sim_runs": int(sim_runs),
             }
         )
     return out_rows, future_rows
 
 
+def parse_cli_args():
+    parser = argparse.ArgumentParser(description="Project remaining fixtures onto a Monte-Carlo season.")
+    parser.add_argument(
+        "--sim-runs",
+        type=int,
+        default=SIMULATION_RUNS,
+        help=f"Number of Monte-Carlo simulations per competition (default: {SIMULATION_RUNS}).",
+    )
+    parser.add_argument(
+        "--competition-workers",
+        type=int,
+        default=0,
+        help=(
+            "Reserved for future per-competition parallelism. "
+            "Currently the inner sim loop is the bottleneck; batching predict_match "
+            "already covers the easier win."
+        ),
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_cli_args()
+    sim_runs = max(1, int(args.sim_runs))
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR)
     if not latest:
@@ -440,7 +495,7 @@ def main():
     all_tables = []
     all_future = []
     for competition, path in sorted(latest.items()):
-        table_rows, future_rows = project_competition(ctx, competition, path)
+        table_rows, future_rows = project_competition(ctx, competition, path, sim_runs)
         all_tables.extend(table_rows)
         all_future.extend(future_rows)
 

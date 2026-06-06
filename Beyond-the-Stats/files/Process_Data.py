@@ -205,7 +205,21 @@ def process_one_file(rel_path):
 
     output_path = os.path.join(PROCESSED_FOLDER, rel_path)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    df.to_csv(output_path, index=False)
+    # Only rewrite the processed file if its content actually changed.
+    # (This preserves the mtime — and downstream the model-cache fingerprint —
+    # when re-processing already-current data.)
+    new_csv = df.to_csv(index=False)
+    write_needed = True
+    try:
+        with open(output_path, "r", encoding="utf-8", newline="") as existing:
+            existing_csv = existing.read()
+        if existing_csv == new_csv:
+            write_needed = False
+    except OSError:
+        pass
+    if write_needed:
+        with open(output_path, "w", encoding="utf-8", newline="") as out:
+            out.write(new_csv)
     return True, rel_path, "processed"
 
 def main():

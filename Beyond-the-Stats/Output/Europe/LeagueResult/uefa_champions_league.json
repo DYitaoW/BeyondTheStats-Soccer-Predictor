@@ -1,0 +1,56 @@
+{
+  "competition": "UEFA/Champions League",
+  "region": "europe",
+  "generated_at_utc": "2026-06-06T00:23:38+00:00",
+  "team_count": 2,
+  "teams": [
+    {
+      "position": 1,
+      "team": "Arsenal",
+      "P": 1,
+      "W": 0,
+      "D": 1,
+      "L": 0,
+      "GF": 1,
+      "GA": 1,
+      "GD": 0,
+      "Pts": 1,
+      "PlayedReal": 0,
+      "PlayedPred": 1,
+      "win_league_pct": 100.0,
+      "top4_pct": 100.0,
+      "bottom3_pct": 100.0,
+      "most_likely_position": 1,
+      "most_likely_position_pct": 100.0,
+      "sim_runs": 1,
+      "position_odds": {
+        "1": 100.0,
+        "2": 0.0
+      }
+    },
+    {
+      "position": 2,
+      "team": "Paris SG",
+      "P": 1,
+      "W": 0,
+      "D": 1,
+      "L": 0,
+      "GF": 1,
+      "GA": 1,
+      "GD": 0,
+      "Pts": 1,
+      "PlayedReal": 0,
+      "PlayedPred": 1,
+      "win_league_pct": 0.0,
+      "top4_pct": 100.0,
+      "bottom3_pct": 100.0,
+      "most_likely_position": 2,
+      "most_likely_position_pct": 100.0,
+      "sim_runs": 1,
+      "position_odds": {
+        "1": 0.0,
+        "2": 100.0
+      }
+    }
+  ]
+}

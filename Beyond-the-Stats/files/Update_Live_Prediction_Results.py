@@ -4,6 +4,7 @@ import json
 import os
 import urllib.request
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -34,6 +35,7 @@ ESPN_COMPETITION_KEYS = {
     "Portugal/Liga Portugal": "por.1",
     "United States/MLS": "usa.1",
 }
+DEFAULT_ESPN_FETCH_WORKERS = 8
 MLS_COMPETITION = "United States/MLS"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
@@ -80,6 +82,12 @@ def parse_cli_args():
         "--cleanup-mls",
         action="store_true",
         help="One-time cleanup: clear MLS settled rows that do not match completed ESPN results.",
+    )
+    parser.add_argument(
+        "--espn-fetch-workers",
+        type=int,
+        default=DEFAULT_ESPN_FETCH_WORKERS,
+        help=f"Concurrent ESPN scoreboard fetches (default: {DEFAULT_ESPN_FETCH_WORKERS}).",
     )
     return parser.parse_args()
 
@@ -463,13 +471,18 @@ def resolve_espn_team_name(raw_name, competition, mapping_by_competition, predic
     return raw, False
 
 
-def build_results_index_from_espn(predictions_df, mapping_by_competition):
+def build_results_index_from_espn(predictions_df, mapping_by_competition, fetch_workers=8):
     if predictions_df is None or predictions_df.empty:
         return {}, {}, {}, {}
     results = {}
     mapping_updates = {}
     unresolved = {}
     seen_names = {}
+
+    # Pre-compute (competition, league_key, query_days) plans for the subset of competitions
+    # that have an ESPN mapping. Scoreboard fetches are independent across (competition, day)
+    # so we can fire them concurrently with a thread pool.
+    plans = []
     for competition in sorted(set(predictions_df["competition"].astype(str).str.strip())):
         if not competition:
             continue
@@ -477,8 +490,6 @@ def build_results_index_from_espn(predictions_df, mapping_by_competition):
         if not league_key:
             print(f"Skipping {competition}: no ESPN league mapping configured.")
             continue
-        unresolved.setdefault(competition, set())
-        seen_names.setdefault(competition, set())
         subset = predictions_df[predictions_df["competition"].astype(str).str.strip() == competition]
         if subset.empty:
             continue
@@ -490,28 +501,71 @@ def build_results_index_from_espn(predictions_df, mapping_by_competition):
         base_days = sorted(set(pd.Timestamp(dt).normalize() for dt in date_series))
         query_days = set(base_days)
         if competition == MLS_COMPETITION:
-            # ESPN event timestamps can roll a fixture across UTC date boundaries.
             for day in base_days:
                 query_days.add(day - pd.Timedelta(days=1))
                 query_days.add(day + pd.Timedelta(days=1))
         date_codes = sorted(day.strftime("%Y%m%d") for day in query_days)
-        for yyyymmdd in date_codes:
-            url = f"{ESPN_BASE}/{league_key}/scoreboard?dates={yyyymmdd}"
-            try:
-                data = fetch_json(url, timeout=45)
-            except Exception as error:
-                print(f"Skipping {competition} date {yyyymmdd}: {error}")
+        plans.append(
+            {
+                "competition": competition,
+                "league_key": league_key,
+                "date_codes": date_codes,
+                "predicted_team_names": predicted_team_names,
+            }
+        )
+
+    if not plans:
+        return {}, {}, {}, {}
+
+    def _fetch_one(competition, league_key, yyyymmdd):
+        url = f"{ESPN_BASE}/{league_key}/scoreboard?dates={yyyymmdd}"
+        try:
+            data = fetch_json(url, timeout=45)
+            return (competition, yyyymmdd, data, None)
+        except Exception as error:
+            return (competition, yyyymmdd, None, error)
+
+    tasks = []
+    for plan in plans:
+        for yyyymmdd in plan["date_codes"]:
+            tasks.append((plan["competition"], plan["league_key"], yyyymmdd))
+
+    fetched = {}
+    if fetch_workers <= 1 or len(tasks) <= 1:
+        for comp, yyyymmdd, data, err in (_fetch_one(c, k, d) for c, k, d in tasks):
+            if err is not None:
+                print(f"Skipping {comp} date {yyyymmdd}: {err}")
                 continue
+            fetched.setdefault(comp, []).append((yyyymmdd, data))
+    else:
+        max_workers = max(1, min(int(fetch_workers), len(tasks)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_meta = {
+                executor.submit(_fetch_one, comp, league_key, yyyymmdd): (comp, yyyymmdd)
+                for comp, league_key, yyyymmdd in tasks
+            }
+            for fut in as_completed(future_to_meta):
+                comp, yyyymmdd = future_to_meta[fut]
+                _, _, data, err = fut.result()
+                if err is not None:
+                    print(f"Skipping {comp} date {yyyymmdd}: {err}")
+                    continue
+                fetched.setdefault(comp, []).append((yyyymmdd, data))
+
+    for plan in plans:
+        competition = plan["competition"]
+        predicted_team_names = plan["predicted_team_names"]
+        unresolved.setdefault(competition, set())
+        seen_names.setdefault(competition, set())
+        for _, data in sorted(fetched.get(competition, []), key=lambda item: item[0]):
             events = data.get("events", [])
             if not isinstance(events, list):
                 continue
-
             for event in events:
                 dt = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
                 if pd.isna(dt):
                     continue
                 date_key = event_date_key_for_competition(dt, competition)
-
                 comps = event.get("competitions", [])
                 if not comps:
                     continue
@@ -519,7 +573,6 @@ def build_results_index_from_espn(predictions_df, mapping_by_competition):
                 status_type = ((comp0.get("status") or {}).get("type") or {})
                 if not bool(status_type.get("completed")):
                     continue
-
                 competitors = comp0.get("competitors", [])
                 home_name = ""
                 away_name = ""
@@ -553,10 +606,8 @@ def build_results_index_from_espn(predictions_df, mapping_by_competition):
                         if not away_ok:
                             unresolved[competition].add(team_name)
                         away_score = int(score_val) if pd.notna(score_val) else None
-
                 if not home_name or not away_name or home_score is None or away_score is None:
                     continue
-
                 key = (date_key, competition, normalize_team_key(home_name), normalize_team_key(away_name))
                 results[key] = {
                     "actual_home_goals": home_score,
@@ -564,6 +615,7 @@ def build_results_index_from_espn(predictions_df, mapping_by_competition):
                     "actual_result": infer_result_code(home_score, away_score),
                     "completed": True,
                 }
+
     unresolved = {k: sorted(v) for k, v in unresolved.items() if v}
     seen_names = {k: sorted(v) for k, v in seen_names.items()}
     return results, mapping_updates, unresolved, seen_names
@@ -606,8 +658,12 @@ def main():
 
     needs_resettle = (not args.cleanup_all) or args.resettle_after_cleanup
     if needs_resettle:
-        global_results, global_mapping_updates, global_unresolved, global_seen_names = build_results_index_from_espn(global_df, shared_mapping)
-        mls_results, mls_mapping_updates, mls_unresolved, mls_seen_names = build_results_index_from_espn(mls_df, shared_mapping)
+        global_results, global_mapping_updates, global_unresolved, global_seen_names = build_results_index_from_espn(
+            global_df, shared_mapping, fetch_workers=args.espn_fetch_workers
+        )
+        mls_results, mls_mapping_updates, mls_unresolved, mls_seen_names = build_results_index_from_espn(
+            mls_df, shared_mapping, fetch_workers=args.espn_fetch_workers
+        )
     else:
         global_results, global_mapping_updates, global_unresolved, global_seen_names = {}, {}, {}, {}
         mls_results, mls_mapping_updates, mls_unresolved, mls_seen_names = {}, {}, {}, {}

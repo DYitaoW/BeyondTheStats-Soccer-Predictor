@@ -918,13 +918,23 @@ def _load_upcoming_rows(csv_path, mode=None):
             return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
 
     # Drop past fixtures so stale upcoming rows never show on the website.
-    parsed_dates = pd.to_datetime(frame["match_date"], errors="coerce").dt.normalize()
-    today = pd.Timestamp(datetime.now().date())
-    frame = frame[parsed_dates.notna()].copy()
-    frame["match_date"] = parsed_dates[parsed_dates.notna()].dt.strftime("%Y-%m-%d")
-    frame = frame[parsed_dates[parsed_dates.notna()] >= today].copy()
+    # CRITICAL: Must reset index after each filter to avoid index alignment issues
+    frame = frame.copy()
+    frame["parsed_date"] = pd.to_datetime(frame["match_date"], errors="coerce").dt.normalize()
+    frame = frame[frame["parsed_date"].notna()].reset_index(drop=True)
+    
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
+    
+    today = pd.Timestamp(datetime.now().date())
+    frame = frame[frame["parsed_date"] >= today].reset_index(drop=True)
+    
+    if frame.empty:
+        return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
+    
+    # Now safely convert dates for display
+    frame["match_date"] = frame["parsed_date"].dt.strftime("%Y-%m-%d")
+    frame = frame.drop(columns=["parsed_date"])
 
     frame = frame.sort_values(["match_date", "competition", "home_team", "away_team"])
     target_mode = mode or ("mls" if os.path.normpath(csv_path) == os.path.normpath(MLS_UPCOMING_FILE) else "global")
@@ -1430,7 +1440,31 @@ def update_accuracy_history_files():
 
 @app.get("/")
 def index():
-    """Render the main website page with available team lists."""
+    """Render the home page with shared team context."""
+    return _render_site_page("home.html", active_page="home")
+
+
+def _render_site_page(template_name, active_page):
+    """Render a website tab page with shared team lists for forms and datalists."""
+    # Shared route map used by template JS navigation helpers.
+    page_routes = {
+        "home": "/",
+        "predictor": "/custom-predictor",
+        "global": "/upcoming-matches",
+        "cups": "/cups",
+        "h2h": "/head-to-head",
+        "market": "/market-odds",
+        "league-table": "/league-tables",
+        "world-cup": "/world-cup",
+        "position-odds": "/position-odds",
+        "players": "/players",
+        "tactics": "/tactics",
+        "about": "/about",
+    }
+    # Template defaults prevent Undefined errors for pages that serialize these values.
+    upcoming_leagues = {"global": [], "mls": [], "extra": [], "cups": []}
+    table_leagues = {"global": [], "mls": [], "extra": [], "cups": []}
+
     if STATIC_PREDICTIONS:
         _, global_teams = _get_static_predictions("global")
         _, mls_teams = _get_static_predictions("mls")
@@ -1455,11 +1489,70 @@ def index():
         except Exception:
             extra_display_teams = sorted({_team_name_for_display(team) for team in _load_teams_from_team_data(pm_extra)})
     return render_template(
-        "index.html",
+        template_name,
+        # Active page keeps nav highlighting/panel state aligned per template.
+        active_page=active_page,
+        page_routes=page_routes,
+        upcoming_leagues=upcoming_leagues,
+        table_leagues=table_leagues,
         teams=global_display_teams,
         mls_teams=mls_display_teams,
         extra_teams=extra_display_teams,
     )
+
+
+@app.get("/custom-predictor")
+def custom_predictor():
+    """Render the custom predictor tab page."""
+    return _render_site_page("predictor.html", active_page="predictor")
+
+
+@app.get("/upcoming-matches")
+def upcoming_matches():
+    """Render the upcoming matches tab page."""
+    return _render_site_page("upcoming_matches.html", active_page="global")
+
+
+@app.get("/cups")
+def cups_page():
+    """Render the cups tab page."""
+    return _render_site_page("cups.html", active_page="cups")
+
+
+@app.get("/head-to-head")
+def head_to_head():
+    """Render the head-to-head tab page."""
+    return _render_site_page("head_to_head.html", active_page="h2h")
+
+
+@app.get("/market-odds")
+def market_odds():
+    """Render the market odds tab page."""
+    return _render_site_page("market_odds.html", active_page="market")
+
+
+@app.get("/league-tables")
+def league_tables():
+    """Render the projected league tables tab page."""
+    return _render_site_page("league_tables.html", active_page="league-table")
+
+
+@app.get("/world-cup")
+def world_cup():
+    """Render the World Cup tab page."""
+    return _render_site_page("world_cup.html", active_page="world-cup")
+
+
+@app.get("/position-odds")
+def position_odds():
+    """Render the position odds tab page."""
+    return _render_site_page("position_odds.html", active_page="position-odds")
+
+
+@app.get("/about")
+def about():
+    """Render the about tab page."""
+    return _render_site_page("about.html", active_page="about")
 
 
 @app.get("/api/teams")
@@ -1485,6 +1578,20 @@ def api_teams():
         except Exception:
             display_teams = []
     return jsonify({"teams": display_teams})
+
+
+@app.get("/api/world-cup")
+def api_world_cup():
+    """Return the World Cup projection data."""
+    world_cup_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+    if not os.path.exists(world_cup_file):
+        return jsonify({"ok": False, "error": "World Cup projection not available"}), 404
+    try:
+        with open(world_cup_file, "r") as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.post("/api/refresh")
@@ -1607,6 +1714,117 @@ def api_upcoming_cups():
     """Return upcoming cup fixtures and persistent accuracy stats."""
     rows, stats, league_stats = _load_upcoming_rows(CUP_UPCOMING_FILE, "cups")
     return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
+
+
+@app.get("/api/upcoming/world-cup")
+def api_upcoming_world_cup():
+    """Return upcoming World Cup GROUP-STAGE fixtures (not knockouts).
+
+    Knockout fixtures are excluded until the actual knockout teams are decided
+    (i.e. once the group stage is complete and the Round of 32 bracket is set).
+    """
+    world_cup_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+    if not os.path.exists(world_cup_file):
+        return jsonify({"ok": True, "rows": [], "stats": {}, "league_stats": []})
+    try:
+        with open(world_cup_file, "r", encoding="utf-8") as fh:
+            wc_data = json.load(fh)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Failed to load World Cup projection: {exc}"}), 500
+
+    # Only include group-stage fixtures for the upcoming list. Knockout matchups
+    # depend on group-stage outcomes that are not yet determined, so we leave
+    # the round-of-32 / round-of-16 / QF / SF / Final off the upcoming page
+    # until real match data confirms the teams.
+    raw_fixtures = wc_data.get("group_fixtures", [])
+    today = pd.Timestamp(datetime.now().date())
+    rows = []
+    for fixture in raw_fixtures:
+        match_date_str = str(fixture.get("match_date", "")).strip()
+        if not match_date_str:
+            continue
+        try:
+            match_date = pd.to_datetime(match_date_str, errors="coerce")
+        except Exception:
+            match_date = None
+        if match_date is None or pd.isna(match_date):
+            continue
+        if match_date < today:
+            continue
+
+        home = _team_name_for_display(str(fixture.get("display_home_team") or fixture.get("home_team") or "").strip())
+        away = _team_name_for_display(str(fixture.get("display_away_team") or fixture.get("away_team") or "").strip())
+        if not home or not away:
+            continue
+
+        try:
+            ph_raw = float(fixture.get("prob_home", 0.0)) * 100
+            pdv_raw = float(fixture.get("prob_draw", 0.0)) * 100
+            pa_raw = float(fixture.get("prob_away", 0.0)) * 100
+        except Exception:
+            ph_raw = pdv_raw = pa_raw = 0.0
+
+        utc_dt_raw = str(fixture.get("match_datetime_utc", "")).strip()
+        date_val = pd.to_datetime(utc_dt_raw, utc=True, errors="coerce") if utc_dt_raw else pd.NaT
+        if pd.isna(date_val):
+            weekday = ""
+            date_label = match_date_str
+            time_label = ""
+        else:
+            weekday = date_val.strftime("%A")
+            date_label = date_val.strftime("%B %d, %Y")
+            try:
+                time_label = date_val.strftime("%I:%M %p UTC").lstrip("0")
+            except Exception:
+                time_label = ""
+
+        # Score prediction: prefer the deterministic `pred_home_goals`/`pred_away_goals`
+        # already on the projection. If those are missing, fall back to a 0-0 placeholder.
+        ph_goals = fixture.get("pred_home_goals")
+        pa_goals = fixture.get("pred_away_goals")
+        try:
+            ph_goals_int = int(ph_goals) if ph_goals is not None and not pd.isna(ph_goals) else None
+        except Exception:
+            ph_goals_int = None
+        try:
+            pa_goals_int = int(pa_goals) if pa_goals is not None and not pd.isna(pa_goals) else None
+        except Exception:
+            pa_goals_int = None
+
+        rows.append({
+            "match_date": match_date_str,
+            "match_datetime_et": "",
+            "weekday": weekday,
+            "date_label": date_label,
+            "time_label": time_label,
+            "competition": str(fixture.get("competition", "FIFA/World Cup")),
+            "stage": str(fixture.get("stage", "group-stage")),
+            "group": str(fixture.get("group", "")),
+            "venue": str(fixture.get("venue", "")),
+            "home_team": home,
+            "away_team": away,
+            "winner_label": _winner_label(str(fixture.get("predicted_result", "")), home, away),
+            "prob_home": round(ph_raw, 3),
+            "prob_draw": round(pdv_raw, 3),
+            "prob_away": round(pa_raw, 3),
+            "prob_home_text": _format_percent_value(ph_raw),
+            "prob_draw_text": _format_percent_value(pdv_raw),
+            "prob_away_text": _format_percent_value(pa_raw),
+            "pred_home_goals": ph_goals_int,
+            "pred_away_goals": pa_goals_int,
+            "reasoning": "",
+            "actual_result": "",
+            "is_correct": "",
+        })
+
+    rows.sort(key=lambda r: (r["match_date"], r["competition"], r["home_team"]))
+    empty_frame = pd.DataFrame(rows)
+    return jsonify({
+        "ok": True,
+        "rows": rows,
+        "stats": _compute_accuracy_stats(empty_frame),
+        "league_stats": _compute_league_accuracy_stats(empty_frame),
+    })
 
 
 @app.get("/api/league-tables")

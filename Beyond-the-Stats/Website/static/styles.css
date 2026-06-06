@@ -117,6 +117,7 @@ body {
   background: transparent;
   color: inherit;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .brand-mark {
@@ -258,6 +259,7 @@ h1 {
   border-radius: 10px;
   background: var(--btn-secondary-bg);
   color: var(--btn-secondary-text);
+  text-decoration: none;
   padding: 8px 12px;
   font-size: 0.9rem;
 }
@@ -784,6 +786,187 @@ body:not(.dark-mode) .confidence-pill {
   margin-bottom: 9px;
 }
 
+/* World Cup summary cards keep key projection facts visible above the long tables. */
+.world-cup-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.world-cup-summary-item,
+.world-cup-odds-card,
+.world-cup-table-card,
+.world-cup-match-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #111922;
+  padding: 12px;
+}
+
+.summary-label {
+  color: var(--muted);
+  display: block;
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+}
+
+/* World Cup sections separate standings, fixtures, and knockout rounds without nested cards. */
+.world-cup-section {
+  border-top: 1px solid var(--border);
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
+.world-cup-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.world-cup-section h4,
+.world-cup-round h5,
+.world-cup-table-card h5 {
+  margin: 0 0 10px;
+}
+
+.world-cup-rules {
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* Position-odds cell: small bar with a percentage label, used in the toggle view. */
+.position-odds-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.position-odds-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, rgba(85, 211, 122, 0.55), rgba(85, 211, 122, 0.85));
+  z-index: 0;
+}
+
+.position-odds-label {
+  position: relative;
+  z-index: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.world-cup-odds-grid,
+.world-cup-group-grid,
+.world-cup-fixture-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.world-cup-odds-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.world-cup-group-grid {
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+}
+
+.world-cup-fixture-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.world-cup-odds-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* World Cup tables use compact cells so all football stats remain scannable. */
+.world-cup-table th,
+.world-cup-table td {
+  padding: 7px 6px;
+  text-align: center;
+}
+
+.world-cup-table th:first-child,
+.world-cup-table td:first-child {
+  text-align: left;
+}
+
+.qualified-row td:first-child,
+.winner-team {
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* World Cup match cards show scorelines and probability splits in a stable layout. */
+.match-card-top,
+.match-card-score,
+.match-card-meta {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.match-card-top {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+.match-card-score {
+  align-items: center;
+  font-size: 0.95rem;
+}
+
+.match-card-score strong {
+  color: var(--primary);
+  font-size: 1.15rem;
+  white-space: nowrap;
+}
+
+.match-card-meta {
+  color: var(--muted);
+  font-size: 0.84rem;
+  margin-top: 8px;
+}
+
+.world-cup-probabilities {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #233141;
+  margin-top: 10px;
+}
+
+.world-cup-probabilities span:nth-child(1) {
+  background: #55d37a;
+}
+
+.world-cup-probabilities span:nth-child(2) {
+  background: #93a4b3;
+}
+
+.world-cup-probabilities span:nth-child(3) {
+  background: #7297ff;
+}
+
 .pred-options {
   display: flex;
   flex-wrap: wrap;
@@ -846,6 +1029,38 @@ body:not(.dark-mode) .confidence-pill {
   .top-picks-grid {
     grid-template-columns: 1fr;
   }
+
+
+.error-message {
+  color: #ff6b6b;
+  background-color: rgba(255, 107, 107, 0.1);
+  border-left: 4px solid #ff6b6b;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: 0.95rem;
+}
+
+.info-message {
+  color: #4ecdc4;
+  background-color: rgba(78, 205, 196, 0.1);
+  border-left: 4px solid #4ecdc4;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: 0.95rem;
+}
+
+.loading-message {
+  color: var(--muted);
+  background-color: rgba(155, 155, 155, 0.1);
+  border-left: 4px solid var(--muted);
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: 0.95rem;
+  font-style: italic;
+}
 
   .kick-card-grid {
     grid-template-columns: 1fr;
