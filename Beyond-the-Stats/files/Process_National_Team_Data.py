@@ -1952,16 +1952,24 @@ def write_api_report(target_teams, ranking_source, value_source, recent_match_co
 
 
 def run_pipeline(args):
+    import time
     os.makedirs(NATIONAL_DATA_DIR, exist_ok=True)
+    pipeline_t0 = time.monotonic()
+    step_t0 = time.monotonic()
     target_teams = fetch_world_cup_team_names() if args.world_cup_only else fetch_world_cup_team_names()
     if not target_teams:
         target_teams = sorted(DEFAULT_FIFA_RANKINGS.keys())
+    print(f"[TIMING] fetch_world_cup_team_names: {time.monotonic() - step_t0:.1f}s")
 
+    step_t0 = time.monotonic()
     rankings = load_fifa_rankings(
         args.rankings_file,
         footballdata_io_token=getattr(args, "footballdata_io_token", ""),
         sportradar_api_key=getattr(args, "sportradar_api_key", ""),
     )
+    print(f"[TIMING] load_fifa_rankings: {time.monotonic() - step_t0:.1f}s")
+
+    step_t0 = time.monotonic()
     refresh_squad = bool(getattr(args, "refresh_squad_values", False)) or not os.path.exists(args.squad_values_file)
     squad_cache_days = getattr(args, "squad_cache_days", SQUAD_VALUES_MAX_AGE_DAYS)
     if squad_cache_days is None:
@@ -1973,13 +1981,17 @@ def run_pipeline(args):
         max_workers=TRANSFERMARKT_FETCH_WORKERS,
         max_age_days=squad_cache_days,
     )
+    print(f"[TIMING] load_squad_values: {time.monotonic() - step_t0:.1f}s")
 
+    step_t0 = time.monotonic()
     if args.skip_fetch:
         recent_rows, by_team = load_existing_recent_matches()
     else:
         recent_rows, by_team = fetch_recent_espn_matches(target_teams, args.lookback_days)
         pd.DataFrame(recent_rows).to_csv(RAW_MATCHES_FILE, index=False)
+    print(f"[TIMING] fetch_recent_espn_matches: {time.monotonic() - step_t0:.1f}s ({len(recent_rows)} matches)")
 
+    step_t0 = time.monotonic()
     team_context = build_team_context(target_teams, by_team, rankings, squad_values)
     processed_rows = []
     for team, context in team_context.items():
@@ -1992,9 +2004,16 @@ def run_pipeline(args):
         }
         processed_rows.append(row)
     pd.DataFrame(processed_rows).to_csv(PROCESSED_MATCHES_FILE, index=False)
+    print(f"[TIMING] build_team_context: {time.monotonic() - step_t0:.1f}s")
 
+    step_t0 = time.monotonic()
     bundle = build_context_bundle(team_context, recent_rows, target_teams)
+    print(f"[TIMING] build_context_bundle (incl model train): {time.monotonic() - step_t0:.1f}s")
+
+    step_t0 = time.monotonic()
     joblib.dump(bundle, MODEL_CACHE)
+    print(f"[TIMING] joblib.dump: {time.monotonic() - step_t0:.1f}s")
+    print(f"[TIMING] run_pipeline total: {time.monotonic() - pipeline_t0:.1f}s")
     ranking_source = "api_or_file" if os.path.exists(args.rankings_file) or getattr(args, "footballdata_io_token", "") or getattr(args, "sportradar_api_key", "") else "seed_snapshot"
     if refresh_squad and os.path.exists(args.squad_values_file):
         value_source = "transfermarkt_live"

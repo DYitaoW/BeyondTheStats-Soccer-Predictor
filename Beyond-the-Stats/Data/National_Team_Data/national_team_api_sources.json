@@ -1,0 +1,22 @@
+{
+  "created_at_utc": "2026-06-06T00:23:09+00:00",
+  "summary": [
+    "National predictor trains a random-forest-cpu sklearn model on 932 completed last-15 matches per team across competitions (World Cup, qualifiers, continental tournaments, Nations League, friendlies).",
+    "When fewer than the minimum training rows are available, the model falls back to a current-context heuristic using FIFA rank, FIFA points, and squad market value.",
+    "Current FIFA rankings are loaded from a provided file or optional paid API credentials; seed rankings are used when no refresh source is configured.",
+    "Latest squad market values are scraped from Transfermarkt (schnellsuche + startseite) and stored in national_team_squad_values.json; cached HTML responses are reused for 24 hours between runs, and the aggregated squad file is auto-refreshed when older than the squad-cache-days window (default 30 days)."
+  ],
+  "target_team_count": 48,
+  "recent_match_count": 932,
+  "model_type": "sklearn",
+  "model_backend": "random-forest-cpu",
+  "training_rows": 932,
+  "min_training_rows": 24,
+  "ranking_source": "api_or_file",
+  "squad_value_source": "file",
+  "outputs": {
+    "raw_recent_matches": "C:\\CS-Projects\\BeyondTheStats\\Soccer-Result-Predictor\\Beyond-the-Stats\\Data\\National_Team_Data\\national_team_recent_matches_raw.csv",
+    "processed_context": "C:\\CS-Projects\\BeyondTheStats\\Soccer-Result-Predictor\\Beyond-the-Stats\\Data\\National_Team_Data\\national_team_recent_context.csv",
+    "model_cache": "C:\\CS-Projects\\BeyondTheStats\\Soccer-Result-Predictor\\Beyond-the-Stats\\Data\\National_Team_Data\\national_team_model_cache.pkl"
+  }
+}

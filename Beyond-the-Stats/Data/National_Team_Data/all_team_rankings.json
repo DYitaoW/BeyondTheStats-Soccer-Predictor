@@ -1,0 +1,546 @@
+{
+  "France": { "rank": 1, "points": 1877.32 },
+  "Spain": { "rank": 2, "points": 1876.40 },
+  "Argentina": { "rank": 3, "points": 1874.81 },
+  "England": { "rank": 4, "points": 1825.97 },
+  "Portugal": { "rank": 5, "points": 1763.83 },
+  "Brazil": { "rank": 6, "points": 1762.66 },
+  "Netherlands": { "rank": 7, "points": 1757.87 },
+  "Morocco": { "rank": 8, "points": 1756.94 },
+  "Belgium": { "rank": 9, "points": 1739.55 },
+  "Germany": { "rank": 10, "points": 1731.30 },
+  "Croatia": { "rank": 11, "points": 1712.24 },
+  "Italy": { "rank": 12, "points": 1700.37 },
+  "Colombia": { "rank": 13, "points": 1695.99 },
+  "Senegal": { "rank": 14, "points": 1686.41 },
+  "Mexico": { "rank": 15, "points": 1684.13 },
+  "USA": { "rank": 16, "points": 1675.70 },
+  "Uruguay": { "rank": 17, "points": 1673.07 },
+  "Japan": { "rank": 18, "points": 1661.58 },
+  "Switzerland": { "rank": 19, "points": 1650.75 },
+  "Denmark": { "rank": 20, "points": 1620.81 },
+  "IR Iran": { "rank": 21, "points": 1616.04 },
+  "Türkiye": { "rank": 22, "points": 1601.99 },
+  "Austria": { "rank": 23, "points": 1597.40 },
+  "Ecuador": { "rank": 24, "points": 1596.48 },
+  "Korea Republic": { "rank": 25, "points": 1589.65 },
+  "Nigeria": { "rank": 26, "points": 1587.28 },
+  "Australia": { "rank": 27, "points": 1578.66 },
+  "Egypt": { "rank": 28, "points": 1565.56 },
+  "Algeria": { "rank": 29, "points": 1564.26 },
+  "Canada": { "rank": 30, "points": 1560.62 },
+  "Norway": { "rank": 31, "points": 1555.60 },
+  "Ukraine": { "rank": 32, "points": 1549.29 },
+  "Panama": { "rank": 33, "points": 1539.14 },
+  "Côte d'Ivoire": { "rank": 34, "points": 1532.98 },
+  "Poland": { "rank": 35, "points": 1525.59 },
+  "Russia": { "rank": 36, "points": 1523.28 },
+  "Wales": { "rank": 37, "points": 1522.64 },
+  "Sweden": { "rank": 38, "points": 1510.11 },
+  "Serbia": { "rank": 39, "points": 1505.48 },
+  "Paraguay": { "rank": 40, "points": 1503.50 },
+  "Czechia": { "rank": 41, "points": 1503.04 },
+  "Hungary": { "rank": 42, "points": 1500.58 },
+  "Scotland": { "rank": 43, "points": 1499.92 },
+  "Cameroon": { "rank": 44, "points": 1481.24 },
+  "Tunisia": { "rank": 45, "points": 1479.10 },
+  "Congo DR": { "rank": 46, "points": 1478.35 },
+  "Greece": { "rank": 47, "points": 1475.82 },
+  "Slovakia": { "rank": 48, "points": 1475.28 },
+  "Venezuela": { "rank": 49, "points": 1468.05 },
+  "Uzbekistan": { "rank": 50, "points": 1461.21 },
+  "Mali": { "rank": 51, "points": 1459.13 },
+  "Costa Rica": { "rank": 52, "points": 1457.00 },
+  "Peru": { "rank": 53, "points": 1455.87 },
+  "Chile": { "rank": 54, "points": 1455.28 },
+  "Qatar": { "rank": 55, "points": 1452.37 },
+  "Romania": { "rank": 56, "points": 1450.20 },
+  "Iraq": { "rank": 57, "points": 1447.77 },
+  "Slovenia": { "rank": 58, "points": 1446.44 },
+  "Republic of Ireland": { "rank": 59, "points": 1439.96 },
+  "South Africa": { "rank": 60, "points": 1428.38 },
+  "Saudi Arabia": { "rank": 61, "points": 1419.73 },
+  "Burkina Faso": { "rank": 62, "points": 1412.49 },
+  "Jordan": { "rank": 63, "points": 1390.10 },
+  "Albania": { "rank": 64, "points": 1388.06 },
+  "Bosnia and Herzegovina": { "rank": 65, "points": 1385.77 },
+  "Honduras": { "rank": 66, "points": 1380.27 },
+  "United Arab Emirates": { "rank": 67, "points": 1370.47 },
+  "Cabo Verde": { "rank": 68, "points": 1369.29 },
+  "North Macedonia": { "rank": 69, "points": 1369.16 },
+  "Northern Ireland": { "rank": 70, "points": 1362.16 },
+  "Jamaica": { "rank": 71, "points": 1357.84 },
+  "Georgia": { "rank": 72, "points": 1351.14 },
+  "Ghana": { "rank": 73, "points": 1346.88 },
+  "Finland": { "rank": 74, "points": 1345.48 },
+  "Iceland": { "rank": 75, "points": 1343.92 },
+  "Bolivia": { "rank": 76, "points": 1329.42 },
+  "Israel": { "rank": 77, "points": 1328.33 },
+  "Kosovo": { "rank": 78, "points": 1317.17 },
+  "Oman": { "rank": 79, "points": 1313.46 },
+  "Montenegro": { "rank": 80, "points": 1300.36 },
+  "Guinea": { "rank": 81, "points": 1300.01 },
+  "Haiti": { "rank": 82, "points": 1296.61 },
+  "Curaçao": { "rank": 83, "points": 1293.08 },
+  "Syria": { "rank": 84, "points": 1288.56 },
+  "New Zealand": { "rank": 85, "points": 1276.66 },
+  "Bulgaria": { "rank": 86, "points": 1274.06 },
+  "Gabon": { "rank": 87, "points": 1272.51 },
+  "Uganda": { "rank": 88, "points": 1264.09 },
+  "Angola": { "rank": 89, "points": 1263.10 },
+  "Benin": { "rank": 90, "points": 1258.98 },
+  "Bahrain": { "rank": 91, "points": 1258.53 },
+  "Zambia": { "rank": 92, "points": 1255.82 },
+  "Thailand": { "rank": 93, "points": 1252.14 },
+  "China PR": { "rank": 94, "points": 1251.60 },
+  "Palestine": { "rank": 95, "points": 1244.73 },
+  "Guatemala": { "rank": 96, "points": 1243.47 },
+  "Belarus": { "rank": 97, "points": 1235.82 },
+  "Luxembourg": { "rank": 98, "points": 1227.77 },
+  "Vietnam": { "rank": 99, "points": 1225.68 },
+  "El Salvador": { "rank": 100, "points": 1225.26 },
+  "Mozambique": {
+    "rank": 101,
+    "points": 1224.31
+  },
+  "Trinidad and Tobago": {
+    "rank": 102,
+    "points": 1221.95
+  },
+  "Tajikistan": {
+    "rank": 103,
+    "points": 1221.78
+  },
+  "Madagascar": {
+    "rank": 104,
+    "points": 1202.69
+  },
+  "Equatorial Guinea": {
+    "rank": 105,
+    "points": 1195.20
+  },
+  "Armenia": {
+    "rank": 106,
+    "points": 1191.42
+  },
+  "Kyrgyz Republic": {
+    "rank": 107,
+    "points": 1191.14
+  },
+  "Lebanon": {
+    "rank": 108,
+    "points": 1187.96
+  },
+  "Comoros": {
+    "rank": 109,
+    "points": 1187.91
+  },
+  "Kazakhstan": {
+    "rank": 110,
+    "points": 1182.96
+  },
+  "Kenya": {
+    "rank": 111,
+    "points": 1182.23
+  },
+  "Libya": {
+    "rank": 112,
+    "points": 1182.08
+  },
+  "Tanzania": {
+    "rank": 113,
+    "points": 1180.27
+  },
+  "Niger": {
+    "rank": 114,
+    "points": 1179.66
+  },
+  "Mauritania": {
+    "rank": 115,
+    "points": 1170.72
+  },
+  "The Gambia": {
+    "rank": 116,
+    "points": 1159.64
+  },
+  "Sudan": {
+    "rank": 117,
+    "points": 1157.22
+  },
+  "Korea DPR": {
+    "rank": 118,
+    "points": 1151.05
+  },
+  "Sierra Leone": {
+    "rank": 119,
+    "points": 1148.98
+  },
+  "Namibia": {
+    "rank": 120,
+    "points": 1148.84
+  },
+  "Togo": {
+    "rank": 121,
+    "points": 1147.31
+  },
+  "Indonesia": {
+    "rank": 122,
+    "points": 1144.88
+  },
+  "Faroe Islands": {
+    "rank": 123,
+    "points": 1137.14
+  },
+  "Azerbaijan": {
+    "rank": 124,
+    "points": 1136.67
+  },
+  "Suriname": {
+    "rank": 125,
+    "points": 1132.43
+  },
+  "Cyprus": {
+    "rank": 126,
+    "points": 1128.33
+  },
+  "Malawi": {
+    "rank": 127,
+    "points": 1128.03
+  },
+  "Rwanda": {
+    "rank": 128,
+    "points": 1126.62
+  },
+  "Estonia": {
+    "rank": 129,
+    "points": 1121.10
+  },
+  "Zimbabwe": {
+    "rank": 130,
+    "points": 1119.78
+  },
+  "Nicaragua": {
+    "rank": 131,
+    "points": 1116.48
+  },
+  "Guinea-Bissau": {
+    "rank": 132,
+    "points": 1108.38
+  },
+  "Congo": {
+    "rank": 133,
+    "points": 1105.96
+  },
+  "Kuwait": {
+    "rank": 134,
+    "points": 1105.10
+  },
+  "Philippines": {
+    "rank": 135,
+    "points": 1094.10
+  },
+  "Latvia": {
+    "rank": 136,
+    "points": 1090.57
+  },
+  "India": {
+    "rank": 137,
+    "points": 1087.34
+  },
+  "Malaysia": {
+    "rank": 138,
+    "points": 1086.22
+  },
+  "Central African Republic": {
+    "rank": 139,
+    "points": 1083.57
+  },
+  "Liberia": {
+    "rank": 140,
+    "points": 1079.02
+  },
+  "Turkmenistan": {
+    "rank": 141,
+    "points": 1078.65
+  },
+  "Burundi": {
+    "rank": 142,
+    "points": 1078.01
+  },
+  "Dominican Republic": {
+    "rank": 143,
+    "points": 1077.95
+  },
+  "Ethiopia": {
+    "rank": 144,
+    "points": 1071.55
+  },
+  "Lesotho": {
+    "rank": 145,
+    "points": 1067.13
+  },
+  "Botswana": {
+    "rank": 146,
+    "points": 1063.63
+  },
+  "Singapore": {
+    "rank": 147,
+    "points": 1061.20
+  },
+  "Lithuania": {
+    "rank": 148,
+    "points": 1058.42
+  },
+  "Yemen": {
+    "rank": 149,
+    "points": 1049.49
+  },
+  "Guyana": {
+    "rank": 150,
+    "points": 1049.32
+  },
+  "New Caledonia": {
+    "rank": 151,
+    "points": 1036.95
+  },
+  "St Kitts and Nevis": {
+    "rank": 152,
+    "points": 1036.33
+  },
+  "Solomon Islands": {
+    "rank": 153,
+    "points": 1031.89
+  },
+  "Fiji": {
+    "rank": 154,
+    "points": 1029.70
+  },
+  "Hong Kong, China": {
+    "rank": 155,
+    "points": 1026.63
+  },
+  "Puerto Rico": {
+    "rank": 156,
+    "points": 1026.11
+  },
+  "Tahiti": {
+    "rank": 157,
+    "points": 1019.04
+  },
+  "Myanmar": {
+    "rank": 158,
+    "points": 1011.88
+  },
+  "Moldova": {
+    "rank": 159,
+    "points": 1004.16
+  },
+  "Vanuatu": {
+    "rank": 160,
+    "points": 997.01
+  },
+  "Antigua and Barbuda": {
+    "rank": 161,
+    "points": 986.58
+  },
+  "Malta": {
+    "rank": 162,
+    "points": 986.39
+  },
+  "Grenada": {
+    "rank": 163,
+    "points": 981.82
+  },
+  "Cuba": {
+    "rank": 164,
+    "points": 981.42
+  },
+  "Eswatini": {
+    "rank": 165,
+    "points": 979.01
+  },
+  "Afghanistan": {
+    "rank": 166,
+    "points": 977.57
+  },
+  "Bermuda": {
+    "rank": 167,
+    "points": 976.87
+  },
+  "St Lucia": {
+    "rank": 168,
+    "points": 976.71
+  },
+  "Papua New Guinea": {
+    "rank": 169,
+    "points": 974.90
+  },
+  "South Sudan": {
+    "rank": 170,
+    "points": 970.94
+  },
+  "St Vincent and the Grenadines": {
+    "rank": 171,
+    "points": 968.27
+  },
+  "Maldives": {
+    "rank": 172,
+    "points": 950.10
+  },
+  "Andorra": {
+    "rank": 173,
+    "points": 944.71
+  },
+  "Chinese Taipei": {
+    "rank": 174,
+    "points": 923.78
+  },
+  "Montserrat": {
+    "rank": 175,
+    "points": 916.75
+  },
+  "Nepal": {
+    "rank": 176,
+    "points": 914.54
+  },
+  "Cambodia": {
+    "rank": 177,
+    "points": 911.54
+  },
+  "Mauritius": {
+    "rank": 178,
+    "points": 911.49
+  },
+  "Barbados": {
+    "rank": 179,
+    "points": 909.89
+  },
+  "Belize": {
+    "rank": 180,
+    "points": 907.00
+  },
+  "Bangladesh": {
+    "rank": 181,
+    "points": 899.53
+  },
+  "Dominica": {
+    "rank": 182,
+    "points": 897.69
+  },
+  "Chad": {
+    "rank": 183,
+    "points": 896.85
+  },
+  "Eritrea": {
+    "rank": 184,
+    "points": 887.06
+  },
+  "Laos": {
+    "rank": 185,
+    "points": 885.03
+  },
+  "Bhutan": {
+    "rank": 186,
+    "points": 880.55
+  },
+  "Mongolia": {
+    "rank": 187,
+    "points": 878.08
+  },
+  "Cook Islands": {
+    "rank": 188,
+    "points": 877.53
+  },
+  "Aruba": {
+    "rank": 189,
+    "points": 877.30
+  },
+  "Samoa": {
+    "rank": 190,
+    "points": 876.41
+  },
+  "Sri Lanka": {
+    "rank": 191,
+    "points": 871.82
+  },
+  "American Samoa": {
+    "rank": 192,
+    "points": 871.61
+  },
+  "Brunei Darussalam": {
+    "rank": 193,
+    "points": 863.09
+  },
+  "Macau": {
+    "rank": 194,
+    "points": 858.03
+  },
+  "Cayman Islands": {
+    "rank": 195,
+    "points": 855.45
+  },
+  "São Tomé and Príncipe": {
+    "rank": 196,
+    "points": 855.44
+  },
+  "Djibouti": {
+    "rank": 197,
+    "points": 853.58
+  },
+  "Somalia": {
+    "rank": 198,
+    "points": 839.17
+  },
+  "Tonga": {
+    "rank": 199,
+    "points": 835.64
+  },
+  "Timor-Leste": {
+    "rank": 200,
+    "points": 825.64
+  },
+  "Guam": {
+    "rank": 201,
+    "points": 825.43
+  },
+  "Pakistan": {
+    "rank": 202,
+    "points": 824.60
+  },
+  "Gibraltar": {
+    "rank": 203,
+    "points": 810.14
+  },
+  "Seychelles": {
+    "rank": 204,
+    "points": 804.16
+  },
+  "Turks and Caicos Islands": {
+    "rank": 205,
+    "points": 803.98
+  },
+  "Liechtenstein": {
+    "rank": 206,
+    "points": 803.57
+  },
+  "Bahamas": {
+    "rank": 207,
+    "points": 786.82
+  },
+  "British Virgin Islands": {
+    "rank": 208,
+    "points": 782.14
+  },
+  "US Virgin Islands": {
+    "rank": 209,
+    "points": 779.76
+  },
+  "Anguilla": {
+    "rank": 210,
+    "points": 760.25
+  },
+  "San Marino": {
+    "rank": 211,
+    "points": 726.33
+  }
+}
