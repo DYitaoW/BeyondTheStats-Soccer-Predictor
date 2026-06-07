@@ -3,3 +3,4 @@ gunicorn>=21.2,<24.0
 joblib>=1.3,<2.0
 pandas>=2.0,<3.0
 scikit-learn>=1.3,<2.0
+psutil>=5.9,<6.0  # optional: per-process RSS for the Backend memory monitor

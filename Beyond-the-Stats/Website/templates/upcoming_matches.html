@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Beyond the Score</title>
+  <title>Beyond The Stats</title>
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026060706') }}">
 </head>
 <body class="dark-mode" data-active-page="global">
   <main class="page">
@@ -15,52 +15,29 @@
     <header class="site-header">
       <div class="site-header-top">
         <a id="brand-home-btn" class="brand brand-home-btn" href="/" aria-label="Go to home">
-          <img class="brand-mark" src="{{ url_for('serve_graphic', filename='BtSLogo.png') }}" alt="Beyond The Score logo">
+          <img class="brand-mark" src="{{ url_for('serve_graphic', filename='BtSLogo.png') }}" alt="Beyond The Stats logo">
           <div>
-            <div class="brand-name">Beyond The Score</div>
+            <div class="brand-name">Beyond The Stats BETA</div>
             <div class="brand-sub">Matchday Predictor</div>
           </div>
         </a>
-        <button id="theme-toggle" class="theme-toggle">Light Mode</button>
+        <div class="header-actions">
+          <span class="ios-app-indicator" role="status"><span class="ios-app-indicator-icon" aria-hidden="true">📱</span><span class="ios-app-indicator-text">iOS mobile app and new website UI coming soon...</span></span>
+          <a id="header-about" class="theme-toggle header-link {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
+        </div>
       </div>
 
       <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
         <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
-        <a id="tab-predictor" class="tab-btn {{ 'active' if active_page == 'predictor' else '' }}" href="/custom-predictor">Custom Match Predictors (Experimental)</a>
+        <a id="tab-world-cup" class="tab-btn world-cup-highlight {{ 'active' if active_page == 'world-cup' else '' }}" href="/world-cup">World Cup 2026</a>
         <a id="tab-global" class="tab-btn {{ 'active' if active_page == 'global' else '' }}" href="/upcoming-matches">Upcoming Matches</a>
         <a id="tab-cups" class="tab-btn {{ 'active' if active_page == 'cups' else '' }}" href="/cups">Cups</a>
-        <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Head to Head</a>
-        <a id="tab-market" class="tab-btn {{ 'active' if active_page == 'market' else '' }}" href="/market-odds">Market & Odds (Coming Soon)</a>
+        <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
         <a id="tab-league-table" class="tab-btn {{ 'active' if active_page == 'league-table' else '' }}" href="/league-tables">Projected League Tables</a>
-        <a id="tab-world-cup" class="tab-btn {{ 'active' if active_page == 'world-cup' else '' }}" href="/world-cup">World Cup</a>
-        <a id="tab-position-odds" class="tab-btn {{ 'active' if active_page == 'position-odds' else '' }}" href="/position-odds">Position Odds</a>
-        <a id="tab-players" class="tab-btn {{ 'active' if active_page == 'players' else '' }}" href="/players">Players</a>
         <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
-        <a id="tab-about" class="tab-btn {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
       </nav>
     </header>
-
-    <section class="hero">
-      <div class="hero-badge">AI-Powered Match Predictions</div>
-      <h1>Machine Learning Algorithm Match Predictions</h1>
-      <p class="sub">Advanced analytics and machine learning forecasts for top European leagues, MLS and more soon...</p>
-      <div class="hero-stats">
-        <div class="hero-stat">
-          <span class="hero-stat-value">XX%</span>
-          <span class="hero-stat-label">Accuracy Rate</span>
-        </div>
-        <div class="hero-stat">
-          <span class="hero-stat-value">12</span>
-          <span class="hero-stat-label">Leagues</span>
-        </div>
-        <div class="hero-stat">
-          <span class="hero-stat-value">XX</span>
-          <span class="hero-stat-label">XXXXX</span>
-        </div>
-      </div>
-    </section>
-
-        <section id="panel-home" class="{{ '' if active_page == 'home' else 'hidden' }}">
+<section id="panel-home" class="{{ '' if active_page == 'home' else 'hidden' }}">
       <div class="card">
         <h3>Highlighed Upcoming Fixtures</h3>
         <p class="section-subtitle">Upcoming matches for the current matchweek.</p>
@@ -81,109 +58,26 @@
       </div>
       <div id="winner-view" class="card">Loading league winners...</div>
     </section>
-
-    <section id="panel-predictor" class="{{ '' if active_page == 'predictor' else 'hidden' }}">
-      <div class="tabs">
-        <button id="subtab-predictor-euro" class="tab-btn active" type="button">European</button>
-        <button id="subtab-predictor-mls" class="tab-btn" type="button">MLS</button>
-        <button id="subtab-predictor-extra" class="tab-btn" type="button">Extra Leagues</button>
-      </div>
-
-      <section id="predictor-euro-body">
-        <form id="predict-form" class="card">
-          <label for="home-team">Home Team</label>
-          <input id="home-team" name="home_team" list="teams" required placeholder="Start typing team name">
-
-          <label for="away-team">Away Team</label>
-          <input id="away-team" name="away_team" list="teams" required placeholder="Start typing team name">
-
-          <datalist id="teams">
-            {% for team in teams %}
-            <option value="{{ team }}"></option>
-            {% endfor %}
-          </datalist>
-
-          <button type="submit">Predict</button>
-        </form>
-
-        <section id="result" class="card hidden"></section>
-        <section class="card">
-          <p class="note">Disclaimer: predictions between different leagues are often far less accurate. Use for entertainment purposes only.</p>
-        </section>
-        <section id="error" class="card error hidden"></section>
-      </section>
-
-      <section id="predictor-mls-body" class="hidden">
-        <form id="predict-form-mls" class="card">
-          <label for="home-team-mls">Home Team (MLS)</label>
-          <input id="home-team-mls" name="home_team" list="mls-teams" required placeholder="Start typing MLS team name">
-
-          <label for="away-team-mls">Away Team (MLS)</label>
-          <input id="away-team-mls" name="away_team" list="mls-teams" required placeholder="Start typing MLS team name">
-
-          <datalist id="mls-teams">
-            {% for team in mls_teams %}
-            <option value="{{ team }}"></option>
-            {% endfor %}
-          </datalist>
-
-          <button type="submit">Predict MLS</button>
-        </form>
-
-        <section class="card">
-          <p class="note">Disclaimer: MLS data is currently limited and predictions may be less accurate. These predictions are likely to be less accurate than 
-          European league predictions. Use for entertainment purposes only.
-          </p>
-        </section>
-        <section id="result-mls" class="card hidden"></section>
-        <section id="error-mls" class="card error hidden"></section>
-      </section>
-
-      <section id="predictor-extra-body" class="hidden">
-        <form id="predict-form-extra" class="card">
-          <label for="home-team-extra">Home Team (Extra Leagues)</label>
-          <input id="home-team-extra" name="home_team" list="extra-teams" required placeholder="Start typing team name">
-
-          <label for="away-team-extra">Away Team (Extra Leagues)</label>
-          <input id="away-team-extra" name="away_team" list="extra-teams" required placeholder="Start typing team name">
-
-          <datalist id="extra-teams">
-            {% for team in extra_teams %}
-            <option value="{{ team }}"></option>
-            {% endfor %}
-          </datalist>
-
-          <button type="submit">Predict Extra League</button>
-        </form>
-
-        <section class="card">
-          <p class="note">Disclaimer: extra-league predictions are experimental and may be less accurate. Use for entertainment purposes only.</p>
-        </section>
-        <section id="result-extra" class="card hidden"></section>
-        <section id="error-extra" class="card error hidden"></section>
-      </section>
-    </section>
-
     <section id="panel-global" class="{{ '' if active_page == 'global' else 'hidden' }}">
-      <div id="global-stats" class="card"></div>
+      <div id="global-stats" class="hidden"></div>
       <div class="card">
         <label for="global-source-filter">Source</label>
         <select id="global-source-filter">
           <option value="global">European Leagues</option>
-          <option value="cups">Cup Competitions</option>
           <option value="mls">MLS</option>
           <option value="extra">Extra Leagues</option>
-          <option value="world-cup">World Cup</option>
+          <option value="world-cup" selected>World Cup 2026</option>
         </select>
-        <div id="cup-tabs" class="tabs cup-tabs hidden" aria-label="Cup prediction tabs"></div>
+        <label for="cup-tabs" class="hidden" style="margin-top: 10px;">Cup</label>
+        <select id="cup-tabs" class="cup-tabs hidden" aria-label="Cup prediction tabs"></select>
       </div>
       <div id="global-league-filter-card" class="card">
         <label for="global-league-filter">League / Cup</label>
         <select id="global-league-filter"></select>
       </div>
       <div id="global-list" class="card">Loading...</div>
-    </section>
 
+    </section>
     <section id="panel-cups" class="{{ '' if active_page == 'cups' else 'hidden' }}">
       <div class="card">
         <h3>Cup Tables & Brackets</h3>
@@ -193,12 +87,12 @@
           <button id="cup-view-table" class="tab-btn active" type="button">League Table</button>
           <button id="cup-view-bracket" class="tab-btn" type="button">Bracket</button>
         </div>
-        <p id="cup-format-note" class="note"></p>
+        <p id="cup-format-note" class="note hidden"></p>
       </div>
       <div id="cup-table-view" class="card">Loading cup table...</div>
       <div id="cup-bracket-view" class="card hidden">Loading cup bracket...</div>
-    </section>
 
+    </section>
     <section id="panel-h2h" class="{{ '' if active_page == 'h2h' else 'hidden' }}">
       <div class="card">
         <h3>Head to Head Comparison</h3>
@@ -225,15 +119,8 @@
       <div id="h2h-results" class="hidden">
           <!-- Results injected here -->
       </div>
-    </section>
 
-    <section id="panel-market" class="{{ '' if active_page == 'market' else 'hidden' }}">
-      <div class="card">
-        <h3>Prediction Market & Betting Odds</h3>
-        <p>Current estimates and betting odds will appear here.</p>
-      </div>
     </section>
-
     <section id="panel-league-table" class="{{ '' if active_page == 'league-table' else 'hidden' }}">
       <div class="card">
         <h3>Projected League Table</h3>
@@ -243,7 +130,7 @@
             <option value="global">European Leagues</option>
             <option value="mls">MLS</option>
             <option value="extra">Extra Leagues</option>
-            <option value="cups">Cup Competitions</option>
+            <option value="world-cup">World Cup 2026</option>
           </select>
 
           <label for="table-league">League</label>
@@ -252,8 +139,8 @@
         <button id="table-view-toggle" type="button">Show Probability View</button>
       </div>
       <div id="league-table-view" class="card">Select a dataset and league.</div>
-    </section>
 
+    </section>
     <section id="panel-world-cup" class="{{ '' if active_page == 'world-cup' else 'hidden' }}">
       <div class="card">
         <h3>2026 FIFA World Cup Projection</h3>
@@ -262,26 +149,8 @@
         </p>
       </div>
       <div id="world-cup-view" class="card">Loading World Cup projection...</div>
+
     </section>
-
-    <section id="panel-position-odds" class="{{ '' if active_page == 'position-odds' else 'hidden' }}">
-      <div class="card">
-        <h3>Final Position Odds</h3>
-        <div class="table-controls">
-          <label for="position-odds-dataset">Dataset</label>
-          <select id="position-odds-dataset">
-            <option value="global">European Leagues</option>
-            <option value="mls">MLS</option>
-            <option value="extra">Extra Leagues</option>
-          </select>
-
-          <label for="position-odds-league">League</label>
-          <select id="position-odds-league"></select>
-        </div>
-      </div>
-      <div id="position-odds-view" class="card">Select a dataset and league.</div>
-    </section>
-
     <section id="panel-players" class="{{ '' if active_page == 'players' else 'hidden' }}">
       <div class="card">
         <h3>Player Database (Preview)</h3>
@@ -301,8 +170,8 @@
         </div>
         <p class="note" style="margin-top: 20px;">* This is a preview of the upcoming player database feature.</p>
       </div>
-    </section>
 
+    </section>
     <section id="panel-about" class="{{ '' if active_page == 'about' else 'hidden' }}">
       <div class="card">
         <h3>About This Project</h3>
@@ -347,7 +216,6 @@
         <textarea id="feedback-text" placeholder="Type your feedback here..." style="width: 100%; padding: 10px; border: 1px solid var(--card-border); border-radius: 4px; background: var(--card-bg); color: var(--text-color); margin-bottom: 10px; min-height: 80px;"></textarea>
         <button id="feedback-submit" class="tab-btn active" type="button" style="margin: 0;">Send Feedback</button>
       </div>
-    </section>
     <section class="{{ '' if active_page == 'about' else 'hidden' }}">
     <div class = "card">
         <h3>Known Bugs & Issues</h3>
@@ -372,7 +240,7 @@
           </ul>
         </p>
     </section>
-    <section class="card disclaimer {{ '' if active_page == 'about' else 'hidden' }}">
+    <section class=\"card disclaimer {{ '' if active_page == 'about' else 'hidden' }}">
       <h3>Disclaimer</h3>
       <p>
         These predictions are model-generated estimates for entertainment use only.
@@ -391,14 +259,15 @@
 
       </p>
     </section>
+    </section>
       <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
-      <p>&copy; 2026 Beyond the Score</p>
+      <p>&copy; 2026 Beyond The Stats</p>
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='shared.js') }}"></script>
-  <script src="{{ url_for('static', filename='upcoming_matches.js') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026060706') }}"></script>
+  <script src="{{ url_for('static', filename='upcoming_matches.js', v='2026060706') }}"></script>
 </body>
 </html>
 

@@ -1,0 +1,53 @@
+[Unit]
+Description=Beyond the Score backend (Flask + daily pipeline scheduler)
+Documentation=https://github.com/anomalyco/opencode
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bts
+Group=bts
+WorkingDirectory=/opt/beyond-the-stats/Beyond-the-Stats
+Environment="PATH=/opt/beyond-the-stats/Beyond-the-Stats/.venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONDONTWRITEBYTECODE=1"
+# Comma-separated list of origins allowed to call the API (CORS).
+# Include the Cloudflare Pages URL(s) plus any localhost dev origin.
+Environment="ALLOWED_ORIGINS=https://beyondthestats.pages.dev,https://www.beyondthestats.com,https://beyondthestats.com,http://localhost:5000"
+ExecStart=/opt/beyond-the-stats/Beyond-the-Stats/.venv/bin/python run_backend.py
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=60
+KillSignal=SIGTERM
+# Two-layer memory protection:
+#   - MemoryHigh=10G: kernel pressure reclaims; soft warning.
+#   - MemoryMax=12G: hard cap; cgroup OOM-kills anything above.
+# The in-process MemoryMonitor already kills the pipeline subprocess at 100%
+# of the 12 GB cap (see Backend/memory.py), so the systemd OOM is the
+# safety net for the whole process group.
+MemoryHigh=10G
+MemoryMax=12G
+OOMPolicy=stop
+OOMScoreAdjust=-100
+# Logs: journald is primary; .venv writes per-run files to logs/ as well.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=beyond-the-stats
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/beyond-the-stats/Beyond-the-Stats /var/log/beyond-the-stats
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# Cloudflared talks to localhost:5000.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

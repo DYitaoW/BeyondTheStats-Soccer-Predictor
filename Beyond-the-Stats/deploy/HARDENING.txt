@@ -1,0 +1,29 @@
+# Hardening notes for beyond-the-stats.service
+#
+# The unit sets `User=bts` and `Group=bts`. Create that account once:
+#
+#   sudo useradd --system --shell /usr/sbin/nologin --home /opt/beyond-the-stats bts
+#
+# The systemd unit restricts the service to:
+#   - ReadWritePaths: only the project dir + /var/log/beyond-the-stats
+#   - ProtectSystem=strict: /usr and /etc are read-only
+#   - ProtectHome=true: /home, /root are inaccessible
+#   - NoNewPrivileges=true: cannot escalate
+#   - MemoryDenyWriteExecute=true: cannot create writable+executable mappings
+#   - PrivateTmp=true: /tmp is private
+#   - RestrictAddressFamilies: only AF_UNIX, AF_INET, AF_INET6 (no weird sockets)
+#   - LockPersonality=true: locks the process's execution domain
+#
+# If you ever need to debug with strace/gdb, temporarily set:
+#   - ProtectKernelTunables=false
+#   - ProtectKernelModules=false
+#   - RestrictNamespaces=false
+#   - MemoryDenyWriteExecute=false
+# ...or run `sudo systemctl edit beyond-the-stats` and override.
+#
+# Log directory setup:
+#   sudo mkdir -p /var/log/beyond-the-stats
+#   sudo chown bts:bts /var/log/beyond-the-stats
+#
+# The backend also writes per-run pipeline logs to:
+#   /opt/beyond-the-stats/Beyond-the-Stats/logs/

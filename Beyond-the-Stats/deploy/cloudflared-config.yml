@@ -1,0 +1,26 @@
+# /etc/cloudflared/config.yml
+# Replace <TUNNEL_ID> and <HOSTNAME> with the values from `cloudflared tunnel login`
+# + `cloudflared tunnel create bts`.
+#
+# The credentials JSON is created by `cloudflared tunnel create` and lives at:
+#   /etc/cloudflared/<TUNNEL_ID>.json
+# Copy it there once:  sudo cp ~/.<TUNNEL_ID>.json /etc/cloudflared/
+
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+# Web server origin: local Flask on port 5000.
+ingress:
+  - hostname: <HOSTNAME>
+    service: http://localhost:5000
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: false
+      keepAliveConnections: 16
+      keepAliveTimeout: 90s
+      httpHostHeader: <HOSTNAME>
+  # Health-check fallback (required last).
+  - service: http_status:404
+
+# Optional: avoid cloudflared opening an external metrics server.
+metrics: localhost:2000

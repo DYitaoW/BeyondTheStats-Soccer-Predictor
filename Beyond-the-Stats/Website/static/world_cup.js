@@ -24,9 +24,10 @@ async function loadWorldCupProjection() {
 function displayWorldCupData(data, container) {
   const knockout = data.knockout || {};
   const champion = data.champion || getFinalWinner(knockout.final);
+  const championProbability = data.simulations?.winner_probabilities?.[champion];
   let html = "";
 
-  html += renderProjectionSummary(data, champion);
+  html += renderProjectionSummary(data, champion, championProbability);
   html += renderWinnerOdds(data.simulations?.winner_probabilities || {});
   html += renderGroupTablesWithToggle(data, container);
   html += renderBestThirdTable(data.third_place_table || data.best_third_place || data.best_third_teams || []);
@@ -36,17 +37,19 @@ function displayWorldCupData(data, container) {
   container.innerHTML = html || '<p class="info-message">No World Cup projection data is available yet.</p>';
   // Wire up the projected-tables <-> position-odds toggle after the HTML is in the DOM.
   wireGroupTablesToggle(container);
+  // Wire up the group-fixtures dropdown after the HTML is in the DOM.
+  wireGroupFixturesFilter(container);
 }
 
 // Summary card: surfaces the fields users care about before the long tables.
-function renderProjectionSummary(data, champion) {
+function renderProjectionSummary(data, champion, championProbability) {
   const generated = formatDateTime(data.generated_at_utc);
-  const simulations = data.simulations?.simulations_run;
+  const championPct = Number.isFinite(Number(championProbability)) ? ` (${formatPercentValue(championProbability)})` : "";
   return `
     <div class="world-cup-summary">
       <div class="world-cup-summary-item">
         <span class="summary-label">Projected Champion</span>
-        <strong>${escapeHtml(champion || "TBD")}</strong>
+        <strong>${escapeHtml(champion || "TBD")}${escapeHtml(championPct)}</strong>
       </div>
       <div class="world-cup-summary-item">
         <span class="summary-label">Competition</span>
@@ -56,19 +59,15 @@ function renderProjectionSummary(data, champion) {
         <span class="summary-label">Generated</span>
         <strong>${escapeHtml(generated || "Unknown")}</strong>
       </div>
-      <div class="world-cup-summary-item">
-        <span class="summary-label">Simulations</span>
-        <strong>${escapeHtml(simulations ? String(simulations) : "Not run")}</strong>
-      </div>
     </div>
   `;
 }
 
-// Winner odds: lists the highest simulated title chances when simulation output exists.
+// Winner odds: lists every team with a non-zero title chance from the simulation output.
 function renderWinnerOdds(winnerProbabilities) {
   const entries = Object.entries(winnerProbabilities)
-    .sort((left, right) => Number(right[1]) - Number(left[1]))
-    .slice(0, 12);
+    .filter(([, probability]) => Number(probability) > 0)
+    .sort((left, right) => Number(right[1]) - Number(left[1]));
   if (!entries.length) return "";
 
   return `
@@ -148,10 +147,10 @@ function renderGroupTablesWithToggle(data, container) {
           Show Position Odds
         </button>
       </div>
-      <div class="world-cup-group-grid" data-group-tables-view="tables">
+      <div class="world-cup-group-grid world-cup-groups-2x6" data-group-tables-view="tables">
         ${groupTables.map(renderGroupTable).join("")}
       </div>
-      <div class="world-cup-group-grid hidden" data-group-tables-view="odds">
+      <div class="world-cup-group-grid world-cup-groups-2x6" data-group-tables-view="odds" style="display: none;">
         ${positionOddsByGroup.map(renderPositionOddsTable).join("")}
       </div>
     </div>
@@ -207,14 +206,14 @@ function wireGroupTablesToggle(container) {
       button.setAttribute("data-view", "odds");
       button.textContent = "Show Projected Tables";
       heading.textContent = "Group Position Odds";
-      if (tablesView) tablesView.classList.add("hidden");
-      if (oddsView) oddsView.classList.remove("hidden");
+      if (tablesView) tablesView.style.display = "none";
+      if (oddsView) oddsView.style.display = "";
     } else {
       button.setAttribute("data-view", "tables");
       button.textContent = "Show Position Odds";
       heading.textContent = "Projected Group Tables";
-      if (oddsView) oddsView.classList.add("hidden");
-      if (tablesView) tablesView.classList.remove("hidden");
+      if (oddsView) oddsView.style.display = "none";
+      if (tablesView) tablesView.style.display = "";
     }
   });
 }
@@ -260,10 +259,10 @@ function renderBestThirdTable(bestThirdRows) {
     <div class="world-cup-section">
       <h4>Best Third-Place Teams</h4>
       <div class="table-scroll">
-        <table class="standings-table world-cup-table">
+        <table class="standings-table world-cup-table third-place-table">
           <thead>
             <tr>
-              <th>Rank</th><th>Group</th><th>Team</th><th>P</th><th>GD</th><th>GF</th><th>Pts</th><th>Status</th>
+              <th>Rank</th><th>Group</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th><th>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -273,8 +272,12 @@ function renderBestThirdTable(bestThirdRows) {
                 <td>${escapeHtml(team.group || "")}</td>
                 <td>${escapeHtml(team.team)}</td>
                 <td>${numberCell(team.P)}</td>
-                <td>${numberCell(team.GD)}</td>
+                <td>${numberCell(team.W)}</td>
+                <td>${numberCell(team.D)}</td>
+                <td>${numberCell(team.L)}</td>
                 <td>${numberCell(team.GF)}</td>
+                <td>${numberCell(team.GA)}</td>
+                <td>${numberCell(team.GD)}</td>
                 <td><strong>${numberCell(team.Pts)}</strong></td>
                 <td>${team.qualified ? "Qualified" : "Eliminated"}</td>
               </tr>
@@ -286,17 +289,90 @@ function renderBestThirdTable(bestThirdRows) {
   `;
 }
 
-// Group fixtures: gives users the actual predicted match list behind the standings.
+// Group fixtures: a row of buttons at the top, one per group, lets the user
+// filter the upcoming fixtures down to a single group. Defaults to the first
+// group that has upcoming games.
 function renderGroupFixtures(fixtures) {
   if (!fixtures.length) return "";
-  return `
-    <div class="world-cup-section">
-      <h4>Group Fixtures</h4>
-      <div class="world-cup-fixture-grid">
-        ${fixtures.map(renderFixtureCard).join("")}
+  const now = Date.now();
+  const isUpcoming = (match) => {
+    const dateValue = match.match_date || match.match_datetime_utc;
+    if (!dateValue) return true;
+    const ts = new Date(dateValue).getTime();
+    return Number.isFinite(ts) ? ts >= now : true;
+  };
+  const upcoming = fixtures.filter(isUpcoming);
+  const byGroup = {};
+  for (const match of upcoming) {
+    const group = match.group || match.group_letter || "";
+    if (!byGroup[group]) byGroup[group] = [];
+    byGroup[group].push(match);
+  }
+  const groupKeys = Object.keys(byGroup).sort((a, b) => a.localeCompare(b));
+  if (!groupKeys.length) {
+    return `
+      <div class="world-cup-section">
+        <h4>Group Fixtures</h4>
+        <p class="info-message">No upcoming group fixtures available yet.</p>
       </div>
+    `;
+  }
+  const groupsPayload = encodeURIComponent(JSON.stringify(byGroup));
+  const buttons = groupKeys.map((key, idx) => `
+    <button type="button" class="group-fixtures-btn ${idx === 0 ? "active" : ""}" data-group-fixtures-key="${escapeHtml(key)}" aria-pressed="${idx === 0 ? "true" : "false"}">
+      ${escapeHtml(key)}
+    </button>
+  `).join("");
+  return `
+    <div class="world-cup-section" data-group-fixtures-section>
+      <div class="world-cup-section-header">
+        <h4>Group Fixtures</h4>
+      </div>
+      <div class="group-fixtures-buttons" role="tablist" aria-label="Filter group fixtures" data-group-fixtures-payload="${groupsPayload}">
+        ${buttons}
+      </div>
+      <div class="world-cup-fixture-grid" data-group-fixtures-view></div>
     </div>
   `;
+}
+
+// Wires the group-fixtures buttons to render only the selected group's
+// upcoming fixtures.
+function wireGroupFixturesFilter(container) {
+  const section = container.querySelector("[data-group-fixtures-section]");
+  if (!section) return;
+  const buttonsRow = section.querySelector(".group-fixtures-buttons");
+  const view = section.querySelector("[data-group-fixtures-view]");
+  if (!buttonsRow || !view) return;
+  let byGroup = {};
+  try {
+    byGroup = JSON.parse(decodeURIComponent(buttonsRow.getAttribute("data-group-fixtures-payload") || "{}"));
+  } catch (err) {
+    byGroup = {};
+  }
+  const buttons = buttonsRow.querySelectorAll(".group-fixtures-btn");
+  const renderGroup = (key) => {
+    const matches = byGroup[key] || [];
+    if (!matches.length) {
+      view.innerHTML = '<p class="info-message">No upcoming fixtures for this group.</p>';
+      return;
+    }
+    view.innerHTML = matches.map(renderFixtureCard).join("");
+  };
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => {
+      buttons.forEach((b) => {
+        b.classList.remove("active");
+        b.setAttribute("aria-pressed", "false");
+      });
+      button.classList.add("active");
+      button.setAttribute("aria-pressed", "true");
+      renderGroup(button.getAttribute("data-group-fixtures-key"));
+    });
+  });
+  // Default to the first group's upcoming fixtures.
+  const first = buttons[0];
+  if (first) renderGroup(first.getAttribute("data-group-fixtures-key"));
 }
 
 // Fixture card: shows score, winner, venue, and model probabilities.
@@ -317,11 +393,13 @@ function renderFixtureCard(match) {
       </div>
       <div class="match-card-meta">Winner: ${escapeHtml(winner || "Draw")}</div>
       ${renderProbabilityBar(match)}
+      ${renderProbabilityLabels(match)}
     </article>
   `;
 }
 
 // Knockout section: renders each round in bracket order and highlights the final winner.
+// All rounds except the Final are collapsed by default; click the header to expand.
 function renderKnockoutRounds(knockout) {
   const stages = [
     ["round_of_32", "Round of 32"],
@@ -331,11 +409,17 @@ function renderKnockoutRounds(knockout) {
     ["third_place", "Third Place"],
     ["final", "Final"],
   ];
-  const html = stages
-    .filter(([key]) => Array.isArray(knockout[key]) && knockout[key].length)
-    .map(([key, label]) => renderKnockoutRound(label, knockout[key]))
+  const visibleStages = stages
+    .filter(([key]) => Array.isArray(knockout[key]) && knockout[key].length);
+  if (!visibleStages.length) return "";
+
+  const html = visibleStages
+    .map(([key, label], idx) => {
+      // Final is always shown; everything else is collapsed by default.
+      const isFinal = key === "final";
+      return renderKnockoutRound(label, knockout[key], { open: isFinal, stageKey: key, idx });
+    })
     .join("");
-  if (!html) return "";
 
   return `
     <div class="world-cup-section">
@@ -345,15 +429,18 @@ function renderKnockoutRounds(knockout) {
   `;
 }
 
-// Knockout round table: avoids draw labels because knockout projections resolve tied model output.
-function renderKnockoutRound(label, matches) {
+// Knockout round: wrapped in a <details> element so the user can collapse/expand
+// each round. The Final is open by default; all other rounds are collapsed.
+function renderKnockoutRound(label, matches, options) {
+  const { open = false, stageKey = "", idx = 0 } = options || {};
+  const openAttr = open ? " open" : "";
   return `
-    <div class="world-cup-round">
-      <h5>${escapeHtml(label)}</h5>
+    <details class="world-cup-round" data-stage="${escapeHtml(stageKey)}"${openAttr}>
+      <summary><span class="world-cup-round-label">${escapeHtml(label)}</span><span class="world-cup-round-hint">${open ? "" : "(click to expand)"}</span></summary>
       <div class="world-cup-fixture-grid">
         ${matches.map(renderKnockoutCard).join("")}
       </div>
-    </div>
+    </details>
   `;
 }
 
@@ -375,6 +462,7 @@ function renderKnockoutCard(match) {
       </div>
       <div class="match-card-meta">Advances: ${escapeHtml(winner || "TBD")}</div>
       ${renderProbabilityBar(match)}
+      ${renderProbabilityLabels(match)}
     </article>
   `;
 }
@@ -389,6 +477,20 @@ function renderProbabilityBar(match) {
       <span style="width: ${home}%;" title="Home ${home.toFixed(1)}%"></span>
       <span style="width: ${draw}%;" title="Draw ${draw.toFixed(1)}%"></span>
       <span style="width: ${away}%;" title="Away ${away.toFixed(1)}%"></span>
+    </div>
+  `;
+}
+
+// Probability labels: explicit H/D/A percentages under the bar.
+function renderProbabilityLabels(match) {
+  const home = normalizeProbability(match.prob_home);
+  const draw = normalizeProbability(match.prob_draw);
+  const away = normalizeProbability(match.prob_away);
+  return `
+    <div class="match-card-probability-labels" aria-label="Prediction percentages">
+      <span><strong>H</strong> ${home.toFixed(1)}%</span>
+      <span><strong>D</strong> ${draw.toFixed(1)}%</span>
+      <span><strong>A</strong> ${away.toFixed(1)}%</span>
     </div>
   `;
 }
