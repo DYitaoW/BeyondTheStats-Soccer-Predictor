@@ -441,7 +441,10 @@ def _load_teams_from_team_data(pm_mod):
 def _load_h2h_and_form(pm_mod):
     head_to_head = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json"))
     current_form = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json"))
-    matches, season_files = pm_mod.load_training_matches(pm_mod.PROCESSED_DIR)
+    try:
+        matches, season_files = pm_mod.load_training_matches(pm_mod.PROCESSED_DIR)
+    except (ValueError, FileNotFoundError, OSError):
+        return head_to_head or {}, {"teams": {}}
     dynamic_form = pm_mod.build_dynamic_form_from_matches(matches)
 
     if (
@@ -468,10 +471,10 @@ def _load_h2h_and_form(pm_mod):
         if team not in current_form_teams or not isinstance(current_form_teams.get(team), dict):
             current_form_teams[team] = stats
             continue
-        existing = current_form_teams[team]
+
         for key, value in stats.items():
-            if key not in existing or existing.get(key) in (None, "", 0, 0.0):
-                existing[key] = value
+            if key not in current_form_teams[team] or current_form_teams[team][key] is None:
+                current_form_teams[team][key] = value
 
     return head_to_head or {}, current_form
 

@@ -241,6 +241,16 @@ def main() -> int:
     write_404(out_dir)
     print(f"[build] wrote 404.html")
 
+    # 6. _redirects for Cloudflare Pages SPA fallback
+    redirects = (out_dir / "_redirects")
+    if not redirects.exists():
+        redirects.write_text(
+            "# Cloudflare Pages SPA fallback: serve index.html for unmatched routes\n"
+            "/*  /index.html  200\n",
+            encoding="utf-8",
+        )
+        print("[build] wrote _redirects (SPA fallback)")
+
     # Summary
     total = sum(p.stat().st_size for p in out_dir.rglob("*") if p.is_file())
     print(f"[build] DONE: {out_dir} ({total / 1024:.1f} KB total)")

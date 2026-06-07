@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026060704') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026060706') }}">
   <meta name="description" content="About Beyond The Stats: machine learning match predictions for top European leagues, MLS, and cup competitions. Privacy policy and terms of use.">
   <meta name="robots" content="index, follow">
   <meta property="og:title" content="About — Beyond The Stats">
@@ -65,23 +65,23 @@
         <a id="brand-home-btn" class="brand brand-home-btn" href="/" aria-label="Go to home">
           <img class="brand-mark" src="{{ url_for('serve_graphic', filename='BtSLogo.png') }}" alt="Beyond The Stats logo">
           <div>
-            <div class="brand-name">Beyond The Stats</div>
+            <div class="brand-name">Beyond The Stats BETA</div>
             <div class="brand-sub">Matchday Predictor</div>
           </div>
         </a>
         <div class="header-actions">
-          <span class="ios-app-indicator" role="status"><span class="ios-app-indicator-icon" aria-hidden="true">📱</span><span class="ios-app-indicator-text">iOS Mobile app coming soon...</span></span>
+          <span class="ios-app-indicator" role="status"><span class="ios-app-indicator-icon" aria-hidden="true">📱</span><span class="ios-app-indicator-text">iOS mobile app and new website UI coming soon...</span></span>
           <a id="header-about" class="theme-toggle header-link {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
         </div>
       </div>
 
       <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
         <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
+        <a id="tab-world-cup" class="tab-btn world-cup-highlight {{ 'active' if active_page == 'world-cup' else '' }}" href="/world-cup">World Cup 2026</a>
         <a id="tab-global" class="tab-btn {{ 'active' if active_page == 'global' else '' }}" href="/upcoming-matches">Upcoming Matches</a>
         <a id="tab-cups" class="tab-btn {{ 'active' if active_page == 'cups' else '' }}" href="/cups">Cups</a>
         <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
         <a id="tab-league-table" class="tab-btn {{ 'active' if active_page == 'league-table' else '' }}" href="/league-tables">Projected League Tables</a>
-        <a id="tab-world-cup" class="tab-btn world-cup-highlight {{ 'active' if active_page == 'world-cup' else '' }}" href="/world-cup">World Cup 2026</a>
         <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
       </nav>
     </header>
@@ -314,9 +314,9 @@
       <h4>Data We Collect</h4>
       <p>Beyond The Stats does not collect personal data from visitors. We do not require accounts, do not track individuals across sessions, and do not store IP addresses. The site runs as a static frontend on Cloudflare Pages; the only server-side state is anonymized request logs used for abuse prevention and deleted within 30 days.</p>
       <h4>Feedback Submissions</h4>
-      <p>If you submit feedback through the form on this page, we store the text you provide so we can review and respond to it. We do not store your IP address, browser, or any other metadata alongside the feedback. To request deletion, contact us at the address below.</p>
+      <p>If you submit feedback through the form on this page, we store the text you provide so we can review and respond to it. We do not store your IP address, browser, or any other metadata alongside the feedback.</p>
       <h4>Cookies & Local Storage</h4>
-      <p>We do not set any cookies. The only persistent data stored in your browser is your dark/light mode preference, kept in your browser's localStorage. It is never sent to our servers and can be cleared at any time from your browser settings.</p>
+      <p>We do not set any cookies.</p>
       <h4>Third-Party Services</h4>
       <p>Match and player data is sourced from public third-party providers. We do not own or control this data. The providers we use, and links to their policies, are:</p>
       <ul>
@@ -363,8 +363,8 @@
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='shared.js', v='2026060704') }}"></script>
-  <script src="{{ url_for('static', filename='about.js', v='2026060704') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026060706') }}"></script>
+  <script src="{{ url_for('static', filename='about.js', v='2026060706') }}"></script>
 </body>
 </html>
 
