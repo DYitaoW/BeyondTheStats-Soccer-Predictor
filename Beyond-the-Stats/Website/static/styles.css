@@ -104,6 +104,64 @@ body {
   width: 100%;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ios-app-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(90deg, rgba(240, 180, 41, 0.18), rgba(240, 180, 41, 0.08));
+  color: #f0b429;
+  border: 1px solid rgba(240, 180, 41, 0.4);
+  border-radius: 10px;
+  padding: 8px 14px;
+  margin: 12px 0 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.ios-app-banner-icon {
+  font-size: 1.05rem;
+}
+
+.ios-app-banner-text {
+  letter-spacing: 0.2px;
+}
+
+.ios-app-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #f0b429;
+  background: rgba(240, 180, 41, 0.08);
+  border: 1px solid rgba(240, 180, 41, 0.4);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-right: 10px;
+}
+
+.ios-app-indicator-icon {
+  font-size: 0.95rem;
+}
+
+@media (max-width: 720px) {
+  .ios-app-indicator-text {
+    display: none;
+  }
+  .ios-app-indicator {
+    padding: 6px 10px;
+  }
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -146,6 +204,39 @@ body {
   color: var(--text);
   padding: 8px 12px;
   font-size: 0.85rem;
+}
+
+.header-link {
+  display: inline-block;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none !important;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.header-link:hover,
+.header-link:focus,
+.header-link:visited {
+  text-decoration: none !important;
+}
+.header-link:hover {
+  background: var(--bg-elev);
+}
+.header-link.active {
+  background: var(--bg-elev);
+}
+
+.tab-soon {
+  color: var(--muted);
+  font-size: 0.78em;
+  font-weight: 500;
+  margin-left: 4px;
 }
 
 .site-nav {
@@ -256,12 +347,13 @@ h1 {
 .tab-btn {
   margin: 0;
   border: 1px solid var(--btn-secondary-border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--btn-secondary-bg);
   color: var(--btn-secondary-text);
   text-decoration: none;
-  padding: 8px 12px;
-  font-size: 0.9rem;
+  padding: 12px 18px;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .tab-btn.active {
@@ -272,6 +364,37 @@ h1 {
 
 .tab-btn.cup-tab-empty {
   opacity: 0.72;
+}
+
+.tab-btn.world-cup-highlight {
+  border-color: #f0b429;
+  color: #f0b429;
+  background: rgba(240, 180, 41, 0.08);
+  font-weight: 700;
+  position: relative;
+}
+.tab-btn.world-cup-highlight:hover {
+  background: rgba(240, 180, 41, 0.18);
+  color: #f5c14b;
+}
+.tab-btn.world-cup-highlight.active {
+  background: #f0b429;
+  color: #1a1300;
+  border-color: #f0b429;
+}
+.tab-btn.world-cup-highlight::after {
+  content: "NEW";
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  background: #f0b429;
+  color: #1a1300;
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 2px 5px;
+  border-radius: 6px;
+  line-height: 1;
+  letter-spacing: 0.5px;
 }
 
 .position-odds-best {
@@ -911,6 +1034,63 @@ body:not(.dark-mode) .match-row.match-wrong {
   margin: 0 0 10px;
 }
 
+.world-cup-round {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #111922;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.world-cup-round > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 4px 0;
+  user-select: none;
+}
+
+.world-cup-round > summary::-webkit-details-marker {
+  display: none;
+}
+
+.world-cup-round > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.world-cup-round[open] > summary::before {
+  content: "▾";
+  color: var(--primary);
+}
+
+.world-cup-round-label {
+  flex: 1;
+}
+
+.world-cup-round-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  font-style: italic;
+}
+
+.world-cup-round[open] .world-cup-round-hint {
+  display: none;
+}
+
+.world-cup-round > .world-cup-fixture-grid {
+  margin-top: 10px;
+}
+
 .world-cup-rules {
   margin: 0;
   padding-left: 20px;
@@ -957,11 +1137,54 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .world-cup-group-grid {
-  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+/* World Cup page: 2 columns × 6 rows so the 12 group tables fit side by side
+   without forcing a horizontal scroll on the section. */
+.world-cup-group-grid.world-cup-groups-2x6 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row;
+}
+
+@media (max-width: 900px) {
+  .world-cup-group-grid.world-cup-groups-2x6 {
+    grid-template-columns: 1fr;
+  }
 }
 
 .world-cup-fixture-grid {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.group-fixtures-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.group-fixtures-btn {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 38px;
+  line-height: 1.2;
+}
+
+.group-fixtures-btn:hover {
+  background: var(--bg-elev);
+}
+
+.group-fixtures-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--btn-text);
 }
 
 .world-cup-odds-card {
@@ -971,10 +1194,71 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 /* World Cup tables use compact cells so all football stats remain scannable. */
+.world-cup-table {
+  font-size: 0.82rem;
+  width: 100%;
+  table-layout: fixed;
+}
 .world-cup-table th,
 .world-cup-table td {
-  padding: 7px 6px;
+  padding: 6px 4px;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Best Third-Place table: very tight cell padding + row spacing so all 12 columns
+   fit compactly. */
+.world-cup-table.third-place-table th,
+.world-cup-table.third-place-table td {
+  padding: 3px 2px;
+  font-size: 0.78rem;
+  line-height: 1.15;
+}
+.world-cup-table.third-place-table th:nth-child(1),
+.world-cup-table.third-place-table td:nth-child(1) {
+  width: 8%;
+}
+.world-cup-table.third-place-table th:nth-child(2),
+.world-cup-table.third-place-table td:nth-child(2) {
+  width: 7%;
+}
+.world-cup-table.third-place-table th:nth-child(3),
+.world-cup-table.third-place-table td:nth-child(3) {
+  width: 25%;
+  text-align: left;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.world-cup-table.third-place-table th:nth-child(n+4),
+.world-cup-table.third-place-table td:nth-child(n+4) {
+  width: 6%;
+}
+.world-cup-table th:nth-child(1),
+.world-cup-table td:nth-child(1) {
+  width: 38%;
+  text-align: left;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.world-cup-table th:nth-child(n+2),
+.world-cup-table td:nth-child(n+2) {
+  width: 7.75%;
+}
+
+/* Position-odds table: 5 columns (Team + 1st/2nd/3rd/4th) needs a different split. */
+.world-cup-table.position-odds-table {
+  table-layout: fixed;
+}
+.world-cup-table.position-odds-table th:nth-child(1),
+.world-cup-table.position-odds-table td:nth-child(1) {
+  width: 30%;
+  text-align: left;
+}
+.world-cup-table.position-odds-table th:nth-child(n+2),
+.world-cup-table.position-odds-table td:nth-child(n+2) {
+  width: 17.5%;
 }
 
 .world-cup-table th:first-child,
@@ -1157,4 +1441,34 @@ body:not(.dark-mode) .match-row.match-wrong {
   .site-nav {
     display: none;
   }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.match-card-probability-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 4px;
+}
+
+.match-card-probability-labels span {
+  flex: 1;
+  text-align: center;
+}
+
+.match-card-probability-labels strong {
+  color: var(--text);
+  font-weight: 600;
 }

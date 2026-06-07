@@ -74,9 +74,9 @@ URL_FOR_GRAPHIC = re.compile(
     r"\{\{\s*url_for\(\s*['\"]serve_graphic['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]\s*\)\s*\}\}"
 )
 
-# url_for('static', filename='X') -> 'static/X'
+# url_for('static', filename='X'[, v='Y']) -> 'static/X[?v=Y]'
 URL_FOR_STATIC = re.compile(
-    r"\{\{\s*url_for\(\s*['\"]static['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]\s*\)\s*\}\}"
+    r"\{\{\s*url_for\(\s*['\"]static['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"](?:\s*,\s*v\s*=\s*['\"]([^'\"]+)['\"])?\s*\)\s*\}\}"
 )
 
 # {{ 'active' if active_page == 'X' else '' }} -> '' (active class set by shared.js)
@@ -94,7 +94,7 @@ JINJA_BLOCK = re.compile(r"\{%[^%]*%\}")
 def strip_jinja(html: str) -> str:
     """Strip all Jinja expressions and blocks, replacing url_for() with paths."""
     html = URL_FOR_GRAPHIC.sub(lambda m: f"graphics/{m.group(1)}", html)
-    html = URL_FOR_STATIC.sub(lambda m: f"static/{m.group(1)}", html)
+    html = URL_FOR_STATIC.sub(lambda m: f"static/{m.group(1)}" + (f"?v={m.group(2)}" if m.group(2) else ""), html)
     html = ACTIVE_CLASS.sub("", html)
     html = JINJA_BLOCK.sub("", html)
     html = GENERIC_JINJA_EXPR.sub("", html)

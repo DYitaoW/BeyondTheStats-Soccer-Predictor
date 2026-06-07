@@ -2167,7 +2167,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=5000, help="Port to bind to")
-    parser.add_argument("--debug", action="store_true", help="Enable Flask debug mode")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable Flask debug mode (with auto-reload; spawns a reloader process)",
+    )
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable Werkzeug file-change reloader (requires --debug)",
+    )
     parser.add_argument("--disable-daily-refresh", action="store_true", help="Disable once-daily model refresh")
     parser.add_argument("--daily-refresh-hour", type=int, default=3, help="Hour (0-23) for daily model refresh")
     parser.add_argument("--daily-refresh-minute", type=int, default=0, help="Minute (0-59) for daily model refresh")
@@ -2182,8 +2191,14 @@ if __name__ == "__main__":
         raise SystemExit("--daily-refresh-hour must be between 0 and 23")
     if not (0 <= args.daily_refresh_minute <= 59):
         raise SystemExit("--daily-refresh-minute must be between 0 and 59")
+    if args.reload and not args.debug:
+        raise SystemExit("--reload requires --debug")
 
-    if _should_run_startup_tasks(args.debug):
+    # Default behavior: a single Flask process, no reloader. Pass --debug --reload
+    # together to get the Werkzeug file-watcher (which spawns a reloader child).
+    use_reloader = bool(args.debug and args.reload)
+
+    if _should_run_startup_tasks(args.debug or use_reloader):
         run_live_results_updater()
         update_accuracy_history_files()
         if not args.disable_daily_refresh:
@@ -2203,4 +2218,9 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    app.run(
+        host=args.host,
+        port=args.port,
+        debug=args.debug,
+        use_reloader=use_reloader,
+    )

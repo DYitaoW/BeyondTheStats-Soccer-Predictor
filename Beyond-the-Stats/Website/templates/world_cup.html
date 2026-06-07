@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026060704') }}">
 </head>
 <body class="dark-mode" data-active-page="world-cup">
   <main class="page">
@@ -21,19 +21,20 @@
             <div class="brand-sub">Matchday Predictor</div>
           </div>
         </a>
-        <button id="theme-toggle" class="theme-toggle">Light Mode</button>
+        <div class="header-actions">
+          <span class="ios-app-indicator" role="status"><span class="ios-app-indicator-icon" aria-hidden="true">📱</span><span class="ios-app-indicator-text">iOS Mobile app coming soon...</span></span>
+          <a id="header-about" class="theme-toggle header-link {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
+        </div>
       </div>
 
       <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
         <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
         <a id="tab-global" class="tab-btn {{ 'active' if active_page == 'global' else '' }}" href="/upcoming-matches">Upcoming Matches</a>
         <a id="tab-cups" class="tab-btn {{ 'active' if active_page == 'cups' else '' }}" href="/cups">Cups</a>
-        <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Head to Head</a>
+        <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
         <a id="tab-league-table" class="tab-btn {{ 'active' if active_page == 'league-table' else '' }}" href="/league-tables">Projected League Tables</a>
-        <a id="tab-world-cup" class="tab-btn {{ 'active' if active_page == 'world-cup' else '' }}" href="/world-cup">World Cup</a>
-        <a id="tab-players" class="tab-btn {{ 'active' if active_page == 'players' else '' }}" href="/players">Players</a>
+        <a id="tab-world-cup" class="tab-btn world-cup-highlight {{ 'active' if active_page == 'world-cup' else '' }}" href="/world-cup">World Cup 2026</a>
         <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
-        <a id="tab-about" class="tab-btn {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
       </nav>
     </header>
 
@@ -61,17 +62,16 @@
     </section>
 
     <section id="panel-global" class="{{ '' if active_page == 'global' else 'hidden' }}">
-      <div id="global-stats" class="card"></div>
+      <div id="global-stats" class="hidden"></div>
       <div class="card">
         <label for="global-source-filter">Source</label>
         <select id="global-source-filter">
           <option value="global">European Leagues</option>
-          <option value="cups">Cup Competitions</option>
           <option value="mls">MLS</option>
           <option value="extra">Extra Leagues</option>
-          <option value="world-cup">World Cup</option>
+          <option value="world-cup">World Cup 2026</option>
         </select>
-        <label for="cup-tabs" style="margin-top: 10px;">Cup</label>
+        <label for="cup-tabs" class="hidden" style="margin-top: 10px;">Cup</label>
         <select id="cup-tabs" class="cup-tabs hidden" aria-label="Cup prediction tabs"></select>
       </div>
       <div id="global-league-filter-card" class="card">
@@ -90,7 +90,7 @@
           <button id="cup-view-table" class="tab-btn active" type="button">League Table</button>
           <button id="cup-view-bracket" class="tab-btn" type="button">Bracket</button>
         </div>
-        <p id="cup-format-note" class="note"></p>
+        <p id="cup-format-note" class="note hidden"></p>
       </div>
       <div id="cup-table-view" class="card">Loading cup table...</div>
       <div id="cup-bracket-view" class="card hidden">Loading cup bracket...</div>
@@ -132,7 +132,7 @@
             <option value="global">European Leagues</option>
             <option value="mls">MLS</option>
             <option value="extra">Extra Leagues</option>
-            <option value="cups">Cup Competitions</option>
+            <option value="world-cup">World Cup 2026</option>
           </select>
 
           <label for="table-league">League</label>
@@ -147,7 +147,7 @@
       <div class="card">
         <h3>2026 FIFA World Cup Projection</h3>
         <p class="section-subtitle">
-          Simulated World Cup below is a representation of a SINGLE random simulation, not an aggregate result.
+          Simulated World Cup below is a representation of a SINGLE random simulation, not an aggregate result. FLUKY RESULTS MAY OCCUR
         </p>
       </div>
       <div id="world-cup-view" class="card">Loading World Cup projection...</div>
@@ -266,8 +266,8 @@
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='shared.js') }}"></script>
-  <script src="{{ url_for('static', filename='world_cup.js') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026060704') }}"></script>
+  <script src="{{ url_for('static', filename='world_cup.js', v='2026060704') }}"></script>
 </body>
 </html>
 

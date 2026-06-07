@@ -97,7 +97,7 @@ function renderHomeWcProjectedGroups(data) {
                 <table class="standings-table world-cup-table">
                     <thead>
                         <tr>
-                            <th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th>
+                            <th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -108,8 +108,6 @@ function renderHomeWcProjectedGroups(data) {
                             <td>${formatCell(team.W)}</td>
                             <td>${formatCell(team.D)}</td>
                             <td>${formatCell(team.L)}</td>
-                            <td>${formatCell(team.GF)}</td>
-                            <td>${formatCell(team.GA)}</td>
                             <td>${formatCell(team.GD)}</td>
                             <td><strong>${formatCell(team.Pts)}</strong></td>
                         </tr>

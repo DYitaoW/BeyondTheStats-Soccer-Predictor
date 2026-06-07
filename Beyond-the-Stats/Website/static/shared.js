@@ -13,7 +13,7 @@ const tabLeagueTable = document.getElementById("tab-league-table");
 const tabWorldCup = document.getElementById("tab-world-cup");
 const tabPlayers = document.getElementById("tab-players");
 const tabTactics = document.getElementById("tab-tactics");
-const tabAbout = document.getElementById("tab-about");
+const headerAbout = document.getElementById("header-about");
 const globalList = document.getElementById("global-list");
 const globalStats = document.getElementById("global-stats");
 const globalSourceFilter = document.getElementById("global-source-filter");
@@ -71,15 +71,64 @@ const cupProjectionConfigs = [
 ];
 let activeCupTab = "all";
 const mlsTeamSet = new Set(
-Array.from(document.querySelectorAll("#mls-teams option"))
+    Array.from(document.querySelectorAll("#mls-teams option"))
     .map((opt) => String(opt.value || "").trim().toLowerCase())
     .filter(Boolean)
 );
 const extraTeamSet = new Set(
-Array.from(document.querySelectorAll("#extra-teams option"))
+    Array.from(document.querySelectorAll("#extra-teams option"))
     .map((opt) => String(opt.value || "").trim().toLowerCase())
     .filter(Boolean)
 );
+
+// Hardcoded league lists: always shown in dropdowns, regardless of which
+// leagues currently have data. Order matches the priority in the dropdown.
+const EUROPEAN_LEAGUES = [
+    "England/Premier League",
+    "England/Championship",
+    "Spain/La Liga",
+    "Spain/La Liga 2",
+    "Germany/Bundesliga",
+    "Germany/Bundesliga 2",
+    "Italy/Serie A",
+    "Italy/Serie B",
+    "France/Ligue 1",
+    "France/Ligue 2",
+    "Belgium/First Division A",
+    "Netherlands/Eredivisie",
+    "Portugal/Primeira Liga",
+    "Scotland/Premiership",
+    "Turkey/Super Lig",
+];
+const EUROPEAN_CUPS = [
+    "UEFA/Champions League",
+    "UEFA/Europa League",
+    "UEFA/Conference League",
+    "England/FA Cup",
+    "England/League Cup",
+];
+const MLS_LEAGUES = [
+    "United States/MLS - Supporters Shield Table",
+    "United States/MLS - Eastern Conference",
+    "United States/MLS - Western Conference",
+];
+const OTHER_LEAGUES = [];
+const WORLD_CUP_OPTIONS = ["FIFA/World Cup"];
+
+function getLeaguesForSource(source) {
+    if (source === "mls") return [...MLS_LEAGUES];
+    if (source === "extra") return [...OTHER_LEAGUES];
+    if (source === "cups") return [...EUROPEAN_CUPS];
+    if (source === "world-cup") return [...WORLD_CUP_OPTIONS];
+    return [...EUROPEAN_LEAGUES, ...EUROPEAN_CUPS];
+}
+
+function getLeaguesForDataset(dataset) {
+    if (dataset === "mls") return [...MLS_LEAGUES];
+    if (dataset === "extra") return [...OTHER_LEAGUES];
+    if (dataset === "cups") return [...EUROPEAN_CUPS];
+    return [...EUROPEAN_LEAGUES, ...EUROPEAN_CUPS];
+}
 
 // Dark Mode Logic
 const themeToggle = document.getElementById("theme-toggle");
@@ -190,7 +239,7 @@ targetResult.innerHTML = html;
 
 function activateTab(tab) {
 // safely reset all tabs/panels so per-page templates without every section do not throw
-    [tabHome, tabGlobal, tabCups, tabH2H, tabLeagueTable, tabWorldCup, tabPlayers, tabAbout]
+    [tabHome, tabGlobal, tabCups, tabH2H, tabLeagueTable, tabWorldCup, tabPlayers, headerAbout]
     .filter(Boolean)
     .forEach((node) => node.classList.remove("active"));
     [panelHome, panelGlobal, panelCups, panelH2H, panelLeagueTable, panelWorldCup, panelPlayers, panelAbout]
@@ -219,7 +268,7 @@ if (tab === "home") {
     tabPlayers.classList.add("active");
     panelPlayers.classList.remove("hidden");
 } else if (tab === "about") {
-    tabAbout.classList.add("active");
+    if (headerAbout) headerAbout.classList.add("active");
     panelAbout.classList.remove("hidden");
 } else {
     tabHome.classList.add("active");
@@ -575,18 +624,22 @@ winnerView.innerHTML = html;
 
 function setLeagueSelectOptions(selectEl, leagues, includeMlsBracket = false, cupBrackets = null) {
 selectEl.innerHTML = "";
-const priorityLeagues = [
-    "England/Premier League",
-    "England/Championship",
-    "United States/MLS - Supporters Shield Table",
-    "United States/MLS - Eastern Conference",
-    "United States/MLS - Western Conference"
-];
+// Use the dataset (winnerDataset.value) to pick the hardcoded per-source list,
+// so all supported leagues are always in the dropdown regardless of data load.
+const dataset = winnerDataset && winnerDataset.value ? winnerDataset.value : "global";
+const hardcodedLeagues = getLeaguesForDataset(dataset);
 const leagueRank = (name) => {
+    const priorityLeagues = [
+        "England/Premier League",
+        "England/Championship",
+        "United States/MLS - Supporters Shield Table",
+        "United States/MLS - Eastern Conference",
+        "United States/MLS - Western Conference"
+    ];
     const idx = priorityLeagues.indexOf(name);
     return idx >= 0 ? idx : 1000;
 };
-const orderedLeagues = [...leagues].sort((a, b) => {
+const orderedLeagues = [...hardcodedLeagues].sort((a, b) => {
     const ra = leagueRank(a);
     const rb = leagueRank(b);
     if (ra !== rb) return ra - rb;
@@ -847,9 +900,16 @@ const config = cupConfigForCompetition(activeCupProjectionCompetition);
 const competition = primaryCupCompetition(config, payload);
 activeCupProjectionCompetition = competition;
 renderCupProjectionTabs(payload);
-cupFormatNote.textContent = config.hasTable
-    ? `${config.label}: ${config.leaguePhaseMatches} league-phase matches, then first round playoff, Round of 16, quarterfinals, semifinals and final.`
-    : `${config.label}: showing the next/recent cup rounds only, not the full historical bracket.`;
+cupFormatNote.textContent = "";
+if (!cupCompetitionHasData(config, payload)) {
+    cupTableView.innerHTML = "<p>No available data yet. Try again later.</p>";
+    cupBracketView.innerHTML = "<p>No available data yet. Try again later.</p>";
+    cupViewTable.classList.toggle("active", activeCupProjectionView === "table");
+    cupViewBracket.classList.toggle("active", activeCupProjectionView === "bracket");
+    cupTableView.classList.toggle("hidden", activeCupProjectionView !== "table");
+    cupBracketView.classList.toggle("hidden", activeCupProjectionView !== "bracket");
+    return;
+}
 cupViewTable.classList.toggle("active", activeCupProjectionView === "table");
 cupViewBracket.classList.toggle("active", activeCupProjectionView === "bracket");
 cupTableView.classList.toggle("hidden", activeCupProjectionView !== "table");
@@ -867,6 +927,7 @@ if (!leagueTablesCache.cups) {
     if (!resp.ok || !data.ok) {
     cupTableView.textContent = "Failed to load cup projections.";
     cupBracketView.textContent = "Failed to load cup projections.";
+    if (cupFormatNote) cupFormatNote.textContent = "";
     return;
     }
     leagueTablesCache.cups = data;
@@ -896,8 +957,8 @@ const cupBracketCount = data.cup_brackets && data.cup_brackets.competitions
     ? Object.keys(data.cup_brackets.competitions).length
     : 0;
 if (!leagues.length && !(mode === "cups" && cupBracketCount)) {
-    leagueTableView.innerHTML = "<p>No projected table CSV found. Run Project_League_Table.py first.</p>";
-    winnerView.innerHTML = "<p>No projected table CSV found. Run Project_League_Table.py first.</p>";
+    leagueTableView.innerHTML = "<p>No available Tables yet. Try again later.</p>";
+    winnerView.innerHTML = "<p>No available Tables yet. Try again later.</p>";
     return;
 }
 setLeagueSelectOptions(tableLeague, leagues, mode === "mls", mode === "cups" ? data.cup_brackets : null);
@@ -1226,14 +1287,10 @@ async function preloadHomeData() {
 
 
 function populateUpcomingLeagueFilter(selectEl, rows, availableLeagues = []) {
-// build league list from both API metadata and row competitions so initial load is never empty
-const rowLeagues = rows
-    .map((row) => String(row?.competition || "").trim())
-    .filter(Boolean);
-const apiLeagues = (availableLeagues || [])
-    .map((league) => String(league || "").trim())
-    .filter(Boolean);
-const leagues = [...new Set([...apiLeagues, ...rowLeagues])];
+// Always use the hardcoded per-source list so all supported leagues are
+// available in the dropdown, even if the current data load has no rows for them.
+const source = currentUpcomingSource ? currentUpcomingSource() : "global";
+const leagues = getLeaguesForSource(source);
 const priorityLeagues = [
     "England/Premier League",
     "England/Championship"
@@ -1267,32 +1324,27 @@ return leagues[0];
 
 async function loadUpcoming(mode, url, target, statsTarget, filterEl) {
 target.textContent = "Loading...";
-statsTarget.textContent = "Loading...";
+if (statsTarget) statsTarget.innerHTML = "";
 const isCupMode = mode === "cups";
 cupTabs.classList.toggle("hidden", !isCupMode);
+const cupLabel = document.querySelector('label[for="cup-tabs"]');
+if (cupLabel) cupLabel.classList.toggle("hidden", !isCupMode);
 // keep league/cup dropdown visible for all sources, including cups
 globalLeagueFilterCard.classList.remove("hidden");
 const resp = await fetch(url);
 const data = await resp.json();
 if (!resp.ok || !data.ok) {
     target.textContent = "Failed to load upcoming predictions.";
-    statsTarget.textContent = "Failed to load stats.";
     return;
 }
 const rows = data.rows || [];
 upcomingCache[mode] = rows;
-const stats = data.stats || {
-    correct_total: 0, settled_total: 0, accuracy_pct: 0.0, total_predictions: 0, pending_total: 0
-};
-const leagueStats = data.league_stats || [];
-upcomingStatsCache[mode] = { stats: stats, league_stats: leagueStats };
 // use API-provided league list when available to keep dropdown populated on first render
 const selectedLeague = populateUpcomingLeagueFilter(filterEl, rows, data.available_leagues || []);
 if (isCupMode) {
     renderCupTabs();
 }
 renderUpcoming(target, rows, selectedLeague);
-renderStats(statsTarget, stats, leagueStats, selectedLeague);
 renderTopPicks();
 }
 
@@ -1524,8 +1576,10 @@ tabTactics.addEventListener("click", () => {
 window.location.href = "/tactics";
 });
 }
-if (tabAbout) {
-tabAbout.addEventListener("click", () => activateTab("about"));
+if (headerAbout) {
+headerAbout.addEventListener("click", () => {
+    window.location.href = "/about";
+});
 }
 if (tableDataset) {
 tableDataset.addEventListener("change", async () => {
