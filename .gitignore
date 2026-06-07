@@ -104,6 +104,9 @@ Beyond-the-Stats/Website/tmp_test_api.py
 old_app_*.py
 old_index_*.html
 
+# User feedback submissions (runtime data, not source)
+Beyond-the-Stats/Website/files/feedback/feedback.txt
+
 # =============================================================================
 # EXCEPTIONS — keep team mappings, FIFA rankings, and pipeline seeds
 # =============================================================================
@@ -119,3 +122,7 @@ old_index_*.html
 # FIFA rankings + national-team API sources
 !Beyond-the-Stats/Data/National_Team_Data/all_team_rankings.json
 !Beyond-the-Stats/Data/National_Team_Data/national_team_api_sources.json
+
+dist-frontend/
+scripts/__pycache__/
+public/

@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import joblib
 import pandas as pd
-from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
 
 class AveragedProbaClassifier:
@@ -102,9 +102,80 @@ pm_extra = _load_module("predict_match_extra", os.path.join(EXTRA_FILES_DIR, "Pr
 
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-API_RATE_LIMIT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_PER_MINUTE", "60"))
+API_RATE_LIMIT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_PER_MINUTE", "120"))
 _api_rate_lock = threading.Lock()
 _api_rate_events_by_ip = {}
+
+
+# Cache-Control policy:
+# - /api/* JSON: 5 minutes shared cache + 5 minutes private. Pipeline runs
+#   daily so the data is stale for at most 24 h; browsers should revalidate
+#   on every navigation through the site, but a returning visitor who hits
+#   "back" within a few minutes gets an instant response.
+# - /static/*: 1 hour shared cache. JS / CSS change only on deploy, but
+#   browser cache + hard refresh (Ctrl-F5) covers the upgrade path without
+#   us needing query-string versioning.
+# - /graphics/* and other routes: short browser cache only.
+_API_CACHE_MAX_AGE = int(os.environ.get("API_CACHE_MAX_AGE", "300"))
+_STATIC_CACHE_MAX_AGE = int(os.environ.get("STATIC_CACHE_MAX_AGE", "86400"))
+
+
+@app.after_request
+def _add_cache_headers(response):
+    """Attach a sensible Cache-Control header to every served response.
+
+    The website re-fetches the same JSON + static assets on every page
+    load because no headers were previously set. This handler adds modest
+    browser + shared cache lifetimes so repeat visits are instant.
+    """
+    if request.path.startswith("/api/"):
+        # JSON endpoints: short max-age + must-revalidate so the browser
+        # revalidates on the next page load but can serve stale-while-
+        # revalidate if the user navigates quickly back to the page.
+        response.headers["Cache-Control"] = (
+            f"private, max-age={_API_CACHE_MAX_AGE}, must-revalidate"
+        )
+    elif request.path.startswith("/static/"):
+        # Static JS / CSS / images. Filenames are stable between deploys;
+        # version-bumping the URL is the cache-bust strategy. Override the
+        # Flask default ("no-cache") so browsers actually cache them.
+        response.headers["Cache-Control"] = (
+            f"public, max-age={_STATIC_CACHE_MAX_AGE}"
+        )
+    elif request.path.startswith("/graphics/"):
+        response.headers["Cache-Control"] = (
+            f"public, max-age={int(_STATIC_CACHE_MAX_AGE * 24)}"
+        )
+
+    # CORS for the Cloudflare Pages frontend (and any future static origin).
+    # Allow-list is read from ALLOWED_ORIGINS env var (comma-separated).
+    origin = request.headers.get("Origin")
+    if origin:
+        allowed = {
+            o.strip()
+            for o in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+            if o.strip()
+        }
+        # Default allow-list when no env var is set (local dev convenience).
+        if not allowed:
+            allowed = {"http://localhost:5000", "http://127.0.0.1:5000"}
+        if origin in allowed:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+
+    return response
+
+
+@app.before_request
+def _handle_cors_preflight():
+    """Respond to CORS preflight (OPTIONS) requests immediately."""
+    if request.method == "OPTIONS":
+        # Build a minimal preflight response; after_request adds the
+        # Access-Control-* headers based on the Origin.
+        return ("", 204)
 
 
 @dataclass
@@ -181,6 +252,10 @@ def _enforce_api_rate_limit():
 
         if len(events) >= limit:
             retry_after = int(max(1, 60 - (now - events[0])))
+            print(
+                f"[rate-limit] {ip} hit {limit} req/min cap on "
+                f"{request.path} (retry_after={retry_after}s)"
+            )
             return jsonify(
                 {
                     "ok": False,
@@ -1352,8 +1427,27 @@ def _safe_filename(name):
     return text[:120] or "unknown_league"
 
 
+HISTORY_COLUMNS = [
+    "prediction_key",
+    "match_date",
+    "competition",
+    "home_team",
+    "away_team",
+    "predicted_result",
+    "actual_result",
+    "is_correct",
+]
+
+
 def _update_accuracy_history_from_csv(csv_path, source_key):
-    """Append settled predictions into per-league accuracy history CSV files."""
+    """Append settled predictions into per-league accuracy history CSV files.
+
+    Each per-league file stores only the singular values needed to compute
+    accuracy (one row per match). Derived metrics (totals/percentages) and
+    prediction detail columns (probabilities, predicted goals/shots, etc.)
+    are intentionally excluded — they can be recomputed on demand from
+    these rows.
+    """
     if not os.path.exists(csv_path):
         return 0, 0
     try:
@@ -1367,12 +1461,11 @@ def _update_accuracy_history_from_csv(csv_path, source_key):
     os.makedirs(source_dir, exist_ok=True)
     files_touched = 0
     rows_added = 0
-    history_columns = list(frame.columns)
     if "actual_result" in frame.columns:
         settled_mask = frame["actual_result"].astype(str).str.strip().isin({"H", "D", "A"})
         settled = frame[settled_mask].copy()
     else:
-        settled = pd.DataFrame(columns=history_columns)
+        settled = pd.DataFrame(columns=HISTORY_COLUMNS)
 
     all_competitions = sorted(set(frame["competition"].astype(str).str.strip()))
     for competition in all_competitions:
@@ -1380,40 +1473,31 @@ def _update_accuracy_history_from_csv(csv_path, source_key):
         league_file = os.path.join(source_dir, f"{_safe_filename(league_name)}.csv")
         comp_data = settled[settled["competition"].astype(str).str.strip() == league_name].copy()
         if not comp_data.empty:
-            comp_data = comp_data[history_columns].copy()
+            comp_data = comp_data.reindex(columns=HISTORY_COLUMNS).copy()
             comp_data["competition"] = league_name
         else:
-            comp_data = pd.DataFrame(columns=history_columns)
+            comp_data = pd.DataFrame(columns=HISTORY_COLUMNS)
 
         if os.path.exists(league_file):
             try:
                 existing = pd.read_csv(league_file)
             except Exception:
-                existing = pd.DataFrame(columns=history_columns)
+                existing = pd.DataFrame(columns=HISTORY_COLUMNS)
         else:
-            existing = pd.DataFrame(columns=history_columns)
+            existing = pd.DataFrame(columns=HISTORY_COLUMNS)
+
+        # Existing files written by the old schema get re-projected to the
+        # new singular-value schema on the next read; missing columns are
+        # introduced as empty so the concat stays consistent.
+        for col in HISTORY_COLUMNS:
+            if col not in existing.columns:
+                existing[col] = pd.Series(dtype="object")
+        existing = existing.reindex(columns=HISTORY_COLUMNS)
 
         before = len(existing)
         merged = pd.concat([existing, comp_data], ignore_index=True) if not comp_data.empty else existing.copy()
         if not merged.empty:
             merged = merged.drop_duplicates(subset=["prediction_key"], keep="last")
-            settled_mask = merged["actual_result"].astype(str).str.strip().str.upper().isin({"H", "D", "A"})
-            settled = merged[settled_mask].copy()
-            total_counter = int(len(settled))
-            correct_counter = int(
-                (
-                    settled["predicted_result"].astype(str).str.strip().str.upper()
-                    == settled["actual_result"].astype(str).str.strip().str.upper()
-                ).sum()
-            )
-            accuracy_counter = round((100.0 * correct_counter / total_counter), 1) if total_counter else 0.0
-            merged["correct_counter"] = correct_counter
-            merged["total_counter"] = total_counter
-            merged["accuracy_pct_counter"] = accuracy_counter
-        else:
-            merged["correct_counter"] = pd.Series(dtype="int64")
-            merged["total_counter"] = pd.Series(dtype="int64")
-            merged["accuracy_pct_counter"] = pd.Series(dtype="float64")
         after = len(merged)
         merged.to_csv(league_file, index=False)
         files_touched += 1
@@ -1452,10 +1536,8 @@ def _render_site_page(template_name, active_page):
         "global": "/upcoming-matches",
         "cups": "/cups",
         "h2h": "/head-to-head",
-        "market": "/market-odds",
         "league-table": "/league-tables",
         "world-cup": "/world-cup",
-        "position-odds": "/position-odds",
         "players": "/players",
         "tactics": "/tactics",
         "about": "/about",
@@ -1500,12 +1582,6 @@ def _render_site_page(template_name, active_page):
     )
 
 
-@app.get("/custom-predictor")
-def custom_predictor():
-    """Redirect to the head-to-head page now that predictor lives there."""
-    return redirect("/head-to-head")
-
-
 @app.get("/upcoming-matches")
 def upcoming_matches():
     """Render the upcoming matches tab page."""
@@ -1524,12 +1600,6 @@ def head_to_head():
     return _render_site_page("head_to_head.html", active_page="h2h")
 
 
-@app.get("/market-odds")
-def market_odds():
-    """Render the market odds tab page."""
-    return _render_site_page("market_odds.html", active_page="market")
-
-
 @app.get("/league-tables")
 def league_tables():
     """Render the projected league tables tab page."""
@@ -1540,12 +1610,6 @@ def league_tables():
 def world_cup():
     """Render the World Cup tab page."""
     return _render_site_page("world_cup.html", active_page="world-cup")
-
-
-@app.get("/position-odds")
-def position_odds():
-    """Render the position odds tab page."""
-    return _render_site_page("position_odds.html", active_page="position-odds")
 
 
 @app.get("/about")
@@ -1823,6 +1887,186 @@ def api_upcoming_world_cup():
         "rows": rows,
         "stats": _compute_accuracy_stats(empty_frame),
         "league_stats": _compute_league_accuracy_stats(empty_frame),
+    })
+
+
+def _row_confidence(row):
+    """Confidence for a top-picks ranking: max of the three outcome probs.
+
+    Range 0-100. Higher means the model is more decisive about the result.
+    """
+    try:
+        ph = float(row.get("prob_home") or 0.0)
+        pdv = float(row.get("prob_draw") or 0.0)
+        pa = float(row.get("prob_away") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(ph, pdv, pa)
+
+
+def _row_match_key(row):
+    """Stable key for de-duplicating the same matchup across data sources."""
+    return (
+        str(row.get("match_date") or "").strip(),
+        str(row.get("home_team") or "").strip().lower(),
+        str(row.get("away_team") or "").strip().lower(),
+    )
+
+
+def _is_valid_top_pick(row):
+    """Filter to rows with full team labels + non-negative numeric probs."""
+    if not row:
+        return False
+    if not row.get("home_team") or not row.get("away_team") or not row.get("winner_label"):
+        return False
+    try:
+        h = float(row.get("prob_home"))
+        d = float(row.get("prob_draw"))
+        a = float(row.get("prob_away"))
+    except (TypeError, ValueError):
+        return False
+    if not all(map(lambda v: v == v and v >= 0, (h, d, a))):  # filter NaN + negatives
+        return False
+    return True
+
+
+def _is_future_top_pick(row):
+    """Keep only fixtures dated today or later."""
+    raw = str(row.get("match_date") or "").strip()
+    if not raw:
+        return False
+    parsed = pd.to_datetime(raw, errors="coerce")
+    if pd.isna(parsed):
+        return False
+    return parsed.normalize() >= pd.Timestamp(datetime.now().date())
+
+
+@app.get("/api/top-picks")
+def api_top_picks():
+    """Return the top-N most confident upcoming predictions across all sources.
+
+    Aggregates rows from the five /api/upcoming/* sources (global, mls, extra,
+    cups, world-cup), de-duplicates identical matchups, filters to future
+    fixtures, sorts by max(prob_home, prob_draw, prob_away) descending, and
+    returns the top N rows. The home page calls this single endpoint for
+    its top-picks widget instead of fetching the five separate sources
+    (which together ship 100+ rows just to display 12 cards).
+    """
+    try:
+        limit = int(request.args.get("limit", "12"))
+    except (TypeError, ValueError):
+        limit = 12
+    limit = max(1, min(limit, 50))
+
+    seen = {}
+    for source, csv_path in (
+        ("global", GLOBAL_UPCOMING_FILE),
+        ("mls", MLS_UPCOMING_FILE),
+        ("extra", EXTRA_UPCOMING_FILE),
+        ("cups", CUP_UPCOMING_FILE),
+    ):
+        rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source)
+        for row in rows:
+            if not _is_valid_top_pick(row):
+                continue
+            key = _row_match_key(row)
+            if not key[0] or not key[1] or not key[2]:
+                continue
+            # First source wins; later sources are skipped.
+            seen.setdefault(key, row)
+
+    # World Cup upcoming is a different shape (read from the projection JSON,
+    # not the CSV files). Append those rows so WC group-stage games show up
+    # alongside the league fixtures in the top-picks widget.
+    try:
+        world_cup_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+        if os.path.exists(world_cup_file):
+            with open(world_cup_file, "r", encoding="utf-8") as fh:
+                wc_data = json.load(fh)
+            today = pd.Timestamp(datetime.now().date())
+            for fixture in wc_data.get("group_fixtures", []) or []:
+                match_date = pd.to_datetime(fixture.get("match_date", ""), errors="coerce")
+                if pd.isna(match_date) or match_date < today:
+                    continue
+                home = str(fixture.get("display_home_team") or fixture.get("home_team") or "").strip()
+                away = str(fixture.get("display_away_team") or fixture.get("away_team") or "").strip()
+                if not home or not away:
+                    continue
+                try:
+                    ph = round(float(fixture.get("prob_home", 0.0)) * 100, 3)
+                    pdv = round(float(fixture.get("prob_draw", 0.0)) * 100, 3)
+                    pa = round(float(fixture.get("prob_away", 0.0)) * 100, 3)
+                except (TypeError, ValueError):
+                    continue
+                try:
+                    phg = int(fixture["pred_home_goals"]) if fixture.get("pred_home_goals") is not None and not pd.isna(fixture["pred_home_goals"]) else None
+                    pag = int(fixture["pred_away_goals"]) if fixture.get("pred_away_goals") is not None and not pd.isna(fixture["pred_away_goals"]) else None
+                except (TypeError, ValueError):
+                    phg = pag = None
+                weekday = ""
+                date_label = str(fixture.get("match_date", ""))
+                time_label = ""
+                utc_raw = str(fixture.get("match_datetime_utc", "")).strip()
+                if utc_raw:
+                    dt_val = pd.to_datetime(utc_raw, utc=True, errors="coerce")
+                    if not pd.isna(dt_val):
+                        weekday = dt_val.strftime("%A")
+                        date_label = dt_val.strftime("%B %d, %Y")
+                        try:
+                            time_label = dt_val.strftime("%I:%M %p UTC").lstrip("0")
+                        except Exception:
+                            time_label = ""
+                wc_row = {
+                    "match_date": str(fixture.get("match_date", "")),
+                    "match_datetime_et": "",
+                    "weekday": weekday,
+                    "date_label": date_label,
+                    "time_label": time_label,
+                    "competition": str(fixture.get("competition", "FIFA/World Cup")),
+                    "stage": str(fixture.get("stage", "group-stage")),
+                    "group": str(fixture.get("group", "")),
+                    "venue": str(fixture.get("venue", "")),
+                    "home_team": home,
+                    "away_team": away,
+                    "winner_label": _winner_label(str(fixture.get("predicted_result", "")), home, away),
+                    "prob_home": ph,
+                    "prob_draw": pdv,
+                    "prob_away": pa,
+                    "pred_home_goals": phg,
+                    "pred_away_goals": pag,
+                    "reasoning": "",
+                    "actual_result": "",
+                    "is_correct": "",
+                }
+                if not _is_valid_top_pick(wc_row):
+                    continue
+                key = _row_match_key(wc_row)
+                if not key[0] or not key[1] or not key[2]:
+                    continue
+                seen.setdefault(key, wc_row)
+    except Exception:
+        # WC projection is optional for the top-picks widget. Swallow errors so
+        # the rest of the picks still render.
+        pass
+
+    # De-dupe and filter to future fixtures.
+    candidates = [r for r in seen.values() if _is_future_top_pick(r)]
+
+    # Sort by confidence desc, then by date asc (earliest first), then by
+    # competition + teams for a deterministic order when ties exist.
+    candidates.sort(
+        key=lambda r: (
+            -_row_confidence(r),
+            str(r.get("match_date") or ""),
+            str(r.get("competition") or "").lower(),
+            str(r.get("home_team") or "").lower(),
+        )
+    )
+    return jsonify({
+        "ok": True,
+        "rows": candidates[:limit],
+        "total_candidates": len(candidates),
+        "limit": limit,
     })
 
 

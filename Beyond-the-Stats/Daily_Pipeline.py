@@ -24,7 +24,7 @@ import json
 import signal
 import sys
 import time
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 from pathlib import Path
 
 SP_DIR = Path(__file__).resolve().parent
@@ -86,7 +86,32 @@ def parse_args():
         "--interval-hours",
         type=float,
         default=24.0,
-        help="Hours to wait between runs when looping (default: 24).",
+        help=(
+            "Hours to wait between runs when looping. Default 24. "
+            "Ignored when --refresh-time is set (then the scheduler fires "
+            "at the configured wall-clock time every day)."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-time",
+        type=str,
+        default="",
+        help=(
+            "Daily wall-clock time to run the pipeline, format HH:MM (24h). "
+            "When set, the scheduler aligns each run to this time in --timezone "
+            "(default America/New_York) instead of every --interval-hours. "
+            "Example: --refresh-time 02:00 --timezone America/New_York."
+        ),
+    )
+    parser.add_argument(
+        "--timezone",
+        type=str,
+        default="America/New_York",
+        help=(
+            "IANA timezone name used to interpret --refresh-time. "
+            "Default America/New_York. The 2am ET target survives DST "
+            "transitions automatically because the scheduler is timezone-aware."
+        ),
     )
     parser.add_argument(
         "--max-iterations",
@@ -648,6 +673,39 @@ def _sleep_with_shutdown(seconds):
         time.sleep(min(1.0, end - time.monotonic()))
 
 
+def _compute_seconds_until_next_run(refresh_time, tz_name):
+    """Compute seconds from now until the next HH:MM tick in ``tz_name``.
+
+    Returns None if ``refresh_time`` is empty / unparseable so the caller
+    can fall back to the interval-hours path.
+    """
+    from zoneinfo import ZoneInfo
+
+    if not refresh_time:
+        return None
+    try:
+        hour_str, minute_str = refresh_time.split(":", 1)
+        hour = int(hour_str)
+        minute = int(minute_str)
+        if not (0 <= hour < 24 and 0 <= minute < 60):
+            raise ValueError("out of range")
+    except (ValueError, AttributeError):
+        print(f"[WARN] --refresh-time {refresh_time!r} is not HH:MM; falling back to --interval-hours")
+        return None
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        print(f"[WARN] --timezone {tz_name!r} is unknown; falling back to UTC")
+        tz = ZoneInfo("UTC")
+    now_local = datetime.now(tz)
+    target = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now_local:
+        target = target + timedelta(days=1)
+    wait = (target - now_local).total_seconds()
+    print(f"[INFO] Next run scheduled for {target.isoformat()} ({tz_name}) -- in {wait/3600:.2f}h")
+    return wait
+
+
 def main():
     args = parse_args()
     api_token = load_api_token()
@@ -694,13 +752,21 @@ def main():
             print(f"[INFO] Reached max-iterations={args.max_iterations}; exiting.")
             break
 
-        sleep_seconds = max(0.0, args.interval_hours) * 3600.0
-        if sleep_seconds <= 0:
-            print("[INFO] interval-hours <= 0; exiting after one run.")
+        # Sleep until the next scheduled run. Two paths:
+        #   1. --refresh-time HH:MM --timezone TZ  -> align to wall clock
+        #   2. (default) --interval-hours N        -> sleep N hours from now
+        # The --refresh-time path is preferred for the persistent backend: the
+        # 2am ET target is preserved across DST because the scheduler uses
+        # zoneinfo instead of naive UTC math.
+        wait_seconds = _compute_seconds_until_next_run(args.refresh_time, args.timezone)
+        if wait_seconds is None:
+            wait_seconds = max(0.0, args.interval_hours) * 3600.0
+        if wait_seconds <= 0:
+            print("[INFO] wait <= 0; exiting after one run.")
             break
 
-        print(f"\n[INFO] Next run in {args.interval_hours:.2f}h. Press Ctrl-C to stop.")
-        _sleep_with_shutdown(sleep_seconds)
+        print(f"\n[INFO] Next run in {wait_seconds/3600:.2f}h. Press Ctrl-C to stop.")
+        _sleep_with_shutdown(wait_seconds)
 
     print("[INFO] Daily pipeline exiting.")
 

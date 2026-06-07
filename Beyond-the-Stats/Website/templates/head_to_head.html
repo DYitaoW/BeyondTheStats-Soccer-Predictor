@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Beyond the Score</title>
+  <title>Beyond The Stats</title>
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BtSLogo.png') }}">
@@ -15,9 +15,9 @@
     <header class="site-header">
       <div class="site-header-top">
         <a id="brand-home-btn" class="brand brand-home-btn" href="/" aria-label="Go to home">
-          <img class="brand-mark" src="{{ url_for('serve_graphic', filename='BtSLogo.png') }}" alt="Beyond The Score logo">
+          <img class="brand-mark" src="{{ url_for('serve_graphic', filename='BtSLogo.png') }}" alt="Beyond The Stats logo">
           <div>
-            <div class="brand-name">Beyond The Score</div>
+            <div class="brand-name">Beyond The Stats</div>
             <div class="brand-sub">Matchday Predictor</div>
           </div>
         </a>
@@ -29,10 +29,8 @@
         <a id="tab-global" class="tab-btn {{ 'active' if active_page == 'global' else '' }}" href="/upcoming-matches">Upcoming Matches</a>
         <a id="tab-cups" class="tab-btn {{ 'active' if active_page == 'cups' else '' }}" href="/cups">Cups</a>
         <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Head to Head</a>
-        <a id="tab-market" class="tab-btn {{ 'active' if active_page == 'market' else '' }}" href="/market-odds">Market & Odds (Coming Soon)</a>
         <a id="tab-league-table" class="tab-btn {{ 'active' if active_page == 'league-table' else '' }}" href="/league-tables">Projected League Tables</a>
         <a id="tab-world-cup" class="tab-btn {{ 'active' if active_page == 'world-cup' else '' }}" href="/world-cup">World Cup</a>
-        <a id="tab-position-odds" class="tab-btn {{ 'active' if active_page == 'position-odds' else '' }}" href="/position-odds">Position Odds</a>
         <a id="tab-players" class="tab-btn {{ 'active' if active_page == 'players' else '' }}" href="/players">Players</a>
         <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
         <a id="tab-about" class="tab-btn {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
@@ -126,13 +124,6 @@
       </div>
 
     </section>
-    <section id="panel-market" class="{{ '' if active_page == 'market' else 'hidden' }}">
-      <div class="card">
-        <h3>Prediction Market & Betting Odds</h3>
-        <p>Current estimates and betting odds will appear here.</p>
-      </div>
-
-    </section>
     <section id="panel-league-table" class="{{ '' if active_page == 'league-table' else 'hidden' }}">
       <div class="card">
         <h3>Projected League Table</h3>
@@ -161,24 +152,6 @@
         </p>
       </div>
       <div id="world-cup-view" class="card">Loading World Cup projection...</div>
-
-    </section>
-    <section id="panel-position-odds" class="{{ '' if active_page == 'position-odds' else 'hidden' }}">
-      <div class="card">
-        <h3>Final Position Odds</h3>
-        <div class="table-controls">
-          <label for="position-odds-dataset">Dataset</label>
-          <select id="position-odds-dataset">
-            <option value="global">European Leagues</option>
-            <option value="mls">MLS</option>
-            <option value="extra">Extra Leagues</option>
-          </select>
-
-          <label for="position-odds-league">League</label>
-          <select id="position-odds-league"></select>
-        </div>
-      </div>
-      <div id="position-odds-view" class="card">Select a dataset and league.</div>
 
     </section>
     <section id="panel-players" class="{{ '' if active_page == 'players' else 'hidden' }}">
@@ -292,7 +265,7 @@
     </section>
       <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
-      <p>&copy; 2026 Beyond the Score</p>
+      <p>&copy; 2026 Beyond The Stats</p>
     </footer>
   </main>
 

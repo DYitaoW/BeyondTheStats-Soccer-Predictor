@@ -3,17 +3,14 @@ const panelGlobal = document.getElementById("panel-global");
 const panelCups = document.getElementById("panel-cups");
 const panelLeagueTable = document.getElementById("panel-league-table");
 const panelWorldCup = document.getElementById("panel-world-cup");
-const panelPositionOdds = document.getElementById("panel-position-odds");
 const panelPlayers = document.getElementById("panel-players");
 const panelAbout = document.getElementById("panel-about");
 const tabHome = document.getElementById("tab-home");
 const tabGlobal = document.getElementById("tab-global");
 const tabCups = document.getElementById("tab-cups");
 const tabH2H = document.getElementById("tab-h2h");
-const tabMarket = document.getElementById("tab-market");
 const tabLeagueTable = document.getElementById("tab-league-table");
 const tabWorldCup = document.getElementById("tab-world-cup");
-const tabPositionOdds = document.getElementById("tab-position-odds");
 const tabPlayers = document.getElementById("tab-players");
 const tabTactics = document.getElementById("tab-tactics");
 const tabAbout = document.getElementById("tab-about");
@@ -26,14 +23,11 @@ const cupTabs = document.getElementById("cup-tabs");
 const tableDataset = document.getElementById("table-dataset");
 const tableLeague = document.getElementById("table-league");
 const tableViewToggle = document.getElementById("table-view-toggle");
+const tablePositionOddsToggle = document.getElementById("table-position-odds-toggle");
 const leagueTableView = document.getElementById("league-table-view");
-const positionOddsDataset = document.getElementById("position-odds-dataset");
-const positionOddsLeague = document.getElementById("position-odds-league");
-const positionOddsView = document.getElementById("position-odds-view");
 const winnerDataset = document.getElementById("winner-dataset");
 const winnerView = document.getElementById("winner-view");
 const panelH2H = document.getElementById("panel-h2h");
-const panelMarket = document.getElementById("panel-market");
 const h2hResults = document.getElementById("h2h-results");
 const h2hDataset = document.getElementById("h2h-dataset");
 const h2hTeam1Input = document.getElementById("h2h-team1");
@@ -50,6 +44,7 @@ const cupTableView = document.getElementById("cup-table-view");
 const cupBracketView = document.getElementById("cup-bracket-view");
 const leagueTablesCache = { global: null, mls: null, extra: null, cups: null };
 let tableViewMode = "standings";
+let tablePositionOddsMode = false;
 let activeCupProjectionCompetition = "UEFA/Champions League";
 let activeCupProjectionView = "table";
 const upcomingCache = { global: [], mls: [], extra: [], cups: [] };
@@ -195,10 +190,10 @@ targetResult.innerHTML = html;
 
 function activateTab(tab) {
 // safely reset all tabs/panels so per-page templates without every section do not throw
-[tabHome, tabGlobal, tabCups, tabH2H, tabMarket, tabLeagueTable, tabWorldCup, tabPositionOdds, tabPlayers, tabAbout]
+    [tabHome, tabGlobal, tabCups, tabH2H, tabLeagueTable, tabWorldCup, tabPlayers, tabAbout]
     .filter(Boolean)
     .forEach((node) => node.classList.remove("active"));
-[panelHome, panelGlobal, panelCups, panelH2H, panelMarket, panelLeagueTable, panelWorldCup, panelPositionOdds, panelPlayers, panelAbout]
+    [panelHome, panelGlobal, panelCups, panelH2H, panelLeagueTable, panelWorldCup, panelPlayers, panelAbout]
     .filter(Boolean)
     .forEach((node) => node.classList.add("hidden"));
 
@@ -214,18 +209,12 @@ if (tab === "home") {
 } else if (tab === "h2h") {
     tabH2H.classList.add("active");
     panelH2H.classList.remove("hidden");
-} else if (tab === "market") {
-    tabMarket.classList.add("active");
-    panelMarket.classList.remove("hidden");
 } else if (tab === "league-table") {
     tabLeagueTable.classList.add("active");
     panelLeagueTable.classList.remove("hidden");
 } else if (tab === "world-cup") {
     tabWorldCup.classList.add("active");
     panelWorldCup.classList.remove("hidden");
-} else if (tab === "position-odds") {
-    tabPositionOdds.classList.add("active");
-    panelPositionOdds.classList.remove("hidden");
 } else if (tab === "players") {
     tabPlayers.classList.add("active");
     panelPlayers.classList.remove("hidden");
@@ -480,11 +469,25 @@ if (!payload || !payload.tables || !payload.tables[selectedLeague]) {
     return;
 }
 const rows = payload.tables[selectedLeague];
-if (tableViewMode === "probability") {
+// Position-odds view wins over the simple probability view when both are active,
+// since it surfaces the same data (chance of finishing 1st / 2nd / ...) in a
+// more detailed grid per team.
+if (tablePositionOddsMode) {
+    leagueTableView.innerHTML = `<h3>${selectedLeague}</h3>${renderPositionOddsRows(rows, selectedLeague)}`;
+} else if (tableViewMode === "probability") {
     leagueTableView.innerHTML = `<h3>${selectedLeague}</h3>${renderLeagueProbabilityRows(rows)}`;
 } else {
     leagueTableView.innerHTML = `<h3>${selectedLeague}</h3>${renderLeagueTableRows(rows, selectedLeague)}`;
 }
+}
+
+function updateTablePositionOddsToggleLabel() {
+if (!tablePositionOddsToggle) {
+    return;
+}
+tablePositionOddsToggle.textContent = tablePositionOddsMode
+    ? "Hide Position Odds"
+    : "Show Position Odds";
 }
 
 function renderPositionOddsRows(rows, leagueName) {
@@ -521,18 +524,6 @@ for (const row of sortedRows) {
 }
 html += "</tbody></table>";
 return html;
-}
-
-function renderPositionOddsView() {
-const mode = positionOddsDataset.value;
-const selectedLeague = positionOddsLeague.value;
-const payload = leagueTablesCache[mode];
-if (!payload || !payload.tables || !payload.tables[selectedLeague]) {
-    positionOddsView.innerHTML = "<p>No position odds data available.</p>";
-    return;
-}
-const rows = payload.tables[selectedLeague];
-positionOddsView.innerHTML = `<h3>${selectedLeague}</h3>${renderPositionOddsRows(rows, selectedLeague)}`;
 }
 
 function renderWinnerView() {
@@ -906,16 +897,12 @@ const cupBracketCount = data.cup_brackets && data.cup_brackets.competitions
     : 0;
 if (!leagues.length && !(mode === "cups" && cupBracketCount)) {
     leagueTableView.innerHTML = "<p>No projected table CSV found. Run Project_League_Table.py first.</p>";
-    positionOddsView.innerHTML = "<p>No projected table CSV found. Run Project_League_Table.py first.</p>";
     winnerView.innerHTML = "<p>No projected table CSV found. Run Project_League_Table.py first.</p>";
     return;
 }
 setLeagueSelectOptions(tableLeague, leagues, mode === "mls", mode === "cups" ? data.cup_brackets : null);
 if ((!tableLeague.value || !tableLeague.value.trim()) && tableLeague.options.length > 0) {
     tableLeague.selectedIndex = 0;
-}
-if (positionOddsDataset.value === mode) {
-    setLeagueSelectOptions(positionOddsLeague, leagues, false);
 }
 if (mode === "mls" && tableLeague.value === "__mls_bracket__") {
     tableViewToggle.disabled = true;
@@ -926,9 +913,6 @@ if (mode === "mls" && tableLeague.value === "__mls_bracket__") {
 } else {
     tableViewToggle.disabled = false;
     renderSelectedLeagueTable();
-}
-if (positionOddsDataset.value === mode) {
-    renderPositionOddsView();
 }
 if (winnerDataset.value === mode) {
     renderWinnerView();
@@ -1155,21 +1139,30 @@ for (const r of rows) {
 return out;
 }
 
-function renderTopPicks() {
-    const allRows = dedupeFixtures(
-    [
-        ...(upcomingCache.global || []),
-        ...(upcomingCache.mls || []),
-        ...(upcomingCache.extra || []),
-        ...(upcomingCache.cups || []),
-        ...(upcomingCache.worldcup || []),
-    ]
-        .filter(isValidProbabilityRow)
-    );
-    const futureRows = allRows.filter(isLikelyFutureFixture);
-    const sourceRows = futureRows.length ? futureRows : allRows;
-    const picks = pickRandomRows(sourceRows, 12);
+function renderTopPicks(rows) {
     if (!topPicksList) return;
+    // Prefer rows passed in by the server-side `/api/top-picks` endpoint
+    // (sorted by confidence desc, capped to N). Fall back to a client-side
+    // random pick from the full upcoming cache for older pages that still
+    // call renderTopPicks() with no argument.
+    let picks = [];
+    if (Array.isArray(rows) && rows.length) {
+        picks = rows.slice(0, 12);
+    } else {
+        const allRows = dedupeFixtures(
+            [
+                ...(upcomingCache.global || []),
+                ...(upcomingCache.mls || []),
+                ...(upcomingCache.extra || []),
+                ...(upcomingCache.cups || []),
+                ...(upcomingCache.worldcup || []),
+            ]
+                .filter(isValidProbabilityRow)
+        );
+        const futureRows = allRows.filter(isLikelyFutureFixture);
+        const sourceRows = futureRows.length ? futureRows : allRows;
+        picks = pickRandomRows(sourceRows, 12);
+    }
     if (!picks.length) {
     topPicksList.innerHTML = "<p class=\"muted-placeholder\">No upcoming games</p>";
     return;
@@ -1202,62 +1195,33 @@ function renderTopPicks() {
 }
 
 async function preloadHomeData() {
-    if (!upcomingCache.global.length) {
+    // The home page is the only page that renders the top-picks widget. Every
+    // other page loads its own data through initializeActivePage() and never
+    // touches the top-picks DOM, so we skip the home widget everywhere else.
+    //
+    // Previously this function also fired five legacy /api/upcoming/* fetches
+    // (global, mls, extra, cups, world-cup) on EVERY page load, regardless of
+    // whether the home panel was visible. That made 5 wasted API calls per
+    // non-home page load and pushed real users over the 60 req/min/IP rate
+    // limit when they clicked through several pages in quick succession.
+    const isHomePage = document.body?.dataset?.activePage === "home";
+    if (!isHomePage || !topPicksList) {
+        return;
+    }
     try {
-        const respGlobal = await fetch("/api/upcoming/global");
-        const dataGlobal = await respGlobal.json();
-        if (respGlobal.ok && dataGlobal.ok) {
-        upcomingCache.global = dataGlobal.rows || [];
+        const resp = await fetch("/api/top-picks?limit=12");
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data?.ok) {
+            renderTopPicks(data.rows || []);
+            return;
         }
+        console.error("Top-picks endpoint returned non-ok response", data);
     } catch (err) {
-        console.error("Failed to preload global upcoming rows", err);
+        console.error("Failed to fetch top picks", err);
     }
-    }
-    if (!upcomingCache.mls.length) {
-    try {
-        const respMls = await fetch("/api/upcoming/mls");
-        const dataMls = await respMls.json();
-        if (respMls.ok && dataMls.ok) {
-        upcomingCache.mls = dataMls.rows || [];
-        }
-    } catch (err) {
-        console.error("Failed to preload MLS upcoming rows", err);
-    }
-    }
-    if (!upcomingCache.extra.length) {
-    try {
-        const respExtra = await fetch("/api/upcoming/extra");
-        const dataExtra = await respExtra.json();
-        if (respExtra.ok && dataExtra.ok) {
-        upcomingCache.extra = dataExtra.rows || [];
-        }
-    } catch (err) {
-        console.error("Failed to preload extra upcoming rows", err);
-    }
-    }
-    if (!upcomingCache.cups.length) {
-    try {
-        const respCups = await fetch("/api/upcoming/cups");
-        const dataCups = await respCups.json();
-        if (respCups.ok && dataCups.ok) {
-        upcomingCache.cups = dataCups.rows || [];
-        }
-    } catch (err) {
-        console.error("Failed to preload cup upcoming rows", err);
-    }
-    }
-    if (!upcomingCache.worldcup || !upcomingCache.worldcup.length) {
-    try {
-        const respWc = await fetch("/api/upcoming/world-cup");
-        const dataWc = await respWc.json();
-        if (respWc.ok && dataWc.ok) {
-        upcomingCache.worldcup = dataWc.rows || [];
-        }
-    } catch (err) {
-        console.error("Failed to preload World Cup upcoming rows", err);
-    }
-    }
-    renderTopPicks();
+    // If the dedicated endpoint failed, leave the existing "Loading future
+    // games..." placeholder so the user sees a clear empty state rather than
+    // five random rows from a different page.
 }
 
 
@@ -1521,9 +1485,6 @@ await loadCupProjections();
 if (tabH2H) {
 tabH2H.addEventListener("click", () => activateTab("h2h"));
 }
-if (tabMarket) {
-tabMarket.addEventListener("click", () => activateTab("market"));
-}
 if (tabLeagueTable) {
 tabLeagueTable.addEventListener("click", async () => {
 activateTab("league-table");
@@ -1539,25 +1500,17 @@ if (!leagueTablesCache[tableDataset.value]) {
     );
     if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
     tableViewToggle.disabled = true;
+    if (tablePositionOddsToggle) tablePositionOddsToggle.disabled = true;
     await renderMlsBracket(cached);
     } else if (tableDataset.value === "cups" && tableLeague.value.startsWith("__cup_bracket__:")) {
     tableViewToggle.disabled = true;
+    if (tablePositionOddsToggle) tablePositionOddsToggle.disabled = true;
     renderCupBracket(cached, tableLeague.value.replace("__cup_bracket__:", ""));
     } else {
     tableViewToggle.disabled = false;
+    if (tablePositionOddsToggle) tablePositionOddsToggle.disabled = false;
     renderSelectedLeagueTable();
     }
-}
-});
-}
-if (tabPositionOdds) {
-tabPositionOdds.addEventListener("click", async () => {
-activateTab("position-odds");
-if (!leagueTablesCache[positionOddsDataset.value]) {
-    await loadLeagueTables(positionOddsDataset.value);
-} else {
-    setLeagueSelectOptions(positionOddsLeague, leagueTablesCache[positionOddsDataset.value].leagues || [], false);
-    renderPositionOddsView();
 }
 });
 }
@@ -1579,16 +1532,6 @@ tableDataset.addEventListener("change", async () => {
 await loadLeagueTables(tableDataset.value);
 });
 }
-if (positionOddsDataset) {
-positionOddsDataset.addEventListener("change", async () => {
-await loadLeagueTables(positionOddsDataset.value);
-});
-}
-if (positionOddsLeague) {
-positionOddsLeague.addEventListener("change", () => {
-renderPositionOddsView();
-});
-}
 // bind winner change handler only on pages that render the winner widget
 if (winnerDataset) {
 winnerDataset.addEventListener("change", async () => {
@@ -1602,12 +1545,15 @@ if (tableLeague) {
 tableLeague.addEventListener("change", async () => {
 if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
     tableViewToggle.disabled = true;
+    if (tablePositionOddsToggle) tablePositionOddsToggle.disabled = true;
     await renderMlsBracket(leagueTablesCache["mls"] || { tables: {} });
 } else if (tableDataset.value === "cups" && tableLeague.value.startsWith("__cup_bracket__:")) {
     tableViewToggle.disabled = true;
+    if (tablePositionOddsToggle) tablePositionOddsToggle.disabled = true;
     renderCupBracket(leagueTablesCache["cups"] || { tables: {}, cup_brackets: null }, tableLeague.value.replace("__cup_bracket__:", ""));
 } else {
     tableViewToggle.disabled = false;
+    if (tablePositionOddsToggle) tablePositionOddsToggle.disabled = false;
     renderSelectedLeagueTable();
 }
 });
@@ -1621,6 +1567,24 @@ if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
 }
 renderSelectedLeagueTable();
 });
+}
+if (tablePositionOddsToggle) {
+tablePositionOddsToggle.addEventListener("click", () => {
+    tablePositionOddsMode = !tablePositionOddsMode;
+    updateTablePositionOddsToggleLabel();
+    // Position-odds and the simple probability view are alternatives — flip
+    // the probability toggle off when turning position-odds on so the user
+    // never sees stacked views.
+    if (tablePositionOddsMode && tableViewMode === "probability" && tableViewToggle) {
+        tableViewMode = "standings";
+        updateTableViewToggleLabel();
+    }
+    if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
+        return;
+    }
+    renderSelectedLeagueTable();
+});
+updateTablePositionOddsToggleLabel();
 }
 if (cupProjectionTabs) {
 cupProjectionTabs.addEventListener("click", async (event) => {
@@ -1712,9 +1676,6 @@ if (ACTIVE_PAGE === "global") {
     if (tableLeague.value) {
         renderSelectedLeagueTable();
     }
-} else if (ACTIVE_PAGE === "position-odds") {
-    if (!positionOddsDataset) return;
-    await loadLeagueTables(positionOddsDataset.value);
 }
 }
 
