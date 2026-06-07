@@ -1,8 +1,0 @@
-[2026-06-06T02:27:22.490340-04:00] ip=127.0.0.1
-user_agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.121.0 Chrome/142.0.7444.265 Electron/39.8.8 Safari/537.36
-feedback=update homne bakc to top 6-9 odds, merge predited league to single block and fix players tab missing buttons
------
-[2026-06-06T02:27:51.219116-04:00] ip=127.0.0.1
-user_agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.121.0 Chrome/142.0.7444.265 Electron/39.8.8 Safari/537.36
-feedback=find way to speedup website loading data
------
