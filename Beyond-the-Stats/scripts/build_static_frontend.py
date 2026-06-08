@@ -245,8 +245,15 @@ def main() -> int:
     redirects = (out_dir / "_redirects")
     if not redirects.exists():
         redirects.write_text(
-            "# Cloudflare Pages SPA fallback: serve index.html for unmatched routes\n"
-            "/*  /index.html  200\n",
+            "# Cloudflare Pages SPA fallback — existing files take priority\n"
+            "# Each app route serves index.html so client-side routing works.\n"
+            "/head-to-head  /index.html  200\n"
+            "/league-tables  /index.html  200\n"
+            "/upcoming-matches  /index.html  200\n"
+            "/world-cup  /index.html  200\n"
+            "/cups  /index.html  200\n"
+            "/tactics  /index.html  200\n"
+            "/about  /index.html  200\n",
             encoding="utf-8",
         )
         print("[build] wrote _redirects (SPA fallback)")
