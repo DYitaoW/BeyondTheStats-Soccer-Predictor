@@ -1,0 +1,956 @@
+match_id,match_datetime_utc,match_date,competition,stage,home_team,away_team,FTHG,FTAG,FTR,status,is_neutral_site,venue,source
+689808,2023-12-31T15:00:00+00:00,2023-12-31,FIFA/Friendly,2023-international-friendly,Qatar,Cambodia,3,0,H,STATUS_FULL_TIME,True,Thani bin Jassim Stadium,espn
+689519,2024-01-01T05:00:00+00:00,2024-01-01,FIFA/Friendly,2024-international-friendly,Japan,Thailand,5,0,H,STATUS_FULL_TIME,True,New Japan National Stadium,espn
+690701,2024-01-04T13:30:00+00:00,2024-01-04,FIFA/Friendly,2024-international-friendly,Saudi Arabia,Lebanon,1,0,H,STATUS_FULL_TIME,True,Saoud Bin Abdulrahman Stadium,espn
+694556,2024-01-05T14:30:00+00:00,2024-01-05,FIFA/Friendly,2024-international-friendly,Iran,Burkina Faso,2,1,H,STATUS_FULL_TIME,True,Kish Olympic Stadium,espn
+692530,2024-01-05T16:00:00+00:00,2024-01-05,FIFA/Friendly,2024-international-friendly,Qatar,Jordan,1,2,A,STATUS_FULL_TIME,True,Thani bin Jassim Stadium,espn
+694553,2024-01-05T16:00:00+00:00,2024-01-05,FIFA/Friendly,2024-international-friendly,Togo,Algeria,0,3,A,STATUS_FULL_TIME,True,Stade de Kégué,espn
+693925,2024-01-06T13:00:00+00:00,2024-01-06,FIFA/Friendly,2024-international-friendly,Iraq,South Korea,0,1,A,STATUS_FULL_TIME,True,New York University Abu Dhabi,espn
+688265,2024-01-06T14:00:00+00:00,2024-01-06,FIFA/Friendly,2024-international-friendly,Bahrain,Australia,0,2,A,STATUS_FULL_TIME,True,Baniyas Stadium,espn
+694612,2024-01-06T16:00:00+00:00,2024-01-06,FIFA/Friendly,2024-international-friendly,Congo DR,Angola,0,0,D,STATUS_FULL_TIME,True,,espn
+693921,2024-01-06T17:00:00+00:00,2024-01-06,FIFA/Friendly,2024-international-friendly,Ivory Coast,Sierra Leone,5,1,H,STATUS_FULL_TIME,True,Stade Laurent Pokou,espn
+694551,2024-01-06T18:30:00+00:00,2024-01-06,FIFA/Friendly,2024-international-friendly,Tunisia,Mauritania,0,0,D,STATUS_FULL_TIME,True,Stade olympique Hammadi-Agrebi,espn
+690840,2024-01-06T20:00:00+00:00,2024-01-06,FIFA/Friendly,2024-international-friendly,Ivory Coast,Mozambique,0,0,D,STATUS_CANCELED,True,,espn
+693583,2024-01-07T16:00:00+00:00,2024-01-07,FIFA/Friendly,2024-international-friendly,Egypt,Tanzania,2,0,H,STATUS_FULL_TIME,True,Cairo International Stadium,espn
+694615,2024-01-07T16:00:00+00:00,2024-01-07,FIFA/Friendly,2024-international-friendly,Uzbekistan,Palestine,1,0,H,STATUS_FULL_TIME,True,,espn
+693958,2024-01-07T20:00:00+00:00,2024-01-07,FIFA/Friendly,2024-international-friendly,Morocco,Gambia,0,0,D,STATUS_CANCELED,True,,espn
+693959,2024-01-08T18:00:00+00:00,2024-01-08,FIFA/Friendly,2024-international-friendly,Senegal,Niger,1,0,H,STATUS_FULL_TIME,True,Stade Me Abdoulaye Wade,espn
+693926,2024-01-08T20:00:00+00:00,2024-01-08,FIFA/Friendly,2024-international-friendly,Ghana,Botswana,0,0,D,STATUS_CANCELED,True,,espn
+694557,2024-01-08T20:00:00+00:00,2024-01-08,FIFA/Friendly,2024-international-friendly,Ghana,Namibia,0,0,D,STATUS_FULL_TIME,True,Baba Yara Stadium,espn
+692531,2024-01-09T11:30:00+00:00,2024-01-09,FIFA/Friendly,2024-international-friendly,Japan,Jordan,6,1,H,STATUS_FULL_TIME,True,Al Ersal Stadium,espn
+694554,2024-01-09T15:00:00+00:00,2024-01-09,FIFA/Friendly,2024-international-friendly,Burundi,Algeria,0,4,A,STATUS_FULL_TIME,True,Stade de Kégué,espn
+693974,2024-01-09T15:00:00+00:00,2024-01-09,FIFA/Friendly,2024-international-friendly,Indonesia,Iran,0,5,A,STATUS_FULL_TIME,True,Al Rayyan Training Ground,espn
+690848,2024-01-09T15:30:00+00:00,2024-01-09,FIFA/Friendly,2024-international-friendly,Saudi Arabia,Palestine,0,0,D,STATUS_FULL_TIME,True,Saoud Bin Abdulrahman Stadium,espn
+694656,2024-01-10T13:00:00+00:00,2024-01-10,FIFA/Friendly,2024-international-friendly,Congo DR,Burkina Faso,1,2,A,STATUS_FULL_TIME,True,,espn
+694558,2024-01-10T13:00:00+00:00,2024-01-10,FIFA/Friendly,2024-international-friendly,South Africa,Lesotho,0,0,D,STATUS_FULL_TIME,True,Lucas Masterpieces Moripe Stadium,espn
+690849,2024-01-10T15:30:00+00:00,2024-01-10,FIFA/Friendly,2024-international-friendly,Saudi Arabia,Hong Kong,2,0,H,STATUS_FULL_TIME,True,Saoud Bin Abdulrahman Stadium,espn
+693960,2024-01-10T17:30:00+00:00,2024-01-10,FIFA/Friendly,2024-international-friendly,Tunisia,Cape Verde,2,0,H,STATUS_FULL_TIME,True,Stade olympique Hammadi-Agrebi,espn
+694616,2024-01-11T15:00:00+00:00,2024-01-11,FIFA/Friendly,2024-international-friendly,Morocco,Sierra Leone,3,1,H,STATUS_FULL_TIME,True,Stade Auguste Denise,espn
+690688,2024-01-12T18:00:00+00:00,2024-01-12,FIFA/Friendly,2024-international-friendly,Sweden,Estonia,2,1,H,STATUS_FULL_TIME,True,Stelios Kyriakides Stadium,espn
+689252,2024-01-13T20:00:00+00:00,2024-01-13,CAF/Africa Cup of Nations,group-stage,Ivory Coast,Guinea-Bissau,2,0,H,STATUS_FULL_TIME,True,Stade Olympique Alassane Ouattara,espn
+689254,2024-01-14T17:00:00+00:00,2024-01-14,CAF/Africa Cup of Nations,group-stage,Egypt,Mozambique,2,2,D,STATUS_FULL_TIME,True,Felix Houphouet-Boigny,espn
+689255,2024-01-14T20:00:00+00:00,2024-01-14,CAF/Africa Cup of Nations,group-stage,Ghana,Cape Verde,1,2,A,STATUS_FULL_TIME,True,Felix Houphouet-Boigny,espn
+689256,2024-01-15T14:00:00+00:00,2024-01-15,CAF/Africa Cup of Nations,group-stage,Senegal,Gambia,3,0,H,STATUS_FULL_TIME,True,Stade Charles Konan Banny de Yamoussoukro,espn
+689258,2024-01-15T20:00:00+00:00,2024-01-15,CAF/Africa Cup of Nations,group-stage,Algeria,Angola,1,1,D,STATUS_FULL_TIME,True,Stade de Bouaké,espn
+689260,2024-01-16T17:00:00+00:00,2024-01-16,CAF/Africa Cup of Nations,group-stage,Tunisia,Namibia,0,1,A,STATUS_FULL_TIME,True,Amadou Gon Coulibaly Stadium,espn
+689261,2024-01-16T20:00:00+00:00,2024-01-16,CAF/Africa Cup of Nations,group-stage,Mali,South Africa,2,0,H,STATUS_FULL_TIME,True,Amadou Gon Coulibaly Stadium,espn
+689262,2024-01-17T17:00:00+00:00,2024-01-17,CAF/Africa Cup of Nations,group-stage,Morocco,Tanzania,3,0,H,STATUS_FULL_TIME,True,Stade Laurent Pokou,espn
+689263,2024-01-17T20:00:00+00:00,2024-01-17,CAF/Africa Cup of Nations,group-stage,Congo DR,Zambia,1,1,D,STATUS_FULL_TIME,True,Stade Laurent Pokou,espn
+689266,2024-01-18T17:00:00+00:00,2024-01-18,CAF/Africa Cup of Nations,group-stage,Ivory Coast,Nigeria,0,1,A,STATUS_FULL_TIME,True,Stade Olympique Alassane Ouattara,espn
+689268,2024-01-18T20:00:00+00:00,2024-01-18,CAF/Africa Cup of Nations,group-stage,Egypt,Ghana,2,2,D,STATUS_FULL_TIME,True,Felix Houphouet-Boigny,espn
+689269,2024-01-19T14:00:00+00:00,2024-01-19,CAF/Africa Cup of Nations,group-stage,Cape Verde,Mozambique,3,0,H,STATUS_FULL_TIME,True,Felix Houphouet-Boigny,espn
+689265,2024-01-19T17:00:00+00:00,2024-01-19,CAF/Africa Cup of Nations,group-stage,Senegal,Cameroon,3,1,H,STATUS_FULL_TIME,True,Stade Charles Konan Banny de Yamoussoukro,espn
+689270,2024-01-20T14:00:00+00:00,2024-01-20,CAF/Africa Cup of Nations,group-stage,Algeria,Burkina Faso,2,2,D,STATUS_FULL_TIME,True,Stade de Bouaké,espn
+690424,2024-01-20T20:00:00+00:00,2024-01-20,FIFA/Friendly,2024-international-friendly,United States,Slovenia,0,1,A,STATUS_FULL_TIME,True,Toyota Field,espn
+689272,2024-01-20T20:00:00+00:00,2024-01-20,CAF/Africa Cup of Nations,group-stage,Tunisia,Mali,1,1,D,STATUS_FULL_TIME,True,Amadou Gon Coulibaly Stadium,espn
+689273,2024-01-21T14:00:00+00:00,2024-01-21,CAF/Africa Cup of Nations,group-stage,Morocco,Congo DR,1,1,D,STATUS_FULL_TIME,True,Stade Laurent Pokou,espn
+689275,2024-01-21T20:00:00+00:00,2024-01-21,CAF/Africa Cup of Nations,group-stage,South Africa,Namibia,4,0,H,STATUS_FULL_TIME,True,Amadou Gon Coulibaly Stadium,espn
+689276,2024-01-22T17:00:00+00:00,2024-01-22,CAF/Africa Cup of Nations,group-stage,Equatorial Guinea,Ivory Coast,4,0,H,STATUS_FULL_TIME,True,Stade Olympique Alassane Ouattara,espn
+689279,2024-01-22T20:00:00+00:00,2024-01-22,CAF/Africa Cup of Nations,group-stage,Cape Verde,Egypt,2,2,D,STATUS_FULL_TIME,True,Felix Houphouet-Boigny,espn
+689278,2024-01-22T20:00:00+00:00,2024-01-22,CAF/Africa Cup of Nations,group-stage,Mozambique,Ghana,2,2,D,STATUS_FULL_TIME,True,Stade Olympique Alassane Ouattara,espn
+689281,2024-01-23T17:00:00+00:00,2024-01-23,CAF/Africa Cup of Nations,group-stage,Guinea,Senegal,0,2,A,STATUS_FULL_TIME,True,Stade Charles Konan Banny de Yamoussoukro,espn
+689283,2024-01-23T20:00:00+00:00,2024-01-23,CAF/Africa Cup of Nations,group-stage,Mauritania,Algeria,1,0,H,STATUS_FULL_TIME,True,Stade de Bouaké,espn
+689284,2024-01-24T17:00:00+00:00,2024-01-24,CAF/Africa Cup of Nations,group-stage,South Africa,Tunisia,0,0,D,STATUS_FULL_TIME,True,Amadou Gon Coulibaly Stadium,espn
+689286,2024-01-24T20:00:00+00:00,2024-01-24,CAF/Africa Cup of Nations,group-stage,Tanzania,Congo DR,0,0,D,STATUS_FULL_TIME,True,Amadou Gon Coulibaly Stadium,espn
+689287,2024-01-24T20:00:00+00:00,2024-01-24,CAF/Africa Cup of Nations,group-stage,Zambia,Morocco,0,1,A,STATUS_FULL_TIME,True,Stade Laurent Pokou,espn
+697524,2024-01-28T20:00:00+00:00,2024-01-28,CAF/Africa Cup of Nations,round-of-16,Egypt,Congo DR,1,1,A,STATUS_FINAL_PEN,True,Stade Laurent Pokou,espn
+697525,2024-01-29T17:00:00+00:00,2024-01-29,CAF/Africa Cup of Nations,round-of-16,Cape Verde,Mauritania,1,0,H,STATUS_FULL_TIME,True,Felix Houphouet-Boigny,espn
+697526,2024-01-29T20:00:00+00:00,2024-01-29,CAF/Africa Cup of Nations,round-of-16,Senegal,Ivory Coast,1,1,A,STATUS_FINAL_PEN,True,Stade Charles Konan Banny de Yamoussoukro,espn
+697528,2024-01-30T20:00:00+00:00,2024-01-30,CAF/Africa Cup of Nations,round-of-16,Morocco,South Africa,0,2,A,STATUS_FULL_TIME,True,Stade Laurent Pokou,espn
+698135,2024-02-02T20:00:00+00:00,2024-02-02,CAF/Africa Cup of Nations,quarterfinals,Congo DR,Guinea,3,1,H,STATUS_FULL_TIME,True,Stade Olympique Alassane Ouattara,espn
+698136,2024-02-03T17:00:00+00:00,2024-02-03,CAF/Africa Cup of Nations,quarterfinals,Mali,Ivory Coast,1,2,A,STATUS_FINAL_AET,True,Stade de Bouaké,espn
+698137,2024-02-03T20:00:00+00:00,2024-02-03,CAF/Africa Cup of Nations,quarterfinals,Cape Verde,South Africa,0,0,A,STATUS_FINAL_PEN,True,Stade Charles Konan Banny de Yamoussoukro,espn
+698429,2024-02-07T17:00:00+00:00,2024-02-07,CAF/Africa Cup of Nations,semifinals,Nigeria,South Africa,1,1,H,STATUS_FINAL_PEN,True,Stade de Bouaké,espn
+698428,2024-02-07T20:00:00+00:00,2024-02-07,CAF/Africa Cup of Nations,semifinals,Ivory Coast,Congo DR,1,0,H,STATUS_FULL_TIME,True,Stade Olympique Alassane Ouattara,espn
+698615,2024-02-10T20:00:00+00:00,2024-02-10,CAF/Africa Cup of Nations,3rd-place-match,South Africa,Congo DR,0,0,H,STATUS_FINAL_PEN,True,Felix Houphouet-Boigny,espn
+698616,2024-02-11T20:00:00+00:00,2024-02-11,CAF/Africa Cup of Nations,final,Nigeria,Ivory Coast,1,2,A,STATUS_FULL_TIME,True,Stade Olympique Alassane Ouattara,espn
+687462,2024-03-21T09:00:00+00:00,2024-03-21,FIFA/World Cup Qualifying - AFC,second-round,Pakistan,Jordan,0,3,A,STATUS_FULL_TIME,True,Jinnah Sports Stadium,espn
+687479,2024-03-21T09:10:00+00:00,2024-03-21,FIFA/World Cup Qualifying - AFC,second-round,Australia,Lebanon,2,0,H,STATUS_FULL_TIME,True,CommBank Stadium,espn
+687397,2024-03-21T10:23:00+00:00,2024-03-21,FIFA/World Cup Qualifying - AFC,second-round,Japan,North Korea,1,0,H,STATUS_FULL_TIME,True,Japan National Stadium,espn
+687409,2024-03-21T11:00:00+00:00,2024-03-21,FIFA/World Cup Qualifying - AFC,second-round,South Korea,Thailand,1,1,D,STATUS_FULL_TIME,True,Seoul World Cup Stadium,espn
+687438,2024-03-21T12:00:00+00:00,2024-03-21,FIFA/World Cup Qualifying - AFC,second-round,Hong Kong,Uzbekistan,0,2,A,STATUS_FULL_TIME,True,Mong Kok Stadium,espn
+687433,2024-03-21T16:00:00+00:00,2024-03-21,FIFA/World Cup Qualifying - AFC,second-round,Iran,Turkmenistan,5,0,H,STATUS_FULL_TIME,True,Azadi Stadium,espn
+687385,2024-03-21T18:30:00+00:00,2024-03-21,FIFA/World Cup Qualifying - AFC,second-round,Qatar,Kuwait,3,0,H,STATUS_FULL_TIME,True,Jassim Bin Hamad Stadium,espn
+700587,2024-03-21T19:00:00+00:00,2024-03-21,FIFA/Friendly,2024-international-friendly,Cape Verde,Guyana,1,0,H,STATUS_FULL_TIME,True,,espn
+687445,2024-03-21T19:00:00+00:00,2024-03-21,FIFA/World Cup Qualifying - AFC,second-round,Iraq,Philippines,1,0,H,STATUS_FULL_TIME,True,Basra International Stadium,espn
+687457,2024-03-21T19:00:00+00:00,2024-03-21,FIFA/World Cup Qualifying - AFC,second-round,Saudi Arabia,Tajikistan,1,0,H,STATUS_FULL_TIME,True,Al-Awwal Park,espn
+690340,2024-03-21T19:45:00+00:00,2024-03-21,FIFA/Friendly,2024-international-friendly,Portugal,Sweden,5,2,H,STATUS_FULL_TIME,True,Estádio D. Afonso Henriques,espn
+698287,2024-03-21T21:00:00+00:00,2024-03-21,FIFA/Friendly,2024-international-friendly,Andorra,South Africa,1,1,D,STATUS_FULL_TIME,True,Stade du 19 Mai 1956,espn
+698420,2024-03-22T00:30:00+00:00,2024-03-22,FIFA/Friendly,2024-international-friendly,Ecuador,Guatemala,2,0,H,STATUS_FULL_TIME,True,Sports Illustrated Stadium,espn
+700491,2024-03-22T16:00:00+00:00,2024-03-22,FIFA/Friendly,2024-international-friendly,Nigeria,Ghana,2,1,H,STATUS_FULL_TIME,True,Stade de Marrakech,espn
+694651,2024-03-22T17:00:00+00:00,2024-03-22,FIFA/Friendly,2024-international-friendly,Norway,Czechia,1,2,A,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+699778,2024-03-22T19:30:00+00:00,2024-03-22,FIFA/Friendly,2024-international-friendly,Senegal,Gabon,3,0,H,STATUS_FULL_TIME,True,Stade Crédit Agricole de la Licorne,espn
+698532,2024-03-22T19:45:00+00:00,2024-03-22,FIFA/Friendly,2024-international-friendly,Hungary,Turkey,1,0,H,STATUS_FULL_TIME,True,Puskás Aréna,espn
+690894,2024-03-22T19:45:00+00:00,2024-03-22,FIFA/Friendly,2024-international-friendly,Netherlands,Scotland,4,0,H,STATUS_FULL_TIME,True,Johan Cruijff Arena,espn
+699076,2024-03-22T20:00:00+00:00,2024-03-22,FIFA/Friendly,2024-international-friendly,Egypt,New Zealand,1,0,H,STATUS_FULL_TIME,True,New Administrative Capital Stadium,espn
+698122,2024-03-22T20:30:00+00:00,2024-03-22,FIFA/Friendly,2024-international-friendly,Spain,Colombia,0,1,A,STATUS_FULL_TIME,True,London Stadium,espn
+698288,2024-03-22T21:00:00+00:00,2024-03-22,FIFA/Friendly,2024-international-friendly,Algeria,Bolivia,3,2,H,STATUS_FULL_TIME,True,Stade de Nelson Mandela,espn
+699100,2024-03-22T22:00:00+00:00,2024-03-22,FIFA/Friendly,2024-international-friendly,Morocco,Angola,1,0,H,STATUS_FULL_TIME,True,Le Grand Stade Agadir,espn
+699139,2024-03-23T00:00:00+00:00,2024-03-23,FIFA/Friendly,2024-international-friendly,Argentina,El Salvador,3,0,H,STATUS_FULL_TIME,True,Lincoln Financial Field,espn
+699773,2024-03-23T16:00:00+00:00,2024-03-23,FIFA/Friendly,2024-international-friendly,Ivory Coast,Benin,2,2,D,STATUS_FULL_TIME,True,Stade Crédit Agricole de la Licorne,espn
+693341,2024-03-23T17:00:00+00:00,2024-03-23,FIFA/Friendly,2024-international-friendly,Republic of Ireland,Belgium,0,0,D,STATUS_FULL_TIME,True,Aviva Stadium,espn
+693430,2024-03-23T17:00:00+00:00,2024-03-23,FIFA/Friendly,2024-international-friendly,Slovakia,Austria,0,2,A,STATUS_FULL_TIME,True,Národny Futbalovy Stadión,espn
+691328,2024-03-23T19:00:00+00:00,2024-03-23,FIFA/Friendly,2024-international-friendly,Denmark,Switzerland,0,0,D,STATUS_FULL_TIME,True,Parken,espn
+689956,2024-03-23T19:00:00+00:00,2024-03-23,FIFA/Friendly,2024-international-friendly,England,Brazil,0,1,A,STATUS_FULL_TIME,True,Wembley Stadium,espn
+690850,2024-03-23T20:00:00+00:00,2024-03-23,FIFA/Friendly,2024-international-friendly,France,Germany,0,2,A,STATUS_FULL_TIME,True,Groupama Stadium,espn
+701238,2024-03-23T20:00:00+00:00,2024-03-23,FIFA/Friendly,2024-international-friendly,French Guiana,Haiti,1,1,D,STATUS_FULL_TIME,True,,espn
+699074,2024-03-23T20:00:00+00:00,2024-03-23,FIFA/Friendly,2024-international-friendly,Tunisia,Croatia,0,0,A,STATUS_FINAL_PEN,True,Cairo International Stadium,espn
+698419,2024-03-24T20:00:00+00:00,2024-03-24,FIFA/Friendly,2024-international-friendly,Ecuador,Italy,0,2,A,STATUS_FULL_TIME,True,Sports Illustrated Stadium,espn
+699073,2024-03-25T17:00:00+00:00,2024-03-25,FIFA/Friendly,2024-international-friendly,Russia,Paraguay,0,0,D,STATUS_CANCELED,True,,espn
+698123,2024-03-25T18:00:00+00:00,2024-03-25,FIFA/Friendly,2024-international-friendly,Sweden,Albania,1,0,H,STATUS_FULL_TIME,True,Strawberry Arena,espn
+700827,2024-03-25T19:00:00+00:00,2024-03-25,FIFA/Friendly,2024-international-friendly,Cape Verde,Equatorial Guinea,1,0,H,STATUS_FULL_TIME,True,,espn
+687480,2024-03-26T08:45:00+00:00,2024-03-26,FIFA/World Cup Qualifying - AFC,second-round,Lebanon,Australia,0,5,A,STATUS_FULL_TIME,True,GIO Stadium,espn
+687446,2024-03-26T11:00:00+00:00,2024-03-26,FIFA/World Cup Qualifying - AFC,second-round,Philippines,Iraq,0,5,A,STATUS_FULL_TIME,True,Rizal Memorial Stadium,espn
+687410,2024-03-26T12:30:00+00:00,2024-03-26,FIFA/World Cup Qualifying - AFC,second-round,Thailand,South Korea,0,3,A,STATUS_FULL_TIME,True,Rajamangala National Stadium,espn
+687439,2024-03-26T14:30:00+00:00,2024-03-26,FIFA/World Cup Qualifying - AFC,second-round,Uzbekistan,Hong Kong,3,0,H,STATUS_FULL_TIME,True,Milliy Stadium,espn
+687458,2024-03-26T15:00:00+00:00,2024-03-26,FIFA/World Cup Qualifying - AFC,second-round,Tajikistan,Saudi Arabia,1,1,D,STATUS_FULL_TIME,True,Republican Central Stadium,espn
+687434,2024-03-26T15:00:00+00:00,2024-03-26,FIFA/World Cup Qualifying - AFC,second-round,Turkmenistan,Iran,0,1,A,STATUS_FULL_TIME,True,Ashgabat Stadium,espn
+700484,2024-03-26T16:00:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Uganda,Ghana,2,2,D,STATUS_FULL_TIME,True,Stade de Marrakech,espn
+694652,2024-03-26T18:00:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Norway,Slovakia,1,1,D,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+687398,2024-03-26T18:00:00+00:00,2024-03-26,FIFA/World Cup Qualifying - AFC,second-round,North Korea,Japan,0,3,A,STATUS_FULL_TIME,True,TBC,espn
+694653,2024-03-26T19:00:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Czechia,Armenia,2,1,H,STATUS_FULL_TIME,True,Generali-Arena,espn
+687463,2024-03-26T19:00:00+00:00,2024-03-26,FIFA/World Cup Qualifying - AFC,second-round,Jordan,Pakistan,7,0,H,STATUS_FULL_TIME,True,Amman International Stadium,espn
+687386,2024-03-26T19:00:00+00:00,2024-03-26,FIFA/World Cup Qualifying - AFC,second-round,Kuwait,Qatar,1,2,A,STATUS_FULL_TIME,True,Sabah Al Salem Stadium,espn
+692534,2024-03-26T19:30:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Colombia,Romania,3,2,H,STATUS_FULL_TIME,True,Riyadh Air Metropolitano,espn
+699348,2024-03-26T19:30:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Ivory Coast,Uruguay,2,1,H,STATUS_FULL_TIME,True,Stade Félix Bollaert-Delélis,espn
+699779,2024-03-26T19:30:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Senegal,Benin,1,0,H,STATUS_FULL_TIME,True,Stade Crédit Agricole de la Licorne,espn
+698533,2024-03-26T19:45:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Austria,Turkey,6,1,H,STATUS_FULL_TIME,True,Ernst-Happel-Stadion,espn
+689957,2024-03-26T19:45:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,England,Belgium,2,2,D,STATUS_FULL_TIME,True,Wembley Stadium,espn
+690893,2024-03-26T19:45:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Germany,Netherlands,2,1,H,STATUS_FULL_TIME,True,Deutsche Bank Park,espn
+693342,2024-03-26T19:45:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Republic of Ireland,Switzerland,0,1,A,STATUS_FULL_TIME,True,Aviva Stadium,espn
+690929,2024-03-26T19:45:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Scotland,Northern Ireland,0,1,A,STATUS_FULL_TIME,True,Hampden Park,espn
+697066,2024-03-26T19:45:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Slovenia,Portugal,2,0,H,STATUS_FULL_TIME,True,Stadion Stozice,espn
+701261,2024-03-26T20:00:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Egypt,Croatia,2,4,A,STATUS_FULL_TIME,True,New Administrative Capital Stadium,espn
+697789,2024-03-26T20:00:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,France,Chile,3,2,H,STATUS_FULL_TIME,True,Orange Vélodrome,espn
+701262,2024-03-26T20:00:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,New Zealand,Tunisia,0,0,A,STATUS_FINAL_PEN,True,Cairo International Stadium,espn
+696634,2024-03-26T20:30:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Spain,Brazil,3,3,D,STATUS_FULL_TIME,True,Estadio Bernabéu,espn
+698290,2024-03-26T21:00:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Algeria,South Africa,3,3,D,STATUS_FULL_TIME,True,Stade de Nelson Mandela,espn
+699099,2024-03-26T22:00:00+00:00,2024-03-26,FIFA/Friendly,2024-international-friendly,Morocco,Mauritania,0,0,D,STATUS_FULL_TIME,True,Le Grand Stade Agadir,espn
+699140,2024-03-27T02:50:00+00:00,2024-03-27,FIFA/Friendly,2024-international-friendly,Argentina,Costa Rica,3,1,H,STATUS_FULL_TIME,True,Los Angeles Memorial Coliseum,espn
+700701,2024-06-01T01:30:00+00:00,2024-06-01,FIFA/Friendly,2024-international-friendly,Mexico,Bolivia,1,0,H,STATUS_FULL_TIME,True,Soldier Field,espn
+702360,2024-06-01T02:00:00+00:00,2024-06-01,FIFA/Friendly,2024-international-friendly,Costa Rica,Uruguay,0,0,D,STATUS_FULL_TIME,True,Estadio Nacional de Costa Rica,espn
+697146,2024-06-03T16:00:00+00:00,2024-06-03,FIFA/Friendly,2024-international-friendly,Gibraltar,Scotland,0,2,A,STATUS_FULL_TIME,True,Estadio Algarve,espn
+693935,2024-06-03T17:00:00+00:00,2024-06-03,FIFA/Friendly,2024-international-friendly,Croatia,North Macedonia,3,0,H,STATUS_FULL_TIME,True,Stadion HNK Rijeka,espn
+698294,2024-06-03T18:45:00+00:00,2024-06-03,FIFA/Friendly,2024-international-friendly,England,Bosnia-Herzegovina,3,0,H,STATUS_FULL_TIME,True,St. James' Park,espn
+700917,2024-06-03T18:45:00+00:00,2024-06-03,FIFA/Friendly,2024-international-friendly,Germany,Ukraine,0,0,D,STATUS_FULL_TIME,True,Max-Morlock-Stadion,espn
+699071,2024-06-04T18:15:00+00:00,2024-06-04,FIFA/Friendly,2024-international-friendly,Switzerland,Estonia,4,0,H,STATUS_FULL_TIME,True,swissporarena,espn
+699060,2024-06-04T18:45:00+00:00,2024-06-04,FIFA/Friendly,2024-international-friendly,Austria,Serbia,2,1,H,STATUS_FULL_TIME,True,Ernst-Happel-Stadion,espn
+698534,2024-06-04T18:45:00+00:00,2024-06-04,FIFA/Friendly,2024-international-friendly,Portugal,Finland,4,2,H,STATUS_FULL_TIME,True,Estádio José Alvalade,espn
+698879,2024-06-04T19:00:00+00:00,2024-06-04,FIFA/Friendly,2024-international-friendly,Italy,Turkey,0,0,D,STATUS_FULL_TIME,True,Renato Dall'Ara,espn
+698439,2024-06-05T17:00:00+00:00,2024-06-05,FIFA/Friendly,2024-international-friendly,Denmark,Sweden,2,1,H,STATUS_FULL_TIME,True,Parken,espn
+698484,2024-06-05T17:00:00+00:00,2024-06-05,FIFA/Friendly,2024-international-friendly,Norway,Kosovo,3,0,H,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+698284,2024-06-05T18:30:00+00:00,2024-06-05,FIFA/Friendly,2024-international-friendly,Belgium,Montenegro,2,0,H,STATUS_FULL_TIME,True,King Baudouin Stadium,espn
+701987,2024-06-05T19:00:00+00:00,2024-06-05,FIFA/Friendly,2024-international-friendly,France,Luxembourg,3,0,H,STATUS_FULL_TIME,True,Stade Saint-Symphorien,espn
+699861,2024-06-05T19:30:00+00:00,2024-06-05,FIFA/Friendly,2024-international-friendly,Spain,Andorra,5,0,H,STATUS_FULL_TIME,True,Nuevo Vivero,espn
+698142,2024-06-05T23:30:00+00:00,2024-06-05,FIFA/World Cup Qualifying - CONCACAF,second-round,Curaçao,Barbados,4,1,H,STATUS_FULL_TIME,True,Stadion Ergilio Hato,espn
+692532,2024-06-06T01:00:00+00:00,2024-06-06,FIFA/Friendly,2024-international-friendly,Mexico,Uruguay,0,4,A,STATUS_FULL_TIME,True,Empower Field at Mile High,espn
+687447,2024-06-06T09:00:00+00:00,2024-06-06,FIFA/World Cup Qualifying - AFC,second-round,Indonesia,Iraq,0,2,A,STATUS_FULL_TIME,True,Gelora Bung Karno Stadium,espn
+687481,2024-06-06T10:45:00+00:00,2024-06-06,FIFA/World Cup Qualifying - AFC,second-round,Bangladesh,Australia,0,2,A,STATUS_FULL_TIME,True,Bashundhara Kings Arena,espn
+687435,2024-06-06T12:00:00+00:00,2024-06-06,FIFA/World Cup Qualifying - AFC,second-round,Hong Kong,Iran,2,4,A,STATUS_FULL_TIME,True,Hong Kong Stadium,espn
+687411,2024-06-06T12:00:00+00:00,2024-06-06,FIFA/World Cup Qualifying - AFC,second-round,Singapore,South Korea,0,7,A,STATUS_FULL_TIME,True,Singapore National Stadium,espn
+687399,2024-06-06T12:10:00+00:00,2024-06-06,FIFA/World Cup Qualifying - AFC,second-round,Myanmar,Japan,0,5,A,STATUS_FULL_TIME,True,Thuwunna Stadium,espn
+687440,2024-06-06T14:30:00+00:00,2024-06-06,FIFA/World Cup Qualifying - AFC,second-round,Uzbekistan,Turkmenistan,3,1,H,STATUS_FULL_TIME,True,Milliy Stadium,espn
+687459,2024-06-06T15:30:00+00:00,2024-06-06,FIFA/World Cup Qualifying - AFC,second-round,Pakistan,Saudi Arabia,0,3,A,STATUS_FULL_TIME,True,Jinnah Sports Stadium,espn
+687387,2024-06-06T16:00:00+00:00,2024-06-06,FIFA/World Cup Qualifying - AFC,second-round,Afghanistan,Qatar,0,0,D,STATUS_FULL_TIME,True,Prince Abdullah bin Jalawi Stadium,espn
+687464,2024-06-06T17:30:00+00:00,2024-06-06,FIFA/World Cup Qualifying - AFC,second-round,Jordan,Tajikistan,3,0,H,STATUS_FULL_TIME,True,Amman International Stadium,espn
+700290,2024-06-06T18:45:00+00:00,2024-06-06,FIFA/Friendly,2024-international-friendly,Netherlands,Canada,4,0,H,STATUS_FULL_TIME,True,Stadion Feijenoord,espn
+698145,2024-06-06T21:00:00+00:00,2024-06-06,FIFA/World Cup Qualifying - CONCACAF,second-round,Haiti,St. Lucia,2,1,H,STATUS_FULL_TIME,True,Wildey Turf,espn
+698149,2024-06-07T00:30:00+00:00,2024-06-07,FIFA/World Cup Qualifying - CONCACAF,second-round,Panama,Guyana,2,0,H,STATUS_FULL_TIME,True,Estadio Rommel Fernández Gutiérrez,espn
+701562,2024-06-07T15:30:00+00:00,2024-06-07,FIFA/Friendly,2024-international-friendly,Czechia,Malta,7,1,H,STATUS_FULL_TIME,True,Stadion Grödig,espn
+698438,2024-06-07T18:45:00+00:00,2024-06-07,FIFA/Friendly,2024-international-friendly,England,Iceland,0,1,A,STATUS_FULL_TIME,True,Wembley Stadium,espn
+700918,2024-06-07T18:45:00+00:00,2024-06-07,FIFA/Friendly,2024-international-friendly,Germany,Greece,2,1,H,STATUS_FULL_TIME,True,BORUSSIA-PARK,espn
+697147,2024-06-07T18:45:00+00:00,2024-06-07,FIFA/Friendly,2024-international-friendly,Scotland,Finland,2,2,D,STATUS_FULL_TIME,True,Hampden Park,espn
+701635,2024-06-08T00:30:00+00:00,2024-06-08,FIFA/Friendly,2024-international-friendly,Peru,Paraguay,0,0,D,STATUS_FULL_TIME,True,Estadio Monumental de Lima,espn
+699072,2024-06-08T16:00:00+00:00,2024-06-08,FIFA/Friendly,2024-international-friendly,Sweden,Serbia,0,3,A,STATUS_FULL_TIME,True,Strawberry Arena,espn
+699061,2024-06-08T16:00:00+00:00,2024-06-08,FIFA/Friendly,2024-international-friendly,Switzerland,Austria,1,1,D,STATUS_FULL_TIME,True,Kybunpark,espn
+698040,2024-06-08T16:45:00+00:00,2024-06-08,FIFA/Friendly,2024-international-friendly,Portugal,Croatia,1,2,A,STATUS_FULL_TIME,True,Estádio do Jamor,espn
+698482,2024-06-08T17:30:00+00:00,2024-06-08,FIFA/Friendly,2024-international-friendly,Denmark,Norway,3,1,H,STATUS_FULL_TIME,True,Brøndby Stadion,espn
+698041,2024-06-08T18:00:00+00:00,2024-06-08,FIFA/Friendly,2024-international-friendly,Belgium,Luxembourg,3,0,H,STATUS_FULL_TIME,True,King Baudouin Stadium,espn
+701680,2024-06-08T19:30:00+00:00,2024-06-08,FIFA/Friendly,2024-international-friendly,Spain,Northern Ireland,5,1,H,STATUS_FULL_TIME,True,Estadi Mallorca Son Moix,espn
+699069,2024-06-08T21:30:00+00:00,2024-06-08,FIFA/Friendly,2024-international-friendly,United States,Colombia,1,5,A,STATUS_FULL_TIME,True,Northwest Stadium,espn
+698151,2024-06-09T00:00:00+00:00,2024-06-09,FIFA/World Cup Qualifying - CONCACAF,second-round,Aruba,Curaçao,0,2,A,STATUS_FULL_TIME,True,Guillermo Prospero Trinidad Stadium,espn
+692533,2024-06-09T01:00:00+00:00,2024-06-09,FIFA/Friendly,2024-international-friendly,Mexico,Brazil,2,3,A,STATUS_FULL_TIME,True,Kyle Field,espn
+699062,2024-06-09T18:45:00+00:00,2024-06-09,FIFA/Friendly,2024-international-friendly,Italy,Bosnia-Herzegovina,1,0,H,STATUS_FULL_TIME,True,Stadio Carlo Castellani – Computer Gross Arena,espn
+701986,2024-06-09T19:15:00+00:00,2024-06-09,FIFA/Friendly,2024-international-friendly,France,Canada,0,0,D,STATUS_FULL_TIME,True,Matmut Atlantique,espn
+698157,2024-06-09T21:00:00+00:00,2024-06-09,FIFA/World Cup Qualifying - CONCACAF,second-round,Barbados,Haiti,1,3,A,STATUS_FULL_TIME,True,Wildey Turf,espn
+701634,2024-06-09T23:00:00+00:00,2024-06-09,FIFA/Friendly,2024-international-friendly,Argentina,Ecuador,1,0,H,STATUS_FULL_TIME,True,Soldier Field,espn
+698160,2024-06-10T01:00:00+00:00,2024-06-10,FIFA/World Cup Qualifying - CONCACAF,second-round,Montserrat,Panama,1,3,A,STATUS_FULL_TIME,True,Estadio Nacional de Fútbol,espn
+698253,2024-06-10T16:00:00+00:00,2024-06-10,FIFA/Friendly,2024-international-friendly,Czechia,North Macedonia,2,1,H,STATUS_FULL_TIME,True,Malsovická Aréna,espn
+700291,2024-06-10T18:45:00+00:00,2024-06-10,FIFA/Friendly,2024-international-friendly,Netherlands,Iceland,4,0,H,STATUS_FULL_TIME,True,Stadion Feijenoord,espn
+700703,2024-06-10T18:45:00+00:00,2024-06-10,FIFA/Friendly,2024-international-friendly,Poland,Turkey,2,1,H,STATUS_FULL_TIME,True,PGE Narodowy,espn
+687400,2024-06-11T10:14:00+00:00,2024-06-11,FIFA/World Cup Qualifying - AFC,second-round,Japan,Syria,5,0,H,STATUS_FULL_TIME,True,Edion Peace Wing Hiroshima,espn
+687412,2024-06-11T11:00:00+00:00,2024-06-11,FIFA/World Cup Qualifying - AFC,second-round,South Korea,China,1,0,H,STATUS_FULL_TIME,True,Seoul World Cup Stadium,espn
+687482,2024-06-11T12:10:00+00:00,2024-06-11,FIFA/World Cup Qualifying - AFC,second-round,Australia,Palestine,5,0,H,STATUS_FULL_TIME,True,HBF Park,espn
+687388,2024-06-11T15:45:00+00:00,2024-06-11,FIFA/World Cup Qualifying - AFC,second-round,Qatar,India,2,1,H,STATUS_FULL_TIME,True,Jassim Bin Hamad Stadium,espn
+687436,2024-06-11T17:00:00+00:00,2024-06-11,FIFA/World Cup Qualifying - AFC,second-round,Iran,Uzbekistan,0,0,D,STATUS_FULL_TIME,True,Azadi Stadium,espn
+687448,2024-06-11T18:00:00+00:00,2024-06-11,FIFA/World Cup Qualifying - AFC,second-round,Iraq,Vietnam,3,1,H,STATUS_FULL_TIME,True,Basra International Stadium,espn
+687460,2024-06-11T18:00:00+00:00,2024-06-11,FIFA/World Cup Qualifying - AFC,second-round,Saudi Arabia,Jordan,1,2,A,STATUS_FULL_TIME,True,Al-Awwal Park,espn
+698536,2024-06-11T18:45:00+00:00,2024-06-11,FIFA/Friendly,2024-international-friendly,Portugal,Republic of Ireland,3,0,H,STATUS_FULL_TIME,True,Estádio Municipal de Aveiro,espn
+701636,2024-06-12T00:00:00+00:00,2024-06-12,FIFA/Friendly,2024-international-friendly,Chile,Paraguay,3,0,H,STATUS_FULL_TIME,True,Estadio Nacional Julio Martínez Prádanos,espn
+699281,2024-06-12T23:00:00+00:00,2024-06-12,FIFA/Friendly,2024-international-friendly,United States,Brazil,1,1,D,STATUS_FULL_TIME,True,Camping World Stadium,espn
+702336,2024-06-13T00:30:00+00:00,2024-06-13,FIFA/Friendly,2024-international-friendly,Ecuador,Bolivia,3,1,H,STATUS_FULL_TIME,True,Subaru Park,espn
+690573,2024-06-14T19:00:00+00:00,2024-06-14,UEFA/European Championship,group-stage,Germany,Scotland,5,1,H,STATUS_FULL_TIME,True,Allianz Arena,espn
+699278,2024-06-15T00:00:00+00:00,2024-06-15,FIFA/Friendly,2024-international-friendly,Argentina,Guatemala,4,1,H,STATUS_FULL_TIME,True,Northwest Stadium,espn
+690574,2024-06-15T13:00:00+00:00,2024-06-15,UEFA/European Championship,group-stage,Hungary,Switzerland,1,3,A,STATUS_FULL_TIME,True,RheinEnergieStadion,espn
+690575,2024-06-15T16:00:00+00:00,2024-06-15,UEFA/European Championship,group-stage,Spain,Croatia,3,0,H,STATUS_FULL_TIME,True,Olympiastadion Berlin,espn
+702242,2024-06-15T21:00:00+00:00,2024-06-15,FIFA/Friendly,2024-international-friendly,Colombia,Bolivia,3,0,H,STATUS_FULL_TIME,True,Pratt & Whitney Stadium at Rentschler Field,espn
+690579,2024-06-16T13:00:00+00:00,2024-06-16,UEFA/European Championship,group-stage,Poland,Netherlands,1,2,A,STATUS_FULL_TIME,True,Volksparkstadion,espn
+690578,2024-06-16T19:00:00+00:00,2024-06-16,UEFA/European Championship,group-stage,Serbia,England,0,1,A,STATUS_FULL_TIME,True,VELTINS-Arena,espn
+702269,2024-06-16T19:30:00+00:00,2024-06-16,FIFA/Friendly,2024-international-friendly,Ecuador,Honduras,2,1,H,STATUS_FULL_TIME,True,Pratt & Whitney Stadium at Rentschler Field,espn
+701623,2024-06-16T22:30:00+00:00,2024-06-16,FIFA/Friendly,2024-international-friendly,Panama,Paraguay,0,1,A,STATUS_FULL_TIME,True,Estadio Rommel Fernández Gutiérrez,espn
+690581,2024-06-17T16:00:00+00:00,2024-06-17,UEFA/European Championship,group-stage,Belgium,Slovakia,0,1,A,STATUS_FULL_TIME,True,Deutsche Bank Park,espn
+690580,2024-06-17T19:00:00+00:00,2024-06-17,UEFA/European Championship,group-stage,Austria,France,0,1,A,STATUS_FULL_TIME,True,Merkur Spiel-Arena,espn
+690583,2024-06-18T16:00:00+00:00,2024-06-18,UEFA/European Championship,group-stage,Turkey,Georgia,3,1,H,STATUS_FULL_TIME,True,SIGNAL IDUNA PARK,espn
+690584,2024-06-18T19:00:00+00:00,2024-06-18,UEFA/European Championship,group-stage,Portugal,Czechia,2,1,H,STATUS_FULL_TIME,True,Red Bull Arena,espn
+690586,2024-06-19T13:00:00+00:00,2024-06-19,UEFA/European Championship,group-stage,Croatia,Albania,2,2,D,STATUS_FULL_TIME,True,Volksparkstadion,espn
+690587,2024-06-19T16:00:00+00:00,2024-06-19,UEFA/European Championship,group-stage,Germany,Hungary,2,0,H,STATUS_FULL_TIME,True,MHPArena,espn
+690585,2024-06-19T19:00:00+00:00,2024-06-19,UEFA/European Championship,group-stage,Scotland,Switzerland,1,1,D,STATUS_FULL_TIME,True,RheinEnergieStadion,espn
+690590,2024-06-20T16:00:00+00:00,2024-06-20,UEFA/European Championship,group-stage,Denmark,England,1,1,D,STATUS_FULL_TIME,True,Deutsche Bank Park,espn
+690588,2024-06-20T19:00:00+00:00,2024-06-20,UEFA/European Championship,group-stage,Spain,Italy,1,0,H,STATUS_FULL_TIME,True,VELTINS-Arena,espn
+690705,2024-06-21T00:00:00+00:00,2024-06-21,CONMEBOL/Copa America,group-stage,Argentina,Canada,2,0,H,STATUS_FULL_TIME,True,Mercedes-Benz Stadium,espn
+690591,2024-06-21T16:00:00+00:00,2024-06-21,UEFA/European Championship,group-stage,Poland,Austria,1,3,A,STATUS_FULL_TIME,True,Olympiastadion Berlin,espn
+690592,2024-06-21T19:00:00+00:00,2024-06-21,UEFA/European Championship,group-stage,Netherlands,France,0,0,D,STATUS_FULL_TIME,True,Red Bull Arena,espn
+690596,2024-06-22T13:00:00+00:00,2024-06-22,UEFA/European Championship,group-stage,Georgia,Czechia,1,1,D,STATUS_FULL_TIME,True,Volksparkstadion,espn
+690595,2024-06-22T16:00:00+00:00,2024-06-22,UEFA/European Championship,group-stage,Turkey,Portugal,0,3,A,STATUS_FULL_TIME,True,SIGNAL IDUNA PARK,espn
+690594,2024-06-22T19:00:00+00:00,2024-06-22,UEFA/European Championship,group-stage,Belgium,Romania,2,0,H,STATUS_FULL_TIME,True,RheinEnergieStadion,espn
+690708,2024-06-22T22:00:00+00:00,2024-06-22,CONMEBOL/Copa America,group-stage,Ecuador,Venezuela,1,2,A,STATUS_FULL_TIME,True,Levi's Stadium,espn
+690707,2024-06-23T01:00:00+00:00,2024-06-23,CONMEBOL/Copa America,group-stage,Mexico,Jamaica,1,0,H,STATUS_FULL_TIME,True,NRG Stadium,espn
+690597,2024-06-23T19:00:00+00:00,2024-06-23,UEFA/European Championship,group-stage,Scotland,Hungary,0,1,A,STATUS_FULL_TIME,True,MHPArena,espn
+690598,2024-06-23T19:00:00+00:00,2024-06-23,UEFA/European Championship,group-stage,Switzerland,Germany,1,1,D,STATUS_FULL_TIME,True,Deutsche Bank Park,espn
+690709,2024-06-23T22:00:00+00:00,2024-06-23,CONMEBOL/Copa America,group-stage,United States,Bolivia,2,0,H,STATUS_FULL_TIME,True,AT&T Stadium,espn
+690710,2024-06-24T01:00:00+00:00,2024-06-24,CONMEBOL/Copa America,group-stage,Uruguay,Panama,3,1,H,STATUS_FULL_TIME,True,Hard Rock Stadium,espn
+690600,2024-06-24T19:00:00+00:00,2024-06-24,UEFA/European Championship,group-stage,Albania,Spain,0,1,A,STATUS_FULL_TIME,True,Merkur Spiel-Arena,espn
+690599,2024-06-24T19:00:00+00:00,2024-06-24,UEFA/European Championship,group-stage,Croatia,Italy,1,1,D,STATUS_FULL_TIME,True,Red Bull Arena,espn
+690711,2024-06-24T22:00:00+00:00,2024-06-24,CONMEBOL/Copa America,group-stage,Colombia,Paraguay,2,1,H,STATUS_FULL_TIME,True,NRG Stadium,espn
+690712,2024-06-25T01:00:00+00:00,2024-06-25,CONMEBOL/Copa America,group-stage,Brazil,Costa Rica,0,0,D,STATUS_FULL_TIME,True,SoFi Stadium,espn
+690604,2024-06-25T16:00:00+00:00,2024-06-25,UEFA/European Championship,group-stage,France,Poland,1,1,D,STATUS_FULL_TIME,True,SIGNAL IDUNA PARK,espn
+690603,2024-06-25T16:00:00+00:00,2024-06-25,UEFA/European Championship,group-stage,Netherlands,Austria,2,3,A,STATUS_FULL_TIME,True,Olympiastadion Berlin,espn
+690602,2024-06-25T19:00:00+00:00,2024-06-25,UEFA/European Championship,group-stage,England,Slovenia,0,0,D,STATUS_FULL_TIME,True,RheinEnergieStadion,espn
+690714,2024-06-25T22:00:00+00:00,2024-06-25,CONMEBOL/Copa America,group-stage,Peru,Canada,0,1,A,STATUS_FULL_TIME,True,Children's Mercy Park,espn
+690713,2024-06-26T01:00:00+00:00,2024-06-26,CONMEBOL/Copa America,group-stage,Chile,Argentina,0,1,A,STATUS_FULL_TIME,True,MetLife Stadium,espn
+690606,2024-06-26T16:00:00+00:00,2024-06-26,UEFA/European Championship,group-stage,Ukraine,Belgium,0,0,D,STATUS_FULL_TIME,True,MHPArena,espn
+690608,2024-06-26T19:00:00+00:00,2024-06-26,UEFA/European Championship,group-stage,Czechia,Turkey,1,2,A,STATUS_FULL_TIME,True,Volksparkstadion,espn
+690607,2024-06-26T19:00:00+00:00,2024-06-26,UEFA/European Championship,group-stage,Georgia,Portugal,2,0,H,STATUS_FULL_TIME,True,VELTINS-Arena,espn
+690716,2024-06-26T22:00:00+00:00,2024-06-26,CONMEBOL/Copa America,group-stage,Ecuador,Jamaica,3,1,H,STATUS_FULL_TIME,True,Allegiant Stadium,espn
+690715,2024-06-27T01:00:00+00:00,2024-06-27,CONMEBOL/Copa America,group-stage,Venezuela,Mexico,1,0,H,STATUS_FULL_TIME,True,SoFi Stadium,espn
+690717,2024-06-27T22:00:00+00:00,2024-06-27,CONMEBOL/Copa America,group-stage,Panama,United States,2,1,H,STATUS_FULL_TIME,True,Mercedes-Benz Stadium,espn
+690718,2024-06-28T01:00:00+00:00,2024-06-28,CONMEBOL/Copa America,group-stage,Uruguay,Bolivia,5,0,H,STATUS_FULL_TIME,True,MetLife Stadium,espn
+690720,2024-06-28T22:00:00+00:00,2024-06-28,CONMEBOL/Copa America,group-stage,Colombia,Costa Rica,3,0,H,STATUS_FULL_TIME,True,State Farm Stadium,espn
+690719,2024-06-29T01:00:00+00:00,2024-06-29,CONMEBOL/Copa America,group-stage,Paraguay,Brazil,1,4,A,STATUS_FULL_TIME,True,Allegiant Stadium,espn
+703931,2024-06-29T16:00:00+00:00,2024-06-29,UEFA/European Championship,round-of-16,Switzerland,Italy,2,0,H,STATUS_FULL_TIME,True,Olympiastadion Berlin,espn
+703932,2024-06-29T19:00:00+00:00,2024-06-29,UEFA/European Championship,round-of-16,Germany,Denmark,2,0,H,STATUS_FULL_TIME,True,SIGNAL IDUNA PARK,espn
+690721,2024-06-30T00:00:00+00:00,2024-06-30,CONMEBOL/Copa America,group-stage,Argentina,Peru,2,0,H,STATUS_FULL_TIME,True,Hard Rock Stadium,espn
+690722,2024-06-30T00:00:00+00:00,2024-06-30,CONMEBOL/Copa America,group-stage,Canada,Chile,0,0,D,STATUS_FULL_TIME,True,Inter&Co Stadium,espn
+703933,2024-06-30T16:00:00+00:00,2024-06-30,UEFA/European Championship,round-of-16,England,Slovakia,2,1,H,STATUS_FINAL_AET,True,VELTINS-Arena,espn
+703934,2024-06-30T19:00:00+00:00,2024-06-30,UEFA/European Championship,round-of-16,Spain,Georgia,4,1,H,STATUS_FULL_TIME,True,RheinEnergieStadion,espn
+690723,2024-07-01T00:00:00+00:00,2024-07-01,CONMEBOL/Copa America,group-stage,Mexico,Ecuador,0,0,D,STATUS_FULL_TIME,True,State Farm Stadium,espn
+703935,2024-07-01T16:00:00+00:00,2024-07-01,UEFA/European Championship,round-of-16,France,Belgium,1,0,H,STATUS_FULL_TIME,True,Merkur Spiel-Arena,espn
+703936,2024-07-01T19:00:00+00:00,2024-07-01,UEFA/European Championship,round-of-16,Portugal,Slovenia,0,0,H,STATUS_FINAL_PEN,True,Deutsche Bank Park,espn
+690726,2024-07-02T01:00:00+00:00,2024-07-02,CONMEBOL/Copa America,group-stage,Bolivia,Panama,1,3,A,STATUS_FULL_TIME,True,Inter&Co Stadium,espn
+690725,2024-07-02T01:00:00+00:00,2024-07-02,CONMEBOL/Copa America,group-stage,United States,Uruguay,0,1,A,STATUS_FULL_TIME,True,GEHA Field at Arrowhead Stadium,espn
+703937,2024-07-02T16:00:00+00:00,2024-07-02,UEFA/European Championship,round-of-16,Romania,Netherlands,0,3,A,STATUS_FULL_TIME,True,Allianz Arena,espn
+703938,2024-07-02T19:00:00+00:00,2024-07-02,UEFA/European Championship,round-of-16,Austria,Turkey,1,2,A,STATUS_FULL_TIME,True,Red Bull Arena,espn
+690728,2024-07-03T01:00:00+00:00,2024-07-03,CONMEBOL/Copa America,group-stage,Brazil,Colombia,1,1,D,STATUS_FULL_TIME,True,Levi's Stadium,espn
+690727,2024-07-03T01:00:00+00:00,2024-07-03,CONMEBOL/Copa America,group-stage,Costa Rica,Paraguay,2,1,H,STATUS_FULL_TIME,True,Q2 Stadium,espn
+703946,2024-07-05T01:00:00+00:00,2024-07-05,CONMEBOL/Copa America,quarterfinals,Argentina,Ecuador,1,1,H,STATUS_FINAL_PEN,True,NRG Stadium,espn
+703939,2024-07-05T16:00:00+00:00,2024-07-05,UEFA/European Championship,quarterfinals,Spain,Germany,2,1,H,STATUS_FINAL_AET,True,MHPArena,espn
+703940,2024-07-05T19:00:00+00:00,2024-07-05,UEFA/European Championship,quarterfinals,Portugal,France,0,0,A,STATUS_FINAL_PEN,True,Volksparkstadion,espn
+703947,2024-07-06T01:00:00+00:00,2024-07-06,CONMEBOL/Copa America,quarterfinals,Venezuela,Canada,1,1,A,STATUS_FINAL_PEN,True,AT&T Stadium,espn
+703941,2024-07-06T16:00:00+00:00,2024-07-06,UEFA/European Championship,quarterfinals,England,Switzerland,1,1,H,STATUS_FINAL_PEN,True,Merkur Spiel-Arena,espn
+703942,2024-07-06T19:00:00+00:00,2024-07-06,UEFA/European Championship,quarterfinals,Netherlands,Turkey,2,1,H,STATUS_FULL_TIME,True,Olympiastadion Berlin,espn
+703948,2024-07-06T22:00:00+00:00,2024-07-06,CONMEBOL/Copa America,quarterfinals,Colombia,Panama,5,0,H,STATUS_FULL_TIME,True,State Farm Stadium,espn
+703949,2024-07-07T01:00:00+00:00,2024-07-07,CONMEBOL/Copa America,quarterfinals,Uruguay,Brazil,0,0,H,STATUS_FINAL_PEN,True,Allegiant Stadium,espn
+703943,2024-07-09T19:00:00+00:00,2024-07-09,UEFA/European Championship,semifinals,Spain,France,2,1,H,STATUS_FULL_TIME,True,Allianz Arena,espn
+703950,2024-07-10T00:00:00+00:00,2024-07-10,CONMEBOL/Copa America,semifinals,Argentina,Canada,2,0,H,STATUS_FULL_TIME,True,MetLife Stadium,espn
+703944,2024-07-10T19:00:00+00:00,2024-07-10,UEFA/European Championship,semifinals,Netherlands,England,1,2,A,STATUS_FULL_TIME,True,SIGNAL IDUNA PARK,espn
+703951,2024-07-11T00:00:00+00:00,2024-07-11,CONMEBOL/Copa America,semifinals,Uruguay,Colombia,0,1,A,STATUS_FULL_TIME,True,Bank of America Stadium,espn
+703952,2024-07-14T00:00:00+00:00,2024-07-14,CONMEBOL/Copa America,3rd-place-match,Canada,Uruguay,2,2,A,STATUS_FINAL_PEN,True,Bank of America Stadium,espn
+703945,2024-07-14T19:00:00+00:00,2024-07-14,UEFA/European Championship,final,Spain,England,2,1,H,STATUS_FULL_TIME,True,Olympiastadion Berlin,espn
+703953,2024-07-15T01:15:00+00:00,2024-07-15,CONMEBOL/Copa America,final,Argentina,Colombia,1,0,H,STATUS_FINAL_AET,True,Hard Rock Stadium,espn
+716795,2024-09-01T23:00:00+00:00,2024-09-01,FIFA/Friendly,2024-international-friendly,Uruguay,Guatemala,1,1,D,STATUS_FULL_TIME,True,Chase Stadium,espn
+710437,2024-09-05T10:10:00+00:00,2024-09-05,FIFA/World Cup Qualifying - AFC,third-round,Australia,Bahrain,0,1,A,STATUS_FULL_TIME,True,Cbus Super Stadium,espn
+710440,2024-09-05T10:35:00+00:00,2024-09-05,FIFA/World Cup Qualifying - AFC,third-round,Japan,China,7,0,H,STATUS_FULL_TIME,True,Saitama Stadium 2002,espn
+710436,2024-09-05T11:00:00+00:00,2024-09-05,FIFA/World Cup Qualifying - AFC,third-round,South Korea,Palestine,0,0,D,STATUS_FULL_TIME,True,Seoul World Cup Stadium,espn
+710435,2024-09-05T14:00:00+00:00,2024-09-05,FIFA/World Cup Qualifying - AFC,third-round,Uzbekistan,North Korea,1,0,H,STATUS_FULL_TIME,True,Milliy Stadium,espn
+698882,2024-09-05T16:00:00+00:00,2024-09-05,UEFA/Nations League,group-stage,Azerbaijan,Sweden,1,3,A,STATUS_FULL_TIME,True,Tofik Bakhramov Stadium,espn
+710438,2024-09-05T16:00:00+00:00,2024-09-05,FIFA/World Cup Qualifying - AFC,third-round,Iran,Kyrgyz Republic,1,0,H,STATUS_FULL_TIME,True,FooladShahr Stadium,espn
+710439,2024-09-05T16:00:00+00:00,2024-09-05,FIFA/World Cup Qualifying - AFC,third-round,Iraq,Oman,1,0,H,STATUS_FULL_TIME,True,Basra International Stadium,espn
+710433,2024-09-05T16:00:00+00:00,2024-09-05,FIFA/World Cup Qualifying - AFC,third-round,Qatar,United Arab Emirates,1,3,A,STATUS_FULL_TIME,True,Ahmad bin Ali Stadium,espn
+710441,2024-09-05T18:00:00+00:00,2024-09-05,FIFA/World Cup Qualifying - AFC,third-round,Jordan,Kuwait,1,1,D,STATUS_FULL_TIME,True,Amman International Stadium,espn
+710434,2024-09-05T18:00:00+00:00,2024-09-05,FIFA/World Cup Qualifying - AFC,third-round,Saudi Arabia,Indonesia,1,1,D,STATUS_FULL_TIME,True,King Abdullah Sports City,espn
+698884,2024-09-05T18:45:00+00:00,2024-09-05,UEFA/Nations League,group-stage,Denmark,Switzerland,2,0,H,STATUS_FULL_TIME,True,Parken,espn
+698888,2024-09-05T18:45:00+00:00,2024-09-05,UEFA/Nations League,group-stage,Portugal,Croatia,2,1,H,STATUS_FULL_TIME,True,Estádio da Luz,espn
+698886,2024-09-05T18:45:00+00:00,2024-09-05,UEFA/Nations League,group-stage,Scotland,Poland,2,3,A,STATUS_FULL_TIME,True,Hampden Park,espn
+698885,2024-09-05T18:45:00+00:00,2024-09-05,UEFA/Nations League,group-stage,Serbia,Spain,0,0,D,STATUS_FULL_TIME,True,Rajko Mitic Stadium,espn
+684608,2024-09-06T00:00:00+00:00,2024-09-06,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Argentina,Chile,3,0,H,STATUS_FULL_TIME,True,Mâs Monumental,espn
+698891,2024-09-06T14:00:00+00:00,2024-09-06,UEFA/Nations League,group-stage,Kazakhstan,Norway,0,0,D,STATUS_FULL_TIME,True,Almaty Ortalyk Stadium,espn
+698897,2024-09-06T18:45:00+00:00,2024-09-06,UEFA/Nations League,group-stage,Belgium,Israel,3,1,H,STATUS_FULL_TIME,True,Nagyerdei Stadium,espn
+698898,2024-09-06T18:45:00+00:00,2024-09-06,UEFA/Nations League,group-stage,France,Italy,1,3,A,STATUS_FULL_TIME,True,Parc des Princes,espn
+698896,2024-09-06T18:45:00+00:00,2024-09-06,UEFA/Nations League,group-stage,Slovenia,Austria,1,1,D,STATUS_FULL_TIME,True,Stadion Stozice,espn
+698892,2024-09-06T18:45:00+00:00,2024-09-06,UEFA/Nations League,group-stage,Wales,Turkey,0,0,D,STATUS_FULL_TIME,True,Cardiff City Stadium,espn
+684612,2024-09-06T23:30:00+00:00,2024-09-06,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Uruguay,Paraguay,0,0,D,STATUS_FULL_TIME,True,Estadio Centenario,espn
+684610,2024-09-07T01:00:00+00:00,2024-09-07,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Brazil,Ecuador,1,0,H,STATUS_FULL_TIME,True,Couto Pereira,espn
+684611,2024-09-07T01:30:00+00:00,2024-09-07,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Peru,Colombia,1,1,D,STATUS_FULL_TIME,True,Estadio Nacional de Lima,espn
+698901,2024-09-07T16:00:00+00:00,2024-09-07,UEFA/Nations League,group-stage,Georgia,Czechia,4,1,H,STATUS_FULL_TIME,True,Mikheil Meskhi Stadioni,espn
+698903,2024-09-07T16:00:00+00:00,2024-09-07,UEFA/Nations League,group-stage,Republic of Ireland,England,0,2,A,STATUS_FULL_TIME,True,Aviva Stadium,espn
+698906,2024-09-07T18:45:00+00:00,2024-09-07,UEFA/Nations League,group-stage,Germany,Hungary,5,0,H,STATUS_FULL_TIME,True,Merkur Spiel-Arena,espn
+698904,2024-09-07T18:45:00+00:00,2024-09-07,UEFA/Nations League,group-stage,Netherlands,Bosnia-Herzegovina,5,2,H,STATUS_FULL_TIME,True,Philips Stadion,espn
+707615,2024-09-07T20:00:00+00:00,2024-09-07,FIFA/Friendly,2024-international-friendly,United States,Canada,1,2,A,STATUS_FULL_TIME,True,Children's Mercy Park,espn
+701259,2024-09-08T01:00:00+00:00,2024-09-08,FIFA/Friendly,2024-international-friendly,Mexico,New Zealand,3,0,H,STATUS_FULL_TIME,True,Rose Bowl,espn
+698915,2024-09-08T18:45:00+00:00,2024-09-08,UEFA/Nations League,group-stage,Croatia,Poland,1,0,H,STATUS_FULL_TIME,True,Opus Arena,espn
+698916,2024-09-08T18:45:00+00:00,2024-09-08,UEFA/Nations League,group-stage,Portugal,Scotland,2,1,H,STATUS_FULL_TIME,True,Estádio da Luz,espn
+698914,2024-09-08T18:45:00+00:00,2024-09-08,UEFA/Nations League,group-stage,Sweden,Estonia,3,0,H,STATUS_FULL_TIME,True,Strawberry Arena,espn
+698913,2024-09-08T18:45:00+00:00,2024-09-08,UEFA/Nations League,group-stage,Switzerland,Spain,1,4,A,STATUS_FULL_TIME,True,Stade de Genève,espn
+698918,2024-09-09T18:45:00+00:00,2024-09-09,UEFA/Nations League,group-stage,France,Belgium,2,0,H,STATUS_FULL_TIME,True,Groupama Stadium,espn
+698924,2024-09-09T18:45:00+00:00,2024-09-09,UEFA/Nations League,group-stage,Norway,Austria,2,1,H,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+698921,2024-09-09T18:45:00+00:00,2024-09-09,UEFA/Nations League,group-stage,Turkey,Iceland,3,1,H,STATUS_FULL_TIME,True,Gürsel Aksel Stadi,espn
+710448,2024-09-10T12:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - AFC,third-round,China,Saudi Arabia,1,2,A,STATUS_FULL_TIME,True,Dalian Suoyuwan Football Stadium,espn
+710450,2024-09-10T12:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - AFC,third-round,Indonesia,Australia,0,0,D,STATUS_FULL_TIME,True,Gelora Bung Karno Stadium,espn
+710449,2024-09-10T12:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - AFC,third-round,North Korea,Qatar,2,2,D,STATUS_FULL_TIME,True,Lao National Stadium KM16,espn
+710445,2024-09-10T14:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - AFC,third-round,Kyrgyz Republic,Uzbekistan,2,3,A,STATUS_FULL_TIME,True,Dolen Omurzakov Stadium,espn
+710444,2024-09-10T14:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - AFC,third-round,Oman,South Korea,1,3,A,STATUS_FULL_TIME,True,Sultan Qaboos Sports Complex',espn
+710443,2024-09-10T14:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - AFC,third-round,Palestine,Jordan,1,3,A,STATUS_FULL_TIME,True,Kuala Lumpur Football Stadium,espn
+710447,2024-09-10T16:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - AFC,third-round,Bahrain,Japan,0,5,A,STATUS_FULL_TIME,True,Bahrain National Stadium,espn
+710446,2024-09-10T16:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - AFC,third-round,United Arab Emirates,Iran,0,1,A,STATUS_FULL_TIME,True,Hazza Bin Zayed Stadium,espn
+710442,2024-09-10T18:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - AFC,third-round,Kuwait,Iraq,0,0,D,STATUS_FULL_TIME,True,Jaber Al-Ahmad International Stadium,espn
+698927,2024-09-10T18:45:00+00:00,2024-09-10,UEFA/Nations League,group-stage,Czechia,Ukraine,3,2,H,STATUS_FULL_TIME,True,Fortuna Arena,espn
+698928,2024-09-10T18:45:00+00:00,2024-09-10,UEFA/Nations League,group-stage,England,Finland,2,0,H,STATUS_FULL_TIME,True,Wembley Stadium,espn
+698932,2024-09-10T18:45:00+00:00,2024-09-10,UEFA/Nations League,group-stage,Hungary,Bosnia-Herzegovina,0,0,D,STATUS_FULL_TIME,True,Puskás Aréna,espn
+698930,2024-09-10T18:45:00+00:00,2024-09-10,UEFA/Nations League,group-stage,Netherlands,Germany,2,2,D,STATUS_FULL_TIME,True,Johan Cruijff Arena,espn
+684614,2024-09-10T20:30:00+00:00,2024-09-10,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Colombia,Argentina,2,1,H,STATUS_FULL_TIME,True,Metropolitano Roberto Meléndez,espn
+684615,2024-09-10T21:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Ecuador,Peru,1,0,H,STATUS_FULL_TIME,True,Rodrigo Paz Delgado,espn
+684617,2024-09-10T22:00:00+00:00,2024-09-10,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Venezuela,Uruguay,0,0,D,STATUS_FULL_TIME,True,Estadio Monumental de Maturín,espn
+707616,2024-09-10T23:00:00+00:00,2024-09-10,FIFA/Friendly,2024-international-friendly,United States,New Zealand,1,1,D,STATUS_FULL_TIME,True,TQL Stadium,espn
+684616,2024-09-11T00:30:00+00:00,2024-09-11,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Paraguay,Brazil,1,0,H,STATUS_FULL_TIME,True,Estadio ueno Defensores del Chaco,espn
+701260,2024-09-11T01:00:00+00:00,2024-09-11,FIFA/Friendly,2024-international-friendly,Mexico,Canada,0,0,D,STATUS_FULL_TIME,True,AT&T Stadium,espn
+710456,2024-10-10T09:10:00+00:00,2024-10-10,FIFA/World Cup Qualifying - AFC,third-round,Australia,China,3,1,H,STATUS_FULL_TIME,True,Adelaide Oval,espn
+710459,2024-10-10T14:00:00+00:00,2024-10-10,FIFA/World Cup Qualifying - AFC,third-round,Jordan,South Korea,0,2,A,STATUS_FULL_TIME,True,Amman International Stadium,espn
+710454,2024-10-10T14:00:00+00:00,2024-10-10,FIFA/World Cup Qualifying - AFC,third-round,Uzbekistan,Iran,0,0,D,STATUS_FULL_TIME,True,Milliy Stadium,espn
+710451,2024-10-10T16:00:00+00:00,2024-10-10,FIFA/World Cup Qualifying - AFC,third-round,Qatar,Kyrgyz Republic,3,1,H,STATUS_FULL_TIME,True,Al Thumama Stadium,espn
+710458,2024-10-10T18:00:00+00:00,2024-10-10,FIFA/World Cup Qualifying - AFC,third-round,Iraq,Palestine,1,0,H,STATUS_FULL_TIME,True,Basra International Stadium,espn
+710452,2024-10-10T18:00:00+00:00,2024-10-10,FIFA/World Cup Qualifying - AFC,third-round,Saudi Arabia,Japan,0,2,A,STATUS_FULL_TIME,True,King Abdullah Sports City,espn
+698936,2024-10-10T18:45:00+00:00,2024-10-10,UEFA/Nations League,group-stage,Austria,Kazakhstan,4,0,H,STATUS_FULL_TIME,True,Raiffeisen Arena,espn
+698935,2024-10-10T18:45:00+00:00,2024-10-10,UEFA/Nations League,group-stage,England,Greece,1,2,A,STATUS_FULL_TIME,True,Wembley Stadium,espn
+698943,2024-10-10T18:45:00+00:00,2024-10-10,UEFA/Nations League,group-stage,Israel,France,1,4,A,STATUS_FULL_TIME,True,Bozsik Aréna,espn
+698939,2024-10-10T18:45:00+00:00,2024-10-10,UEFA/Nations League,group-stage,Italy,Belgium,2,2,D,STATUS_FULL_TIME,True,Stadio Olimpico,espn
+698942,2024-10-10T18:45:00+00:00,2024-10-10,UEFA/Nations League,group-stage,Norway,Slovenia,3,0,H,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+684618,2024-10-10T20:00:00+00:00,2024-10-10,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Bolivia,Colombia,1,0,H,STATUS_FULL_TIME,True,Municipal Villa Ingenio,espn
+684620,2024-10-10T21:00:00+00:00,2024-10-10,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Ecuador,Paraguay,0,0,D,STATUS_FULL_TIME,True,Rodrigo Paz Delgado,espn
+684622,2024-10-10T21:00:00+00:00,2024-10-10,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Venezuela,Argentina,1,1,D,STATUS_FULL_TIME,True,Estadio Monumental de Maturín,espn
+684619,2024-10-11T00:00:00+00:00,2024-10-11,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Chile,Brazil,1,2,A,STATUS_FULL_TIME,True,Estadio Nacional Julio Martínez Prádanos,espn
+698946,2024-10-11T18:45:00+00:00,2024-10-11,UEFA/Nations League,group-stage,Bosnia-Herzegovina,Germany,1,2,A,STATUS_FULL_TIME,True,Bilino Polje,espn
+698945,2024-10-11T18:45:00+00:00,2024-10-11,UEFA/Nations League,group-stage,Czechia,Albania,2,0,H,STATUS_FULL_TIME,True,Generali-Arena,espn
+698947,2024-10-11T18:45:00+00:00,2024-10-11,UEFA/Nations League,group-stage,Hungary,Netherlands,1,1,D,STATUS_FULL_TIME,True,Puskás Aréna,espn
+698950,2024-10-11T18:45:00+00:00,2024-10-11,UEFA/Nations League,group-stage,Slovakia,Sweden,2,2,D,STATUS_FULL_TIME,True,Národny Futbalovy Stadión,espn
+698949,2024-10-11T18:45:00+00:00,2024-10-11,UEFA/Nations League,group-stage,Turkey,Montenegro,1,0,H,STATUS_FULL_TIME,True,Samsun Yeni 19 Mayis Stadyumu,espn
+684621,2024-10-12T01:30:00+00:00,2024-10-12,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Peru,Uruguay,1,0,H,STATUS_FULL_TIME,True,Estadio Nacional de Lima,espn
+698954,2024-10-12T16:00:00+00:00,2024-10-12,UEFA/Nations League,group-stage,Croatia,Scotland,2,1,H,STATUS_FULL_TIME,True,Maksimir,espn
+698958,2024-10-12T18:45:00+00:00,2024-10-12,UEFA/Nations League,group-stage,Poland,Portugal,1,3,A,STATUS_FULL_TIME,True,PGE Narodowy,espn
+698957,2024-10-12T18:45:00+00:00,2024-10-12,UEFA/Nations League,group-stage,Serbia,Switzerland,2,0,H,STATUS_FULL_TIME,True,Gradski stadion Dubocica,espn
+698956,2024-10-12T18:45:00+00:00,2024-10-12,UEFA/Nations League,group-stage,Spain,Denmark,1,0,H,STATUS_FULL_TIME,True,Enrique Roca,espn
+707617,2024-10-13T01:00:00+00:00,2024-10-13,FIFA/Friendly,2024-international-friendly,United States,Panama,2,0,H,STATUS_FULL_TIME,True,Q2 Stadium,espn
+698962,2024-10-13T16:00:00+00:00,2024-10-13,UEFA/Nations League,group-stage,Finland,England,1,3,A,STATUS_FULL_TIME,True,Helsinki Olympic Stadium,espn
+698965,2024-10-13T18:45:00+00:00,2024-10-13,UEFA/Nations League,group-stage,Austria,Norway,5,1,H,STATUS_FULL_TIME,True,Raiffeisen Arena,espn
+722283,2024-10-14T10:00:00+00:00,2024-10-14,FIFA/Friendly,2024-international-friendly,New Zealand,Malaysia,4,0,H,STATUS_FULL_TIME,True,,espn
+698974,2024-10-14T18:45:00+00:00,2024-10-14,UEFA/Nations League,group-stage,Belgium,France,1,2,A,STATUS_FULL_TIME,True,King Baudouin Stadium,espn
+698973,2024-10-14T18:45:00+00:00,2024-10-14,UEFA/Nations League,group-stage,Bosnia-Herzegovina,Hungary,0,2,A,STATUS_FULL_TIME,True,Bilino Polje,espn
+698972,2024-10-14T18:45:00+00:00,2024-10-14,UEFA/Nations League,group-stage,Estonia,Sweden,0,3,A,STATUS_FULL_TIME,True,A. Le Coq Arena,espn
+698971,2024-10-14T18:45:00+00:00,2024-10-14,UEFA/Nations League,group-stage,Germany,Netherlands,1,0,H,STATUS_FULL_TIME,True,Allianz Arena,espn
+698970,2024-10-14T18:45:00+00:00,2024-10-14,UEFA/Nations League,group-stage,Iceland,Turkey,2,4,A,STATUS_FULL_TIME,True,Laugardalsvöllur,espn
+698977,2024-10-14T18:45:00+00:00,2024-10-14,UEFA/Nations League,group-stage,Ukraine,Czechia,1,1,D,STATUS_FULL_TIME,True,Tarczynski Arena,espn
+710466,2024-10-15T10:35:00+00:00,2024-10-15,FIFA/World Cup Qualifying - AFC,third-round,Japan,Australia,1,1,D,STATUS_FULL_TIME,True,Saitama Stadium 2002,espn
+710461,2024-10-15T11:00:00+00:00,2024-10-15,FIFA/World Cup Qualifying - AFC,third-round,South Korea,Iraq,3,2,H,STATUS_FULL_TIME,True,Yongin Citizen Sports Park,espn
+710464,2024-10-15T14:00:00+00:00,2024-10-15,FIFA/World Cup Qualifying - AFC,third-round,Uzbekistan,United Arab Emirates,1,0,H,STATUS_FULL_TIME,True,Milliy Stadium,espn
+710467,2024-10-15T16:00:00+00:00,2024-10-15,FIFA/World Cup Qualifying - AFC,third-round,Iran,Qatar,4,1,H,STATUS_FULL_TIME,True,Rashid Stadium,espn
+710465,2024-10-15T16:00:00+00:00,2024-10-15,FIFA/World Cup Qualifying - AFC,third-round,Jordan,Oman,4,0,H,STATUS_FULL_TIME,True,Amman International Stadium,espn
+710462,2024-10-15T18:00:00+00:00,2024-10-15,FIFA/World Cup Qualifying - AFC,third-round,Saudi Arabia,Bahrain,0,0,D,STATUS_FULL_TIME,True,King Abdullah Sports City,espn
+698981,2024-10-15T18:45:00+00:00,2024-10-15,UEFA/Nations League,group-stage,Poland,Croatia,3,3,D,STATUS_FULL_TIME,True,PGE Narodowy,espn
+698982,2024-10-15T18:45:00+00:00,2024-10-15,UEFA/Nations League,group-stage,Scotland,Portugal,0,0,D,STATUS_FULL_TIME,True,Hampden Park,espn
+698984,2024-10-15T18:45:00+00:00,2024-10-15,UEFA/Nations League,group-stage,Spain,Serbia,3,0,H,STATUS_FULL_TIME,True,Nuevo Arcángel,espn
+698983,2024-10-15T18:45:00+00:00,2024-10-15,UEFA/Nations League,group-stage,Switzerland,Denmark,2,2,D,STATUS_FULL_TIME,True,Kybunpark,espn
+684625,2024-10-15T20:30:00+00:00,2024-10-15,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Colombia,Chile,4,0,H,STATUS_FULL_TIME,True,Metropolitano Roberto Meléndez,espn
+684626,2024-10-15T23:00:00+00:00,2024-10-15,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Paraguay,Venezuela,2,1,H,STATUS_FULL_TIME,True,Estadio ueno Defensores del Chaco,espn
+684627,2024-10-15T23:30:00+00:00,2024-10-15,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Uruguay,Ecuador,0,0,D,STATUS_FULL_TIME,True,Estadio Centenario,espn
+719859,2024-10-15T23:30:00+00:00,2024-10-15,FIFA/Friendly,2024-international-friendly,Canada,Panama,2,1,H,STATUS_FULL_TIME,True,BMO Field,espn
+684623,2024-10-16T00:00:00+00:00,2024-10-16,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Argentina,Bolivia,6,0,H,STATUS_FULL_TIME,True,Mâs Monumental,espn
+684624,2024-10-16T00:45:00+00:00,2024-10-16,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Brazil,Peru,4,0,H,STATUS_FULL_TIME,True,Arena BRB Mané Garrincha,espn
+719821,2024-10-16T02:30:00+00:00,2024-10-16,FIFA/Friendly,2024-international-friendly,Mexico,United States,2,0,H,STATUS_FULL_TIME,True,Estadio Akron,espn
+710471,2024-11-14T09:10:00+00:00,2024-11-14,FIFA/World Cup Qualifying - AFC,third-round,Australia,Saudi Arabia,0,0,D,STATUS_FULL_TIME,True,Melbourne Rectangular Stadium,espn
+710469,2024-11-14T12:00:00+00:00,2024-11-14,FIFA/World Cup Qualifying - AFC,third-round,North Korea,Iran,2,3,A,STATUS_FULL_TIME,True,Lao National Stadium KM16,espn
+710475,2024-11-14T14:00:00+00:00,2024-11-14,FIFA/World Cup Qualifying - AFC,third-round,Kuwait,South Korea,1,3,A,STATUS_FULL_TIME,True,Jaber Al-Ahmad International Stadium,espn
+698986,2024-11-14T15:00:00+00:00,2024-11-14,UEFA/Nations League,group-stage,Kazakhstan,Austria,0,2,A,STATUS_FULL_TIME,True,Almaty Ortalyk Stadium,espn
+710476,2024-11-14T16:15:00+00:00,2024-11-14,FIFA/World Cup Qualifying - AFC,third-round,Iraq,Jordan,0,0,D,STATUS_FULL_TIME,True,Basra International Stadium,espn
+710473,2024-11-14T16:15:00+00:00,2024-11-14,FIFA/World Cup Qualifying - AFC,third-round,Qatar,Uzbekistan,3,2,H,STATUS_FULL_TIME,True,Jassim Bin Hamad Stadium,espn
+698988,2024-11-14T19:45:00+00:00,2024-11-14,UEFA/Nations League,group-stage,Belgium,Italy,0,1,A,STATUS_FULL_TIME,True,King Baudouin Stadium,espn
+698989,2024-11-14T19:45:00+00:00,2024-11-14,UEFA/Nations League,group-stage,France,Israel,0,0,D,STATUS_FULL_TIME,True,Stade de France,espn
+698990,2024-11-14T19:45:00+00:00,2024-11-14,UEFA/Nations League,group-stage,Greece,England,0,3,A,STATUS_FULL_TIME,True,Athens Olympic Stadium,espn
+698993,2024-11-14T19:45:00+00:00,2024-11-14,UEFA/Nations League,group-stage,Slovenia,Norway,1,4,A,STATUS_FULL_TIME,True,Stadion Stozice,espn
+684632,2024-11-14T21:00:00+00:00,2024-11-14,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Venezuela,Brazil,1,1,D,STATUS_FULL_TIME,True,Estadio Monumental de Maturín,espn
+684628,2024-11-14T23:30:00+00:00,2024-11-14,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Paraguay,Argentina,2,1,H,STATUS_FULL_TIME,True,Estadio ueno Defensores del Chaco,espn
+684629,2024-11-15T00:00:00+00:00,2024-11-15,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Ecuador,Bolivia,4,0,H,STATUS_FULL_TIME,True,Estadio Banco Pichincha,espn
+710477,2024-11-15T12:00:00+00:00,2024-11-15,FIFA/World Cup Qualifying - AFC,third-round,Indonesia,Japan,0,4,A,STATUS_FULL_TIME,True,Gelora Bung Karno Stadium,espn
+698995,2024-11-15T19:45:00+00:00,2024-11-15,UEFA/Nations League,group-stage,Denmark,Spain,1,2,A,STATUS_FULL_TIME,True,Parken,espn
+698998,2024-11-15T19:45:00+00:00,2024-11-15,UEFA/Nations League,group-stage,Portugal,Poland,5,1,H,STATUS_FULL_TIME,True,Estádio do Dragão,espn
+699001,2024-11-15T19:45:00+00:00,2024-11-15,UEFA/Nations League,group-stage,Scotland,Croatia,1,0,H,STATUS_FULL_TIME,True,Hampden Park,espn
+699002,2024-11-15T19:45:00+00:00,2024-11-15,UEFA/Nations League,group-stage,Switzerland,Serbia,1,1,D,STATUS_FULL_TIME,True,Stadion Letzigrund,espn
+684630,2024-11-16T00:00:00+00:00,2024-11-16,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Uruguay,Colombia,3,2,H,STATUS_FULL_TIME,True,Estadio Centenario,espn
+699005,2024-11-16T17:00:00+00:00,2024-11-16,UEFA/Nations League,group-stage,Turkey,Wales,0,0,D,STATUS_FULL_TIME,True,RHG Enertürk Enerji Stadyumu,espn
+699009,2024-11-16T19:45:00+00:00,2024-11-16,UEFA/Nations League,group-stage,Albania,Czechia,0,0,D,STATUS_FULL_TIME,True,Arena Kombetare,espn
+699011,2024-11-16T19:45:00+00:00,2024-11-16,UEFA/Nations League,group-stage,Germany,Bosnia-Herzegovina,7,0,H,STATUS_FULL_TIME,True,Europa-Park Stadion,espn
+699010,2024-11-16T19:45:00+00:00,2024-11-16,UEFA/Nations League,group-stage,Netherlands,Hungary,4,0,H,STATUS_FULL_TIME,True,Johan Cruijff Arena,espn
+699008,2024-11-16T19:45:00+00:00,2024-11-16,UEFA/Nations League,group-stage,Sweden,Slovakia,2,1,H,STATUS_FULL_TIME,True,Strawberry Arena,espn
+699016,2024-11-17T17:00:00+00:00,2024-11-17,UEFA/Nations League,group-stage,Austria,Slovenia,1,1,D,STATUS_FULL_TIME,True,Ernst-Happel-Stadion,espn
+699017,2024-11-17T17:00:00+00:00,2024-11-17,UEFA/Nations League,group-stage,England,Republic of Ireland,5,0,H,STATUS_FULL_TIME,True,Wembley Stadium,espn
+699015,2024-11-17T17:00:00+00:00,2024-11-17,UEFA/Nations League,group-stage,Norway,Kazakhstan,5,0,H,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+699018,2024-11-17T19:45:00+00:00,2024-11-17,UEFA/Nations League,group-stage,Israel,Belgium,1,0,H,STATUS_FULL_TIME,True,Bozsik Aréna,espn
+699019,2024-11-17T19:45:00+00:00,2024-11-17,UEFA/Nations League,group-stage,Italy,France,1,3,A,STATUS_FULL_TIME,True,Stadio Giuseppe Meazza,espn
+699020,2024-11-18T19:45:00+00:00,2024-11-18,UEFA/Nations League,group-stage,Croatia,Portugal,1,1,D,STATUS_FULL_TIME,True,Stadion Poljud,espn
+699026,2024-11-18T19:45:00+00:00,2024-11-18,UEFA/Nations League,group-stage,Poland,Scotland,1,2,A,STATUS_FULL_TIME,True,PGE Narodowy,espn
+699023,2024-11-18T19:45:00+00:00,2024-11-18,UEFA/Nations League,group-stage,Spain,Switzerland,3,2,H,STATUS_FULL_TIME,True,Heliodoro Rodríguez López,espn
+710485,2024-11-19T12:00:00+00:00,2024-11-19,FIFA/World Cup Qualifying - AFC,third-round,China,Japan,1,3,A,STATUS_FULL_TIME,True,Xiamen Egret Stadium,espn
+710483,2024-11-19T12:00:00+00:00,2024-11-19,FIFA/World Cup Qualifying - AFC,third-round,Indonesia,Saudi Arabia,2,0,H,STATUS_FULL_TIME,True,Gelora Bung Karno Stadium,espn
+710484,2024-11-19T12:00:00+00:00,2024-11-19,FIFA/World Cup Qualifying - AFC,third-round,North Korea,Uzbekistan,0,1,A,STATUS_FULL_TIME,True,Lao National Stadium KM16,espn
+710481,2024-11-19T14:00:00+00:00,2024-11-19,FIFA/World Cup Qualifying - AFC,third-round,Kyrgyz Republic,Iran,2,3,A,STATUS_FULL_TIME,True,Dolen Omurzakov Stadium,espn
+710479,2024-11-19T14:00:00+00:00,2024-11-19,FIFA/World Cup Qualifying - AFC,third-round,Palestine,South Korea,1,1,D,STATUS_FULL_TIME,True,Amman International Stadium,espn
+710480,2024-11-19T16:00:00+00:00,2024-11-19,FIFA/World Cup Qualifying - AFC,third-round,Oman,Iraq,0,1,A,STATUS_FULL_TIME,True,Sultan Qaboos Sports Complex',espn
+710482,2024-11-19T16:00:00+00:00,2024-11-19,FIFA/World Cup Qualifying - AFC,third-round,United Arab Emirates,Qatar,5,0,H,STATUS_FULL_TIME,True,Al Nahyan Stadium,espn
+710486,2024-11-19T18:15:00+00:00,2024-11-19,FIFA/World Cup Qualifying - AFC,third-round,Bahrain,Australia,2,2,D,STATUS_FULL_TIME,True,Bahrain National Stadium,espn
+710478,2024-11-19T18:15:00+00:00,2024-11-19,FIFA/World Cup Qualifying - AFC,third-round,Kuwait,Jordan,1,1,D,STATUS_FULL_TIME,True,Jaber Al-Ahmad International Stadium,espn
+699030,2024-11-19T19:45:00+00:00,2024-11-19,UEFA/Nations League,group-stage,Bosnia-Herzegovina,Netherlands,1,1,D,STATUS_FULL_TIME,True,Bilino Polje,espn
+699045,2024-11-19T19:45:00+00:00,2024-11-19,UEFA/Nations League,group-stage,Czechia,Georgia,2,1,H,STATUS_FULL_TIME,True,Andruv Stadion,espn
+699044,2024-11-19T19:45:00+00:00,2024-11-19,UEFA/Nations League,group-stage,Hungary,Germany,1,1,D,STATUS_FULL_TIME,True,Puskás Aréna,espn
+699046,2024-11-19T19:45:00+00:00,2024-11-19,UEFA/Nations League,group-stage,Montenegro,Turkey,3,1,H,STATUS_FULL_TIME,True,Gradski Niksica,espn
+699041,2024-11-19T19:45:00+00:00,2024-11-19,UEFA/Nations League,group-stage,Sweden,Azerbaijan,6,0,H,STATUS_FULL_TIME,True,Strawberry Arena,espn
+684634,2024-11-19T20:00:00+00:00,2024-11-19,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Bolivia,Paraguay,2,2,D,STATUS_FULL_TIME,True,Municipal Villa Ingenio,espn
+684637,2024-11-19T23:00:00+00:00,2024-11-19,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Colombia,Ecuador,0,1,A,STATUS_FULL_TIME,True,Metropolitano Roberto Meléndez,espn
+684633,2024-11-20T00:00:00+00:00,2024-11-20,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Argentina,Peru,1,0,H,STATUS_FULL_TIME,True,Alberto José Armando (La Bombonera),espn
+684635,2024-11-20T00:45:00+00:00,2024-11-20,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Brazil,Uruguay,1,1,D,STATUS_FULL_TIME,True,Casa de Apostas Arena Fonte Nova,espn
+725028,2024-12-15T17:00:00+00:00,2024-12-15,FIFA/Friendly,2024-international-friendly,Ivory Coast,Guinea,4,1,H,STATUS_FULL_TIME,True,,espn
+724801,2024-12-17T13:15:00+00:00,2024-12-17,FIFA/Friendly,2024-international-friendly,Saudi Arabia,Trinidad and Tobago,3,1,H,STATUS_FULL_TIME,True,Al-Shabab Club Stadium,espn
+723617,2025-01-18T20:00:00+00:00,2025-01-18,FIFA/Friendly,2025-international-friendly,United States,Venezuela,3,1,H,STATUS_FULL_TIME,True,Chase Stadium,espn
+724802,2025-01-23T00:00:00+00:00,2025-01-23,FIFA/Friendly,2025-international-friendly,United States,Costa Rica,3,0,H,STATUS_FULL_TIME,True,Inter&Co Stadium,espn
+730104,2025-02-08T23:30:00+00:00,2025-02-08,FIFA/Friendly,2025-international-friendly,Chile,Panama,6,1,H,STATUS_FULL_TIME,True,Estadio Nacional Julio Martínez Prádanos,espn
+734504,2025-03-14T18:15:00+00:00,2025-03-14,FIFA/Friendly,2025-international-friendly,Jordan,North Korea,0,0,D,STATUS_FULL_TIME,True,Amman International Stadium,espn
+734874,2025-03-19T16:30:00+00:00,2025-03-19,FIFA/Friendly,2025-international-friendly,Kazakhstan,Curaçao,2,0,H,STATUS_FULL_TIME,True,Gloria Sports Arena,espn
+710488,2025-03-20T09:10:00+00:00,2025-03-20,FIFA/World Cup Qualifying - AFC,third-round,Australia,Indonesia,5,1,H,STATUS_FULL_TIME,True,Allianz Stadium,espn
+710487,2025-03-20T10:35:00+00:00,2025-03-20,FIFA/World Cup Qualifying - AFC,third-round,Japan,Bahrain,2,0,H,STATUS_FULL_TIME,True,Saitama Stadium 2002,espn
+710493,2025-03-20T11:00:00+00:00,2025-03-20,FIFA/World Cup Qualifying - AFC,third-round,South Korea,Oman,1,1,D,STATUS_FULL_TIME,True,Goyang Stadium,espn
+710489,2025-03-20T16:00:00+00:00,2025-03-20,FIFA/World Cup Qualifying - AFC,third-round,Iran,United Arab Emirates,2,0,H,STATUS_FULL_TIME,True,Azadi Stadium,espn
+710491,2025-03-20T16:00:00+00:00,2025-03-20,FIFA/World Cup Qualifying - AFC,third-round,Uzbekistan,Kyrgyz Republic,1,0,H,STATUS_FULL_TIME,True,Milliy Stadium,espn
+723715,2025-03-20T17:00:00+00:00,2025-03-20,UEFA/Nations League,relegation-playoffs,Turkey,Hungary,3,1,H,STATUS_FULL_TIME,True,RAMS Park,espn
+710490,2025-03-20T18:15:00+00:00,2025-03-20,FIFA/World Cup Qualifying - AFC,third-round,Iraq,Kuwait,2,2,D,STATUS_FULL_TIME,True,Basra International Stadium,espn
+710492,2025-03-20T18:15:00+00:00,2025-03-20,FIFA/World Cup Qualifying - AFC,third-round,Jordan,Palestine,3,1,H,STATUS_FULL_TIME,True,Amman International Stadium,espn
+710494,2025-03-20T18:15:00+00:00,2025-03-20,FIFA/World Cup Qualifying - AFC,third-round,Qatar,North Korea,5,1,H,STATUS_FULL_TIME,True,Jassim Bin Hamad Stadium,espn
+710495,2025-03-20T18:15:00+00:00,2025-03-20,FIFA/World Cup Qualifying - AFC,third-round,Saudi Arabia,China,1,0,H,STATUS_FULL_TIME,True,Al-Awwal Park,espn
+723719,2025-03-20T19:45:00+00:00,2025-03-20,UEFA/Nations League,relegation-playoffs,Austria,Serbia,1,1,D,STATUS_FULL_TIME,True,Ernst-Happel-Stadion,espn
+723709,2025-03-20T19:45:00+00:00,2025-03-20,UEFA/Nations League,quarterfinals,Croatia,France,2,0,H,STATUS_FULL_TIME,True,Stadion Poljud,espn
+723711,2025-03-20T19:45:00+00:00,2025-03-20,UEFA/Nations League,quarterfinals,Denmark,Portugal,1,0,H,STATUS_FULL_TIME,True,Parken,espn
+723721,2025-03-20T19:45:00+00:00,2025-03-20,UEFA/Nations League,relegation-playoffs,Greece,Scotland,0,1,A,STATUS_FULL_TIME,True,Georgios Karaiskakis Stadium,espn
+723713,2025-03-20T19:45:00+00:00,2025-03-20,UEFA/Nations League,quarterfinals,Italy,Germany,1,2,A,STATUS_FULL_TIME,True,Stadio Giuseppe Meazza,espn
+723707,2025-03-20T19:45:00+00:00,2025-03-20,UEFA/Nations League,quarterfinals,Netherlands,Spain,2,2,D,STATUS_FULL_TIME,True,Stadion Feijenoord,espn
+723717,2025-03-20T19:45:00+00:00,2025-03-20,UEFA/Nations League,relegation-playoffs,Ukraine,Belgium,3,1,H,STATUS_FULL_TIME,True,Enrique Roca,espn
+684640,2025-03-20T23:00:00+00:00,2025-03-20,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Paraguay,Chile,1,0,H,STATUS_FULL_TIME,True,Estadio ueno Defensores del Chaco,espn
+684638,2025-03-21T00:45:00+00:00,2025-03-21,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Brazil,Colombia,2,1,H,STATUS_FULL_TIME,True,Arena BRB Mané Garrincha,espn
+724926,2025-03-21T19:45:00+00:00,2025-03-21,FIFA/World Cup Qualifying - UEFA,group-stage,England,Albania,2,0,H,STATUS_FULL_TIME,True,Wembley Stadium,espn
+724928,2025-03-21T19:45:00+00:00,2025-03-21,FIFA/World Cup Qualifying - UEFA,group-stage,Romania,Bosnia-Herzegovina,0,1,A,STATUS_FULL_TIME,True,National Arena,espn
+732253,2025-03-21T19:45:00+00:00,2025-03-21,FIFA/Friendly,2025-international-friendly,Northern Ireland,Switzerland,1,1,D,STATUS_FULL_TIME,True,Windsor Park,espn
+684639,2025-03-21T21:00:00+00:00,2025-03-21,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Ecuador,Venezuela,2,1,H,STATUS_FULL_TIME,True,Rodrigo Paz Delgado,espn
+684642,2025-03-21T23:30:00+00:00,2025-03-21,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Uruguay,Argentina,0,1,A,STATUS_FULL_TIME,True,Estadio Centenario,espn
+724930,2025-03-22T17:00:00+00:00,2025-03-22,FIFA/World Cup Qualifying - UEFA,group-stage,Moldova,Norway,0,5,A,STATUS_FULL_TIME,True,Stadionul Zimbru,espn
+729806,2025-03-22T17:00:00+00:00,2025-03-22,FIFA/Friendly,2025-international-friendly,Luxembourg,Sweden,1,0,H,STATUS_FULL_TIME,True,Stade de Luxembourg,espn
+733984,2025-03-22T17:45:00+00:00,2025-03-22,FIFA/Friendly,2025-international-friendly,Azerbaijan,Haiti,0,3,A,STATUS_FULL_TIME,True,Mehdi Huseynzade Stadium,espn
+724932,2025-03-22T19:45:00+00:00,2025-03-22,FIFA/World Cup Qualifying - UEFA,group-stage,Czechia,Faroe Islands,2,1,H,STATUS_FULL_TIME,True,Malsovická Aréna,espn
+723716,2025-03-23T17:00:00+00:00,2025-03-23,UEFA/Nations League,relegation-playoffs,Hungary,Turkey,0,3,A,STATUS_FULL_TIME,True,Puskás Aréna,espn
+723722,2025-03-23T17:00:00+00:00,2025-03-23,UEFA/Nations League,relegation-playoffs,Scotland,Greece,0,3,A,STATUS_FULL_TIME,True,Hampden Park,espn
+723720,2025-03-23T17:00:00+00:00,2025-03-23,UEFA/Nations League,relegation-playoffs,Serbia,Austria,2,0,H,STATUS_FULL_TIME,True,Rajko Mitic Stadium,espn
+723718,2025-03-23T19:45:00+00:00,2025-03-23,UEFA/Nations League,relegation-playoffs,Belgium,Ukraine,3,0,H,STATUS_FULL_TIME,True,Cegeka Arena,espn
+723710,2025-03-23T19:45:00+00:00,2025-03-23,UEFA/Nations League,quarterfinals,France,Croatia,2,0,H,STATUS_FINAL_PEN,True,Stade de France,espn
+723714,2025-03-23T19:45:00+00:00,2025-03-23,UEFA/Nations League,quarterfinals,Germany,Italy,3,3,H,STATUS_FULL_TIME,True,SIGNAL IDUNA PARK,espn
+723712,2025-03-23T19:45:00+00:00,2025-03-23,UEFA/Nations League,quarterfinals,Portugal,Denmark,5,2,H,STATUS_FINAL_AET,True,Estádio José Alvalade,espn
+723708,2025-03-23T19:45:00+00:00,2025-03-23,UEFA/Nations League,quarterfinals,Spain,Netherlands,3,3,H,STATUS_FINAL_PEN,True,Mestalla,espn
+724936,2025-03-24T19:45:00+00:00,2025-03-24,FIFA/World Cup Qualifying - UEFA,group-stage,Bosnia-Herzegovina,Cyprus,2,1,H,STATUS_FULL_TIME,True,Bilino Polje Stadium,espn
+724937,2025-03-24T19:45:00+00:00,2025-03-24,FIFA/World Cup Qualifying - UEFA,group-stage,England,Latvia,3,0,H,STATUS_FULL_TIME,True,Wembley Stadium,espn
+710501,2025-03-25T10:35:00+00:00,2025-03-25,FIFA/World Cup Qualifying - AFC,third-round,Japan,Saudi Arabia,0,0,D,STATUS_FULL_TIME,True,Saitama Stadium 2002,espn
+710497,2025-03-25T11:00:00+00:00,2025-03-25,FIFA/World Cup Qualifying - AFC,third-round,China,Australia,0,2,A,STATUS_FULL_TIME,True,Hangzhou Olympic Sports Centre Stadium,espn
+710502,2025-03-25T11:00:00+00:00,2025-03-25,FIFA/World Cup Qualifying - AFC,third-round,South Korea,Jordan,1,1,D,STATUS_FULL_TIME,True,Suwon World Cup Stadium,espn
+710504,2025-03-25T13:45:00+00:00,2025-03-25,FIFA/World Cup Qualifying - AFC,third-round,Kyrgyz Republic,Qatar,3,1,H,STATUS_FULL_TIME,True,Dolen Omurzakov Stadium,espn
+710499,2025-03-25T16:00:00+00:00,2025-03-25,FIFA/World Cup Qualifying - AFC,third-round,Iran,Uzbekistan,2,2,D,STATUS_FULL_TIME,True,Azadi Stadium,espn
+730105,2025-03-25T18:00:00+00:00,2025-03-25,FIFA/Friendly,2025-international-friendly,Sweden,Northern Ireland,5,1,H,STATUS_FULL_TIME,True,Friends Arena,espn
+710496,2025-03-25T18:15:00+00:00,2025-03-25,FIFA/World Cup Qualifying - AFC,third-round,Palestine,Iraq,2,1,H,STATUS_FULL_TIME,True,Amman International Stadium,espn
+724941,2025-03-25T19:45:00+00:00,2025-03-25,FIFA/World Cup Qualifying - UEFA,group-stage,Gibraltar,Czechia,0,4,A,STATUS_FULL_TIME,True,Estadio Algarve,espn
+724942,2025-03-25T19:45:00+00:00,2025-03-25,FIFA/World Cup Qualifying - UEFA,group-stage,Israel,Norway,2,4,A,STATUS_FULL_TIME,True,Nagyerdei Stadium,espn
+730972,2025-03-25T19:45:00+00:00,2025-03-25,FIFA/Friendly,2025-international-friendly,Switzerland,Luxembourg,3,1,H,STATUS_FULL_TIME,True,Kybunpark,espn
+684644,2025-03-25T20:00:00+00:00,2025-03-25,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Bolivia,Uruguay,0,0,D,STATUS_FULL_TIME,True,Municipal Villa Ingenio,espn
+684643,2025-03-26T00:00:00+00:00,2025-03-26,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Argentina,Brazil,4,1,H,STATUS_FULL_TIME,True,Mâs Monumental,espn
+684645,2025-03-26T00:00:00+00:00,2025-03-26,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Chile,Ecuador,0,0,D,STATUS_FULL_TIME,True,Estadio Nacional Julio Martínez Prádanos,espn
+684646,2025-03-26T00:00:00+00:00,2025-03-26,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Colombia,Paraguay,2,2,D,STATUS_FULL_TIME,True,Metropolitano Roberto Meléndez,espn
+735406,2025-05-28T18:45:00+00:00,2025-05-28,FIFA/Friendly,2025-international-friendly,Ghana,Nigeria,1,2,A,STATUS_FULL_TIME,True,Gtech Community Stadium,espn
+736096,2025-05-29T13:00:00+00:00,2025-05-29,FIFA/Friendly,2025-international-friendly,Malaysia,Cape Verde,1,1,D,STATUS_FULL_TIME,True,Stadium Bola Sepak,espn
+735762,2025-05-30T15:40:00+00:00,2025-05-30,FIFA/Friendly,2025-international-friendly,Saudi Arabia,Jordan,2,0,H,STATUS_FULL_TIME,True,Al Ettifaq Club Stadium,espn
+736093,2025-05-31T11:30:00+00:00,2025-05-31,FIFA/Friendly,2025-international-friendly,Trinidad and Tobago,Ghana,0,4,A,STATUS_FULL_TIME,True,Gtech Community Stadium,espn
+735836,2025-06-02T17:30:00+00:00,2025-06-02,FIFA/Friendly,2025-international-friendly,Tunisia,Burkina Faso,2,0,H,STATUS_FULL_TIME,True,Stade Olympique de Radès,espn
+736105,2025-06-03T13:00:00+00:00,2025-06-03,FIFA/Friendly,2025-international-friendly,Malaysia,Cape Verde,0,3,A,STATUS_FULL_TIME,True,Bukit Jalil National Stadium,espn
+723735,2025-06-04T19:10:00+00:00,2025-06-04,UEFA/Nations League,semifinals,Germany,Portugal,1,2,A,STATUS_FULL_TIME,True,Allianz Arena,espn
+710513,2025-06-05T11:10:00+00:00,2025-06-05,FIFA/World Cup Qualifying - AFC,third-round,Australia,Japan,1,0,H,STATUS_FULL_TIME,True,Optus Stadium,espn
+735520,2025-06-05T16:00:00+00:00,2025-06-05,FIFA/Friendly,2025-international-friendly,Algeria,Rwanda,2,0,H,STATUS_FULL_TIME,True,Stade Chahid Hamlaoui,espn
+710512,2025-06-05T16:00:00+00:00,2025-06-05,FIFA/World Cup Qualifying - AFC,third-round,Bahrain,Saudi Arabia,0,2,A,STATUS_FULL_TIME,True,Bahrain National Stadium,espn
+710509,2025-06-05T16:00:00+00:00,2025-06-05,FIFA/World Cup Qualifying - AFC,third-round,Oman,Jordan,0,3,A,STATUS_FULL_TIME,True,Sultan Qaboos Sports Complex',espn
+710511,2025-06-05T16:00:00+00:00,2025-06-05,FIFA/World Cup Qualifying - AFC,third-round,United Arab Emirates,Uzbekistan,0,0,D,STATUS_FULL_TIME,True,Al Nahyan Stadium,espn
+736110,2025-06-05T18:00:00+00:00,2025-06-05,FIFA/Friendly,2025-international-friendly,Congo DR,Mali,1,0,H,STATUS_FULL_TIME,True,Stade de la Source,espn
+710507,2025-06-05T18:15:00+00:00,2025-06-05,FIFA/World Cup Qualifying - AFC,third-round,Iraq,South Korea,0,2,A,STATUS_FULL_TIME,True,Basra International Stadium,espn
+710510,2025-06-05T18:15:00+00:00,2025-06-05,FIFA/World Cup Qualifying - AFC,third-round,Qatar,Iran,1,0,H,STATUS_FULL_TIME,True,Jassim Bin Hamad Stadium,espn
+723736,2025-06-05T19:00:00+00:00,2025-06-05,UEFA/Nations League,semifinals,Spain,France,5,4,H,STATUS_FULL_TIME,True,MHPArena,espn
+684650,2025-06-05T23:00:00+00:00,2025-06-05,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Ecuador,Brazil,0,0,D,STATUS_FULL_TIME,True,Estadio Banco Pichincha,espn
+684651,2025-06-05T23:00:00+00:00,2025-06-05,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Paraguay,Uruguay,2,0,H,STATUS_FULL_TIME,True,Estadio ueno Defensores del Chaco,espn
+684648,2025-06-06T01:00:00+00:00,2025-06-06,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Chile,Argentina,0,1,A,STATUS_FULL_TIME,True,Estadio Nacional Julio Martínez Prádanos,espn
+731575,2025-06-06T17:30:00+00:00,2025-06-06,FIFA/Friendly,2025-international-friendly,Hungary,Sweden,0,2,A,STATUS_FULL_TIME,True,Puskás Aréna,espn
+735916,2025-06-06T17:30:00+00:00,2025-06-06,FIFA/Friendly,2025-international-friendly,South Africa,Tanzania,0,0,D,STATUS_FULL_TIME,True,Peter Mokaba Stadium,espn
+724948,2025-06-06T18:45:00+00:00,2025-06-06,FIFA/World Cup Qualifying - UEFA,group-stage,Czechia,Montenegro,2,0,H,STATUS_FULL_TIME,True,Doosan Arena,espn
+724949,2025-06-06T18:45:00+00:00,2025-06-06,FIFA/World Cup Qualifying - UEFA,group-stage,Gibraltar,Croatia,0,7,A,STATUS_FULL_TIME,True,Estadio Algarve,espn
+724950,2025-06-06T18:45:00+00:00,2025-06-06,FIFA/World Cup Qualifying - UEFA,group-stage,North Macedonia,Belgium,1,1,D,STATUS_FULL_TIME,True,Toše Proeski Arena,espn
+724951,2025-06-06T18:45:00+00:00,2025-06-06,FIFA/World Cup Qualifying - UEFA,group-stage,Norway,Italy,3,0,H,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+734876,2025-06-06T18:45:00+00:00,2025-06-06,FIFA/Friendly,2025-international-friendly,Republic of Ireland,Senegal,1,1,D,STATUS_FULL_TIME,True,Aviva Stadium,espn
+731307,2025-06-06T18:45:00+00:00,2025-06-06,FIFA/Friendly,2025-international-friendly,Scotland,Iceland,1,3,A,STATUS_FULL_TIME,True,Hampden Park,espn
+733164,2025-06-06T20:00:00+00:00,2025-06-06,FIFA/Friendly,2025-international-friendly,Morocco,Tunisia,2,0,H,STATUS_FULL_TIME,True,Complexe Sportif de Fès,espn
+684649,2025-06-06T20:30:00+00:00,2025-06-06,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Colombia,Peru,0,0,D,STATUS_FULL_TIME,True,Metropolitano Roberto Meléndez,espn
+698176,2025-06-06T23:30:00+00:00,2025-06-06,FIFA/World Cup Qualifying - CONCACAF,second-round,Curaçao,St. Lucia,4,0,H,STATUS_FULL_TIME,True,Stadion Ergilio Hato,espn
+724953,2025-06-07T13:00:00+00:00,2025-06-07,FIFA/World Cup Qualifying - UEFA,group-stage,Bosnia-Herzegovina,San Marino,1,0,H,STATUS_FULL_TIME,True,Bilino Polje Stadium,espn
+724954,2025-06-07T16:00:00+00:00,2025-06-07,FIFA/World Cup Qualifying - UEFA,group-stage,Andorra,England,0,1,A,STATUS_FULL_TIME,True,RCDE Stadium,espn
+724957,2025-06-07T18:45:00+00:00,2025-06-07,FIFA/World Cup Qualifying - UEFA,group-stage,Austria,Romania,2,1,H,STATUS_FULL_TIME,True,Ernst-Happel-Stadion,espn
+724956,2025-06-07T18:45:00+00:00,2025-06-07,FIFA/World Cup Qualifying - UEFA,group-stage,Finland,Netherlands,0,2,A,STATUS_FULL_TIME,True,Helsinki Olympic Stadium,espn
+734219,2025-06-07T19:30:00+00:00,2025-06-07,FIFA/Friendly,2025-international-friendly,United States,Turkey,1,2,A,STATUS_FULL_TIME,True,Pratt & Whitney Stadium at Rentschler Field,espn
+734938,2025-06-07T19:35:00+00:00,2025-06-07,FIFA/Friendly,2025-international-friendly,Canada,Ukraine,4,2,H,STATUS_FULL_TIME,True,BMO Field,espn
+734177,2025-06-07T20:00:00+00:00,2025-06-07,FIFA/Friendly,2025-international-friendly,Mexico,Switzerland,2,4,A,STATUS_FULL_TIME,True,Rice-Eccles Stadium,espn
+698182,2025-06-07T21:00:00+00:00,2025-06-07,FIFA/World Cup Qualifying - CONCACAF,second-round,Aruba,Haiti,0,5,A,STATUS_FULL_TIME,True,Guillermo Prospero Trinidad Stadium,espn
+734939,2025-06-07T23:15:00+00:00,2025-06-07,FIFA/Friendly,2025-international-friendly,Ivory Coast,New Zealand,0,1,A,STATUS_FULL_TIME,True,BMO Field,espn
+698183,2025-06-08T01:00:00+00:00,2025-06-08,FIFA/World Cup Qualifying - CONCACAF,second-round,Belize,Panama,0,2,A,STATUS_FULL_TIME,True,FFB Stadium,espn
+723737,2025-06-08T13:00:00+00:00,2025-06-08,UEFA/Nations League,3rd-place-match,Germany,France,0,2,A,STATUS_FULL_TIME,True,MHPArena,espn
+736115,2025-06-08T15:00:00+00:00,2025-06-08,FIFA/Friendly,2025-international-friendly,Congo DR,Madagascar,3,1,H,STATUS_FULL_TIME,True,Stade de la Source,espn
+735583,2025-06-08T16:00:00+00:00,2025-06-08,FIFA/Friendly,2025-international-friendly,Georgia,Cape Verde,1,1,D,STATUS_FULL_TIME,True,Ramaz Shengelia Stadium,espn
+723738,2025-06-08T19:00:00+00:00,2025-06-08,UEFA/Nations League,final,Portugal,Spain,2,2,H,STATUS_FINAL_PEN,True,Allianz Arena,espn
+731306,2025-06-09T16:00:00+00:00,2025-06-09,FIFA/Friendly,2025-international-friendly,Liechtenstein,Scotland,0,4,A,STATUS_FULL_TIME,True,Rheinpark Stadion,espn
+724961,2025-06-09T18:45:00+00:00,2025-06-09,FIFA/World Cup Qualifying - UEFA,group-stage,Belgium,Wales,4,3,H,STATUS_FULL_TIME,True,King Baudouin Stadium,espn
+724964,2025-06-09T18:45:00+00:00,2025-06-09,FIFA/World Cup Qualifying - UEFA,group-stage,Croatia,Czechia,5,1,H,STATUS_FULL_TIME,True,Opus Arena,espn
+724960,2025-06-09T18:45:00+00:00,2025-06-09,FIFA/World Cup Qualifying - UEFA,group-stage,Estonia,Norway,0,1,A,STATUS_FULL_TIME,True,A. Le Coq Arena,espn
+736118,2025-06-09T19:00:00+00:00,2025-06-09,FIFA/Friendly,2025-international-friendly,Algeria,Rwanda,2,0,H,STATUS_FULL_TIME,True,Stade Mustapha Tchaker,espn
+737524,2025-06-09T19:00:00+00:00,2025-06-09,FIFA/Friendly,2025-international-friendly,Tunisia,Central African Republic,0,0,D,STATUS_CANCELED,True,,espn
+733165,2025-06-09T20:00:00+00:00,2025-06-09,FIFA/Friendly,2025-international-friendly,Morocco,Benin,1,0,H,STATUS_FULL_TIME,True,Complexe Sportif de Fès,espn
+710516,2025-06-10T10:35:00+00:00,2025-06-10,FIFA/World Cup Qualifying - AFC,third-round,Japan,Indonesia,6,0,H,STATUS_FULL_TIME,True,Suita City Football Stadium,espn
+710514,2025-06-10T11:00:00+00:00,2025-06-10,FIFA/World Cup Qualifying - AFC,third-round,South Korea,Kuwait,4,0,H,STATUS_FULL_TIME,True,Seoul World Cup Stadium,espn
+710518,2025-06-10T13:45:00+00:00,2025-06-10,FIFA/World Cup Qualifying - AFC,third-round,Uzbekistan,Qatar,3,0,H,STATUS_FULL_TIME,True,Milliy Stadium,espn
+732244,2025-06-10T16:00:00+00:00,2025-06-10,FIFA/Friendly,2025-international-friendly,Slovenia,Bosnia-Herzegovina,2,1,H,STATUS_FULL_TIME,True,Stadion Z'dezele,espn
+710515,2025-06-10T16:00:00+00:00,2025-06-10,FIFA/World Cup Qualifying - AFC,third-round,Iran,North Korea,3,0,H,STATUS_FULL_TIME,True,Azadi Stadium,espn
+735176,2025-06-10T17:00:00+00:00,2025-06-10,FIFA/Friendly,2025-international-friendly,Sweden,Algeria,4,3,H,STATUS_FULL_TIME,True,Friends Arena,espn
+736078,2025-06-10T17:30:00+00:00,2025-06-10,FIFA/Friendly,2025-international-friendly,South Africa,Mozambique,2,0,H,STATUS_FULL_TIME,True,Peter Mokaba Stadium,espn
+710517,2025-06-10T18:15:00+00:00,2025-06-10,FIFA/World Cup Qualifying - AFC,third-round,Jordan,Iraq,0,1,A,STATUS_FULL_TIME,True,Amman International Stadium,espn
+710521,2025-06-10T18:15:00+00:00,2025-06-10,FIFA/World Cup Qualifying - AFC,third-round,Saudi Arabia,Australia,1,2,A,STATUS_FULL_TIME,True,King Abdullah Sports City,espn
+724970,2025-06-10T18:45:00+00:00,2025-06-10,FIFA/World Cup Qualifying - UEFA,group-stage,Netherlands,Malta,8,0,H,STATUS_FULL_TIME,True,Euroborg,espn
+724968,2025-06-10T18:45:00+00:00,2025-06-10,FIFA/World Cup Qualifying - UEFA,group-stage,San Marino,Austria,0,4,A,STATUS_FULL_TIME,True,San Marino Stadium,espn
+733159,2025-06-10T18:45:00+00:00,2025-06-10,FIFA/Friendly,2025-international-friendly,England,Senegal,1,3,A,STATUS_FULL_TIME,True,The City Ground,espn
+736032,2025-06-10T19:00:00+00:00,2025-06-10,FIFA/Friendly,2025-international-friendly,Tunisia,Zambia,0,0,D,STATUS_CANCELED,True,Stade Larbi Zaouli,espn
+734940,2025-06-10T21:00:00+00:00,2025-06-10,FIFA/Friendly,2025-international-friendly,New Zealand,Ukraine,1,2,A,STATUS_FULL_TIME,True,BMO Field,espn
+698198,2025-06-10T22:00:00+00:00,2025-06-10,FIFA/World Cup Qualifying - CONCACAF,second-round,Haiti,Curaçao,1,5,A,STATUS_FULL_TIME,True,Guillermo Prospero Trinidad Stadium,espn
+684657,2025-06-10T23:00:00+00:00,2025-06-10,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Uruguay,Venezuela,2,0,H,STATUS_FULL_TIME,True,Estadio Centenario,espn
+684653,2025-06-11T00:00:00+00:00,2025-06-11,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Argentina,Colombia,1,1,D,STATUS_FULL_TIME,True,Mâs Monumental,espn
+698197,2025-06-11T00:00:00+00:00,2025-06-11,FIFA/World Cup Qualifying - CONCACAF,second-round,Panama,Nicaragua,3,0,H,STATUS_FULL_TIME,True,Estadio Rommel Fernández Gutiérrez,espn
+734220,2025-06-11T00:00:00+00:00,2025-06-11,FIFA/Friendly,2025-international-friendly,United States,Switzerland,0,4,A,STATUS_FULL_TIME,True,GEODIS Park,espn
+734941,2025-06-11T00:30:00+00:00,2025-06-11,FIFA/Friendly,2025-international-friendly,Canada,Ivory Coast,0,0,A,STATUS_FINAL_PEN,True,BMO Field,espn
+684655,2025-06-11T00:45:00+00:00,2025-06-11,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Brazil,Paraguay,1,0,H,STATUS_FULL_TIME,True,Neo Química Arena,espn
+734176,2025-06-11T01:00:00+00:00,2025-06-11,FIFA/Friendly,2025-international-friendly,Mexico,Turkey,1,0,H,STATUS_FULL_TIME,True,Kenan Stadium,espn
+684656,2025-06-11T01:30:00+00:00,2025-06-11,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Peru,Ecuador,0,0,D,STATUS_FULL_TIME,True,Estadio Nacional de Lima,espn
+735318,2025-06-15T02:15:00+00:00,2025-06-15,CONCACAF/Gold Cup,group-stage,Mexico,Dominican Republic,3,2,H,STATUS_FULL_TIME,True,SoFi Stadium,espn
+735319,2025-06-15T22:00:00+00:00,2025-06-15,CONCACAF/Gold Cup,group-stage,United States,Trinidad and Tobago,5,0,H,STATUS_FULL_TIME,True,PayPal Park,espn
+735320,2025-06-16T00:15:00+00:00,2025-06-16,CONCACAF/Gold Cup,group-stage,Haiti,Saudi Arabia,0,1,A,STATUS_FULL_TIME,True,Snapdragon Stadium,espn
+735322,2025-06-16T23:00:00+00:00,2025-06-16,CONCACAF/Gold Cup,group-stage,Panama,Guadeloupe,5,2,H,STATUS_FULL_TIME,True,Dignity Health Sports Park,espn
+735324,2025-06-18T00:15:00+00:00,2025-06-18,CONCACAF/Gold Cup,group-stage,Curaçao,El Salvador,0,0,D,STATUS_FULL_TIME,True,PayPal Park,espn
+735325,2025-06-18T02:30:00+00:00,2025-06-18,CONCACAF/Gold Cup,group-stage,Canada,Honduras,6,0,H,STATUS_FULL_TIME,True,BC Place,espn
+735327,2025-06-19T02:00:00+00:00,2025-06-19,CONCACAF/Gold Cup,group-stage,Suriname,Mexico,0,2,A,STATUS_FULL_TIME,True,AT&T Stadium,espn
+735328,2025-06-19T22:45:00+00:00,2025-06-19,CONCACAF/Gold Cup,group-stage,Trinidad and Tobago,Haiti,1,1,D,STATUS_FULL_TIME,True,Shell Energy Stadium,espn
+735329,2025-06-20T01:15:00+00:00,2025-06-20,CONCACAF/Gold Cup,group-stage,Saudi Arabia,United States,0,1,A,STATUS_FULL_TIME,True,Q2 Stadium,espn
+735331,2025-06-21T02:00:00+00:00,2025-06-21,CONCACAF/Gold Cup,group-stage,Guatemala,Panama,0,1,A,STATUS_FULL_TIME,True,Q2 Stadium,espn
+735332,2025-06-21T23:00:00+00:00,2025-06-21,CONCACAF/Gold Cup,group-stage,Curaçao,Canada,1,1,D,STATUS_FULL_TIME,True,Shell Energy Stadium,espn
+735334,2025-06-22T23:00:00+00:00,2025-06-22,CONCACAF/Gold Cup,group-stage,Saudi Arabia,Trinidad and Tobago,1,1,D,STATUS_FULL_TIME,True,Allegiant Stadium,espn
+735335,2025-06-22T23:00:00+00:00,2025-06-22,CONCACAF/Gold Cup,group-stage,United States,Haiti,2,1,H,STATUS_FULL_TIME,True,AT&T Stadium,espn
+735337,2025-06-23T02:00:00+00:00,2025-06-23,CONCACAF/Gold Cup,group-stage,Mexico,Costa Rica,0,0,D,STATUS_FULL_TIME,True,Allegiant Stadium,espn
+735338,2025-06-24T23:00:00+00:00,2025-06-24,CONCACAF/Gold Cup,group-stage,Panama,Jamaica,4,1,H,STATUS_FULL_TIME,True,Q2 Stadium,espn
+735341,2025-06-25T02:00:00+00:00,2025-06-25,CONCACAF/Gold Cup,group-stage,Canada,El Salvador,2,0,H,STATUS_FULL_TIME,True,Shell Energy Stadium,espn
+735340,2025-06-25T02:00:00+00:00,2025-06-25,CONCACAF/Gold Cup,group-stage,Honduras,Curaçao,2,1,H,STATUS_FULL_TIME,True,PayPal Park,espn
+735345,2025-06-28T23:15:00+00:00,2025-06-28,CONCACAF/Gold Cup,quarterfinals,Panama,Honduras,1,1,A,STATUS_FINAL_PEN,True,State Farm Stadium,espn
+735343,2025-06-29T02:15:00+00:00,2025-06-29,CONCACAF/Gold Cup,quarterfinals,Mexico,Saudi Arabia,2,0,H,STATUS_FULL_TIME,True,State Farm Stadium,espn
+735344,2025-06-29T20:00:00+00:00,2025-06-29,CONCACAF/Gold Cup,quarterfinals,Canada,Guatemala,1,1,A,STATUS_FINAL_PEN,True,U.S. Bank Stadium,espn
+735342,2025-06-29T23:00:00+00:00,2025-06-29,CONCACAF/Gold Cup,quarterfinals,United States,Costa Rica,2,2,H,STATUS_FINAL_PEN,True,U.S. Bank Stadium,espn
+735346,2025-07-02T23:00:00+00:00,2025-07-02,CONCACAF/Gold Cup,semifinals,United States,Guatemala,2,1,H,STATUS_FULL_TIME,True,Energizer Park,espn
+735347,2025-07-03T02:00:00+00:00,2025-07-03,CONCACAF/Gold Cup,semifinals,Mexico,Honduras,1,0,H,STATUS_FULL_TIME,True,Levi's Stadium,espn
+749917,2025-07-04T19:00:00+00:00,2025-07-04,FIFA/Friendly,2025-international-friendly,Senegal,Guinea,0,0,D,STATUS_FULL_TIME,True,Stade de l'Amitie,espn
+735348,2025-07-06T23:00:00+00:00,2025-07-06,CONCACAF/Gold Cup,final,United States,Mexico,1,2,A,STATUS_FULL_TIME,True,NRG Stadium,espn
+751361,2025-07-07T17:00:00+00:00,2025-07-07,FIFA/Friendly,2025-international-friendly,Senegal,Guinea,1,0,H,STATUS_FULL_TIME,True,Stade Me Abdoulaye Wade,espn
+753973,2025-07-24T10:00:00+00:00,2025-07-24,FIFA/Friendly,2025-international-friendly,Senegal,Uganda,0,0,D,STATUS_CANCELED,True,,espn
+754178,2025-07-24T12:00:00+00:00,2025-07-24,FIFA/Friendly,2025-international-friendly,Uganda,Senegal,2,1,H,STATUS_FULL_TIME,True,Karatu Stadium,espn
+753974,2025-07-27T10:00:00+00:00,2025-07-27,FIFA/Friendly,2025-international-friendly,Kenya,Senegal,0,0,D,STATUS_CANCELED,True,,espn
+753972,2025-07-27T12:00:00+00:00,2025-07-27,FIFA/Friendly,2025-international-friendly,Tanzania,Senegal,2,1,H,STATUS_FULL_TIME,True,Karatu Stadium,espn
+755890,2025-08-24T15:30:00+00:00,2025-08-24,FIFA/Friendly,2025-international-friendly,Qatar,Lebanon,0,1,A,STATUS_FULL_TIME,True,Khalifa International Stadium,espn
+755868,2025-09-03T15:15:00+00:00,2025-09-03,FIFA/Friendly,2025-international-friendly,Qatar,Bahrain,2,2,D,STATUS_FULL_TIME,True,Al Thumama Stadium,espn
+755903,2025-09-04T15:00:00+00:00,2025-09-04,FIFA/Friendly,2025-international-friendly,Saudi Arabia,North Macedonia,2,1,H,STATUS_FULL_TIME,True,eFotbal Arena,espn
+724972,2025-09-04T16:00:00+00:00,2025-09-04,FIFA/World Cup Qualifying - UEFA,group-stage,Georgia,Turkey,2,3,A,STATUS_FULL_TIME,True,Boris Paichadze Dinamo Arena,espn
+733152,2025-09-04T16:00:00+00:00,2025-09-04,FIFA/Friendly,2025-international-friendly,Norway,Finland,1,0,H,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+755849,2025-09-04T17:00:00+00:00,2025-09-04,FIFA/Friendly,2025-international-friendly,Russia,Jordan,0,0,D,STATUS_FULL_TIME,True,Lukoil Arena,espn
+724973,2025-09-04T18:45:00+00:00,2025-09-04,FIFA/World Cup Qualifying - UEFA,group-stage,Bulgaria,Spain,0,3,A,STATUS_FULL_TIME,True,Vasil Levski National Stadium,espn
+724974,2025-09-04T18:45:00+00:00,2025-09-04,FIFA/World Cup Qualifying - UEFA,group-stage,Liechtenstein,Belgium,0,6,A,STATUS_FULL_TIME,True,Rheinpark Stadion,espn
+724978,2025-09-04T18:45:00+00:00,2025-09-04,FIFA/World Cup Qualifying - UEFA,group-stage,Netherlands,Poland,1,1,D,STATUS_FULL_TIME,True,De Kuip,espn
+724977,2025-09-04T18:45:00+00:00,2025-09-04,FIFA/World Cup Qualifying - UEFA,group-stage,Slovakia,Germany,2,0,H,STATUS_FULL_TIME,True,Národny Futbalovy Stadión,espn
+754236,2025-09-04T21:30:00+00:00,2025-09-04,FIFA/World Cup Qualifying - CONCACAF,third-round,Suriname,Panama,0,0,D,STATUS_FULL_TIME,True,Franklin Essed Stadion,espn
+684658,2025-09-04T23:30:00+00:00,2025-09-04,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Argentina,Venezuela,3,0,H,STATUS_FULL_TIME,True,Mâs Monumental,espn
+684660,2025-09-04T23:30:00+00:00,2025-09-04,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Colombia,Bolivia,3,0,H,STATUS_FULL_TIME,True,Metropolitano Roberto Meléndez,espn
+684661,2025-09-04T23:30:00+00:00,2025-09-04,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Paraguay,Ecuador,0,0,D,STATUS_FULL_TIME,True,Estadio ueno Defensores del Chaco,espn
+684662,2025-09-04T23:30:00+00:00,2025-09-04,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Uruguay,Peru,3,0,H,STATUS_FULL_TIME,True,Estadio Centenario,espn
+684659,2025-09-05T00:30:00+00:00,2025-09-05,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Brazil,Chile,3,0,H,STATUS_FULL_TIME,True,Estadio do Maracana,espn
+743812,2025-09-05T09:45:00+00:00,2025-09-05,FIFA/Friendly,2025-international-friendly,Australia,New Zealand,1,0,H,STATUS_FULL_TIME,True,GIO Stadium,espn
+733151,2025-09-05T18:00:00+00:00,2025-09-05,FIFA/Friendly,2025-international-friendly,Romania,Canada,0,3,A,STATUS_FULL_TIME,True,National Arena,espn
+724985,2025-09-05T18:45:00+00:00,2025-09-05,FIFA/World Cup Qualifying - UEFA,group-stage,Denmark,Scotland,0,0,D,STATUS_FULL_TIME,True,Parken Stadium,espn
+724979,2025-09-05T18:45:00+00:00,2025-09-05,FIFA/World Cup Qualifying - UEFA,group-stage,Faroe Islands,Croatia,0,1,A,STATUS_FULL_TIME,True,Tórsvollur,espn
+724987,2025-09-05T18:45:00+00:00,2025-09-05,FIFA/World Cup Qualifying - UEFA,group-stage,Montenegro,Czechia,0,2,A,STATUS_FULL_TIME,True,Podgorica City Stadium,espn
+724988,2025-09-05T18:45:00+00:00,2025-09-05,FIFA/World Cup Qualifying - UEFA,group-stage,Slovenia,Sweden,2,2,D,STATUS_FULL_TIME,True,Stadion Stozice,espn
+724983,2025-09-05T18:45:00+00:00,2025-09-05,FIFA/World Cup Qualifying - UEFA,group-stage,Switzerland,Kosovo,4,0,H,STATUS_FULL_TIME,True,St. Jakob Park,espn
+724984,2025-09-05T18:45:00+00:00,2025-09-05,FIFA/World Cup Qualifying - UEFA,group-stage,Ukraine,France,0,2,A,STATUS_FULL_TIME,True,Municipal Stadium Wroclaw,espn
+754239,2025-09-06T00:00:00+00:00,2025-09-06,FIFA/World Cup Qualifying - CONCACAF,third-round,Haiti,Honduras,0,0,D,STATUS_FULL_TIME,True,Stadion Ergilio Hato,espn
+754240,2025-09-06T00:00:00+00:00,2025-09-06,FIFA/World Cup Qualifying - CONCACAF,third-round,Trinidad and Tobago,Curaçao,0,0,D,STATUS_FULL_TIME,True,Hasely Crawford Stadium,espn
+724990,2025-09-06T16:00:00+00:00,2025-09-06,FIFA/World Cup Qualifying - UEFA,group-stage,Armenia,Portugal,0,5,A,STATUS_FULL_TIME,True,Vazgen Sargsyan Republican Stadium,espn
+724991,2025-09-06T16:00:00+00:00,2025-09-06,FIFA/World Cup Qualifying - UEFA,group-stage,England,Andorra,2,0,H,STATUS_FULL_TIME,True,Villa Park,espn
+724992,2025-09-06T18:45:00+00:00,2025-09-06,FIFA/World Cup Qualifying - UEFA,group-stage,Austria,Cyprus,1,0,H,STATUS_FULL_TIME,True,Raiffeisen Arena (Linz),espn
+724994,2025-09-06T18:45:00+00:00,2025-09-06,FIFA/World Cup Qualifying - UEFA,group-stage,San Marino,Bosnia-Herzegovina,0,6,A,STATUS_FULL_TIME,True,San Marino Stadium,espn
+735765,2025-09-06T21:00:00+00:00,2025-09-06,FIFA/Friendly,2025-international-friendly,United States,South Korea,0,2,A,STATUS_FULL_TIME,True,Red Bull Arena,espn
+735773,2025-09-07T02:00:00+00:00,2025-09-07,FIFA/Friendly,2025-international-friendly,Mexico,Japan,0,0,D,STATUS_FULL_TIME,True,Oakland-Alameda County Coliseum,espn
+755869,2025-09-07T15:15:00+00:00,2025-09-07,FIFA/Friendly,2025-international-friendly,Qatar,Russia,1,4,A,STATUS_FULL_TIME,True,Jassim Bin Hamad Stadium,espn
+724995,2025-09-07T16:00:00+00:00,2025-09-07,FIFA/World Cup Qualifying - UEFA,group-stage,Lithuania,Netherlands,2,3,A,STATUS_FULL_TIME,True,S. Darius and S. Gireno Stadium,espn
+724998,2025-09-07T18:45:00+00:00,2025-09-07,FIFA/World Cup Qualifying - UEFA,group-stage,Belgium,Kazakhstan,6,0,H,STATUS_FULL_TIME,True,Lotto Park,espn
+725001,2025-09-07T18:45:00+00:00,2025-09-07,FIFA/World Cup Qualifying - UEFA,group-stage,Germany,Northern Ireland,3,1,H,STATUS_FULL_TIME,True,RheinEnergieStadion,espn
+725002,2025-09-07T18:45:00+00:00,2025-09-07,FIFA/World Cup Qualifying - UEFA,group-stage,Turkey,Spain,0,6,A,STATUS_FULL_TIME,True,Medas Konya Büyüksehir Stadyumu,espn
+749810,2025-09-08T17:15:00+00:00,2025-09-08,FIFA/Friendly,2025-international-friendly,Czechia,Saudi Arabia,1,1,D,STATUS_FULL_TIME,True,Malsovická Aréna,espn
+725003,2025-09-08T18:45:00+00:00,2025-09-08,FIFA/World Cup Qualifying - UEFA,group-stage,Belarus,Scotland,0,2,A,STATUS_FULL_TIME,True,ZTE Arena,espn
+725010,2025-09-08T18:45:00+00:00,2025-09-08,FIFA/World Cup Qualifying - UEFA,group-stage,Croatia,Montenegro,4,0,H,STATUS_FULL_TIME,True,Maksimir Stadium,espn
+725007,2025-09-08T18:45:00+00:00,2025-09-08,FIFA/World Cup Qualifying - UEFA,group-stage,Kosovo,Sweden,2,0,H,STATUS_FULL_TIME,True,Stadiumi Fadil Vokrri,espn
+725009,2025-09-08T18:45:00+00:00,2025-09-08,FIFA/World Cup Qualifying - UEFA,group-stage,Switzerland,Slovenia,3,0,H,STATUS_FULL_TIME,True,St. Jakob Park,espn
+754243,2025-09-09T01:30:00+00:00,2025-09-09,FIFA/World Cup Qualifying - CONCACAF,third-round,Panama,Guatemala,1,1,D,STATUS_FULL_TIME,True,Estadio Rommel Fernández Gutiérrez,espn
+743813,2025-09-09T07:00:00+00:00,2025-09-09,FIFA/Friendly,2025-international-friendly,New Zealand,Australia,1,3,A,STATUS_FULL_TIME,True,Go Media Stadium,espn
+758165,2025-09-09T17:00:00+00:00,2025-09-09,FIFA/Friendly,2025-international-friendly,Jordan,Dominican Republic,3,0,H,STATUS_FULL_TIME,True,Amman International Stadium,espn
+725014,2025-09-09T18:45:00+00:00,2025-09-09,FIFA/World Cup Qualifying - UEFA,group-stage,Bosnia-Herzegovina,Austria,1,2,A,STATUS_FULL_TIME,True,Bilino Polje Stadium,espn
+725018,2025-09-09T18:45:00+00:00,2025-09-09,FIFA/World Cup Qualifying - UEFA,group-stage,France,Iceland,2,1,H,STATUS_FULL_TIME,True,Parc des Princes,espn
+725016,2025-09-09T18:45:00+00:00,2025-09-09,FIFA/World Cup Qualifying - UEFA,group-stage,Hungary,Portugal,2,3,A,STATUS_FULL_TIME,True,Puskás Aréna,espn
+725008,2025-09-09T18:45:00+00:00,2025-09-09,FIFA/World Cup Qualifying - UEFA,group-stage,Norway,Moldova,11,1,H,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+725017,2025-09-09T18:45:00+00:00,2025-09-09,FIFA/World Cup Qualifying - UEFA,group-stage,Serbia,England,0,5,A,STATUS_FULL_TIME,True,Rajko Mitic Stadium,espn
+733167,2025-09-09T18:45:00+00:00,2025-09-09,FIFA/Friendly,2025-international-friendly,Wales,Canada,0,1,A,STATUS_FULL_TIME,True,Swansea.com Stadium,espn
+684665,2025-09-09T23:00:00+00:00,2025-09-09,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Ecuador,Argentina,1,0,H,STATUS_FULL_TIME,True,Estadio Banco Pichincha,espn
+684663,2025-09-09T23:30:00+00:00,2025-09-09,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Bolivia,Brazil,1,0,H,STATUS_FULL_TIME,True,Municipal Villa Ingenio,espn
+684664,2025-09-09T23:30:00+00:00,2025-09-09,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Chile,Uruguay,0,0,D,STATUS_FULL_TIME,True,Estadio Nacional Julio Martínez Prádanos,espn
+684666,2025-09-09T23:30:00+00:00,2025-09-09,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Peru,Paraguay,0,1,A,STATUS_FULL_TIME,True,Estadio Nacional de Lima,espn
+684667,2025-09-09T23:30:00+00:00,2025-09-09,FIFA/World Cup Qualifying - CONMEBOL,2026-world-cup-qualifying---conmebol,Venezuela,Colombia,3,6,A,STATUS_FULL_TIME,True,Estadio Monumental de Maturín,espn
+735766,2025-09-09T23:30:00+00:00,2025-09-09,FIFA/Friendly,2025-international-friendly,United States,Japan,2,0,H,STATUS_FULL_TIME,True,ScottsMiracle-Gro Field,espn
+754245,2025-09-10T00:00:00+00:00,2025-09-10,FIFA/World Cup Qualifying - CONCACAF,third-round,Curaçao,Bermuda,3,2,H,STATUS_FULL_TIME,True,Stadion Ergilio Hato,espn
+735774,2025-09-10T01:30:00+00:00,2025-09-10,FIFA/Friendly,2025-international-friendly,Mexico,South Korea,2,2,D,STATUS_FULL_TIME,True,GEODIS Park,espn
+754246,2025-09-10T02:00:00+00:00,2025-09-10,FIFA/World Cup Qualifying - CONCACAF,third-round,Costa Rica,Haiti,3,3,D,STATUS_FULL_TIME,True,Estadio Nacional de Costa Rica,espn
+753692,2025-10-08T15:00:00+00:00,2025-10-08,FIFA/World Cup Qualifying - AFC,fourth-round,Oman,Qatar,0,0,D,STATUS_FULL_TIME,True,Jassim Bin Hamad Stadium,espn
+753691,2025-10-08T17:15:00+00:00,2025-10-08,FIFA/World Cup Qualifying - AFC,fourth-round,Indonesia,Saudi Arabia,2,3,A,STATUS_FULL_TIME,True,King Abdullah Sports City,espn
+725019,2025-10-09T18:45:00+00:00,2025-10-09,FIFA/World Cup Qualifying - UEFA,group-stage,Austria,San Marino,10,0,H,STATUS_FULL_TIME,True,Ernst-Happel-Stadion,espn
+725021,2025-10-09T18:45:00+00:00,2025-10-09,FIFA/World Cup Qualifying - UEFA,group-stage,Cyprus,Bosnia-Herzegovina,2,2,D,STATUS_FULL_TIME,True,AEK Arena,espn
+725022,2025-10-09T18:45:00+00:00,2025-10-09,FIFA/World Cup Qualifying - UEFA,group-stage,Czechia,Croatia,0,0,D,STATUS_FULL_TIME,True,Fortuna Arena,espn
+724833,2025-10-09T18:45:00+00:00,2025-10-09,FIFA/World Cup Qualifying - UEFA,group-stage,Malta,Netherlands,0,4,A,STATUS_FULL_TIME,True,Ta' Qali National Stadium,espn
+724834,2025-10-09T18:45:00+00:00,2025-10-09,FIFA/World Cup Qualifying - UEFA,group-stage,Scotland,Greece,3,1,H,STATUS_FULL_TIME,True,Hampden Park,espn
+733158,2025-10-09T18:45:00+00:00,2025-10-09,FIFA/Friendly,2025-international-friendly,England,Wales,3,0,H,STATUS_FULL_TIME,True,Wembley Stadium,espn
+756251,2025-10-09T18:45:00+00:00,2025-10-09,FIFA/Friendly,2025-international-friendly,Poland,New Zealand,1,0,H,STATUS_FULL_TIME,True,Silesian Stadium,espn
+758972,2025-10-09T19:00:00+00:00,2025-10-09,FIFA/Friendly,2025-international-friendly,Morocco,Bahrain,1,0,H,STATUS_FULL_TIME,True,Stade Prince Moulay Abdallah,espn
+754248,2025-10-10T00:00:00+00:00,2025-10-10,FIFA/World Cup Qualifying - CONCACAF,third-round,Nicaragua,Haiti,0,3,A,STATUS_FULL_TIME,True,Estadio Nacional de Fútbol,espn
+739959,2025-10-10T10:20:00+00:00,2025-10-10,FIFA/Friendly,2025-international-friendly,Japan,Paraguay,2,2,D,STATUS_FULL_TIME,True,Suita City Football Stadium,espn
+757631,2025-10-10T11:00:00+00:00,2025-10-10,FIFA/Friendly,2025-international-friendly,South Korea,Brazil,0,5,A,STATUS_FULL_TIME,True,Seoul World Cup Stadium,espn
+758400,2025-10-10T12:45:00+00:00,2025-10-10,FIFA/Friendly,2025-international-friendly,Uruguay,Dominican Republic,1,0,H,STATUS_FULL_TIME,True,Bukit Jalil National Stadium,espn
+758719,2025-10-10T16:00:00+00:00,2025-10-10,FIFA/Friendly,2025-international-friendly,Jordan,Bolivia,0,1,A,STATUS_FULL_TIME,True,Recep Tayyip Erdogan Stadium,espn
+735086,2025-10-10T17:00:00+00:00,2025-10-10,FIFA/Friendly,2025-international-friendly,Russia,Iran,2,1,H,STATUS_FULL_TIME,True,Volgograd Arena,espn
+724838,2025-10-10T18:45:00+00:00,2025-10-10,FIFA/World Cup Qualifying - UEFA,group-stage,Belgium,North Macedonia,0,0,D,STATUS_FULL_TIME,True,Ghelamco Arena,espn
+724842,2025-10-10T18:45:00+00:00,2025-10-10,FIFA/World Cup Qualifying - UEFA,group-stage,France,Azerbaijan,3,0,H,STATUS_FULL_TIME,True,Parc des Princes,espn
+724839,2025-10-10T18:45:00+00:00,2025-10-10,FIFA/World Cup Qualifying - UEFA,group-stage,Germany,Luxembourg,4,0,H,STATUS_FULL_TIME,True,PreZero Arena,espn
+724837,2025-10-10T18:45:00+00:00,2025-10-10,FIFA/World Cup Qualifying - UEFA,group-stage,Sweden,Switzerland,0,2,A,STATUS_FULL_TIME,True,Friends Arena,espn
+754251,2025-10-10T23:00:00+00:00,2025-10-10,FIFA/World Cup Qualifying - CONCACAF,third-round,Curaçao,Jamaica,2,0,H,STATUS_FULL_TIME,True,Stadion Ergilio Hato,espn
+749807,2025-10-10T23:30:00+00:00,2025-10-10,FIFA/Friendly,2025-international-friendly,Canada,Australia,0,1,A,STATUS_FULL_TIME,True,Stade Saputo,espn
+758378,2025-10-11T00:00:00+00:00,2025-10-11,FIFA/Friendly,2025-international-friendly,Argentina,Venezuela,1,0,H,STATUS_FULL_TIME,True,Hard Rock Stadium,espn
+753161,2025-10-11T00:30:00+00:00,2025-10-11,FIFA/Friendly,2025-international-friendly,United States,Ecuador,1,1,D,STATUS_FULL_TIME,True,Q2 Stadium,espn
+754252,2025-10-11T01:00:00+00:00,2025-10-11,FIFA/World Cup Qualifying - CONCACAF,third-round,El Salvador,Panama,0,1,A,STATUS_FULL_TIME,True,Estadio Cuscatlán,espn
+724844,2025-10-11T16:00:00+00:00,2025-10-11,FIFA/World Cup Qualifying - UEFA,group-stage,Norway,Israel,5,0,H,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+724847,2025-10-11T18:45:00+00:00,2025-10-11,FIFA/World Cup Qualifying - UEFA,group-stage,Bulgaria,Turkey,1,6,A,STATUS_FULL_TIME,True,Vasil Levski National Stadium,espn
+724849,2025-10-11T18:45:00+00:00,2025-10-11,FIFA/World Cup Qualifying - UEFA,group-stage,Portugal,Republic of Ireland,1,0,H,STATUS_FULL_TIME,True,Estádio José Alvalade,espn
+724850,2025-10-11T18:45:00+00:00,2025-10-11,FIFA/World Cup Qualifying - UEFA,group-stage,Spain,Georgia,2,0,H,STATUS_FULL_TIME,True,Estadio Martínez Valero,espn
+753693,2025-10-11T19:30:00+00:00,2025-10-11,FIFA/World Cup Qualifying - AFC,fourth-round,Iraq,Indonesia,1,0,H,STATUS_FULL_TIME,True,King Abdullah Sports City,espn
+751638,2025-10-12T01:00:00+00:00,2025-10-12,FIFA/Friendly,2025-international-friendly,Mexico,Colombia,0,4,A,STATUS_FULL_TIME,True,AT&T Stadium,espn
+724852,2025-10-12T16:00:00+00:00,2025-10-12,FIFA/World Cup Qualifying - UEFA,group-stage,Faroe Islands,Czechia,2,1,H,STATUS_FULL_TIME,True,Tórsvollur,espn
+724854,2025-10-12T16:00:00+00:00,2025-10-12,FIFA/World Cup Qualifying - UEFA,group-stage,Netherlands,Finland,4,0,H,STATUS_FULL_TIME,True,Johan Cruijff Arena,espn
+724853,2025-10-12T16:00:00+00:00,2025-10-12,FIFA/World Cup Qualifying - UEFA,group-stage,Scotland,Belarus,2,1,H,STATUS_FULL_TIME,True,Hampden Park,espn
+733031,2025-10-12T17:00:00+00:00,2025-10-12,FIFA/Friendly,2025-international-friendly,Malta,Bosnia-Herzegovina,1,4,A,STATUS_FULL_TIME,True,Ta' Qali National Stadium,espn
+724856,2025-10-12T18:45:00+00:00,2025-10-12,FIFA/World Cup Qualifying - UEFA,group-stage,Croatia,Gibraltar,3,0,H,STATUS_FULL_TIME,True,Stadion Andjelko Herjavec,espn
+724857,2025-10-12T18:45:00+00:00,2025-10-12,FIFA/World Cup Qualifying - UEFA,group-stage,Romania,Austria,1,0,H,STATUS_FULL_TIME,True,National Arena,espn
+758411,2025-10-13T12:45:00+00:00,2025-10-13,FIFA/Friendly,2025-international-friendly,Uzbekistan,Uruguay,1,2,A,STATUS_FULL_TIME,True,Stadium Hang Jebat,espn
+724866,2025-10-13T18:45:00+00:00,2025-10-13,FIFA/World Cup Qualifying - UEFA,group-stage,Iceland,France,2,2,D,STATUS_FULL_TIME,True,Laugardalsvöllur,espn
+724861,2025-10-13T18:45:00+00:00,2025-10-13,FIFA/World Cup Qualifying - UEFA,group-stage,Northern Ireland,Germany,0,1,A,STATUS_FULL_TIME,True,Windsor Park,espn
+724863,2025-10-13T18:45:00+00:00,2025-10-13,FIFA/World Cup Qualifying - UEFA,group-stage,Slovenia,Switzerland,0,0,D,STATUS_FULL_TIME,True,Stadion Stozice,espn
+724864,2025-10-13T18:45:00+00:00,2025-10-13,FIFA/World Cup Qualifying - UEFA,group-stage,Sweden,Kosovo,0,1,A,STATUS_FULL_TIME,True,Ullevi Stadium,espn
+724859,2025-10-13T18:45:00+00:00,2025-10-13,FIFA/World Cup Qualifying - UEFA,group-stage,Wales,Belgium,2,4,A,STATUS_FULL_TIME,True,Cardiff City Stadium,espn
+754255,2025-10-14T00:00:00+00:00,2025-10-14,FIFA/World Cup Qualifying - CONCACAF,third-round,Honduras,Haiti,3,0,H,STATUS_FULL_TIME,True,Estadio José de la Paz Herrera Uclés,espn
+757632,2025-10-14T10:30:00+00:00,2025-10-14,FIFA/Friendly,2025-international-friendly,Japan,Brazil,3,2,H,STATUS_FULL_TIME,True,Tokyo Stadium,espn
+739960,2025-10-14T11:00:00+00:00,2025-10-14,FIFA/Friendly,2025-international-friendly,South Korea,Paraguay,2,0,H,STATUS_FULL_TIME,True,Seoul World Cup Stadium,espn
+735087,2025-10-14T14:00:00+00:00,2025-10-14,FIFA/Friendly,2025-international-friendly,Iran,Chile,0,0,D,STATUS_CANCELED,True,,espn
+759665,2025-10-14T15:00:00+00:00,2025-10-14,FIFA/Friendly,2025-international-friendly,Iran,Tanzania,2,0,H,STATUS_FULL_TIME,True,Rashid Stadium,espn
+733153,2025-10-14T16:00:00+00:00,2025-10-14,FIFA/Friendly,2025-international-friendly,Norway,New Zealand,1,1,D,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+758681,2025-10-14T17:00:00+00:00,2025-10-14,FIFA/Friendly,2025-international-friendly,Albania,Jordan,4,2,H,STATUS_FULL_TIME,True,Air Albania Stadium,espn
+753695,2025-10-14T17:00:00+00:00,2025-10-14,FIFA/World Cup Qualifying - AFC,fourth-round,Qatar,United Arab Emirates,2,1,H,STATUS_FULL_TIME,True,Jassim Bin Hamad Stadium,espn
+724871,2025-10-14T18:45:00+00:00,2025-10-14,FIFA/World Cup Qualifying - UEFA,group-stage,Latvia,England,0,5,A,STATUS_FULL_TIME,True,Daugavas Stadions,espn
+724867,2025-10-14T18:45:00+00:00,2025-10-14,FIFA/World Cup Qualifying - UEFA,group-stage,Portugal,Hungary,2,2,D,STATUS_FULL_TIME,True,Estádio José Alvalade,espn
+724869,2025-10-14T18:45:00+00:00,2025-10-14,FIFA/World Cup Qualifying - UEFA,group-stage,Spain,Bulgaria,4,0,H,STATUS_FULL_TIME,True,Estadio José Zorrilla,espn
+724874,2025-10-14T18:45:00+00:00,2025-10-14,FIFA/World Cup Qualifying - UEFA,group-stage,Turkey,Georgia,4,1,H,STATUS_FULL_TIME,True,Yildiz Entegre Kocaeli Stadyumu,espn
+753696,2025-10-14T18:45:00+00:00,2025-10-14,FIFA/World Cup Qualifying - AFC,fourth-round,Saudi Arabia,Iraq,0,0,D,STATUS_FULL_TIME,True,King Abdullah Sports City,espn
+754256,2025-10-14T23:00:00+00:00,2025-10-14,FIFA/World Cup Qualifying - CONCACAF,third-round,Curaçao,Trinidad and Tobago,1,1,D,STATUS_FULL_TIME,True,Stadion Ergilio Hato,espn
+758373,2025-10-15T00:10:00+00:00,2025-10-15,FIFA/Friendly,2025-international-friendly,Puerto Rico,Argentina,0,6,A,STATUS_FULL_TIME,True,Chase Stadium,espn
+746411,2025-10-15T00:30:00+00:00,2025-10-15,FIFA/Friendly,2025-international-friendly,Colombia,Canada,0,0,D,STATUS_FULL_TIME,True,Red Bull Arena,espn
+754257,2025-10-15T01:00:00+00:00,2025-10-15,FIFA/World Cup Qualifying - CONCACAF,third-round,Panama,Suriname,1,1,D,STATUS_FULL_TIME,True,Estadio Rommel Fernández Gutiérrez,espn
+753162,2025-10-15T01:00:00+00:00,2025-10-15,FIFA/Friendly,2025-international-friendly,United States,Australia,2,1,H,STATUS_FULL_TIME,True,Dick's Sporting Goods Park,espn
+755899,2025-10-15T02:30:00+00:00,2025-10-15,FIFA/Friendly,2025-international-friendly,Mexico,Ecuador,1,1,D,STATUS_FULL_TIME,True,Estadio Akron,espn
+760185,2025-11-12T16:45:00+00:00,2025-11-12,FIFA/Friendly,2025-international-friendly,Tunisia,Mauritania,1,1,D,STATUS_FULL_TIME,True,Stade Olympique de Radès,espn
+759987,2025-11-13T16:00:00+00:00,2025-11-13,FIFA/Friendly,2025-international-friendly,Iran,Cape Verde,0,0,H,STATUS_FINAL_PEN,True,Hazza Bin Zayed Stadium,espn
+760045,2025-11-13T16:00:00+00:00,2025-11-13,FIFA/World Cup Qualifying - AFC,fifth-round,United Arab Emirates,Iraq,1,1,D,STATUS_FULL_TIME,True,Mohammed bin Zayed Stadium,espn
+760378,2025-11-13T16:30:00+00:00,2025-11-13,FIFA/Friendly,2025-international-friendly,Algeria,Zimbabwe,3,1,H,STATUS_FULL_TIME,True,Prince Abdullah Al-Faisal Stadium,espn
+724875,2025-11-13T17:00:00+00:00,2025-11-13,FIFA/World Cup Qualifying - UEFA,group-stage,Norway,Estonia,4,1,H,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+757634,2025-11-13T17:00:00+00:00,2025-11-13,FIFA/Friendly,2025-international-friendly,Czechia,San Marino,1,0,H,STATUS_FULL_TIME,True,Mestsky Stadion Karvina,espn
+724879,2025-11-13T19:45:00+00:00,2025-11-13,FIFA/World Cup Qualifying - UEFA,group-stage,England,Serbia,2,0,H,STATUS_FULL_TIME,True,Wembley Stadium,espn
+724881,2025-11-13T19:45:00+00:00,2025-11-13,FIFA/World Cup Qualifying - UEFA,group-stage,France,Ukraine,4,0,H,STATUS_FULL_TIME,True,Parc des Princes,espn
+724882,2025-11-13T19:45:00+00:00,2025-11-13,FIFA/World Cup Qualifying - UEFA,group-stage,Republic of Ireland,Portugal,2,0,H,STATUS_FULL_TIME,True,Aviva Stadium,espn
+754265,2025-11-14T00:00:00+00:00,2025-11-14,FIFA/World Cup Qualifying - CONCACAF,third-round,Bermuda,Curaçao,0,7,A,STATUS_FULL_TIME,True,Dame Flora Duffy National Sports Centre,espn
+758183,2025-11-14T00:30:00+00:00,2025-11-14,FIFA/Friendly,2025-international-friendly,Canada,Ecuador,0,0,D,STATUS_FULL_TIME,True,BMO Field,espn
+754263,2025-11-14T02:00:00+00:00,2025-11-14,FIFA/World Cup Qualifying - CONCACAF,third-round,Guatemala,Panama,2,3,A,STATUS_FULL_TIME,True,Estadio El Trébol,espn
+754262,2025-11-14T02:00:00+00:00,2025-11-14,FIFA/World Cup Qualifying - CONCACAF,third-round,Haiti,Costa Rica,1,0,H,STATUS_FULL_TIME,True,Stadion Ergilio Hato,espn
+760050,2025-11-14T10:20:00+00:00,2025-11-14,FIFA/Friendly,2025-international-friendly,Japan,Ghana,2,0,H,STATUS_FULL_TIME,True,Toyota Stadium (Japan),espn
+758720,2025-11-14T11:00:00+00:00,2025-11-14,FIFA/Friendly,2025-international-friendly,South Korea,Bolivia,2,0,H,STATUS_FULL_TIME,True,Daejeon World Cup Stadium,espn
+760281,2025-11-14T16:00:00+00:00,2025-11-14,FIFA/Friendly,2025-international-friendly,Angola,Argentina,0,2,A,STATUS_FULL_TIME,True,Estádio 11 de Novembro,espn
+759988,2025-11-14T16:00:00+00:00,2025-11-14,FIFA/Friendly,2025-international-friendly,Egypt,Uzbekistan,0,2,A,STATUS_FULL_TIME,True,Hazza Bin Zayed Stadium,espn
+760376,2025-11-14T16:30:00+00:00,2025-11-14,FIFA/Friendly,2025-international-friendly,Saudi Arabia,Ivory Coast,1,0,H,STATUS_FULL_TIME,True,King Abdullah Sports City,espn
+760186,2025-11-14T16:45:00+00:00,2025-11-14,FIFA/Friendly,2025-international-friendly,Tunisia,Jordan,3,2,H,STATUS_FULL_TIME,True,Stade Olympique de Radès,espn
+760374,2025-11-14T19:00:00+00:00,2025-11-14,FIFA/Friendly,2025-international-friendly,Morocco,Mozambique,1,0,H,STATUS_FULL_TIME,True,Ibn Batouta Stadium,espn
+724887,2025-11-14T19:45:00+00:00,2025-11-14,FIFA/World Cup Qualifying - UEFA,group-stage,Croatia,Faroe Islands,3,1,H,STATUS_FULL_TIME,True,Stadion HNK Rijeka,espn
+724885,2025-11-14T19:45:00+00:00,2025-11-14,FIFA/World Cup Qualifying - UEFA,group-stage,Luxembourg,Germany,0,2,A,STATUS_FULL_TIME,True,Stade de Luxembourg,espn
+724886,2025-11-14T19:45:00+00:00,2025-11-14,FIFA/World Cup Qualifying - UEFA,group-stage,Poland,Netherlands,1,1,D,STATUS_FULL_TIME,True,PGE Narodowy,espn
+760259,2025-11-15T02:30:00+00:00,2025-11-15,FIFA/Friendly,2025-international-friendly,Venezuela,Australia,1,0,H,STATUS_FULL_TIME,True,Shell Energy Stadium,espn
+760282,2025-11-15T13:00:00+00:00,2025-11-15,FIFA/Friendly,2025-international-friendly,South Africa,Zambia,3,1,H,STATUS_FULL_TIME,True,Nelson Mandela Bay Stadium,espn
+724889,2025-11-15T14:00:00+00:00,2025-11-15,FIFA/World Cup Qualifying - UEFA,group-stage,Kazakhstan,Belgium,1,1,D,STATUS_FULL_TIME,True,Astana Arena,espn
+760051,2025-11-15T16:00:00+00:00,2025-11-15,FIFA/Friendly,2025-international-friendly,Brazil,Senegal,2,0,H,STATUS_FULL_TIME,True,Emirates Stadium,espn
+724891,2025-11-15T17:00:00+00:00,2025-11-15,FIFA/World Cup Qualifying - UEFA,group-stage,Cyprus,Austria,0,2,A,STATUS_FULL_TIME,True,Alphamega Stadium,espn
+724890,2025-11-15T17:00:00+00:00,2025-11-15,FIFA/World Cup Qualifying - UEFA,group-stage,Georgia,Spain,0,4,A,STATUS_FULL_TIME,True,Boris Paichadze Dinamo Arena,espn
+724892,2025-11-15T17:00:00+00:00,2025-11-15,FIFA/World Cup Qualifying - UEFA,group-stage,Turkey,Bulgaria,2,0,H,STATUS_FULL_TIME,True,Yüzüncü Yil Atatürk Stadyumu,espn
+724895,2025-11-15T19:45:00+00:00,2025-11-15,FIFA/World Cup Qualifying - UEFA,group-stage,Bosnia-Herzegovina,Romania,3,1,H,STATUS_FULL_TIME,True,Bilino Polje Stadium,espn
+724898,2025-11-15T19:45:00+00:00,2025-11-15,FIFA/World Cup Qualifying - UEFA,group-stage,Greece,Scotland,3,2,H,STATUS_FULL_TIME,True,Georgios Karaiskakis Stadium,espn
+724897,2025-11-15T19:45:00+00:00,2025-11-15,FIFA/World Cup Qualifying - UEFA,group-stage,Switzerland,Sweden,4,1,H,STATUS_FULL_TIME,True,Stade de Genève,espn
+758376,2025-11-15T22:00:00+00:00,2025-11-15,FIFA/Friendly,2025-international-friendly,United States,Paraguay,2,1,H,STATUS_FULL_TIME,True,Subaru Park,espn
+758715,2025-11-16T00:30:00+00:00,2025-11-16,FIFA/Friendly,2025-international-friendly,Colombia,New Zealand,2,1,H,STATUS_FULL_TIME,True,Chase Stadium,espn
+758718,2025-11-16T01:00:00+00:00,2025-11-16,FIFA/Friendly,2025-international-friendly,Mexico,Uruguay,0,0,D,STATUS_FULL_TIME,True,Estadio Corona,espn
+724900,2025-11-16T14:00:00+00:00,2025-11-16,FIFA/World Cup Qualifying - UEFA,group-stage,Portugal,Armenia,9,1,H,STATUS_FULL_TIME,True,Estádio do Dragão,espn
+724902,2025-11-16T17:00:00+00:00,2025-11-16,FIFA/World Cup Qualifying - UEFA,group-stage,Albania,England,0,2,A,STATUS_FULL_TIME,True,Air Albania Stadium,espn
+724901,2025-11-16T17:00:00+00:00,2025-11-16,FIFA/World Cup Qualifying - UEFA,group-stage,Azerbaijan,France,1,3,A,STATUS_FULL_TIME,True,Tofiq Bahramov Republican Stadium,espn
+724906,2025-11-16T19:45:00+00:00,2025-11-16,FIFA/World Cup Qualifying - UEFA,group-stage,Italy,Norway,1,4,A,STATUS_FULL_TIME,True,San Siro,espn
+761121,2025-11-17T16:00:00+00:00,2025-11-17,FIFA/Friendly,2025-international-friendly,Egypt,Cape Verde,1,1,H,STATUS_FINAL_PEN,True,Hazza Bin Zayed Stadium,espn
+760915,2025-11-17T16:30:00+00:00,2025-11-17,FIFA/Friendly,2025-international-friendly,Qatar,Zimbabwe,1,2,A,STATUS_FULL_TIME,True,Abdullah bin Khalifa Stadium,espn
+724909,2025-11-17T19:45:00+00:00,2025-11-17,FIFA/World Cup Qualifying - UEFA,group-stage,Czechia,Gibraltar,6,0,H,STATUS_FULL_TIME,True,Andruv Stadion,espn
+724911,2025-11-17T19:45:00+00:00,2025-11-17,FIFA/World Cup Qualifying - UEFA,group-stage,Germany,Slovakia,6,0,H,STATUS_FULL_TIME,True,Red Bull Arena,espn
+724907,2025-11-17T19:45:00+00:00,2025-11-17,FIFA/World Cup Qualifying - UEFA,group-stage,Montenegro,Croatia,2,3,A,STATUS_FULL_TIME,True,Podgorica City Stadium,espn
+724912,2025-11-17T19:45:00+00:00,2025-11-17,FIFA/World Cup Qualifying - UEFA,group-stage,Netherlands,Lithuania,4,0,H,STATUS_FULL_TIME,True,Johan Cruijff Arena,espn
+758721,2025-11-18T10:15:00+00:00,2025-11-18,FIFA/Friendly,2025-international-friendly,Japan,Bolivia,3,0,H,STATUS_FULL_TIME,True,Japan National Stadium,espn
+760052,2025-11-18T11:00:00+00:00,2025-11-18,FIFA/Friendly,2025-international-friendly,South Korea,Ghana,1,0,H,STATUS_FULL_TIME,True,Seoul World Cup Stadium,espn
+760409,2025-11-18T15:00:00+00:00,2025-11-18,FIFA/Friendly,2025-international-friendly,Oman,Ivory Coast,0,2,A,STATUS_FULL_TIME,True,Seeb Stadium,espn
+760824,2025-11-18T15:00:00+00:00,2025-11-18,FIFA/Friendly,2025-international-friendly,Senegal,Kenya,8,0,H,STATUS_FULL_TIME,True,Mardan Stadyumu,espn
+761122,2025-11-18T16:00:00+00:00,2025-11-18,FIFA/Friendly,2025-international-friendly,Uzbekistan,Iran,0,0,H,STATUS_FINAL_PEN,True,Hazza Bin Zayed Stadium,espn
+760046,2025-11-18T16:00:00+00:00,2025-11-18,FIFA/World Cup Qualifying - AFC,fifth-round,Iraq,United Arab Emirates,2,1,H,STATUS_FULL_TIME,True,Basra International Stadium,espn
+760377,2025-11-18T16:30:00+00:00,2025-11-18,FIFA/Friendly,2025-international-friendly,Saudi Arabia,Algeria,0,2,A,STATUS_FULL_TIME,True,Prince Abdullah Al-Faisal Stadium,espn
+760899,2025-11-18T18:00:00+00:00,2025-11-18,FIFA/Friendly,2025-international-friendly,Jordan,Mali,0,0,D,STATUS_FULL_TIME,True,Hammadi Agrebi Stadium,espn
+760375,2025-11-18T19:00:00+00:00,2025-11-18,FIFA/Friendly,2025-international-friendly,Morocco,Uganda,4,0,H,STATUS_FULL_TIME,True,Ibn Batouta Stadium,espn
+760053,2025-11-18T19:30:00+00:00,2025-11-18,FIFA/Friendly,2025-international-friendly,Brazil,Tunisia,1,1,D,STATUS_FULL_TIME,True,Decathlon Arena - Stade Pierre-Mauroy,espn
+724913,2025-11-18T19:45:00+00:00,2025-11-18,FIFA/World Cup Qualifying - UEFA,group-stage,Austria,Bosnia-Herzegovina,1,1,D,STATUS_FULL_TIME,True,Ernst-Happel-Stadion,espn
+724915,2025-11-18T19:45:00+00:00,2025-11-18,FIFA/World Cup Qualifying - UEFA,group-stage,Belgium,Liechtenstein,7,0,H,STATUS_FULL_TIME,True,Stade Maurice Dufrasne,espn
+724922,2025-11-18T19:45:00+00:00,2025-11-18,FIFA/World Cup Qualifying - UEFA,group-stage,Kosovo,Switzerland,1,1,D,STATUS_FULL_TIME,True,Stadiumi Fadil Vokrri,espn
+724921,2025-11-18T19:45:00+00:00,2025-11-18,FIFA/World Cup Qualifying - UEFA,group-stage,Scotland,Denmark,4,2,H,STATUS_FULL_TIME,True,Hampden Park,espn
+724917,2025-11-18T19:45:00+00:00,2025-11-18,FIFA/World Cup Qualifying - UEFA,group-stage,Spain,Turkey,2,2,D,STATUS_FULL_TIME,True,Estadio La Cartuja,espn
+724919,2025-11-18T19:45:00+00:00,2025-11-18,FIFA/World Cup Qualifying - UEFA,group-stage,Sweden,Slovenia,1,1,D,STATUS_FULL_TIME,True,Friends Arena,espn
+758377,2025-11-19T00:00:00+00:00,2025-11-19,FIFA/Friendly,2025-international-friendly,United States,Uruguay,5,1,H,STATUS_FULL_TIME,True,Raymond James Stadium,espn
+754268,2025-11-19T01:00:00+00:00,2025-11-19,FIFA/World Cup Qualifying - CONCACAF,third-round,Haiti,Nicaragua,2,0,H,STATUS_FULL_TIME,True,Stadion Ergilio Hato,espn
+754267,2025-11-19T01:00:00+00:00,2025-11-19,FIFA/World Cup Qualifying - CONCACAF,third-round,Jamaica,Curaçao,0,0,D,STATUS_FULL_TIME,True,Independence Park,espn
+754266,2025-11-19T01:00:00+00:00,2025-11-19,FIFA/World Cup Qualifying - CONCACAF,third-round,Panama,El Salvador,3,0,H,STATUS_FULL_TIME,True,Estadio Rommel Fernández Gutiérrez,espn
+759185,2025-11-19T01:00:00+00:00,2025-11-19,FIFA/Friendly,2025-international-friendly,Colombia,Nigeria,0,0,D,STATUS_CANCELED,True,Citi Field,espn
+760258,2025-11-19T01:30:00+00:00,2025-11-19,FIFA/Friendly,2025-international-friendly,Colombia,Australia,3,0,H,STATUS_FULL_TIME,True,Citi Field,espn
+758717,2025-11-19T01:30:00+00:00,2025-11-19,FIFA/Friendly,2025-international-friendly,Ecuador,New Zealand,2,0,H,STATUS_FULL_TIME,True,Red Bull Arena,espn
+758974,2025-11-19T01:30:00+00:00,2025-11-19,FIFA/Friendly,2025-international-friendly,Mexico,Paraguay,1,2,A,STATUS_FULL_TIME,True,Alamodome,espn
+758716,2025-11-19T01:30:00+00:00,2025-11-19,FIFA/Friendly,2025-international-friendly,Venezuela,Canada,0,2,A,STATUS_FULL_TIME,True,Chase Stadium,espn
+762772,2025-12-16T15:00:00+00:00,2025-12-16,FIFA/Friendly,2025-international-friendly,Zambia,Congo DR,0,2,A,STATUS_FULL_TIME,True,Pinatar Arena,espn
+762474,2025-12-16T18:00:00+00:00,2025-12-16,FIFA/Friendly,2025-international-friendly,Egypt,Nigeria,2,1,H,STATUS_FULL_TIME,True,Cairo International Stadium,espn
+401842482,2025-12-18T14:00:00+00:00,2025-12-18,FIFA/Friendly,2025-international-friendly,Tunisia,Botswana,2,1,H,STATUS_FULL_TIME,True,Complex La Cigale,espn
+732133,2025-12-21T19:00:00+00:00,2025-12-21,CAF/Africa Cup of Nations,group-stage,Morocco,Comoros,2,0,H,STATUS_FULL_TIME,True,Stade Prince Moulay Abdallah,espn
+732136,2025-12-22T17:00:00+00:00,2025-12-22,CAF/Africa Cup of Nations,group-stage,South Africa,Angola,2,1,H,STATUS_FULL_TIME,True,Stade de Marrakech,espn
+732135,2025-12-22T20:00:00+00:00,2025-12-22,CAF/Africa Cup of Nations,group-stage,Egypt,Zimbabwe,2,1,H,STATUS_FULL_TIME,True,Le Grand Stade Agadir,espn
+732137,2025-12-23T12:30:00+00:00,2025-12-23,CAF/Africa Cup of Nations,group-stage,Congo DR,Benin,1,0,H,STATUS_FULL_TIME,True,Stade El Barid,espn
+732139,2025-12-23T15:00:00+00:00,2025-12-23,CAF/Africa Cup of Nations,group-stage,Senegal,Botswana,3,0,H,STATUS_FULL_TIME,True,Ibn Batouta Stadium,espn
+732140,2025-12-23T20:00:00+00:00,2025-12-23,CAF/Africa Cup of Nations,group-stage,Tunisia,Uganda,3,1,H,STATUS_FULL_TIME,True,Stade Olympique de Rabat,espn
+732143,2025-12-24T15:00:00+00:00,2025-12-24,CAF/Africa Cup of Nations,group-stage,Algeria,Sudan,3,0,H,STATUS_FULL_TIME,True,Stade Prince Moulay Al Hassan,espn
+732144,2025-12-24T17:30:00+00:00,2025-12-24,CAF/Africa Cup of Nations,group-stage,Ivory Coast,Mozambique,1,0,H,STATUS_FULL_TIME,True,Stade de Marrakech,espn
+732146,2025-12-26T15:00:00+00:00,2025-12-26,CAF/Africa Cup of Nations,group-stage,Egypt,South Africa,1,0,H,STATUS_FULL_TIME,True,Le Grand Stade Agadir,espn
+732147,2025-12-26T20:00:00+00:00,2025-12-26,CAF/Africa Cup of Nations,group-stage,Morocco,Mali,1,1,D,STATUS_FULL_TIME,True,Stade Prince Moulay Abdallah,espn
+732152,2025-12-27T15:00:00+00:00,2025-12-27,CAF/Africa Cup of Nations,group-stage,Senegal,Congo DR,1,1,D,STATUS_FULL_TIME,True,Ibn Batouta Stadium,espn
+732150,2025-12-27T20:00:00+00:00,2025-12-27,CAF/Africa Cup of Nations,group-stage,Nigeria,Tunisia,3,2,H,STATUS_FULL_TIME,True,Complexe Sportif de Fès,espn
+732153,2025-12-28T17:30:00+00:00,2025-12-28,CAF/Africa Cup of Nations,group-stage,Algeria,Burkina Faso,1,0,H,STATUS_FULL_TIME,True,Stade Prince Moulay Al Hassan,espn
+732155,2025-12-28T20:00:00+00:00,2025-12-28,CAF/Africa Cup of Nations,group-stage,Ivory Coast,Cameroon,1,1,D,STATUS_FULL_TIME,True,Stade de Marrakech,espn
+732157,2025-12-29T16:00:00+00:00,2025-12-29,CAF/Africa Cup of Nations,group-stage,Angola,Egypt,0,0,D,STATUS_FULL_TIME,True,Le Grand Stade Agadir,espn
+732159,2025-12-29T16:00:00+00:00,2025-12-29,CAF/Africa Cup of Nations,group-stage,Zimbabwe,South Africa,2,3,A,STATUS_FULL_TIME,True,Stade de Marrakech,espn
+732160,2025-12-29T19:00:00+00:00,2025-12-29,CAF/Africa Cup of Nations,group-stage,Zambia,Morocco,0,3,A,STATUS_FULL_TIME,True,Stade Prince Moulay Abdallah,espn
+732163,2025-12-30T16:00:00+00:00,2025-12-30,CAF/Africa Cup of Nations,group-stage,Tanzania,Tunisia,1,1,D,STATUS_FULL_TIME,True,Stade Olympique de Rabat,espn
+732161,2025-12-30T19:00:00+00:00,2025-12-30,CAF/Africa Cup of Nations,group-stage,Benin,Senegal,0,3,A,STATUS_FULL_TIME,True,Ibn Batouta Stadium,espn
+732162,2025-12-30T19:00:00+00:00,2025-12-30,CAF/Africa Cup of Nations,group-stage,Botswana,Congo DR,0,3,A,STATUS_FULL_TIME,True,Stade El Barid,espn
+732165,2025-12-31T16:00:00+00:00,2025-12-31,CAF/Africa Cup of Nations,group-stage,Equatorial Guinea,Algeria,1,3,A,STATUS_FULL_TIME,True,Stade Prince Moulay Al Hassan,espn
+732167,2025-12-31T19:00:00+00:00,2025-12-31,CAF/Africa Cup of Nations,group-stage,Gabon,Ivory Coast,2,3,A,STATUS_FULL_TIME,True,Stade de Marrakech,espn
+732170,2026-01-03T16:00:00+00:00,2026-01-03,CAF/Africa Cup of Nations,round-of-16,Senegal,Sudan,3,1,H,STATUS_FULL_TIME,True,Ibn Batouta Stadium,espn
+732169,2026-01-03T19:00:00+00:00,2026-01-03,CAF/Africa Cup of Nations,round-of-16,Mali,Tunisia,1,1,H,STATUS_FINAL_PEN,True,Mohamed V Stadium,espn
+732171,2026-01-04T16:00:00+00:00,2026-01-04,CAF/Africa Cup of Nations,round-of-16,Morocco,Tanzania,1,0,H,STATUS_FULL_TIME,True,Stade Prince Moulay Abdallah,espn
+732172,2026-01-04T19:00:00+00:00,2026-01-04,CAF/Africa Cup of Nations,round-of-16,South Africa,Cameroon,1,2,A,STATUS_FULL_TIME,True,Stade El Barid,espn
+732173,2026-01-05T16:00:00+00:00,2026-01-05,CAF/Africa Cup of Nations,round-of-16,Egypt,Benin,3,1,H,STATUS_FINAL_AET,True,Le Grand Stade Agadir,espn
+732175,2026-01-06T16:00:00+00:00,2026-01-06,CAF/Africa Cup of Nations,round-of-16,Algeria,Congo DR,1,0,H,STATUS_FINAL_AET,True,Stade Prince Moulay Al Hassan,espn
+732176,2026-01-06T19:00:00+00:00,2026-01-06,CAF/Africa Cup of Nations,round-of-16,Ivory Coast,Burkina Faso,3,0,H,STATUS_FULL_TIME,True,Stade de Marrakech,espn
+732177,2026-01-09T16:00:00+00:00,2026-01-09,CAF/Africa Cup of Nations,quarterfinals,Mali,Senegal,0,1,A,STATUS_FULL_TIME,True,Ibn Batouta Stadium,espn
+732178,2026-01-09T19:00:00+00:00,2026-01-09,CAF/Africa Cup of Nations,quarterfinals,Cameroon,Morocco,0,2,A,STATUS_FULL_TIME,True,Stade Prince Moulay Abdallah,espn
+732180,2026-01-10T16:00:00+00:00,2026-01-10,CAF/Africa Cup of Nations,quarterfinals,Algeria,Nigeria,0,2,A,STATUS_FULL_TIME,True,Stade de Marrakech,espn
+732179,2026-01-10T19:00:00+00:00,2026-01-10,CAF/Africa Cup of Nations,quarterfinals,Egypt,Ivory Coast,3,2,H,STATUS_FULL_TIME,True,Le Grand Stade Agadir,espn
+732181,2026-01-14T17:00:00+00:00,2026-01-14,CAF/Africa Cup of Nations,semifinals,Senegal,Egypt,1,0,H,STATUS_FULL_TIME,True,Ibn Batouta Stadium,espn
+732182,2026-01-14T20:00:00+00:00,2026-01-14,CAF/Africa Cup of Nations,semifinals,Nigeria,Morocco,0,0,A,STATUS_FINAL_PEN,True,Stade Prince Moulay Abdallah,espn
+732183,2026-01-17T16:00:00+00:00,2026-01-17,CAF/Africa Cup of Nations,3rd-place-match,Egypt,Nigeria,0,0,A,STATUS_FINAL_PEN,True,Mohamed V Stadium,espn
+401844264,2026-01-18T03:00:00+00:00,2026-01-18,FIFA/Friendly,2026-international-friendly,Canada,Guatemala,1,0,H,STATUS_FULL_TIME,True,BMO Stadium,espn
+732184,2026-01-18T19:00:00+00:00,2026-01-18,CAF/Africa Cup of Nations,final,Senegal,Morocco,0,3,A,STATUS_FINAL_AET,True,Stade Prince Moulay Abdallah,espn
+762557,2026-01-18T21:00:00+00:00,2026-01-18,FIFA/Friendly,2026-international-friendly,Bolivia,Panama,1,1,D,STATUS_FULL_TIME,True,Estadio IV Centenário,espn
+401842387,2026-01-23T01:00:00+00:00,2026-01-23,FIFA/Friendly,2026-international-friendly,Panama,Mexico,0,1,A,STATUS_FULL_TIME,True,Estadio Rommel Fernández Gutiérrez,espn
+401842388,2026-01-25T19:30:00+00:00,2026-01-25,FIFA/Friendly,2026-international-friendly,Bolivia,Mexico,0,1,A,STATUS_FULL_TIME,True,Estadio Ramón Tahuichi,espn
+401857718,2026-01-26T13:30:00+00:00,2026-01-26,FIFA/Friendly,2026-international-friendly,Uzbekistan,China,2,2,D,STATUS_FULL_TIME,True,,espn
+401842389,2026-02-26T02:00:00+00:00,2026-02-26,FIFA/Friendly,2026-international-friendly,Mexico,Iceland,4,0,H,STATUS_FULL_TIME,True,Estadio Corregidora,espn
+401866396,2026-03-25T22:00:00+00:00,2026-03-25,FIFA/Friendly,2026-international-friendly,Congo DR,Bermuda,2,0,H,STATUS_FULL_TIME,True,Estadio Akron,espn
+761383,2026-03-26T17:00:00+00:00,2026-03-26,FIFA/World Cup Qualifying - UEFA,playoff-semifinals,Turkey,Romania,1,0,H,STATUS_FULL_TIME,True,Vodafone Park,espn
+401856642,2026-03-26T18:00:00+00:00,2026-03-26,FIFA/Friendly,2026-international-friendly,Qatar,Serbia,0,0,D,STATUS_CANCELED,True,,espn
+761378,2026-03-26T19:45:00+00:00,2026-03-26,FIFA/World Cup Qualifying - UEFA,playoff-semifinals,Czechia,Republic of Ireland,2,2,H,STATUS_FINAL_PEN,True,Fortuna Arena,espn
+761384,2026-03-26T19:45:00+00:00,2026-03-26,FIFA/World Cup Qualifying - UEFA,playoff-semifinals,Ukraine,Sweden,1,3,A,STATUS_FULL_TIME,True,Estadi Ciutat de València,espn
+761381,2026-03-26T19:45:00+00:00,2026-03-26,FIFA/World Cup Qualifying - UEFA,playoff-semifinals,Wales,Bosnia-Herzegovina,1,1,A,STATUS_FINAL_PEN,True,Cardiff City Stadium,espn
+762452,2026-03-26T20:00:00+00:00,2026-03-26,FIFA/Friendly,2026-international-friendly,Brazil,France,1,2,A,STATUS_FULL_TIME,True,Gillette Stadium,espn
+401847048,2026-03-26T23:30:00+00:00,2026-03-26,FIFA/Friendly,2026-international-friendly,Colombia,Croatia,1,2,A,STATUS_FULL_TIME,True,Camping World Stadium,espn
+401856419,2026-03-27T03:00:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Chile,Cape Verde,4,2,H,STATUS_FULL_TIME,True,Eden Park,espn
+401856591,2026-03-27T06:00:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,China,Curaçao,2,0,H,STATUS_FULL_TIME,True,Accor Stadium,espn
+401856601,2026-03-27T06:00:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,New Zealand,Finland,0,2,A,STATUS_FULL_TIME,True,Eden Park,espn
+401856592,2026-03-27T09:10:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Australia,Cameroon,1,0,H,STATUS_FULL_TIME,True,Accor Stadium,espn
+401861777,2026-03-27T12:30:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Iran,Nigeria,1,2,A,STATUS_FULL_TIME,True,Mardan Stadyumu,espn
+401866483,2026-03-27T14:00:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Uzbekistan,Gabon,3,1,H,STATUS_FULL_TIME,True,Milliy Stadium,espn
+401856593,2026-03-27T17:00:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Austria,Ghana,5,1,H,STATUS_FULL_TIME,True,Ernst-Happel-Stadion,espn
+401860541,2026-03-27T17:00:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,South Africa,Panama,1,1,D,STATUS_FULL_TIME,True,Moses Mabhida Stadium,espn
+401862038,2026-03-27T17:30:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Jordan,Costa Rica,2,2,D,STATUS_FULL_TIME,True,Mardan Stadyumu,espn
+401854539,2026-03-27T17:30:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Saudi Arabia,Egypt,0,4,A,STATUS_FULL_TIME,True,King Abdullah Sports City,espn
+401861598,2026-03-27T19:00:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Greece,Paraguay,0,1,A,STATUS_FULL_TIME,True,Georgios Karaiskakis Stadium,espn
+401862318,2026-03-27T19:30:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Algeria,Guatemala,7,0,H,STATUS_FULL_TIME,True,Stadio Luigi Ferraris,espn
+762553,2026-03-27T19:45:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,England,Uruguay,1,1,D,STATUS_FULL_TIME,True,Wembley Stadium,espn
+762549,2026-03-27T19:45:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Netherlands,Norway,2,1,H,STATUS_FULL_TIME,True,Johan Cruijff Arena,espn
+762550,2026-03-27T19:45:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Switzerland,Germany,3,4,A,STATUS_FULL_TIME,True,St. Jakob Park,espn
+401865041,2026-03-27T20:00:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Spain,Serbia,3,0,H,STATUS_FULL_TIME,True,Estadio de la Cerámica,espn
+401860936,2026-03-27T20:15:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Morocco,Ecuador,1,1,D,STATUS_FULL_TIME,True,Riyadh Air Metropolitano,espn
+401866131,2026-03-27T23:15:00+00:00,2026-03-27,FIFA/Friendly,2026-international-friendly,Argentina,Mauritania,2,1,H,STATUS_FULL_TIME,True,Alberto José Armando (La Bombonera),espn
+401860779,2026-03-28T14:00:00+00:00,2026-03-28,FIFA/Friendly,2026-international-friendly,South Korea,Ivory Coast,0,4,A,STATUS_FULL_TIME,True,Stadium MK,espn
+401861999,2026-03-28T16:00:00+00:00,2026-03-28,FIFA/Friendly,2026-international-friendly,Senegal,Peru,2,0,H,STATUS_FULL_TIME,True,Stade de France,espn
+401856638,2026-03-28T17:00:00+00:00,2026-03-28,FIFA/Friendly,2026-international-friendly,Canada,Iceland,2,2,D,STATUS_FULL_TIME,True,BMO Field,espn
+401856618,2026-03-28T17:00:00+00:00,2026-03-28,FIFA/Friendly,2026-international-friendly,Scotland,Japan,0,1,A,STATUS_FULL_TIME,True,Hampden Park,espn
+762258,2026-03-28T19:30:00+00:00,2026-03-28,FIFA/Friendly,2026-international-friendly,United States,Belgium,2,5,A,STATUS_FULL_TIME,True,Mercedes-Benz Stadium,espn
+401856640,2026-03-29T00:00:00+00:00,2026-03-29,FIFA/Friendly,2026-international-friendly,Haiti,Tunisia,0,1,A,STATUS_FULL_TIME,True,BMO Field,espn
+762263,2026-03-29T01:00:00+00:00,2026-03-29,FIFA/Friendly,2026-international-friendly,Mexico,Portugal,0,0,D,STATUS_FULL_TIME,True,Estadio Banorte,espn
+762453,2026-03-29T19:00:00+00:00,2026-03-29,FIFA/Friendly,2026-international-friendly,Colombia,France,1,3,A,STATUS_FULL_TIME,True,Northwest Stadium,espn
+401856602,2026-03-30T03:00:00+00:00,2026-03-30,FIFA/Friendly,2026-international-friendly,Cape Verde,Finland,1,1,H,STATUS_FINAL_PEN,True,Eden Park,espn
+401856420,2026-03-30T06:00:00+00:00,2026-03-30,FIFA/Friendly,2026-international-friendly,New Zealand,Chile,4,1,H,STATUS_FULL_TIME,True,Eden Park,espn
+401861040,2026-03-30T14:00:00+00:00,2026-03-30,FIFA/Friendly,2026-international-friendly,Uzbekistan,Venezuela,0,0,H,STATUS_FINAL_PEN,True,Milliy Stadium,espn
+758380,2026-03-30T18:45:00+00:00,2026-03-30,FIFA/Friendly,2026-international-friendly,Germany,Ivory Coast,0,0,D,STATUS_CANCELED,True,MHPArena,espn
+762773,2026-03-30T18:45:00+00:00,2026-03-30,FIFA/Friendly,2026-international-friendly,Germany,Ghana,2,1,H,STATUS_FULL_TIME,True,MHPArena,espn
+401856595,2026-03-31T09:10:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Australia,Curaçao,5,1,H,STATUS_FULL_TIME,True,Melbourne Rectangular Stadium,espn
+401861778,2026-03-31T13:00:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Iran,Costa Rica,5,0,H,STATUS_FULL_TIME,True,Mardan Stadyumu,espn
+762552,2026-03-31T16:00:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Norway,Switzerland,0,0,D,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+401856619,2026-03-31T16:00:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Serbia,Saudi Arabia,2,1,H,STATUS_FULL_TIME,True,Gradski stadion Backa Topola,espn
+401862040,2026-03-31T17:30:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Jordan,Nigeria,2,2,D,STATUS_FULL_TIME,True,Mardan Stadyumu,espn
+401860542,2026-03-31T17:30:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,South Africa,Panama,1,2,A,STATUS_FULL_TIME,True,DHL Cape Town Stadium,espn
+401856641,2026-03-31T17:35:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Haiti,Iceland,1,1,D,STATUS_FULL_TIME,True,BMO Field,espn
+401860937,2026-03-31T18:00:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Morocco,Paraguay,2,1,H,STATUS_FULL_TIME,True,Stade Bollaert-Delelis,espn
+401856643,2026-03-31T18:00:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Qatar,Argentina,0,0,D,STATUS_CANCELED,True,,espn
+401862321,2026-03-31T18:30:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Algeria,Uruguay,0,0,D,STATUS_FULL_TIME,True,Allianz Stadium,espn
+401859485,2026-03-31T18:30:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Ivory Coast,Scotland,1,0,H,STATUS_FULL_TIME,True,Hill Dickinson Stadium,espn
+761952,2026-03-31T18:45:00+00:00,2026-03-31,FIFA/World Cup Qualifying - UEFA,playoff-finals,Bosnia-Herzegovina,Italy,1,1,H,STATUS_FINAL_PEN,True,Bilino Polje Stadium,espn
+761955,2026-03-31T18:45:00+00:00,2026-03-31,FIFA/World Cup Qualifying - UEFA,playoff-finals,Czechia,Denmark,2,2,H,STATUS_FINAL_PEN,True,Generali Arena,espn
+761953,2026-03-31T18:45:00+00:00,2026-03-31,FIFA/World Cup Qualifying - UEFA,playoff-finals,Kosovo,Turkey,0,1,A,STATUS_FULL_TIME,True,Stadiumi Fadil Vokrri,espn
+761954,2026-03-31T18:45:00+00:00,2026-03-31,FIFA/World Cup Qualifying - UEFA,playoff-finals,Sweden,Poland,3,2,H,STATUS_FULL_TIME,True,Friends Arena,espn
+401856596,2026-03-31T18:45:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Austria,South Korea,1,0,H,STATUS_FULL_TIME,True,Ernst-Happel-Stadion,espn
+762554,2026-03-31T18:45:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,England,Japan,0,1,A,STATUS_FULL_TIME,True,Wembley Stadium,espn
+762551,2026-03-31T18:45:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Netherlands,Ecuador,1,1,D,STATUS_FULL_TIME,True,Philips Stadion,espn
+401862000,2026-03-31T19:00:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Senegal,Gambia,3,1,H,STATUS_FULL_TIME,True,Stade Me Abdoulaye Wade,espn
+401851847,2026-03-31T19:00:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Spain,Egypt,0,0,D,STATUS_FULL_TIME,True,RCDE Stadium,espn
+762259,2026-03-31T23:00:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,United States,Portugal,0,2,A,STATUS_FULL_TIME,True,Mercedes-Benz Stadium,espn
+401865273,2026-03-31T23:15:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Argentina,Guatemala,0,0,D,STATUS_CANCELED,True,Alberto José Armando (La Bombonera),espn
+401866132,2026-03-31T23:30:00+00:00,2026-03-31,FIFA/Friendly,2026-international-friendly,Argentina,Zambia,5,0,H,STATUS_FULL_TIME,True,Alberto José Armando (La Bombonera),espn
+401843261,2026-04-01T00:00:00+00:00,2026-04-01,FIFA/Friendly,2026-international-friendly,Brazil,Croatia,3,1,H,STATUS_FULL_TIME,True,Camping World Stadium,espn
+401856639,2026-04-01T01:00:00+00:00,2026-04-01,FIFA/Friendly,2026-international-friendly,Canada,Tunisia,0,0,D,STATUS_FULL_TIME,True,BMO Field,espn
+762264,2026-04-01T01:00:00+00:00,2026-04-01,FIFA/Friendly,2026-international-friendly,Mexico,Belgium,1,1,D,STATUS_FULL_TIME,True,Soldier Field,espn
+401873391,2026-05-21T15:30:00+00:00,2026-05-21,FIFA/Friendly,2026-international-friendly,Qatar,Sudan,0,0,D,STATUS_CANCELED,True,Khalifa International Stadium,espn
+401861774,2026-05-23T02:00:00+00:00,2026-05-23,FIFA/Friendly,2026-international-friendly,Mexico,Ghana,2,0,H,STATUS_FULL_TIME,True,Estadio Cuauhtémoc,espn
+401872678,2026-05-26T11:00:00+00:00,2026-05-26,FIFA/Friendly,2026-international-friendly,Morocco,Burundi,5,0,H,STATUS_FULL_TIME,True,Mohammed VI Football Academy,espn
+401870853,2026-05-28T18:00:00+00:00,2026-05-28,FIFA/Friendly,2026-international-friendly,Egypt,Russia,1,0,H,STATUS_FULL_TIME,True,Cairo International Stadium,espn
+401860781,2026-05-28T18:45:00+00:00,2026-05-28,FIFA/Friendly,2026-international-friendly,Republic of Ireland,Qatar,1,0,H,STATUS_FULL_TIME,True,Aviva Stadium,espn
+401872547,2026-05-29T15:30:00+00:00,2026-05-29,FIFA/Friendly,2026-international-friendly,Iran,Gambia,0,0,H,STATUS_FULL_TIME,True,Mardan Stadyumu,espn
+401871530,2026-05-29T16:00:00+00:00,2026-05-29,FIFA/Friendly,2026-international-friendly,Iraq,Andorra,1,0,H,STATUS_FULL_TIME,True,Estadi Montilivi,espn
+401871131,2026-05-29T16:00:00+00:00,2026-05-29,FIFA/Friendly,2026-international-friendly,South Africa,Nicaragua,0,0,D,STATUS_FULL_TIME,True,Orlando Stadium,espn
+401869326,2026-05-29T18:30:00+00:00,2026-05-29,FIFA/Friendly,2026-international-friendly,Bosnia-Herzegovina,North Macedonia,0,0,D,STATUS_FULL_TIME,True,Asim Ferhatovic Hase Stadium,espn
+401856621,2026-05-30T12:00:00+00:00,2026-05-30,FIFA/Friendly,2026-international-friendly,Scotland,Curaçao,4,1,H,STATUS_FULL_TIME,True,Hampden Park,espn
+401869431,2026-05-30T23:30:00+00:00,2026-05-30,FIFA/Friendly,2026-international-friendly,Ecuador,Saudi Arabia,2,1,H,STATUS_FULL_TIME,True,Red Bull Arena,espn
+401872679,2026-05-31T01:00:00+00:00,2026-05-31,FIFA/Friendly,2026-international-friendly,South Korea,Trinidad and Tobago,5,0,H,STATUS_FULL_TIME,True,,espn
+401861775,2026-05-31T02:00:00+00:00,2026-05-31,FIFA/Friendly,2026-international-friendly,Mexico,Australia,1,0,H,STATUS_FULL_TIME,True,Rose Bowl,espn
+401867618,2026-05-31T10:25:00+00:00,2026-05-31,FIFA/Friendly,2026-international-friendly,Japan,Iceland,1,0,H,STATUS_FULL_TIME,True,Japan National Stadium,espn
+401862319,2026-05-31T13:00:00+00:00,2026-05-31,FIFA/Friendly,2026-international-friendly,Switzerland,Jordan,4,1,H,STATUS_FULL_TIME,True,Kybunpark,espn
+401872603,2026-05-31T14:00:00+00:00,2026-05-31,FIFA/Friendly,2026-international-friendly,Czechia,Kosovo,2,1,H,STATUS_FULL_TIME,True,Generali Arena,espn
+401871172,2026-05-31T15:00:00+00:00,2026-05-31,FIFA/Friendly,2026-international-friendly,Cape Verde,Serbia,3,0,H,STATUS_FULL_TIME,True,Estádio do Restelo,espn
+758381,2026-05-31T18:45:00+00:00,2026-05-31,FIFA/Friendly,2026-international-friendly,Germany,Finland,4,0,H,STATUS_FULL_TIME,True,MEWA ARENA,espn
+762592,2026-05-31T19:30:00+00:00,2026-05-31,FIFA/Friendly,2026-international-friendly,United States,Senegal,3,2,H,STATUS_FULL_TIME,True,Bank of America Stadium,espn
+401864003,2026-05-31T21:30:00+00:00,2026-05-31,FIFA/Friendly,2026-international-friendly,Brazil,Panama,6,2,H,STATUS_FULL_TIME,True,Estadio do Maracana,espn
+401864055,2026-06-01T17:00:00+00:00,2026-06-01,FIFA/Friendly,2026-international-friendly,Norway,Sweden,3,1,H,STATUS_FULL_TIME,True,Ullevaal Stadion,espn
+401871359,2026-06-01T17:30:00+00:00,2026-06-01,FIFA/Friendly,2026-international-friendly,Turkey,North Macedonia,4,0,H,STATUS_FULL_TIME,True,Ulker Stadyumu,espn
+401856597,2026-06-01T18:45:00+00:00,2026-06-01,FIFA/Friendly,2026-international-friendly,Austria,Tunisia,1,0,H,STATUS_FULL_TIME,True,Ernst-Happel-Stadion,espn
+401866134,2026-06-01T23:00:00+00:00,2026-06-01,FIFA/Friendly,2026-international-friendly,Colombia,Costa Rica,3,1,H,STATUS_FULL_TIME,True,Estadio Nemesio Camacho El Campín,espn
+401853575,2026-06-02T01:00:00+00:00,2026-06-02,FIFA/Friendly,2026-international-friendly,Canada,Uzbekistan,2,0,H,STATUS_FULL_TIME,True,Commonwealth Stadium,espn
+401856361,2026-06-02T16:00:00+00:00,2026-06-02,FIFA/Friendly,2026-international-friendly,Croatia,Belgium,0,2,A,STATUS_FULL_TIME,True,Stadion HNK Rijeka,espn
+401872680,2026-06-02T17:00:00+00:00,2026-06-02,FIFA/Friendly,2026-international-friendly,Morocco,Madagascar,4,0,H,STATUS_FULL_TIME,True,Stade Prince Moulay Abdallah,espn
+401863573,2026-06-02T18:45:00+00:00,2026-06-02,FIFA/Friendly,2026-international-friendly,Wales,Ghana,1,1,D,STATUS_FULL_TIME,True,Cardiff City Stadium,espn
+401871830,2026-06-03T00:36:00+00:00,2026-06-03,FIFA/Friendly,2026-international-friendly,Haiti,New Zealand,4,0,H,STATUS_FULL_TIME,True,Chase Stadium,espn
+401871169,2026-06-03T18:00:00+00:00,2026-06-03,FIFA/Friendly,2026-international-friendly,Congo DR,Denmark,0,0,D,STATUS_FULL_TIME,True,Stade Maurice Dufrasne,espn
+401863500,2026-06-03T18:45:00+00:00,2026-06-03,FIFA/Friendly,2026-international-friendly,Netherlands,Algeria,0,1,A,STATUS_FULL_TIME,True,De Kuip,espn
+401870075,2026-06-04T00:45:00+00:00,2026-06-04,FIFA/Friendly,2026-international-friendly,Panama,Dominican Republic,4,2,H,STATUS_FULL_TIME,True,Estadio Rommel Fernández Gutiérrez,espn
+401871496,2026-06-04T01:00:00+00:00,2026-06-04,FIFA/Friendly,2026-international-friendly,South Korea,El Salvador,1,0,H,STATUS_FULL_TIME,True,,espn
+401874358,2026-06-04T16:30:00+00:00,2026-06-04,FIFA/Friendly,2026-international-friendly,Iran,Mali,2,0,H,STATUS_FULL_TIME,True,Mardan Stadyumu,espn
+401870034,2026-06-04T17:00:00+00:00,2026-06-04,FIFA/Friendly,2026-international-friendly,Sweden,Greece,2,2,D,STATUS_FULL_TIME,True,Friends Arena,espn
+401871471,2026-06-04T19:00:00+00:00,2026-06-04,FIFA/Friendly,2026-international-friendly,Spain,Iraq,1,1,D,STATUS_FULL_TIME,True,Riazor,espn
+401864934,2026-06-04T19:10:00+00:00,2026-06-04,FIFA/Friendly,2026-international-friendly,France,Ivory Coast,1,2,A,STATUS_FULL_TIME,True,Stade de la Beaujoire,espn
+401870095,2026-06-05T00:00:00+00:00,2026-06-05,FIFA/Friendly,2026-international-friendly,Czechia,Guatemala,3,1,H,STATUS_FULL_TIME,True,Red Bull Arena,espn
+401861776,2026-06-05T02:00:00+00:00,2026-06-05,FIFA/Friendly,2026-international-friendly,Mexico,Serbia,5,1,H,STATUS_FULL_TIME,True,Estadio Nemesio Díez Riega,espn
+401871132,2026-06-05T22:45:00+00:00,2026-06-05,FIFA/Friendly,2026-international-friendly,Paraguay,Nicaragua,4,0,H,STATUS_FULL_TIME,True,Defensores del Chaco,espn
+401873680,2026-06-05T23:00:00+00:00,2026-06-05,FIFA/Friendly,2026-international-friendly,Puerto Rico,Saudi Arabia,0,3,A,STATUS_FULL_TIME,True,Q2 Stadium,espn
+401860780,2026-06-05T23:30:00+00:00,2026-06-05,FIFA/Friendly,2026-international-friendly,Canada,Republic of Ireland,1,1,D,STATUS_FULL_TIME,True,Stade Saputo,espn
+401871781,2026-06-06T00:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Haiti,Peru,1,2,A,STATUS_FULL_TIME,True,Nu Stadium,espn
+401856622,2026-06-06T13:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Belgium,Tunisia,5,0,H,STATUS_FULL_TIME,True,King Baudouin Stadium,espn
+401862883,2026-06-06T17:45:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Portugal,Chile,2,1,H,STATUS_FULL_TIME,True,Estádio do Jamor,espn
+762260,2026-06-06T18:30:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,United States,Germany,1,2,A,STATUS_FULL_TIME,True,Soldier Field,espn
+401871528,2026-06-06T19:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Panama,Bosnia-Herzegovina,1,1,D,STATUS_FULL_TIME,True,Energizer Park,espn
+401869743,2026-06-06T19:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Switzerland,Australia,1,1,D,STATUS_FULL_TIME,True,Snapdragon Stadium,espn
+401868148,2026-06-06T20:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Bolivia,Scotland,0,4,A,STATUS_FULL_TIME,True,Red Bull Arena,espn
+401860828,2026-06-06T20:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,England,New Zealand,1,0,H,STATUS_FULL_TIME,True,Raymond James Stadium,espn
+401870103,2026-06-06T20:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Qatar,El Salvador,0,0,D,STATUS_FULL_TIME,True,BMO Stadium,espn
+401875160,2026-06-06T21:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Jamaica,South Africa,0,1,A,STATUS_FULL_TIME,True,Estadio Hidalgo,espn
+401861998,2026-06-06T22:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Brazil,Egypt,2,1,H,STATUS_FULL_TIME,True,Huntington Bank Field,espn
+401871361,2026-06-06T22:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Venezuela,Turkey,1,2,A,STATUS_FULL_TIME,True,Chase Stadium,espn
+401868047,2026-06-07T00:00:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Argentina,Honduras,2,0,H,STATUS_FULL_TIME,True,Kyle Field,espn
+401873741,2026-06-07T00:00:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Curaçao,Aruba,4,0,H,STATUS_FULL_TIME,True,Stadion Ergilio Hato,espn
+401856623,2026-06-07T18:45:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Croatia,Slovenia,2,1,H,STATUS_FULL_TIME,True,Stadion Andjelko Herjavec,espn
+401866598,2026-06-07T19:00:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Morocco,Norway,1,1,D,STATUS_FULL_TIME,True,Red Bull Arena,espn
+401870000,2026-06-07T20:00:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Ecuador,Guatemala,3,0,H,STATUS_FULL_TIME,True,ScottsMiracle-Gro Field,espn
+401862320,2026-06-07T23:00:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Colombia,Jordan,2,0,H,STATUS_FULL_TIME,True,Snapdragon Stadium,espn
+401871814,2026-06-08T18:45:00+00:00,2026-06-08,FIFA/Friendly,2026-international-friendly,Netherlands,Uzbekistan,2,1,H,STATUS_FULL_TIME,True,Icahn Stadium,espn
+401869804,2026-06-08T19:10:00+00:00,2026-06-08,FIFA/Friendly,2026-international-friendly,France,Northern Ireland,3,1,H,STATUS_FULL_TIME,True,Decathlon Arena - Stade Pierre-Mauroy,espn

@@ -302,12 +302,14 @@ class BackendServer:
             log_path = self.config.log_dir / f"pipeline-{datetime.now():%Y%m%d-%H%M%S}-{trigger}.log"
             cmd = self._build_pipeline_cmd()
             LOG.info("[pipeline] starting (trigger=%s) -> %s", trigger, log_path)
+            subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             self._pipeline_proc = subprocess.Popen(
                 cmd,
                 cwd=str(PROJECT_ROOT),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                env=subprocess_env,
             )
             self._tee_pipeline_output(log_path)
         finally:
