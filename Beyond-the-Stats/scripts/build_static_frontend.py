@@ -131,6 +131,24 @@ def inject_api_base_into_shared_js(out_static_dir: Path, api_base: str) -> None:
     target.write_text(injection + text, encoding="utf-8")
 
 
+def strip_inactive_panels(html: str) -> str:
+    """Remove <section id="panel-*"> sections that aren't the active page's panel."""
+    m = re.search(r'data-active-page="([\w-]+)"', html)
+    if not m:
+        return html
+    active = m.group(1)
+    active_id = f"panel-{active}"
+    def _keep_active(match):
+        pid = match.group(1)
+        return match.group(0) if pid == active_id else ""
+    return re.sub(
+        r'<section\s+id="(panel-[\w-]+)"[^>]*>.*?</section>',
+        _keep_active,
+        html,
+        flags=re.DOTALL,
+    )
+
+
 def write_404(out_dir: Path) -> None:
     """Write a 404.html that soft-redirects to the home page on GitHub Pages."""
     html = """<!doctype html>
@@ -215,6 +233,7 @@ def main() -> int:
         target = out_dir / target_name
         html = src.read_text(encoding="utf-8")
         html = strip_jinja(html)
+        html = strip_inactive_panels(html)
         target.write_text(html, encoding="utf-8")
         n_templates += 1
         print(f"[build] template {src.name} -> {target_name} ({len(html):,} bytes)")
