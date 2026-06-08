@@ -50,25 +50,6 @@ TEMPLATE_RENAMES = {
     "world_cup.html": "world-cup.html",
 }
 
-# Flask route -> static filename mapping for in-page href rewriting.
-ROUTE_TO_FILE = {
-    "/": "index.html",
-    "/upcoming-matches": "upcoming-matches.html",
-    "/cups": "cups.html",
-    "/head-to-head": "head-to-head.html",
-    "/league-tables": "league-tables.html",
-    "/world-cup": "world-cup.html",
-    "/players": "players.html",
-    "/tactics": "tactics.html",
-    "/about": "about.html",
-}
-
-# Each route appears as href="/foo" in the source HTML; rewrite to the local file.
-# The empty alternative handles href="/" (the home link).
-HREF_TO_FILE = re.compile(
-    r'href="/(' + "|".join(re.escape(k.lstrip("/")) for k in ROUTE_TO_FILE) + r'|)"'
-)
-
 # url_for('serve_graphic', filename='X') -> 'graphics/X'
 URL_FOR_GRAPHIC = re.compile(
     r"\{\{\s*url_for\(\s*['\"]serve_graphic['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]\s*\)\s*\}\}"
@@ -98,13 +79,8 @@ def strip_jinja(html: str) -> str:
     html = ACTIVE_CLASS.sub("", html)
     html = JINJA_BLOCK.sub("", html)
     html = GENERIC_JINJA_EXPR.sub("", html)
-    # Rewrite in-page navigation hrefs from Flask routes to static filenames.
-    def _route_to_file(match: re.Match) -> str:
-        # match.group(1) is the path with no leading slash, e.g. "about" or "" (home)
-        path = match.group(1)
-        route = "/" + path
-        return f'href="/{ROUTE_TO_FILE[route]}"'
-    html = HREF_TO_FILE.sub(_route_to_file, html)
+    # Navigation hrefs stay as clean paths (e.g. href="/cups") — the
+    # _redirects file maps them to the corresponding .html file at deploy time.
     return html
 
 
@@ -249,23 +225,22 @@ def main() -> int:
     write_404(out_dir)
     print(f"[build] wrote 404.html")
 
-    # 6. _redirects for Cloudflare Pages SPA fallback
+    # 6. _redirects — map clean URLs to their static .html files
     redirects = (out_dir / "_redirects")
     if not redirects.exists():
         redirects.write_text(
-            "# Cloudflare Pages SPA fallback — existing files take priority\n"
-            "# Each app route serves index.html so client-side routing works.\n"
-            "/head-to-head  /index.html  200\n"
-            "/league-tables  /index.html  200\n"
-            "/upcoming-matches  /index.html  200\n"
-            "/world-cup  /index.html  200\n"
-            "/cups  /index.html  200\n"
-            "/tactics  /index.html  200\n"
-            "/about  /index.html  200\n"
-            "/players  /index.html  200\n",
+            "# Clean URLs → static HTML files\n"
+            "/head-to-head  /head-to-head.html  200\n"
+            "/league-tables  /league-tables.html  200\n"
+            "/upcoming-matches  /upcoming-matches.html  200\n"
+            "/world-cup  /world-cup.html  200\n"
+            "/cups  /cups.html  200\n"
+            "/tactics  /tactics.html  200\n"
+            "/about  /about.html  200\n"
+            "/players  /players.html  200\n",
             encoding="utf-8",
         )
-        print("[build] wrote _redirects (SPA fallback)")
+        print("[build] wrote _redirects (route -> .html)")
 
     # Summary
     total = sum(p.stat().st_size for p in out_dir.rglob("*") if p.is_file())

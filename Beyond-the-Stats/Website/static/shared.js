@@ -1513,41 +1513,32 @@ applyH2HDataset(h2hDataset.value);
 }
 
 if (tabHome) {
-tabHome.addEventListener("click", (e) => { e.preventDefault(); activateTab("home"); });
+tabHome.addEventListener("click", () => activateTab("home"));
 }
 if (brandHomeBtn && tabHome) {
-brandHomeBtn.addEventListener("click", (e) => { e.preventDefault(); tabHome.click(); });
+brandHomeBtn.addEventListener("click", () => tabHome.click());
 }
 if (feedbackSubmit) {
 feedbackSubmit.addEventListener("click", submitFeedback);
 }
 if (tabGlobal) {
-tabGlobal.addEventListener("click", async (e) => {
-e.preventDefault();
+tabGlobal.addEventListener("click", async () => {
 activateTab("global");
 const source = currentUpcomingSource();
 await loadUpcoming(source, upcomingUrlForSource(source), globalList, globalStats, globalLeagueFilter);
 });
 }
 if (tabCups) {
-tabCups.addEventListener("click", async (e) => {
-e.preventDefault();
+tabCups.addEventListener("click", async () => {
 activateTab("cups");
 await loadCupProjections();
 });
 }
 if (tabH2H) {
-tabH2H.addEventListener("click", (e) => { e.preventDefault(); activateTab("h2h"); });
-}
-if (tabWorldCup) {
-tabWorldCup.addEventListener("click", (e) => {
-e.preventDefault();
-activateTab("world-cup");
-});
+tabH2H.addEventListener("click", () => activateTab("h2h"));
 }
 if (tabLeagueTable) {
-tabLeagueTable.addEventListener("click", async (e) => {
-e.preventDefault();
+tabLeagueTable.addEventListener("click", async () => {
 activateTab("league-table");
 if (!leagueTablesCache[tableDataset.value]) {
     await loadLeagueTables(tableDataset.value);
