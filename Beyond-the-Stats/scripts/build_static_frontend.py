@@ -93,8 +93,8 @@ JINJA_BLOCK = re.compile(r"\{%[^%]*%\}")
 
 def strip_jinja(html: str) -> str:
     """Strip all Jinja expressions and blocks, replacing url_for() with paths."""
-    html = URL_FOR_GRAPHIC.sub(lambda m: f"graphics/{m.group(1)}", html)
-    html = URL_FOR_STATIC.sub(lambda m: f"static/{m.group(1)}" + (f"?v={m.group(2)}" if m.group(2) else ""), html)
+    html = URL_FOR_GRAPHIC.sub(lambda m: f"/graphics/{m.group(1)}", html)
+    html = URL_FOR_STATIC.sub(lambda m: f"/static/{m.group(1)}" + (f"?v={m.group(2)}" if m.group(2) else ""), html)
     html = ACTIVE_CLASS.sub("", html)
     html = JINJA_BLOCK.sub("", html)
     html = GENERIC_JINJA_EXPR.sub("", html)
@@ -103,7 +103,7 @@ def strip_jinja(html: str) -> str:
         # match.group(1) is the path with no leading slash, e.g. "about" or "" (home)
         path = match.group(1)
         route = "/" + path
-        return f'href="{ROUTE_TO_FILE[route]}"'
+        return f'href="/{ROUTE_TO_FILE[route]}"'
     html = HREF_TO_FILE.sub(_route_to_file, html)
     return html
 
@@ -130,20 +130,20 @@ def write_404(out_dir: Path) -> None:
 <head>
   <meta charset="utf-8">
   <title>Page not found &middot; Beyond The Stats</title>
-  <meta http-equiv="refresh" content="2; url=./index.html">
-  <link rel="stylesheet" href="static/styles.css">
+  <meta http-equiv="refresh" content="2; url=/index.html">
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="dark-mode">
   <main class="page">
     <header class="site-header"><div class="site-header-top">
-      <a class="brand" href="./index.html">
+      <a class="brand" href="/index.html">
         <div><div class="brand-name">Beyond The Stats</div></div>
       </a>
     </div></header>
     <section class="card">
       <h3>Page not found</h3>
       <p>Redirecting to the home page&hellip;</p>
-      <p><a href="./index.html">Click here</a> if you are not redirected.</p>
+      <p><a href="/index.html">Click here</a> if you are not redirected.</p>
     </section>
   </main>
 </body>
@@ -253,7 +253,8 @@ def main() -> int:
             "/world-cup  /index.html  200\n"
             "/cups  /index.html  200\n"
             "/tactics  /index.html  200\n"
-            "/about  /index.html  200\n",
+            "/about  /index.html  200\n"
+            "/players  /index.html  200\n",
             encoding="utf-8",
         )
         print("[build] wrote _redirects (SPA fallback)")
