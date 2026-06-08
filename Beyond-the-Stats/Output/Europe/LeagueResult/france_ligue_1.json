@@ -1,7 +1,7 @@
 {
   "competition": "France/Ligue 1",
   "region": "europe",
-  "generated_at_utc": "2026-06-06T00:23:38+00:00",
+  "generated_at_utc": "2026-06-08T21:57:40+00:00",
   "team_count": 18,
   "teams": [
     {
@@ -331,8 +331,8 @@
       "W": 12,
       "D": 8,
       "L": 13,
-      "GF": 48,
-      "GA": 47,
+      "GF": 49,
+      "GA": 48,
       "GD": 1,
       "Pts": 46,
       "PlayedReal": 33,
@@ -651,8 +651,8 @@
       "W": 5,
       "D": 8,
       "L": 20,
-      "GF": 30,
-      "GA": 53,
+      "GF": 31,
+      "GA": 54,
       "GD": -23,
       "Pts": 24,
       "PlayedReal": 33,

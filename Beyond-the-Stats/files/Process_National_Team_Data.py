@@ -1958,7 +1958,13 @@ def run_pipeline(args):
     step_t0 = time.monotonic()
     target_teams = fetch_world_cup_team_names() if args.world_cup_only else fetch_world_cup_team_names()
     if not target_teams:
-        target_teams = sorted(DEFAULT_FIFA_RANKINGS.keys())
+        try:
+            with open(FIFA_RANKINGS_FILE, "r", encoding="utf-8") as f:
+                target_teams = sorted(json.load(f).keys())
+            print(f"[INFO] Using {len(target_teams)} teams from {FIFA_RANKINGS_FILE} as fallback.")
+        except Exception:
+            print("[ERROR] ESPN API unreachable and no rankings file available. Cannot determine World Cup teams.")
+            raise
     print(f"[TIMING] fetch_world_cup_team_names: {time.monotonic() - step_t0:.1f}s")
 
     step_t0 = time.monotonic()

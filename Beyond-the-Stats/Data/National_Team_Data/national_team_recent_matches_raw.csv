@@ -936,3 +936,21 @@ match_id,match_datetime_utc,match_date,competition,stage,home_team,away_team,FTH
 401860780,2026-06-05T23:30:00+00:00,2026-06-05,FIFA/Friendly,2026-international-friendly,Canada,Republic of Ireland,1,1,D,STATUS_FULL_TIME,True,Stade Saputo,espn
 401871781,2026-06-06T00:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Haiti,Peru,1,2,A,STATUS_FULL_TIME,True,Nu Stadium,espn
 401856622,2026-06-06T13:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Belgium,Tunisia,5,0,H,STATUS_FULL_TIME,True,King Baudouin Stadium,espn
+401862883,2026-06-06T17:45:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Portugal,Chile,2,1,H,STATUS_FULL_TIME,True,Estádio do Jamor,espn
+762260,2026-06-06T18:30:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,United States,Germany,1,2,A,STATUS_FULL_TIME,True,Soldier Field,espn
+401871528,2026-06-06T19:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Panama,Bosnia-Herzegovina,1,1,D,STATUS_FULL_TIME,True,Energizer Park,espn
+401869743,2026-06-06T19:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Switzerland,Australia,1,1,D,STATUS_FULL_TIME,True,Snapdragon Stadium,espn
+401868148,2026-06-06T20:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Bolivia,Scotland,0,4,A,STATUS_FULL_TIME,True,Red Bull Arena,espn
+401860828,2026-06-06T20:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,England,New Zealand,1,0,H,STATUS_FULL_TIME,True,Raymond James Stadium,espn
+401870103,2026-06-06T20:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Qatar,El Salvador,0,0,D,STATUS_FULL_TIME,True,BMO Stadium,espn
+401875160,2026-06-06T21:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Jamaica,South Africa,0,1,A,STATUS_FULL_TIME,True,Estadio Hidalgo,espn
+401861998,2026-06-06T22:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Brazil,Egypt,2,1,H,STATUS_FULL_TIME,True,Huntington Bank Field,espn
+401871361,2026-06-06T22:00:00+00:00,2026-06-06,FIFA/Friendly,2026-international-friendly,Venezuela,Turkey,1,2,A,STATUS_FULL_TIME,True,Chase Stadium,espn
+401868047,2026-06-07T00:00:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Argentina,Honduras,2,0,H,STATUS_FULL_TIME,True,Kyle Field,espn
+401873741,2026-06-07T00:00:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Curaçao,Aruba,4,0,H,STATUS_FULL_TIME,True,Stadion Ergilio Hato,espn
+401856623,2026-06-07T18:45:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Croatia,Slovenia,2,1,H,STATUS_FULL_TIME,True,Stadion Andjelko Herjavec,espn
+401866598,2026-06-07T19:00:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Morocco,Norway,1,1,D,STATUS_FULL_TIME,True,Red Bull Arena,espn
+401870000,2026-06-07T20:00:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Ecuador,Guatemala,3,0,H,STATUS_FULL_TIME,True,ScottsMiracle-Gro Field,espn
+401862320,2026-06-07T23:00:00+00:00,2026-06-07,FIFA/Friendly,2026-international-friendly,Colombia,Jordan,2,0,H,STATUS_FULL_TIME,True,Snapdragon Stadium,espn
+401871814,2026-06-08T18:45:00+00:00,2026-06-08,FIFA/Friendly,2026-international-friendly,Netherlands,Uzbekistan,2,1,H,STATUS_FULL_TIME,True,Icahn Stadium,espn
+401869804,2026-06-08T19:10:00+00:00,2026-06-08,FIFA/Friendly,2026-international-friendly,France,Northern Ireland,3,1,H,STATUS_FULL_TIME,True,Decathlon Arena - Stade Pierre-Mauroy,espn

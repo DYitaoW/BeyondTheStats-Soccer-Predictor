@@ -1,0 +1,1281 @@
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Process_Data.py:210: UserWarning: Parsing dates in %d/%m/%Y format when dayfirst=False (the default) was specified. Pass `dayfirst=True` or specify a format to silence this warning.
+  out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+
+Downloading Argentina - Primera Division
+Kept argstat2014.csv
+Kept argstat2015.csv
+Kept argstat2016.csv
+Kept argstat2020.csv
+Kept argstat2021.csv
+Kept argstat2022.csv
+Kept argstat2023.csv
+Downloaded/Updated argstat2024.csv (581 rows)
+Downloaded/Updated argstat2025.csv (510 rows)
+Downloaded/Updated argstat2026.csv (254 rows)
+Done Argentina - Primera Division: updated 3 season files, skipped 7 historical files.
+
+Downloading Brazil - Serie A
+Kept brastat2012.csv
+Kept brastat2013.csv
+Kept brastat2014.csv
+Kept brastat2015.csv
+Kept brastat2016.csv
+Kept brastat2017.csv
+Kept brastat2018.csv
+Kept brastat2019.csv
+Kept brastat2020.csv
+Kept brastat2021.csv
+Kept brastat2022.csv
+Kept brastat2023.csv
+Downloaded/Updated brastat2024.csv (380 rows)
+Downloaded/Updated brastat2025.csv (380 rows)
+Downloaded/Updated brastat2026.csv (177 rows)
+Done Brazil - Serie A: updated 3 season files, skipped 12 historical files.
+
+Downloading Japan - J1 League
+Kept jpnstat2012.csv
+Kept jpnstat2013.csv
+Kept jpnstat2014.csv
+Kept jpnstat2015.csv
+Kept jpnstat2016.csv
+Kept jpnstat2017.csv
+Kept jpnstat2018.csv
+Kept jpnstat2019.csv
+Kept jpnstat2020.csv
+Kept jpnstat2021.csv
+Kept jpnstat2022.csv
+Kept jpnstat2023.csv
+Downloaded/Updated jpnstat2024.csv (380 rows)
+Downloaded/Updated jpnstat2025.csv (380 rows)
+Done Japan - J1 League: updated 2 season files, skipped 12 historical files.
+
+Downloading Mexico - Liga MX
+Done Mexico - Liga MX: updated 0 season files, skipped 0 historical files.
+
+Extra leagues download complete.
+
+Processing extra-league files...
+Processed Japan\J1 League\jpnstat2012.csv...
+Processed Japan\J1 League\jpnstat2013.csv...
+Processed Argentina\Primera Division\argstat2014.csv...
+Processed Japan\J1 League\jpnstat2014.csv...
+Processed Brazil\Serie A\brastat2013.csv...
+Processed Brazil\Serie A\brastat2012.csv...
+Processed Brazil\Serie A\brastat2014.csv...
+Processed Argentina\Primera Division\argstat2015.csv...
+Processed Brazil\Serie A\brastat2015.csv...
+Processed Argentina\Primera Division\argstat2016.csv...
+Processed Japan\J1 League\jpnstat2015.csv...
+Processed Brazil\Serie A\brastat2017.csv...
+Processed Japan\J1 League\jpnstat2016.csv...
+Processed Brazil\Serie A\brastat2016.csv...
+Processed Japan\J1 League\jpnstat2017.csv...
+Processed Brazil\Serie A\brastat2018.csv...
+Processed Japan\J1 League\jpnstat2018.csv...
+Processed Argentina\Primera Division\argstat2020.csv...
+Processed Japan\J1 League\jpnstat2019.csv...
+Processed Brazil\Serie A\brastat2019.csv...
+Processed Brazil\Serie A\brastat2020.csv...
+Processed Japan\J1 League\jpnstat2020.csv...
+Processed Brazil\Serie A\brastat2021.csv...
+Processed Japan\J1 League\jpnstat2021.csv...
+Processed Japan\J1 League\jpnstat2022.csv...
+Processed Brazil\Serie A\brastat2022.csv...
+Processed Argentina\Primera Division\argstat2021.csv...
+Processed Argentina\Primera Division\argstat2022.csv...
+Processed Brazil\Serie A\brastat2023.csv...
+Processed Japan\J1 League\jpnstat2023.csv...
+Processed Japan\J1 League\jpnstat2024.csv...
+Processed Brazil\Serie A\brastat2024.csv...
+Processed Argentina\Primera Division\argstat2023.csv...
+Processed Argentina\Primera Division\argstat2024.csv...
+Processed Brazil\Serie A\brastat2025.csv...
+Processed Japan\J1 League\jpnstat2025.csv...
+Processed Argentina\Primera Division\argstat2026.csv...
+Processed Argentina\Primera Division\argstat2025.csv...
+Processed Brazil\Serie A\brastat2026.csv...
+All extra-league files processed.
+
+Sorting extra-league team data...
+Processing Brazil\Serie A\brastat2012.csv
+Processing Japan\J1 League\jpnstat2012.csv
+Processing Brazil\Serie A\brastat2013.csv
+Processing Japan\J1 League\jpnstat2013.csv
+Processing Argentina\Primera Division\argstat2014.csv
+Processing Brazil\Serie A\brastat2014.csv
+Processing Japan\J1 League\jpnstat2014.csv
+Processing Argentina\Primera Division\argstat2015.csv
+Processing Brazil\Serie A\brastat2015.csv
+Processing Japan\J1 League\jpnstat2015.csv
+Processing Argentina\Primera Division\argstat2016.csv
+Processing Brazil\Serie A\brastat2016.csv
+Processing Japan\J1 League\jpnstat2016.csv
+Processing Brazil\Serie A\brastat2017.csv
+Processing Japan\J1 League\jpnstat2017.csv
+Processing Brazil\Serie A\brastat2018.csv
+Processing Japan\J1 League\jpnstat2018.csv
+Processing Brazil\Serie A\brastat2019.csv
+Processing Japan\J1 League\jpnstat2019.csv
+Processing Argentina\Primera Division\argstat2020.csv
+Processing Brazil\Serie A\brastat2020.csv
+Processing Japan\J1 League\jpnstat2020.csv
+Processing Argentina\Primera Division\argstat2021.csv
+Processing Brazil\Serie A\brastat2021.csv
+Processing Japan\J1 League\jpnstat2021.csv
+Processing Argentina\Primera Division\argstat2022.csv
+Processing Brazil\Serie A\brastat2022.csv
+Processing Japan\J1 League\jpnstat2022.csv
+Processing Argentina\Primera Division\argstat2023.csv
+Processing Brazil\Serie A\brastat2023.csv
+Processing Japan\J1 League\jpnstat2023.csv
+Processing Argentina\Primera Division\argstat2024.csv
+Processing Brazil\Serie A\brastat2024.csv
+Processing Japan\J1 League\jpnstat2024.csv
+Processing Argentina\Primera Division\argstat2025.csv
+Processing Brazil\Serie A\brastat2025.csv
+Processing Japan\J1 League\jpnstat2025.csv
+Processing Argentina\Primera Division\argstat2026.csv
+Processing Brazil\Serie A\brastat2026.csv
+
+Done!
+
+Current form written from Brazil\Serie A\brastat2026.csv
+Market values: Athletico-PR (5 players)
+Market values: Atletico-MG (5 players)
+Market values: Bahia (5 players)
+Market values: Bragantino (5 players)
+Market values: Corinthians (5 players)
+Market values: Coritiba (5 players)
+Market values: Cruzeiro (0 players)
+Market values: Fluminense (5 players)
+Market values: Gremio (5 players)
+Market values: Internacional (5 players)
+Market values: Mirassol (0 players)
+Market values: Palmeiras (5 players)
+Market values: Remo (5 players)
+Market values: Santos (0 players)
+Market values: Sao Paulo (5 players)
+Market values: Vasco (5 players)
+Market values: Vitoria (5 players)
+Top market value players written to team_top_market_value_players.json
+
+Extra leagues pipeline complete (download + process + sort).
+
+Match Predictor
+
+Model backend: ensemble(random-forest+extra-trees)
+Enter teams for prediction. Team 1 is always the home team.
+Type 'q' to quit.
+
+Enable debug reasoning output? (y/n): 
+Team 1 (Home): 
+Exiting predictor.
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Predict_Upcoming_Matchweek.py:348: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+Saved upcoming extra-league predictions: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\Data\Predictions\upcoming_matchweek_predictions.csv
+Rows: 0
+Projected league tables saved: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\Data\Predictions\projected_league_tables.csv
+Predicted remaining matches saved: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\Data\Predictions\projected_future_matches.csv
+
+Downloading MLS source: https://www.football-data.co.uk/new/USA.csv
+Kept mlsstat2012.csv
+Kept mlsstat2013.csv
+Kept mlsstat2014.csv
+Kept mlsstat2015.csv
+Kept mlsstat2016.csv
+Kept mlsstat2017.csv
+Kept mlsstat2018.csv
+Kept mlsstat2019.csv
+Kept mlsstat2020.csv
+Kept mlsstat2021.csv
+Kept mlsstat2022.csv
+Kept mlsstat2023.csv
+Downloaded/Updated mlsstat2024.csv (522 rows)
+Downloaded/Updated mlsstat2025.csv (540 rows)
+Downloaded/Updated mlsstat2026.csv (218 rows)
+
+Download stage done. Updated 3 season files, skipped 12 existing historical files.
+
+Processing MLS files...
+Processed United States\MLS\mlsstat2014.csv...
+Processed United States\MLS\mlsstat2012.csv...
+Processed United States\MLS\mlsstat2013.csv...
+Processed United States\MLS\mlsstat2019.csv...
+Processed United States\MLS\mlsstat2018.csv...
+Processed United States\MLS\mlsstat2015.csv...
+Processed United States\MLS\mlsstat2016.csv...
+Processed United States\MLS\mlsstat2017.csv...
+Processed United States\MLS\mlsstat2020.csv...
+Processed United States\MLS\mlsstat2022.csv...
+Processed United States\MLS\mlsstat2021.csv...
+Processed United States\MLS\mlsstat2026.csv...
+Processed United States\MLS\mlsstat2023.csv...
+Processed United States\MLS\mlsstat2025.csv...
+Processed United States\MLS\mlsstat2024.csv...
+All MLS files processed.
+
+Sorting MLS team data...
+Processing United States\MLS\mlsstat2012.csv
+Processing United States\MLS\mlsstat2013.csv
+Processing United States\MLS\mlsstat2014.csv
+Processing United States\MLS\mlsstat2015.csv
+Processing United States\MLS\mlsstat2016.csv
+Processing United States\MLS\mlsstat2017.csv
+Processing United States\MLS\mlsstat2018.csv
+Processing United States\MLS\mlsstat2019.csv
+Processing United States\MLS\mlsstat2020.csv
+Processing United States\MLS\mlsstat2021.csv
+Processing United States\MLS\mlsstat2022.csv
+Processing United States\MLS\mlsstat2023.csv
+Processing United States\MLS\mlsstat2024.csv
+Processing United States\MLS\mlsstat2025.csv
+Processing United States\MLS\mlsstat2026.csv
+
+Done!
+
+Current form written from United States\MLS\mlsstat2026.csv
+Market values: Austin FC (5 players)
+Market values: CF Montreal (5 players)
+Market values: Charlotte (5 players)
+Market values: Chicago Fire (5 players)
+Market values: Colorado Rapids (5 players)
+Market values: Columbus Crew (5 players)
+Market values: DC United (5 players)
+Market values: FC Cincinnati (5 players)
+Market values: FC Dallas (5 players)
+Market values: Houston Dynamo (5 players)
+Market values: Inter Miami (5 players)
+Market values: Los Angeles FC (5 players)
+Market values: Los Angeles Galaxy (5 players)
+Market values: Minnesota United (5 players)
+Market values: Nashville SC (5 players)
+Market values: New England Revolution (5 players)
+Market values: New York City (5 players)
+Market values: New York Red Bulls (5 players)
+Market values: Orlando City (5 players)
+Market values: Philadelphia Union (5 players)
+Market values: Portland Timbers (5 players)
+Market values: Real Salt Lake (5 players)
+Market values: San Diego FC (5 players)
+Market values: San Jose Earthquakes (5 players)
+Market values: Seattle Sounders (5 players)
+Market values: Sporting Kansas City (5 players)
+Market values: St. Louis City (5 players)
+Market values: Toronto FC (5 players)
+Market values: Vancouver Whitecaps (5 players)
+Top market value players written to team_top_market_value_players.json
+
+MLS pipeline complete (download + process + sort).
+
+Match Predictor
+
+Model backend: ensemble(random-forest+extra-trees)
+Enter teams for prediction. Team 1 is always the home team.
+Type 'q' to quit.
+
+Enable debug reasoning output? (y/n): 
+Team 1 (Home): 
+Exiting predictor.
+football-data.org returned 403 for MLS. Falling back to football-data.co.uk source.
+No upcoming matchweek fixtures returned by API.
+
+Downloading England - Premier League (E0)
+Kept premstat2002-03.csv
+Kept premstat2003-04.csv
+Kept premstat2004-05.csv
+Kept premstat2005-06.csv
+Kept premstat2006-07.csv
+Kept premstat2007-08.csv
+Kept premstat2008-09.csv
+Kept premstat2009-10.csv
+Kept premstat2010-11.csv
+Kept premstat2011-12.csv
+Kept premstat2012-13.csv
+Kept premstat2013-14.csv
+Kept premstat2014-15.csv
+Kept premstat2015-16.csv
+Kept premstat2016-17.csv
+Kept premstat2017-18.csv
+Kept premstat2018-19.csv
+Kept premstat2019-20.csv
+Kept premstat2020-21.csv
+Kept premstat2021-22.csv
+Kept premstat2022-23.csv
+Kept premstat2023-24.csv
+Downloaded/Updated premstat2024-25.csv
+Downloaded/Updated premstat2025-26.csv
+
+Downloading England - Championship (E1)
+Kept champstat2002-03.csv
+Kept champstat2003-04.csv
+Kept champstat2004-05.csv
+Kept champstat2005-06.csv
+Kept champstat2006-07.csv
+Kept champstat2007-08.csv
+Kept champstat2008-09.csv
+Kept champstat2009-10.csv
+Kept champstat2010-11.csv
+Kept champstat2011-12.csv
+Kept champstat2012-13.csv
+Kept champstat2013-14.csv
+Kept champstat2014-15.csv
+Kept champstat2015-16.csv
+Kept champstat2016-17.csv
+Kept champstat2017-18.csv
+Kept champstat2018-19.csv
+Kept champstat2019-20.csv
+Kept champstat2020-21.csv
+Kept champstat2021-22.csv
+Kept champstat2022-23.csv
+Kept champstat2023-24.csv
+Downloaded/Updated champstat2024-25.csv
+Downloaded/Updated champstat2025-26.csv
+
+Downloading Spain - La Liga (SP1)
+Kept laligastat2005-06.csv
+Kept laligastat2006-07.csv
+Kept laligastat2007-08.csv
+Kept laligastat2008-09.csv
+Kept laligastat2009-10.csv
+Kept laligastat2010-11.csv
+Kept laligastat2011-12.csv
+Kept laligastat2012-13.csv
+Kept laligastat2013-14.csv
+Kept laligastat2014-15.csv
+Kept laligastat2015-16.csv
+Kept laligastat2016-17.csv
+Kept laligastat2017-18.csv
+Kept laligastat2018-19.csv
+Kept laligastat2019-20.csv
+Kept laligastat2020-21.csv
+Kept laligastat2021-22.csv
+Kept laligastat2022-23.csv
+Kept laligastat2023-24.csv
+Downloaded/Updated laligastat2024-25.csv
+Downloaded/Updated laligastat2025-26.csv
+
+Downloading Spain - La Liga 2 (SP2)
+Kept laliga2stat2017-18.csv
+Kept laliga2stat2018-19.csv
+Kept laliga2stat2019-20.csv
+Kept laliga2stat2020-21.csv
+Kept laliga2stat2021-22.csv
+Kept laliga2stat2022-23.csv
+Kept laliga2stat2023-24.csv
+Downloaded/Updated laliga2stat2024-25.csv
+Downloaded/Updated laliga2stat2025-26.csv
+
+Downloading Italy - Serie A (I1)
+Kept seriaastat2005-06.csv
+Kept seriaastat2006-07.csv
+Kept seriaastat2007-08.csv
+Kept seriaastat2008-09.csv
+Kept seriaastat2009-10.csv
+Kept seriaastat2010-11.csv
+Kept seriaastat2011-12.csv
+Kept seriaastat2012-13.csv
+Kept seriaastat2013-14.csv
+Kept seriaastat2014-15.csv
+Kept seriaastat2015-16.csv
+Kept seriaastat2016-17.csv
+Kept seriaastat2017-18.csv
+Kept seriaastat2018-19.csv
+Kept seriaastat2019-20.csv
+Kept seriaastat2020-21.csv
+Kept seriaastat2021-22.csv
+Kept seriaastat2022-23.csv
+Kept seriaastat2023-24.csv
+Downloaded/Updated seriaastat2024-25.csv
+Downloaded/Updated seriaastat2025-26.csv
+
+Downloading Italy - Serie B (I2)
+Kept seriabstat2017-18.csv
+Kept seriabstat2018-19.csv
+Kept seriabstat2019-20.csv
+Kept seriabstat2020-21.csv
+Kept seriabstat2021-22.csv
+Kept seriabstat2022-23.csv
+Kept seriabstat2023-24.csv
+Downloaded/Updated seriabstat2024-25.csv
+Downloaded/Updated seriabstat2025-26.csv
+
+Downloading Germany - Bundesliga (D1)
+Kept bundstat2006-07.csv
+Kept bundstat2007-08.csv
+Kept bundstat2008-09.csv
+Kept bundstat2009-10.csv
+Kept bundstat2010-11.csv
+Kept bundstat2011-12.csv
+Kept bundstat2012-13.csv
+Kept bundstat2013-14.csv
+Kept bundstat2014-15.csv
+Kept bundstat2015-16.csv
+Kept bundstat2016-17.csv
+Kept bundstat2017-18.csv
+Kept bundstat2018-19.csv
+Kept bundstat2019-20.csv
+Kept bundstat2020-21.csv
+Kept bundstat2021-22.csv
+Kept bundstat2022-23.csv
+Kept bundstat2023-24.csv
+Downloaded/Updated bundstat2024-25.csv
+Downloaded/Updated bundstat2025-26.csv
+
+Downloading Germany - Bundesliga 2 (D2)
+Kept bund2stat2006-07.csv
+Kept bund2stat2017-18.csv
+Kept bund2stat2018-19.csv
+Kept bund2stat2019-20.csv
+Kept bund2stat2020-21.csv
+Kept bund2stat2021-22.csv
+Kept bund2stat2022-23.csv
+Kept bund2stat2023-24.csv
+Downloaded/Updated bund2stat2024-25.csv
+Downloaded/Updated bund2stat2025-26.csv
+
+Downloading France - Ligue 1 (F1)
+Kept ligue1stat2005-06.csv
+Kept ligue1stat2006-07.csv
+Kept ligue1stat2007-08.csv
+Kept ligue1stat2008-09.csv
+Kept ligue1stat2009-10.csv
+Kept ligue1stat2010-11.csv
+Kept ligue1stat2011-12.csv
+Kept ligue1stat2012-13.csv
+Kept ligue1stat2013-14.csv
+Kept ligue1stat2014-15.csv
+Kept ligue1stat2015-16.csv
+Kept ligue1stat2016-17.csv
+Kept ligue1stat2017-18.csv
+Kept ligue1stat2018-19.csv
+Kept ligue1stat2019-20.csv
+Kept ligue1stat2020-21.csv
+Kept ligue1stat2021-22.csv
+Kept ligue1stat2022-23.csv
+Kept ligue1stat2023-24.csv
+Downloaded/Updated ligue1stat2024-25.csv
+Downloaded/Updated ligue1stat2025-26.csv
+
+Downloading France - Ligue 2 (F2)
+Kept ligue2stat2017-18.csv
+Kept ligue2stat2018-19.csv
+Kept ligue2stat2019-20.csv
+Kept ligue2stat2020-21.csv
+Kept ligue2stat2021-22.csv
+Kept ligue2stat2022-23.csv
+Kept ligue2stat2023-24.csv
+Downloaded/Updated ligue2stat2024-25.csv
+Downloaded/Updated ligue2stat2025-26.csv
+
+Downloading Portugal - Liga Portugal (P1)
+Kept portstat2017-18.csv
+Kept portstat2018-19.csv
+Kept portstat2019-20.csv
+Kept portstat2020-21.csv
+Kept portstat2021-22.csv
+Kept portstat2022-23.csv
+Kept portstat2023-24.csv
+Downloaded/Updated portstat2024-25.csv
+Downloaded/Updated portstat2025-26.csv
+
+Downloading Netherlands - Eredivisie (N1)
+Kept eredivisiestat2017-18.csv
+Kept eredivisiestat2018-19.csv
+Kept eredivisiestat2019-20.csv
+Kept eredivisiestat2020-21.csv
+Kept eredivisiestat2021-22.csv
+Kept eredivisiestat2022-23.csv
+Kept eredivisiestat2023-24.csv
+Downloaded/Updated eredivisiestat2024-25.csv
+Downloaded/Updated eredivisiestat2025-26.csv
+
+Downloading Belgium - First Division A (B1)
+Kept belgiestat2017-18.csv
+Kept belgiestat2018-19.csv
+Kept belgiestat2019-20.csv
+Kept belgiestat2020-21.csv
+Kept belgiestat2021-22.csv
+Kept belgiestat2022-23.csv
+Kept belgiestat2023-24.csv
+Downloaded/Updated belgiestat2024-25.csv
+Downloaded/Updated belgiestat2025-26.csv
+
+Downloading Scotland - Premiership (SC0)
+Kept scotpremstat2005-06.csv
+Kept scotpremstat2006-07.csv
+Kept scotpremstat2007-08.csv
+Kept scotpremstat2008-09.csv
+Kept scotpremstat2009-10.csv
+Kept scotpremstat2010-11.csv
+Kept scotpremstat2011-12.csv
+Kept scotpremstat2012-13.csv
+Kept scotpremstat2013-14.csv
+Kept scotpremstat2014-15.csv
+Kept scotpremstat2015-16.csv
+Kept scotpremstat2016-17.csv
+Kept scotpremstat2017-18.csv
+Kept scotpremstat2018-19.csv
+Kept scotpremstat2020-21.csv
+Kept scotpremstat2021-22.csv
+Kept scotpremstat2022-23.csv
+Kept scotpremstat2023-24.csv
+Downloaded/Updated scotpremstat2024-25.csv
+Downloaded/Updated scotpremstat2025-26.csv
+
+Downloading Turkey - Super Lig (T1)
+Kept turkstat2017-18.csv
+Kept turkstat2018-19.csv
+Kept turkstat2019-20.csv
+Kept turkstat2020-21.csv
+Kept turkstat2021-22.csv
+Kept turkstat2022-23.csv
+Kept turkstat2023-24.csv
+Downloaded/Updated turkstat2024-25.csv
+Downloaded/Updated turkstat2025-26.csv
+
+Downloading France - Ligue 2 (F2)
+Kept ligue2stat2017-18.csv
+Kept ligue2stat2018-19.csv
+Kept ligue2stat2019-20.csv
+Kept ligue2stat2020-21.csv
+Kept ligue2stat2021-22.csv
+Kept ligue2stat2022-23.csv
+Kept ligue2stat2023-24.csv
+Downloaded/Updated ligue2stat2024-25.csv
+Downloaded/Updated ligue2stat2025-26.csv
+
+Done. Updated 32 CSV files across all configured competitions.
+Processed England\Championship\champstat2004-05.csv...
+Processed England\Premier League\premstat2003-04.csv...
+Processed England\Premier League\premstat2004-05.csv...
+Processed England\Premier League\premstat2002-03.csv...
+Processed England\Premier League\premstat2005-06.csv...
+Processed England\Championship\champstat2002-03.csv...
+Processed England\Championship\champstat2005-06.csv...
+Processed England\Championship\champstat2003-04.csv...
+Skipped Scotland\Premiership\scotpremstat2005-06.csv (insufficient data)...
+Processed France\Ligue 1\ligue1stat2005-06.csv...
+Processed Spain\La Liga\laligastat2005-06.csv...
+Processed Italy\Serie A\seriaastat2005-06.csv...
+Processed England\Premier League\premstat2006-07.csv...
+Processed France\Ligue 1\ligue1stat2006-07.csv...
+Processed Germany\Bundesliga\bundstat2006-07.csv...
+Processed England\Championship\champstat2006-07.csv...
+Skipped Scotland\Premiership\scotpremstat2006-07.csv (insufficient data)...
+Processed Germany\Bundesliga 2\bund2stat2006-07.csv...
+Processed Spain\La Liga\laligastat2006-07.csv...
+Processed Italy\Serie A\seriaastat2006-07.csv...
+Processed France\Ligue 1\ligue1stat2007-08.csv...
+Processed England\Premier League\premstat2007-08.csv...
+Skipped Scotland\Premiership\scotpremstat2007-08.csv (insufficient data)...
+Processed Germany\Bundesliga\bundstat2007-08.csv...
+Processed England\Championship\champstat2007-08.csv...
+Processed Italy\Serie A\seriaastat2007-08.csv...
+Processed Spain\La Liga\laligastat2007-08.csv...
+Processed England\Premier League\premstat2008-09.csv...
+Processed Germany\Bundesliga\bundstat2008-09.csv...
+Skipped Scotland\Premiership\scotpremstat2008-09.csv (insufficient data)...
+Processed Italy\Serie A\seriaastat2008-09.csv...
+Processed France\Ligue 1\ligue1stat2008-09.csv...
+Processed England\Championship\champstat2008-09.csv...
+Processed Spain\La Liga\laligastat2008-09.csv...
+Processed Germany\Bundesliga\bundstat2009-10.csv...
+Processed England\Premier League\premstat2009-10.csv...
+Skipped Scotland\Premiership\scotpremstat2009-10.csv (insufficient data)...
+Processed France\Ligue 1\ligue1stat2009-10.csv...
+Processed Italy\Serie A\seriaastat2009-10.csv...
+Processed England\Championship\champstat2009-10.csv...
+Processed Spain\La Liga\laligastat2009-10.csv...
+Processed France\Ligue 1\ligue1stat2010-11.csv...
+Processed England\Premier League\premstat2010-11.csv...
+Processed Germany\Bundesliga\bundstat2010-11.csv...
+Processed Italy\Serie A\seriaastat2010-11.csv...
+Skipped Scotland\Premiership\scotpremstat2010-11.csv (insufficient data)...
+Processed England\Championship\champstat2010-11.csv...
+Processed Spain\La Liga\laligastat2010-11.csv...
+Processed England\Premier League\premstat2011-12.csv...
+Processed France\Ligue 1\ligue1stat2011-12.csv...
+Processed Germany\Bundesliga\bundstat2011-12.csv...
+Skipped Scotland\Premiership\scotpremstat2011-12.csv (insufficient data)...
+Processed Italy\Serie A\seriaastat2011-12.csv...
+Processed England\Championship\champstat2011-12.csv...
+Processed Spain\La Liga\laligastat2011-12.csv...
+Processed England\Championship\champstat2012-13.csv...
+Processed England\Premier League\premstat2012-13.csv...
+Processed France\Ligue 1\ligue1stat2012-13.csv...
+Processed Germany\Bundesliga\bundstat2012-13.csv...
+Skipped Scotland\Premiership\scotpremstat2012-13.csv (insufficient data)...
+Processed Spain\La Liga\laligastat2012-13.csv...
+Processed Italy\Serie A\seriaastat2012-13.csv...
+Processed Germany\Bundesliga\bundstat2013-14.csv...
+Skipped Scotland\Premiership\scotpremstat2013-14.csv (insufficient data)...
+Processed England\Premier League\premstat2013-14.csv...
+Processed France\Ligue 1\ligue1stat2013-14.csv...
+Processed England\Championship\champstat2013-14.csv...
+Processed Spain\La Liga\laligastat2013-14.csv...
+Processed Italy\Serie A\seriaastat2013-14.csv...
+Processed England\Premier League\premstat2014-15.csv...
+Processed France\Ligue 1\ligue1stat2014-15.csv...
+Skipped Scotland\Premiership\scotpremstat2014-15.csv (insufficient data)...
+Processed Germany\Bundesliga\bundstat2014-15.csv...
+Processed Italy\Serie A\seriaastat2014-15.csv...
+Processed Spain\La Liga\laligastat2014-15.csv...
+Processed England\Championship\champstat2014-15.csv...
+Skipped Scotland\Premiership\scotpremstat2015-16.csv (insufficient data)...
+Processed France\Ligue 1\ligue1stat2015-16.csv...
+Processed Germany\Bundesliga\bundstat2015-16.csv...
+Processed England\Premier League\premstat2015-16.csv...
+Processed Italy\Serie A\seriaastat2015-16.csv...
+Processed England\Championship\champstat2015-16.csv...
+Processed Spain\La Liga\laligastat2015-16.csv...
+Processed England\Premier League\premstat2016-17.csv...
+Processed England\Championship\champstat2016-17.csv...
+Skipped Scotland\Premiership\scotpremstat2016-17.csv (insufficient data)...
+Processed France\Ligue 1\ligue1stat2016-17.csv...
+Processed Germany\Bundesliga\bundstat2016-17.csv...
+Processed Italy\Serie A\seriaastat2016-17.csv...
+Skipped Belgium\First Division A\belgiestat2017-18.csv (insufficient data)...
+Processed Spain\La Liga\laligastat2016-17.csv...
+Processed Germany\Bundesliga\bundstat2017-18.csv...
+Processed France\Ligue 1\ligue1stat2017-18.csv...
+Processed France\Ligue 2\ligue2stat2017-18.csv...
+Processed England\Premier League\premstat2017-18.csv...
+Processed Germany\Bundesliga 2\bund2stat2017-18.csv...
+Processed Italy\Serie A\seriaastat2017-18.csv...
+Processed Italy\Serie B\seriabstat2017-18.csv...
+Processed England\Championship\champstat2017-18.csv...
+Skipped Scotland\Premiership\scotpremstat2017-18.csv (insufficient data)...
+Processed Netherlands\Eredivisie\eredivisiestat2017-18.csv...
+Processed Portugal\Liga Portugal\portstat2017-18.csv...
+Processed Spain\La Liga\laligastat2017-18.csv...
+Skipped Belgium\First Division A\belgiestat2018-19.csv (insufficient data)...
+Processed Spain\La Liga 2\laliga2stat2017-18.csv...
+Processed Turkey\Super Lig\turkstat2017-18.csv...
+Processed England\Premier League\premstat2018-19.csv...
+Processed Italy\Serie B\seriabstat2018-19.csv...
+Processed France\Ligue 1\ligue1stat2018-19.csv...
+Processed Germany\Bundesliga\bundstat2018-19.csv...
+Processed France\Ligue 2\ligue2stat2018-19.csv...
+Processed Germany\Bundesliga 2\bund2stat2018-19.csv...
+Processed England\Championship\champstat2018-19.csv...
+Processed Italy\Serie A\seriaastat2018-19.csv...
+Skipped Scotland\Premiership\scotpremstat2018-19.csv (insufficient data)...
+Processed Netherlands\Eredivisie\eredivisiestat2018-19.csv...
+Processed Portugal\Liga Portugal\portstat2018-19.csv...
+Processed Spain\La Liga 2\laliga2stat2018-19.csv...
+Processed Spain\La Liga\laligastat2018-19.csv...
+Processed Turkey\Super Lig\turkstat2018-19.csv...
+Skipped Belgium\First Division A\belgiestat2019-20.csv (insufficient data)...
+Processed England\Premier League\premstat2019-20.csv...
+Processed France\Ligue 2\ligue2stat2019-20.csv...
+Processed France\Ligue 1\ligue1stat2019-20.csv...
+Processed Germany\Bundesliga\bundstat2019-20.csv...
+Processed Germany\Bundesliga 2\bund2stat2019-20.csv...
+Processed Italy\Serie A\seriaastat2019-20.csv...
+Processed England\Championship\champstat2019-20.csv...
+Processed Italy\Serie B\seriabstat2019-20.csv...
+Skipped Netherlands\Eredivisie\eredivisiestat2019-20.csv (insufficient data)...
+Processed Portugal\Liga Portugal\portstat2019-20.csv...
+Processed Spain\La Liga\laligastat2019-20.csv...
+Processed Spain\La Liga 2\laliga2stat2019-20.csv...
+Processed Turkey\Super Lig\turkstat2019-20.csv...
+Processed Belgium\First Division A\belgiestat2020-21.csv...
+Processed France\Ligue 1\ligue1stat2020-21.csv...
+Processed England\Premier League\premstat2020-21.csv...
+Processed Germany\Bundesliga\bundstat2020-21.csv...
+Processed France\Ligue 2\ligue2stat2020-21.csv...
+Processed England\Championship\champstat2020-21.csv...
+Processed Germany\Bundesliga 2\bund2stat2020-21.csv...
+Processed Italy\Serie B\seriabstat2020-21.csv...
+Processed Italy\Serie A\seriaastat2020-21.csv...
+Processed Netherlands\Eredivisie\eredivisiestat2020-21.csv...
+Processed Portugal\Liga Portugal\portstat2020-21.csv...
+Skipped Scotland\Premiership\scotpremstat2020-21.csv (insufficient data)...
+Processed Spain\La Liga\laligastat2020-21.csv...
+Processed Spain\La Liga 2\laliga2stat2020-21.csv...
+Processed Turkey\Super Lig\turkstat2020-21.csv...
+Processed Belgium\First Division A\belgiestat2021-22.csv...
+Processed France\Ligue 1\ligue1stat2021-22.csv...
+Processed England\Premier League\premstat2021-22.csv...
+Processed France\Ligue 2\ligue2stat2021-22.csv...
+Processed England\Championship\champstat2021-22.csv...
+Processed Germany\Bundesliga\bundstat2021-22.csv...
+Processed Germany\Bundesliga 2\bund2stat2021-22.csv...
+Processed Italy\Serie A\seriaastat2021-22.csv...
+Processed Netherlands\Eredivisie\eredivisiestat2021-22.csv...
+Skipped Scotland\Premiership\scotpremstat2021-22.csv (insufficient data)...
+Processed Italy\Serie B\seriabstat2021-22.csv...
+Processed Portugal\Liga Portugal\portstat2021-22.csv...
+Processed Spain\La Liga\laligastat2021-22.csv...
+Processed Spain\La Liga 2\laliga2stat2021-22.csv...
+Processed Turkey\Super Lig\turkstat2021-22.csv...
+Processed Belgium\First Division A\belgiestat2022-23.csv...
+Processed England\Premier League\premstat2022-23.csv...
+Processed France\Ligue 2\ligue2stat2022-23.csv...
+Processed Germany\Bundesliga\bundstat2022-23.csv...
+Processed France\Ligue 1\ligue1stat2022-23.csv...
+Processed Germany\Bundesliga 2\bund2stat2022-23.csv...
+Processed Italy\Serie A\seriaastat2022-23.csv...
+Processed England\Championship\champstat2022-23.csv...
+Processed Italy\Serie B\seriabstat2022-23.csv...
+Processed Netherlands\Eredivisie\eredivisiestat2022-23.csv...
+Processed Portugal\Liga Portugal\portstat2022-23.csv...
+Skipped Scotland\Premiership\scotpremstat2022-23.csv (insufficient data)...
+Processed Spain\La Liga\laligastat2022-23.csv...
+Skipped Turkey\Super Lig\turkstat2022-23.csv (insufficient data)...
+Processed Spain\La Liga 2\laliga2stat2022-23.csv...
+Processed Belgium\First Division A\belgiestat2023-24.csv...
+Processed England\Premier League\premstat2023-24.csv...
+Processed France\Ligue 1\ligue1stat2023-24.csv...
+Processed France\Ligue 2\ligue2stat2023-24.csv...
+Processed Germany\Bundesliga\bundstat2023-24.csv...
+Processed Germany\Bundesliga 2\bund2stat2023-24.csv...
+Processed England\Championship\champstat2023-24.csv...
+Processed Italy\Serie A\seriaastat2023-24.csv...
+Processed Italy\Serie B\seriabstat2023-24.csv...
+Processed Netherlands\Eredivisie\eredivisiestat2023-24.csv...
+Skipped Scotland\Premiership\scotpremstat2023-24.csv (insufficient data)...
+Processed Portugal\Liga Portugal\portstat2023-24.csv...
+Processed Spain\La Liga\laligastat2023-24.csv...
+Processed Turkey\Super Lig\turkstat2023-24.csv...
+Processed Spain\La Liga 2\laliga2stat2023-24.csv...
+Processed Belgium\First Division A\belgiestat2024-25.csv...
+Processed England\Premier League\premstat2024-25.csv...
+Processed France\Ligue 1\ligue1stat2024-25.csv...
+Processed France\Ligue 2\ligue2stat2024-25.csv...
+Processed Germany\Bundesliga\bundstat2024-25.csv...
+Processed Germany\Bundesliga 2\bund2stat2024-25.csv...
+Processed England\Championship\champstat2024-25.csv...
+Processed Italy\Serie B\seriabstat2024-25.csv...
+Processed Italy\Serie A\seriaastat2024-25.csv...
+Processed Netherlands\Eredivisie\eredivisiestat2024-25.csv...
+Processed Portugal\Liga Portugal\portstat2024-25.csv...
+Skipped Scotland\Premiership\scotpremstat2024-25.csv (insufficient data)...
+Processed Spain\La Liga\laligastat2024-25.csv...
+Processed Spain\La Liga 2\laliga2stat2024-25.csv...
+Processed Turkey\Super Lig\turkstat2024-25.csv...
+Processed Belgium\First Division A\belgiestat2025-26.csv...
+Processed France\Ligue 1\ligue1stat2025-26.csv...
+Processed England\Premier League\premstat2025-26.csv...
+Processed France\Ligue 2\ligue2stat2025-26.csv...
+Processed Germany\Bundesliga\bundstat2025-26.csv...
+Processed England\Championship\champstat2025-26.csv...
+Processed Germany\Bundesliga 2\bund2stat2025-26.csv...
+Processed Italy\Serie A\seriaastat2025-26.csv...
+Processed Netherlands\Eredivisie\eredivisiestat2025-26.csv...
+Processed Italy\Serie B\seriabstat2025-26.csv...
+Processed Portugal\Liga Portugal\portstat2025-26.csv...
+Processed Scotland\Premiership\scotpremstat2025-26.csv...
+Processed Spain\La Liga 2\laliga2stat2025-26.csv...
+Processed Spain\La Liga\laligastat2025-26.csv...
+Processed Turkey\Super Lig\turkstat2025-26.csv...
+All files processed.
+Processing England\Championship\champstat2002-03.csv
+Processing England\Premier League\premstat2002-03.csv
+Processing England\Championship\champstat2003-04.csv
+Processing England\Premier League\premstat2003-04.csv
+Processing England\Championship\champstat2004-05.csv
+Processing England\Premier League\premstat2004-05.csv
+Processing England\Championship\champstat2005-06.csv
+Processing England\Premier League\premstat2005-06.csv
+Processing France\Ligue 1\ligue1stat2005-06.csv
+Processing Italy\Serie A\seriaastat2005-06.csv
+Processing Spain\La Liga\laligastat2005-06.csv
+Processing England\Championship\champstat2006-07.csv
+Processing England\Premier League\premstat2006-07.csv
+Processing France\Ligue 1\ligue1stat2006-07.csv
+Processing Germany\Bundesliga\bundstat2006-07.csv
+Processing Germany\Bundesliga 2\bund2stat2006-07.csv
+Processing Italy\Serie A\seriaastat2006-07.csv
+Processing Spain\La Liga\laligastat2006-07.csv
+Processing England\Championship\champstat2007-08.csv
+Processing England\Premier League\premstat2007-08.csv
+Processing France\Ligue 1\ligue1stat2007-08.csv
+Processing Germany\Bundesliga\bundstat2007-08.csv
+Processing Italy\Serie A\seriaastat2007-08.csv
+Processing Spain\La Liga\laligastat2007-08.csv
+Processing England\Championship\champstat2008-09.csv
+Processing England\Premier League\premstat2008-09.csv
+Processing France\Ligue 1\ligue1stat2008-09.csv
+Processing Germany\Bundesliga\bundstat2008-09.csv
+Processing Italy\Serie A\seriaastat2008-09.csv
+Processing Spain\La Liga\laligastat2008-09.csv
+Processing England\Championship\champstat2009-10.csv
+Processing England\Premier League\premstat2009-10.csv
+Processing France\Ligue 1\ligue1stat2009-10.csv
+Processing Germany\Bundesliga\bundstat2009-10.csv
+Processing Italy\Serie A\seriaastat2009-10.csv
+Processing Spain\La Liga\laligastat2009-10.csv
+Processing England\Championship\champstat2010-11.csv
+Processing England\Premier League\premstat2010-11.csv
+Processing France\Ligue 1\ligue1stat2010-11.csv
+Processing Germany\Bundesliga\bundstat2010-11.csv
+Processing Italy\Serie A\seriaastat2010-11.csv
+Processing Spain\La Liga\laligastat2010-11.csv
+Processing England\Championship\champstat2011-12.csv
+Processing England\Premier League\premstat2011-12.csv
+Processing France\Ligue 1\ligue1stat2011-12.csv
+Processing Germany\Bundesliga\bundstat2011-12.csv
+Processing Italy\Serie A\seriaastat2011-12.csv
+Processing Spain\La Liga\laligastat2011-12.csv
+Processing England\Championship\champstat2012-13.csv
+Processing England\Premier League\premstat2012-13.csv
+Processing France\Ligue 1\ligue1stat2012-13.csv
+Processing Germany\Bundesliga\bundstat2012-13.csv
+Processing Italy\Serie A\seriaastat2012-13.csv
+Processing Spain\La Liga\laligastat2012-13.csv
+Processing England\Championship\champstat2013-14.csv
+Processing England\Premier League\premstat2013-14.csv
+Processing France\Ligue 1\ligue1stat2013-14.csv
+Processing Germany\Bundesliga\bundstat2013-14.csv
+Processing Italy\Serie A\seriaastat2013-14.csv
+Processing Spain\La Liga\laligastat2013-14.csv
+Processing England\Championship\champstat2014-15.csv
+Processing England\Premier League\premstat2014-15.csv
+Processing France\Ligue 1\ligue1stat2014-15.csv
+Processing Germany\Bundesliga\bundstat2014-15.csv
+Processing Italy\Serie A\seriaastat2014-15.csv
+Processing Spain\La Liga\laligastat2014-15.csv
+Processing England\Championship\champstat2015-16.csv
+Processing England\Premier League\premstat2015-16.csv
+Processing France\Ligue 1\ligue1stat2015-16.csv
+Processing Germany\Bundesliga\bundstat2015-16.csv
+Processing Italy\Serie A\seriaastat2015-16.csv
+Processing Spain\La Liga\laligastat2015-16.csv
+Processing England\Championship\champstat2016-17.csv
+Processing England\Premier League\premstat2016-17.csv
+Processing France\Ligue 1\ligue1stat2016-17.csv
+Processing Germany\Bundesliga\bundstat2016-17.csv
+Processing Italy\Serie A\seriaastat2016-17.csv
+Processing Spain\La Liga\laligastat2016-17.csv
+Processing England\Championship\champstat2017-18.csv
+Processing England\Premier League\premstat2017-18.csv
+Processing France\Ligue 1\ligue1stat2017-18.csv
+Processing France\Ligue 2\ligue2stat2017-18.csv
+Processing Germany\Bundesliga\bundstat2017-18.csv
+Processing Germany\Bundesliga 2\bund2stat2017-18.csv
+Processing Italy\Serie A\seriaastat2017-18.csv
+Processing Italy\Serie B\seriabstat2017-18.csv
+Processing Netherlands\Eredivisie\eredivisiestat2017-18.csv
+Processing Portugal\Liga Portugal\portstat2017-18.csv
+Processing Spain\La Liga\laligastat2017-18.csv
+Processing Spain\La Liga 2\laliga2stat2017-18.csv
+Processing Turkey\Super Lig\turkstat2017-18.csv
+Processing England\Championship\champstat2018-19.csv
+Processing England\Premier League\premstat2018-19.csv
+Processing France\Ligue 1\ligue1stat2018-19.csv
+Processing France\Ligue 2\ligue2stat2018-19.csv
+Processing Germany\Bundesliga\bundstat2018-19.csv
+Processing Germany\Bundesliga 2\bund2stat2018-19.csv
+Processing Italy\Serie A\seriaastat2018-19.csv
+Processing Italy\Serie B\seriabstat2018-19.csv
+Processing Netherlands\Eredivisie\eredivisiestat2018-19.csv
+Processing Portugal\Liga Portugal\portstat2018-19.csv
+Processing Spain\La Liga\laligastat2018-19.csv
+Processing Spain\La Liga 2\laliga2stat2018-19.csv
+Processing Turkey\Super Lig\turkstat2018-19.csv
+Processing England\Championship\champstat2019-20.csv
+Processing England\Premier League\premstat2019-20.csv
+Processing France\Ligue 1\ligue1stat2019-20.csv
+Processing France\Ligue 2\ligue2stat2019-20.csv
+Processing Germany\Bundesliga\bundstat2019-20.csv
+Processing Germany\Bundesliga 2\bund2stat2019-20.csv
+Processing Italy\Serie A\seriaastat2019-20.csv
+Processing Italy\Serie B\seriabstat2019-20.csv
+Processing Portugal\Liga Portugal\portstat2019-20.csv
+Processing Spain\La Liga\laligastat2019-20.csv
+Processing Spain\La Liga 2\laliga2stat2019-20.csv
+Processing Turkey\Super Lig\turkstat2019-20.csv
+Processing Belgium\First Division A\belgiestat2020-21.csv
+Processing England\Championship\champstat2020-21.csv
+Processing England\Premier League\premstat2020-21.csv
+Processing France\Ligue 1\ligue1stat2020-21.csv
+Processing France\Ligue 2\ligue2stat2020-21.csv
+Processing Germany\Bundesliga\bundstat2020-21.csv
+Processing Germany\Bundesliga 2\bund2stat2020-21.csv
+Processing Italy\Serie A\seriaastat2020-21.csv
+Processing Italy\Serie B\seriabstat2020-21.csv
+Processing Netherlands\Eredivisie\eredivisiestat2020-21.csv
+Processing Portugal\Liga Portugal\portstat2020-21.csv
+Processing Spain\La Liga\laligastat2020-21.csv
+Processing Spain\La Liga 2\laliga2stat2020-21.csv
+Processing Turkey\Super Lig\turkstat2020-21.csv
+Processing Belgium\First Division A\belgiestat2021-22.csv
+Processing England\Championship\champstat2021-22.csv
+Processing England\Premier League\premstat2021-22.csv
+Processing France\Ligue 1\ligue1stat2021-22.csv
+Processing France\Ligue 2\ligue2stat2021-22.csv
+Processing Germany\Bundesliga\bundstat2021-22.csv
+Processing Germany\Bundesliga 2\bund2stat2021-22.csv
+Processing Italy\Serie A\seriaastat2021-22.csv
+Processing Italy\Serie B\seriabstat2021-22.csv
+Processing Netherlands\Eredivisie\eredivisiestat2021-22.csv
+Processing Portugal\Liga Portugal\portstat2021-22.csv
+Processing Spain\La Liga\laligastat2021-22.csv
+Processing Spain\La Liga 2\laliga2stat2021-22.csv
+Processing Turkey\Super Lig\turkstat2021-22.csv
+Processing Belgium\First Division A\belgiestat2022-23.csv
+Processing England\Championship\champstat2022-23.csv
+Processing England\Premier League\premstat2022-23.csv
+Processing France\Ligue 1\ligue1stat2022-23.csv
+Processing France\Ligue 2\ligue2stat2022-23.csv
+Processing Germany\Bundesliga\bundstat2022-23.csv
+Processing Germany\Bundesliga 2\bund2stat2022-23.csv
+Processing Italy\Serie A\seriaastat2022-23.csv
+Processing Italy\Serie B\seriabstat2022-23.csv
+Processing Netherlands\Eredivisie\eredivisiestat2022-23.csv
+Processing Portugal\Liga Portugal\portstat2022-23.csv
+Processing Spain\La Liga\laligastat2022-23.csv
+Processing Spain\La Liga 2\laliga2stat2022-23.csv
+Processing Belgium\First Division A\belgiestat2023-24.csv
+Processing England\Championship\champstat2023-24.csv
+Processing England\Premier League\premstat2023-24.csv
+Processing France\Ligue 1\ligue1stat2023-24.csv
+Processing France\Ligue 2\ligue2stat2023-24.csv
+Processing Germany\Bundesliga\bundstat2023-24.csv
+Processing Germany\Bundesliga 2\bund2stat2023-24.csv
+Processing Italy\Serie A\seriaastat2023-24.csv
+Processing Italy\Serie B\seriabstat2023-24.csv
+Processing Netherlands\Eredivisie\eredivisiestat2023-24.csv
+Processing Portugal\Liga Portugal\portstat2023-24.csv
+Processing Spain\La Liga\laligastat2023-24.csv
+Processing Spain\La Liga 2\laliga2stat2023-24.csv
+Processing Turkey\Super Lig\turkstat2023-24.csv
+Processing Belgium\First Division A\belgiestat2024-25.csv
+Processing England\Championship\champstat2024-25.csv
+Processing England\Premier League\premstat2024-25.csv
+Processing France\Ligue 1\ligue1stat2024-25.csv
+Processing France\Ligue 2\ligue2stat2024-25.csv
+Processing Germany\Bundesliga\bundstat2024-25.csv
+Processing Germany\Bundesliga 2\bund2stat2024-25.csv
+Processing Italy\Serie A\seriaastat2024-25.csv
+Processing Italy\Serie B\seriabstat2024-25.csv
+Processing Netherlands\Eredivisie\eredivisiestat2024-25.csv
+Processing Portugal\Liga Portugal\portstat2024-25.csv
+Processing Spain\La Liga\laligastat2024-25.csv
+Processing Spain\La Liga 2\laliga2stat2024-25.csv
+Processing Turkey\Super Lig\turkstat2024-25.csv
+Processing Belgium\First Division A\belgiestat2025-26.csv
+Processing England\Championship\champstat2025-26.csv
+Processing England\Premier League\premstat2025-26.csv
+Processing France\Ligue 1\ligue1stat2025-26.csv
+Processing France\Ligue 2\ligue2stat2025-26.csv
+Processing Germany\Bundesliga\bundstat2025-26.csv
+Processing Germany\Bundesliga 2\bund2stat2025-26.csv
+Processing Italy\Serie A\seriaastat2025-26.csv
+Processing Italy\Serie B\seriabstat2025-26.csv
+Processing Netherlands\Eredivisie\eredivisiestat2025-26.csv
+Processing Portugal\Liga Portugal\portstat2025-26.csv
+Processing Scotland\Premiership\scotpremstat2025-26.csv
+Processing Spain\La Liga\laligastat2025-26.csv
+Processing Spain\La Liga 2\laliga2stat2025-26.csv
+Processing Turkey\Super Lig\turkstat2025-26.csv
+
+Done!
+
+Current form written from Turkey\Super Lig\turkstat2025-26.csv
+Model cache ready: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Data\Team_Data\model_cache.pkl (backend=random-forest-cpu)
+C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\MLS\files\Project_League_Table.py:732: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "generated_at_utc": datetime.utcnow().isoformat() + "Z",
+Projected league tables saved: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\MLS\Data\Predictions\projected_league_tables.csv
+Predicted remaining matches saved: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\MLS\Data\Predictions\projected_future_matches.csv
+Predicted MLS playoff bracket saved: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\MLS\Data\Predictions\projected_mls_playoff_bracket.json
+No upcoming matchweek fixtures returned by API or raw CSVs.
+Projected league tables saved: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Data\Predictions\projected_league_tables.csv
+Predicted remaining matches saved: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Data\Predictions\projected_future_matches.csv
+=====================================================================
+STARTING CUP PREDICTION PIPELINE
+=====================================================================
+
+[STEP 1/5] Skipping data refresh (using existing raw data).
+
+[STEP 2/5] Loading upcoming fixtures from all sources...
+
+--- Checking Source for: FA Cup (7-day fixture window) ---
+TheSportsDB: No events found for England/FA Cup
+
+--- Checking Source for: Carabao Cup (5-day fixture window) ---
+TheSportsDB: No events found for England/League Cup
+
+--- Checking Source for: UCL (5-day fixture window) ---
+TheSportsDB: No events found for UEFA/Champions League
+
+--- Checking Source for: UEL (6-day fixture window) ---
+TheSportsDB: No events found for UEFA/Europa League
+
+--- Checking Source for: UECL (6-day fixture window) ---
+TheSportsDB: No events found for UEFA/Conference League
+
+--- Checking Source for: Coppa Italia (5-day fixture window) ---
+TheSportsDB: No events found for Italy/Coppa Italia
+
+--- Checking Source for: Copa del Rey (5-day fixture window) ---
+TheSportsDB: No events found for Spain/Copa del Rey
+
+--- Checking Source for: DFB-Pokal (6-day fixture window) ---
+TheSportsDB Germany/DFB-Pokal: First fixture 2026-08-22 anchors 6-day cutoff at 2026-08-28.
+TheSportsDB: Loaded 1 fixtures for Germany/DFB-Pokal
+SUCCESS: Loaded 1 fixtures for DFB-Pokal from TheSportsDB.
+
+--- Checking Source for: Coupe de France (6-day fixture window) ---
+TheSportsDB: No events found for France/Coupe de France
+
+[STEP 3/5] Building prediction context (Loading models and stats)...
+Building prediction context: Loading ML models and historical stats...
+
+[STEP 4/5] Updating team mappings...
+
+[STEP 5/5] Running predictions and saving results...
+
+=====================================================================
+Traceback (most recent call last):
+  File "C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Predict_Upcoming_Cups", line 1332, in <module>
+    main()
+    ~~~~^^
+  File "C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Predict_Upcoming_Cups", line 1320, in main
+    print("\u2705 CUP PREDICTION PIPELINE FINISHED SUCCESSFULLY \u2705")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3568.0_x64__qbz5n2kfra8p0\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 0: character maps to <undefined>
+[TIMING] fetch_world_cup_team_names: 0.7s
+Loaded 211 rankings from all_team_rankings.json
+[TIMING] load_fifa_rankings: 0.0s
+[TIMING] load_squad_values: 0.0s
+Scanning ESPN FIFA/World Cup for recent national-team matches...
+Scanning ESPN FIFA/World Cup Qualifying - UEFA for recent national-team matches...
+Scanning ESPN FIFA/World Cup Qualifying - CONMEBOL for recent national-team matches...
+Scanning ESPN FIFA/World Cup Qualifying - CONCACAF for recent national-team matches...
+Scanning ESPN FIFA/Friendly for recent national-team matches...
+Scanning ESPN UEFA/European Championship for recent national-team matches...
+Scanning ESPN CONMEBOL/Copa America for recent national-team matches...
+Scanning ESPN CONCACAF/Gold Cup for recent national-team matches...
+Scanning ESPN CAF/Africa Cup of Nations for recent national-team matches...
+Scanning ESPN UEFA/Nations League for recent national-team matches...
+Scanning ESPN FIFA/World Cup Qualifying - AFC for recent national-team matches...
+[TIMING] fetch_recent_espn_matches: 272.2s (955 matches)
+[TIMING] build_team_context: 0.0s
+[TIMING] build_context_bundle (incl model train): 0.6s
+[TIMING] joblib.dump: 0.1s
+[TIMING] run_pipeline total: 273.7s
+
+National-team current-context predictor generated
+Teams loaded: 48
+Recent ESPN matches loaded: 955
+Model type: sklearn
+Model backend: random-forest-cpu
+Training rows: 955 (min: 24)
+Train feature columns: 51
+Ranking source: api_or_file
+Squad value source: file
+Context data: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Data\National_Team_Data\national_team_recent_context.csv
+Model cache: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Data\National_Team_Data\national_team_model_cache.pkl
+Scheduling ESPN fixtures for FIFA/World Cup (fifa.world)
+
+Upcoming national-team predictions generated
+Fixtures found: 107
+Predictions written: 107
+World Cup predictions currently in file: 104
+Skipped fixtures: 0
+Saved tracking file: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Data\Predictions\upcoming_national_team_predictions.csv
+Generating tournament simulations...
+Running 1000 tournament simulations...
+  Pre-cached 72 group fixtures.
+  Pre-cached 2256 knockout pair predictions.
+  Progress: 100/1000 simulations...
+  Progress: 200/1000 simulations...
+  Progress: 300/1000 simulations...
+  Progress: 400/1000 simulations...
+  Progress: 500/1000 simulations...
+  Progress: 600/1000 simulations...
+  Progress: 700/1000 simulations...
+  Progress: 800/1000 simulations...
+  Progress: 900/1000 simulations...
+  Progress: 1000/1000 simulations...
+  Completed 1000 successful simulations
+World Cup projection saved: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Data\Predictions\world_cup_projection.json
+Groups projected: 12
+Champion projection: Spain
+
+=== [extra] Download/process/sort latest data ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Download_Latest_Data.py
+[OK] [extra] Download/process/sort latest data (58.2s)
+
+=== [extra] Build model cache (non-interactive) ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Predict_Match.py
+[OK] [extra] Build model cache (non-interactive) (19.7s)
+
+=== [extra] Upcoming matchweek predictions ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Predict_Upcoming_Matchweek.py --window-days 3
+[OK] [extra] Upcoming matchweek predictions (3.3s)
+
+=== [extra] Projected league tables ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Extra-leagues\files\Project_League_Table.py --competition-workers 4
+[OK] [extra] Projected league tables (3.2s)
+
+=== [global] Download latest data ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Download_Latest_Data.py
+[OK] [global] Download latest data (131.1s)
+
+=== [global] Process data ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Process_Data.py
+[OK] [global] Process data (3.8s)
+
+=== [global] Sort data ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Sort_Data.py
+[OK] [global] Sort data (4.7s)
+
+=== [global] Build model cache (non-interactive) ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Predict_Match.py --build-cache-only
+[OK] [global] Build model cache (non-interactive) (26.8s)
+
+=== [global] Upcoming matchweek predictions ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Predict_Upcoming_Matchweek.py --window-days 3 --api-token f35c03c275474bbdbff0197ed691a041
+[OK] [global] Upcoming matchweek predictions (31.7s)
+
+=== [global] Projected league tables ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Project_League_Table.py --competition-workers 4
+[OK] [global] Projected league tables (21.4s)
+
+=== [global] Upcoming cup predictions ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Predict_Upcoming_Cups --window-days 3
+[ERROR] [global] Upcoming cup predictions failed with exit code 1 (after 25.9s)
+
+=== [global] National team World Cup model ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Process_National_Team_Data.py --world-cup-only
+[OK] [global] National team World Cup model (275.4s)
+
+=== [global] Upcoming World Cup predictions ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Predict_Upcoming_National_Team_Games.py --world-cup-only --window-days 90 --api-token f35c03c275474bbdbff0197ed691a041
+[OK] [global] Upcoming World Cup predictions (18.2s)
+
+=== [global] Projected World Cup groups and bracket ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Project_World_Cup.py --api-token f35c03c275474bbdbff0197ed691a041
+[OK] [global] Projected World Cup groups and bracket (10.3s)
+
+=== [mls] Download/process/sort latest data ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\MLS\files\Download_Latest_Data.py
+[OK] [mls] Download/process/sort latest data (93.6s)
+
+=== [mls] Build model cache (non-interactive) ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\MLS\files\Predict_Match.py
+[OK] [mls] Build model cache (non-interactive) (10.2s)
+
+=== [mls] Upcoming matchweek predictions ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\MLS\files\Predict_Upcoming_Matchweek.py --window-days 3 --api-token f35c03c275474bbdbff0197ed691a041
+[OK] [mls] Upcoming matchweek predictions (11.1s)
+
+=== [mls] Projected league tables ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\MLS\files\Project_League_Table.py --competition-workers 4
+[OK] [mls] Projected league tables (52.1s)
+Traceback (most recent call last):
+  File "C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Update_Live_Prediction_Results.py", line 743, in <module>
+    main()
+    ~~~~^^
+  File "C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Update_Live_Prediction_Results.py", line 655, in main
+    raise ValueError("No predictions CSV files found to update.")
+ValueError: No predictions CSV files found to update.
+Skipping cup Germany/DFB-Pokal: no ESPN cup mapping configured.
+Cup mapping auto-added: 0 (drift detected: 0)
+Cup predictions updated: 0
+Cup completed rows added to history: 0
+Cup completed rows removed from upcoming list: 0
+Cup totals entries added: 0
+Cup projected table rows written: 0
+Cup bracket sections written: 15
+Cup completed predictions file: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Data\Predictions\completed_cup_predictions.csv
+Cup projected tables file: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Data\Predictions\projected_cup_tables.csv
+Cup projected brackets file: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Data\Predictions\projected_cup_brackets.json
+Done.
+[startup] Accuracy history updated: global_files=0, global_new_rows=0, mls_files=0, mls_new_rows=0, extra_files=0, extra_new_rows=0, cup_files=0, cup_new_rows=0
+
+################################################################################
+  PIPELINE RUN #1  -  2026-06-08T21:48:28+00:00
+################################################################################
+
+>>> Running 3 sub-pipelines in parallel (max_workers=3)
+  [OK] extra sub-pipeline finished
+  [OK] mls sub-pipeline finished
+  [OK] global sub-pipeline finished
+
+>>> Running post-pipeline steps
+
+=== Settle predictions with live/final results ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Update_Live_Prediction_Results.py
+[ERROR] Settle predictions with live/final results failed with exit code 1 (after 0.6s)
+
+=== Track completed cup predictions and cup projections ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\files\Track_Cup_Results.py
+[OK] Track completed cup predictions and cup projections (0.6s)
+
+=== Update website accuracy history ===
+C:\Users\dylan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe -c import importlib.util; p=r'Beyond-the-Stats/Website/app.py'; s=importlib.util.spec_from_file_location('webapp', p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); m.update_accuracy_history_files()
+[OK] Update website accuracy history (1.6s)
+  [TIMING] post-pipeline steps: 2.7s
+
+[TIMING] full pipeline: 552.2s
+[OK] Mobile-app feed written: C:\CS-Projects\BeyondTheStats\Soccer-Result-Predictor\Beyond-the-Stats\Output\mobile_app_feed.json
+[OK] Output/europe: 16 file(s) published
+[OK] Output/other: 3 file(s) published
+[OK] Output/national: 2 file(s) published
+[OK] Output/combined: 1 file(s) published
+
+[INFO] Next run in 24.00h. Press Ctrl-C to stop.
+
+[INFO] Shutdown requested. Finishing current run, then exiting.
+[INFO] Daily pipeline exiting.
