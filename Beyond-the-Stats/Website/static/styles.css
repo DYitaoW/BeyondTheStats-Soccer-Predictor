@@ -162,6 +162,25 @@ body {
   }
 }
 
+@media (max-width: 480px) {
+  .ios-app-indicator {
+    display: none;
+  }
+  .site-header-top {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .brand-name {
+    font-size: 0.85rem;
+  }
+  .brand-sub {
+    font-size: 0.7rem;
+  }
+  .header-actions {
+    margin-left: auto;
+  }
+}
+
 .brand {
   display: flex;
   align-items: center;

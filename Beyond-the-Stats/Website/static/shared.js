@@ -127,6 +127,7 @@ function getLeaguesForDataset(dataset) {
     if (dataset === "mls") return [...MLS_LEAGUES];
     if (dataset === "extra") return [...OTHER_LEAGUES];
     if (dataset === "cups") return [...EUROPEAN_CUPS];
+    if (dataset === "world-cup") return [...WORLD_CUP_OPTIONS];
     return [...EUROPEAN_LEAGUES, ...EUROPEAN_CUPS];
 }
 
@@ -622,11 +623,10 @@ html += "</tbody></table>";
 winnerView.innerHTML = html;
 }
 
-function setLeagueSelectOptions(selectEl, leagues, includeMlsBracket = false, cupBrackets = null) {
+function setLeagueSelectOptions(selectEl, leagues, includeMlsBracket = false, cupBrackets = null, dataset = "global") {
 selectEl.innerHTML = "";
-// Use the dataset (winnerDataset.value) to pick the hardcoded per-source list,
+// Use the dataset to pick the hardcoded per-source list,
 // so all supported leagues are always in the dropdown regardless of data load.
-const dataset = winnerDataset && winnerDataset.value ? winnerDataset.value : "global";
 const hardcodedLeagues = getLeaguesForDataset(dataset);
 const leagueRank = (name) => {
     const priorityLeagues = [
@@ -961,7 +961,7 @@ if (!leagues.length && !(mode === "cups" && cupBracketCount)) {
     winnerView.innerHTML = "<p>No available Tables yet. Try again later.</p>";
     return;
 }
-setLeagueSelectOptions(tableLeague, leagues, mode === "mls", mode === "cups" ? data.cup_brackets : null);
+setLeagueSelectOptions(tableLeague, leagues, mode === "mls", mode === "cups" ? data.cup_brackets : null, mode);
 if ((!tableLeague.value || !tableLeague.value.trim()) && tableLeague.options.length > 0) {
     tableLeague.selectedIndex = 0;
 }
@@ -1548,7 +1548,8 @@ if (!leagueTablesCache[tableDataset.value]) {
     tableLeague,
     cached.leagues || [],
     tableDataset.value === "mls",
-    tableDataset.value === "cups" ? cached.cup_brackets : null
+    tableDataset.value === "cups" ? cached.cup_brackets : null,
+    tableDataset.value
     );
     if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
     tableViewToggle.disabled = true;
