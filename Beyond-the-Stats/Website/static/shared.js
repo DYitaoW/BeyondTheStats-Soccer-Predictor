@@ -1516,7 +1516,7 @@ if (tabHome) {
 tabHome.addEventListener("click", (e) => { e.preventDefault(); activateTab("home"); });
 }
 if (brandHomeBtn && tabHome) {
-brandHomeBtn.addEventListener("click", () => tabHome.click());
+brandHomeBtn.addEventListener("click", (e) => { e.preventDefault(); tabHome.click(); });
 }
 if (feedbackSubmit) {
 feedbackSubmit.addEventListener("click", submitFeedback);
@@ -1540,10 +1540,9 @@ if (tabH2H) {
 tabH2H.addEventListener("click", (e) => { e.preventDefault(); activateTab("h2h"); });
 }
 if (tabWorldCup) {
-tabWorldCup.addEventListener("click", async (e) => {
+tabWorldCup.addEventListener("click", (e) => {
 e.preventDefault();
 activateTab("world-cup");
-await loadWCData();
 });
 }
 if (tabLeagueTable) {
