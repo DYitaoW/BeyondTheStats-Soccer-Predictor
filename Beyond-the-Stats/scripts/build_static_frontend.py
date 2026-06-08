@@ -98,11 +98,12 @@ def strip_jinja(html: str) -> str:
     html = ACTIVE_CLASS.sub("", html)
     html = JINJA_BLOCK.sub("", html)
     html = GENERIC_JINJA_EXPR.sub("", html)
-    # Rewrite navigation hrefs to clean URLs (e.g. /cups not /cups.html).
-    # The _redirects file rewrites clean URLs to .html files at serve time.
+    # Rewrite navigation hrefs to the static .html filenames.
     def _route_to_file(match: re.Match) -> str:
         path = match.group(1)
-        return f'href="/{path}"' if path else 'href="/"'
+        route = "/" + path
+        file = ROUTE_TO_FILE.get(route, "index.html")
+        return f'href="/{file}"'
     html = HREF_TO_FILE.sub(_route_to_file, html)
     return html
 
@@ -248,22 +249,7 @@ def main() -> int:
     write_404(out_dir)
     print(f"[build] wrote 404.html")
 
-    # 6. _redirects — clean URL rewrites (keep URL as /cups but serve cups.html)
-    redirects = (out_dir / "_redirects")
-    if not redirects.exists():
-        redirects.write_text(
-            "# Rewrite clean URLs to .html files (browser URL stays clean)\n"
-            "/head-to-head  /head-to-head.html  200\n"
-            "/league-tables  /league-tables.html  200\n"
-            "/upcoming-matches  /upcoming-matches.html  200\n"
-            "/world-cup  /world-cup.html  200\n"
-            "/cups  /cups.html  200\n"
-            "/tactics  /tactics.html  200\n"
-            "/about  /about.html  200\n"
-            "/players  /players.html  200\n",
-            encoding="utf-8",
-        )
-        print("[build] wrote _redirects (clean URL -> .html rewrite)")
+    # 6. (no _redirects needed — all navigation uses direct .html file links)
 
     # Summary
     total = sum(p.stat().st_size for p in out_dir.rglob("*") if p.is_file())
