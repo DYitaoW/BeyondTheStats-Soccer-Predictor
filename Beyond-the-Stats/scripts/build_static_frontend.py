@@ -50,6 +50,25 @@ TEMPLATE_RENAMES = {
     "world_cup.html": "world-cup.html",
 }
 
+# Flask route -> static filename mapping for in-page href rewriting.
+ROUTE_TO_FILE = {
+    "/": "index.html",
+    "/upcoming-matches": "upcoming-matches.html",
+    "/cups": "cups.html",
+    "/head-to-head": "head-to-head.html",
+    "/league-tables": "league-tables.html",
+    "/world-cup": "world-cup.html",
+    "/players": "players.html",
+    "/tactics": "tactics.html",
+    "/about": "about.html",
+}
+
+# Each route appears as href="/foo" in the source HTML; rewrite to .html file.
+# The empty alternative handles href="/" (the home link).
+HREF_TO_FILE = re.compile(
+    r'href="/(' + "|".join(re.escape(k.lstrip("/")) for k in ROUTE_TO_FILE) + r'|)"'
+)
+
 # url_for('serve_graphic', filename='X') -> 'graphics/X'
 URL_FOR_GRAPHIC = re.compile(
     r"\{\{\s*url_for\(\s*['\"]serve_graphic['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]\s*\)\s*\}\}"
@@ -79,8 +98,13 @@ def strip_jinja(html: str) -> str:
     html = ACTIVE_CLASS.sub("", html)
     html = JINJA_BLOCK.sub("", html)
     html = GENERIC_JINJA_EXPR.sub("", html)
-    # Navigation hrefs stay as clean paths (e.g. href="/cups") — the
-    # _redirects file maps them to the corresponding .html file at deploy time.
+    # Rewrite in-page navigation hrefs from Flask routes to static .html filenames.
+    def _route_to_file(match: re.Match) -> str:
+        path = match.group(1)
+        route = "/" + path
+        file = ROUTE_TO_FILE.get(route, match.group(0))
+        return f'href="{file}"'
+    html = HREF_TO_FILE.sub(_route_to_file, html)
     return html
 
 
@@ -225,22 +249,23 @@ def main() -> int:
     write_404(out_dir)
     print(f"[build] wrote 404.html")
 
-    # 6. _redirects — map clean URLs to their static .html files
+    # 6. _redirects — clean URL redirects for direct access
     redirects = (out_dir / "_redirects")
     if not redirects.exists():
         redirects.write_text(
-            "# Clean URLs → static HTML files\n"
-            "/head-to-head  /head-to-head.html  200\n"
-            "/league-tables  /league-tables.html  200\n"
-            "/upcoming-matches  /upcoming-matches.html  200\n"
-            "/world-cup  /world-cup.html  200\n"
-            "/cups  /cups.html  200\n"
-            "/tactics  /tactics.html  200\n"
-            "/about  /about.html  200\n"
-            "/players  /players.html  200\n",
+            "# Redirect bare paths to .html files for direct URL access\n"
+            "# Tabs link directly to .html files, so this is only for typed URLs.\n"
+            "/head-to-head  /head-to-head.html  308\n"
+            "/league-tables  /league-tables.html  308\n"
+            "/upcoming-matches  /upcoming-matches.html  308\n"
+            "/world-cup  /world-cup.html  308\n"
+            "/cups  /cups.html  308\n"
+            "/tactics  /tactics.html  308\n"
+            "/about  /about.html  308\n"
+            "/players  /players.html  308\n",
             encoding="utf-8",
         )
-        print("[build] wrote _redirects (route -> .html)")
+        print("[build] wrote _redirects (bare path -> .html)")
 
     # Summary
     total = sum(p.stat().st_size for p in out_dir.rglob("*") if p.is_file())
