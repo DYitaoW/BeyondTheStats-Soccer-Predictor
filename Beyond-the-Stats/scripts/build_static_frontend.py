@@ -109,7 +109,7 @@ def strip_jinja(html: str) -> str:
 
 
 def inject_api_base_into_shared_js(out_static_dir: Path, api_base: str) -> None:
-    """Prepend a window.BTS_API_BASE assignment to shared.js."""
+    """Prepend BTS_API_BASE + fetch wrapper to shared.js."""
     if not api_base:
         return
     target = out_static_dir / "shared.js"
@@ -117,9 +117,17 @@ def inject_api_base_into_shared_js(out_static_dir: Path, api_base: str) -> None:
         print(f"[build] WARNING: {target} not found; skipping API base injection", file=sys.stderr)
         return
     text = target.read_text(encoding="utf-8")
-    if "window.BTS_API_BASE" in text:
+    if "window.BTS_API_BASE" in text and "window.__origFetch" in text:
         return
-    injection = f'// Auto-injected by build_static_frontend.py\nwindow.BTS_API_BASE = "{api_base}";\n'
+    injection = (
+        f'// Auto-injected by build_static_frontend.py\n'
+        f'window.BTS_API_BASE = "{api_base}";\n'
+        f'window.__origFetch = window.fetch;\n'
+        f'window.fetch = function(u, o) {{\n'
+        f'  if (typeof u === "string" && u.startsWith("/api/")) u = window.BTS_API_BASE + u;\n'
+        f'  return window.__origFetch(u, o);\n'
+        f'}};\n'
+    )
     target.write_text(injection + text, encoding="utf-8")
 
 
