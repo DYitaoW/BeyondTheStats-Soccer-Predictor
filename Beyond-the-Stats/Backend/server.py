@@ -305,13 +305,34 @@ class BackendServer:
             self._pipeline_proc = subprocess.Popen(
                 cmd,
                 cwd=str(PROJECT_ROOT),
-                stdout=log_path.open("w", encoding="utf-8"),
+                stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
             )
+            self._tee_pipeline_output(log_path)
         finally:
             # Lock is released by ``_pipeline_done`` once the subprocess exits.
             pass
+
+    def _tee_pipeline_output(self, log_path: Path) -> None:
+        """Read subprocess stdout in a thread: write to log file + relay to LOG."""
+        proc = self._pipeline_proc
+
+        def _reader():
+            try:
+                with log_path.open("w", encoding="utf-8") as log_fh:
+                    for line in iter(proc.stdout.readline, ""):
+                        log_fh.write(line)
+                        log_fh.flush()
+                        LOG.info("[pipeline] %s", line.rstrip("\n\r"))
+            except Exception:
+                LOG.exception("[pipeline] output reader failed")
+            finally:
+                if proc.stdout and not proc.stdout.closed:
+                    proc.stdout.close()
+
+        t = threading.Thread(target=_reader, daemon=True)
+        t.start()
 
     def _kill_pipeline_blocking(self) -> None:
         proc = self._pipeline_proc

@@ -12,10 +12,11 @@ WorkingDirectory=/opt/beyond-the-stats/Beyond-the-Stats
 Environment="PATH=/opt/beyond-the-stats/Beyond-the-Stats/.venv/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="PYTHONDONTWRITEBYTECODE=1"
+Environment="FOOTBALL_DATA_API_TOKEN=f35c03c275474bbdbff0197ed691a041"
 # Comma-separated list of origins allowed to call the API (CORS).
 # Include the Cloudflare Pages URL(s) plus any localhost dev origin.
-Environment="ALLOWED_ORIGINS=https://beyondthestatsapp.com,https://www.beyondthestatsapp.com,https://beyond-the-stats.pages.dev,http://localhost:5000"
-ExecStart=/opt/beyond-the-stats/Beyond-the-Stats/.venv/bin/python run_backend.py
+Environment="ALLOWED_ORIGINS=https://beyondthestatsapp.com,https://www.beyondthestatsapp.com,https://beyond-the-stats.pages.dev,http://localhost:8099"
+ExecStart=/opt/beyond-the-stats/Beyond-the-Stats/.venv/bin/python run_backend.py --memory-limit-gb 13 --no-watcher --no-website --national-window-days 60 --port 8099
 Restart=on-failure
 RestartSec=30
 TimeoutStopSec=60
@@ -26,8 +27,9 @@ KillSignal=SIGTERM
 # The in-process MemoryMonitor already kills the pipeline subprocess at 100%
 # of the 12 GB cap (see Backend/memory.py), so the systemd OOM is the
 # safety net for the whole process group.
-MemoryHigh=10G
-MemoryMax=12G
+MemoryHigh=12G
+MemoryMax=14G
+CPUQuota=800%
 OOMPolicy=stop
 OOMScoreAdjust=-100
 # Logs: journald is primary; .venv writes per-run files to logs/ as well.
