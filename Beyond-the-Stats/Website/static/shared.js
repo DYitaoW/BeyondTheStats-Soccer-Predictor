@@ -1260,12 +1260,8 @@ async function loadHomeStats() {
         const resp = await fetch("/api/stats");
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok || !data?.ok) return;
-        const accuracyEl = document.getElementById("hero-accuracy");
         const leaguesEl = document.getElementById("hero-leagues");
         const refreshedEl = document.getElementById("hero-refreshed");
-        if (accuracyEl && data.accuracy_pct != null) {
-            accuracyEl.textContent = `${(Number(data.accuracy_pct) * 100).toFixed(0)}%`;
-        }
         if (leaguesEl && data.league_count != null) {
             leaguesEl.textContent = `${data.league_count}+`;
         }
@@ -1412,7 +1408,7 @@ h2hCompareButton.addEventListener("click", async () => {
         fetch("/api/predict", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ home_team: t1, away_team: t2 }),
+            body: JSON.stringify({ home_team: t1, away_team: t2, mode: dataset }),
         }).then((r) => r.json()),
     ]);
     if (requests[0].status === "fulfilled" && requests[0].value && requests[0].value.ok) {

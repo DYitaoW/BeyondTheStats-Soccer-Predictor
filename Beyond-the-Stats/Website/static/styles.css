@@ -803,6 +803,10 @@ body:not(.dark-mode) .match-row.match-wrong {
   border-collapse: collapse;
 }
 
+#league-table-view {
+  overflow-x: auto;
+}
+
 .league-table th,
 .league-table td {
   border-bottom: 1px solid var(--border);

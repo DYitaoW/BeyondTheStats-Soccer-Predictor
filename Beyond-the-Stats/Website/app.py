@@ -1029,11 +1029,10 @@ def _load_upcoming_rows(csv_path, mode=None):
         mls_dt_raw = str(row.get("match_datetime_et", "")).strip() if "match_datetime_et" in frame.columns else ""
         utc_dt_raw = str(row.get("match_datetime_utc", "")).strip() if "match_datetime_utc" in frame.columns else ""
         
-        # Prioritize match_datetime_utc if available from API
+        # Convert match_datetime_utc to Eastern time for display
         if utc_dt_raw:
             date_val = pd.to_datetime(utc_dt_raw, utc=True, errors="coerce")
-            if pd.notna(date_val) and is_mls_file:
-                # MLS timestamps should be presented in Eastern time.
+            if pd.notna(date_val):
                 try:
                     date_val = date_val.tz_convert("America/New_York")
                     time_label = date_val.strftime("%I:%M %p ET").lstrip("0")
@@ -1051,24 +1050,17 @@ def _load_upcoming_rows(csv_path, mode=None):
             date_val = pd.to_datetime(raw_date, errors="coerce")
         else:
             date_val = pd.to_datetime(raw_date, utc=True, errors="coerce")
-            if pd.notna(date_val) and is_mls_file:
-                # MLS timestamps should be presented in Eastern time.
+            if pd.notna(date_val):
                 try:
                     date_val = date_val.tz_convert("America/New_York")
-                    time_label = date_val.strftime("%I:%M %p ET").lstrip("0")
                 except Exception:
                     pass
         if pd.isna(date_val):
             weekday = ""
             date_label = str(row["match_date"])
         else:
-            # MLS cards should display one full human-readable date string.
-            if is_mls_file:
-                weekday = ""
-                date_label = date_val.strftime("%A %B %d, %Y")
-            else:
-                weekday = date_val.strftime("%A")
-                date_label = date_val.strftime("%B %d, %Y")
+            weekday = date_val.strftime("%A")
+            date_label = date_val.strftime("%B %d, %Y")
         try:
             ph_raw = float(row["prob_home"]) * 100
             pdv_raw = float(row["prob_draw"]) * 100
@@ -1681,14 +1673,119 @@ def api_refresh():
     return jsonify({"ok": True, "message": "Refresh started."})
 
 
+MOBILE_FEED_FILE = os.path.join(PROJECT_DIR, "Output", "mobile_app_feed.json")
+_UPCOMING_CSV_FILES = {
+    "global": os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv"),
+    "mls": os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv"),
+    "extra": os.path.join(PROJECT_DIR, "Extra-leagues", "Data", "Predictions", "upcoming_matchweek_predictions.csv"),
+    "cups": os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_cup_predictions.csv"),
+    "national": os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_national_team_predictions.csv"),
+}
+
+
+@app.get("/api/mobile/feed")
+def api_mobile_feed():
+    """Return the full mobile-app feed JSON."""
+    if not os.path.exists(MOBILE_FEED_FILE):
+        return jsonify({"ok": False, "error": "Mobile feed not yet generated."}), 404
+    try:
+        with open(MOBILE_FEED_FILE, "r", encoding="utf-8") as f:
+            return jsonify(json.load(f))
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.get("/api/mobile/widget")
+def api_mobile_widget():
+    """Lightweight widget feed: upcoming games filtered by league/team/random.
+    
+    Query params:
+        league  — comma-separated league names (e.g. \"England/Premier League,Spain/La Liga\")
+        team    — team name to filter by (e.g. \"Chelsea\")
+        limit   — max rows to return (default 10, max 50)
+        mode    — \"random\" to shuffle and return random picks
+    """
+    import random as _random
+
+    leagues_param = request.args.get("league", "").strip()
+    team_param = request.args.get("team", "").strip()
+    try:
+        limit = min(max(1, int(request.args.get("limit", "10"))), 50)
+    except (ValueError, TypeError):
+        limit = 10
+    mode = request.args.get("mode", "").strip().lower()
+
+    filter_leagues = [l.strip() for l in leagues_param.split(",") if l.strip()] if leagues_param else []
+
+    rows = []
+    seen = set()
+    for csv_path in _UPCOMING_CSV_FILES.values():
+        if not os.path.exists(csv_path):
+            continue
+        try:
+            frame = pd.read_csv(csv_path, dtype=str)
+        except Exception:
+            continue
+        for _, row in frame.iterrows():
+            comp = str(row.get("competition", "") or "").strip()
+            home = str(row.get("home_team", "") or "").strip()
+            away = str(row.get("away_team", "") or "").strip()
+            dedup_key = f"{comp}|{home}|{away}"
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+            if filter_leagues and comp not in filter_leagues:
+                continue
+            if team_param and team_param.lower() not in (home.lower(), away.lower()):
+                continue
+            rows.append({
+                "competition": comp,
+                "match_date": str(row.get("match_date", "") or "").strip(),
+                "match_datetime_utc": str(row.get("match_datetime_utc", "") or "").strip(),
+                "home_team": home,
+                "away_team": away,
+                "predicted_result": str(row.get("predicted_result", "") or "").strip(),
+                "prob_home": _to_float(row.get("prob_home")),
+                "prob_draw": _to_float(row.get("prob_draw")),
+                "prob_away": _to_float(row.get("prob_away")),
+            })
+
+    if mode == "random":
+        _random.shuffle(rows)
+
+    return jsonify({
+        "ok": True,
+        "count": min(len(rows), limit),
+        "total": len(rows),
+        "rows": rows[:limit],
+        "generated_at_utc": datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+
+
+def _to_float(val):
+    try:
+        return round(float(val), 1)
+    except (ValueError, TypeError):
+        return None
+
+
 @app.post("/api/predict")
 def api_predict():
-    """Predict a single European/global matchup from user input."""
+    """Predict a single matchup from user input.
+    
+    JSON body:
+        home_team (str, required)
+        away_team (str, required)
+        mode (str, optional) — "global" (default), "mls", or "extra"
+    """
     payload = request.get_json(silent=True) or request.form
     home_team = str(payload.get("home_team", "")).strip()
     away_team = str(payload.get("away_team", "")).strip()
+    mode = str(payload.get("mode", "global")).strip().lower()
+    if mode not in ("global", "mls", "extra"):
+        mode = "global"
     try:
-        result = _predict(home_team, away_team, mode="global")
+        result = _predict(home_team, away_team, mode=mode)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "prediction": result})
@@ -1844,10 +1941,14 @@ def api_upcoming_world_cup():
             date_label = match_date_str
             time_label = ""
         else:
-            weekday = date_val.strftime("%A")
-            date_label = date_val.strftime("%B %d, %Y")
             try:
-                time_label = date_val.strftime("%I:%M %p UTC").lstrip("0")
+                date_val_et = date_val.tz_convert("America/New_York")
+            except Exception:
+                date_val_et = date_val
+            weekday = date_val_et.strftime("%A")
+            date_label = date_val_et.strftime("%B %d, %Y")
+            try:
+                time_label = date_val_et.strftime("%I:%M %p ET").lstrip("0")
             except Exception:
                 time_label = ""
 
@@ -2020,10 +2121,14 @@ def api_top_picks():
                 if utc_raw:
                     dt_val = pd.to_datetime(utc_raw, utc=True, errors="coerce")
                     if not pd.isna(dt_val):
-                        weekday = dt_val.strftime("%A")
-                        date_label = dt_val.strftime("%B %d, %Y")
                         try:
-                            time_label = dt_val.strftime("%I:%M %p UTC").lstrip("0")
+                            dt_val_et = dt_val.tz_convert("America/New_York")
+                        except Exception:
+                            dt_val_et = dt_val
+                        weekday = dt_val_et.strftime("%A")
+                        date_label = dt_val_et.strftime("%B %d, %Y")
+                        try:
+                            time_label = dt_val_et.strftime("%I:%M %p ET").lstrip("0")
                         except Exception:
                             time_label = ""
                 wc_row = {
