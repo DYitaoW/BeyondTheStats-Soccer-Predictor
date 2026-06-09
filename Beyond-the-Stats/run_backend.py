@@ -234,7 +234,7 @@ def main() -> int:
         memory_limit_gb=float(args.memory_limit_gb),
     )
 
-    configure_logging(config.log_dir)
+    configure_logging()
     server = BackendServer(config)
     try:
         server.run_forever()
