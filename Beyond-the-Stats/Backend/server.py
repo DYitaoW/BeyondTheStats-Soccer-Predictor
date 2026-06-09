@@ -558,19 +558,14 @@ class BackendServer:
 
 
 def configure_logging(log_dir: Path) -> None:
-    """Configure root logging to write to both stderr and a daily log file."""
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / f"backend-{datetime.now():%Y%m%d}.log"
+    """Configure root logging to stderr only (journald)."""
     formatter = logging.Formatter(
         "[%(asctime)s] %(name)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(formatter)
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.handlers.clear()
-    root.addHandler(file_handler)
     root.addHandler(stream_handler)
