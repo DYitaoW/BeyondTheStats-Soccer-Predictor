@@ -93,7 +93,6 @@ class BackendServer:
 
     def __init__(self, config: Optional[BackendConfig] = None) -> None:
         self.config = config or BackendConfig()
-        self.config.log_dir.mkdir(parents=True, exist_ok=True)
         self._stop = threading.Event()
         self._pipeline_lock = threading.Lock()
         self._pipeline_proc: Optional[subprocess.Popen] = None
@@ -301,9 +300,8 @@ class BackendServer:
                         reading.limit_mb,
                     )
                     return
-            log_path = self.config.log_dir / f"pipeline-{datetime.now():%Y%m%d-%H%M%S}-{trigger}.log"
             cmd = self._build_pipeline_cmd()
-            LOG.info("[pipeline] starting (trigger=%s) -> %s", trigger, log_path)
+            LOG.info("[pipeline] starting (trigger=%s) -> journald", trigger)
             subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             self._pipeline_proc = subprocess.Popen(
                 cmd,
@@ -313,22 +311,19 @@ class BackendServer:
                 text=True,
                 env=subprocess_env,
             )
-            self._tee_pipeline_output(log_path)
+            self._tee_pipeline_output()
         finally:
             # Lock is released by ``_pipeline_done`` once the subprocess exits.
             pass
 
-    def _tee_pipeline_output(self, log_path: Path) -> None:
-        """Read subprocess stdout in a thread: write to log file + relay to LOG."""
+    def _tee_pipeline_output(self) -> None:
+        """Relay subprocess stdout to LOG (journald)."""
         proc = self._pipeline_proc
 
         def _reader():
             try:
-                with log_path.open("w", encoding="utf-8") as log_fh:
-                    for line in iter(proc.stdout.readline, ""):
-                        log_fh.write(line)
-                        log_fh.flush()
-                        LOG.info("[pipeline] %s", line.rstrip("\n\r"))
+                for line in iter(proc.stdout.readline, ""):
+                    LOG.info("[pipeline] %s", line.rstrip("\n\r"))
             except Exception:
                 LOG.exception("[pipeline] output reader failed")
             finally:
@@ -557,7 +552,7 @@ class BackendServer:
         )
 
 
-def configure_logging(log_dir: Path) -> None:
+def configure_logging() -> None:
     """Configure root logging to stderr only (journald)."""
     formatter = logging.Formatter(
         "[%(asctime)s] %(name)s %(levelname)s %(message)s",
