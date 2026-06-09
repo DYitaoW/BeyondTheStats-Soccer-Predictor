@@ -1255,20 +1255,37 @@ function renderTopPicks(rows) {
     `).join("");
 }
 
+async function loadHomeStats() {
+    try {
+        const resp = await fetch("/api/stats");
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data?.ok) return;
+        const accuracyEl = document.getElementById("hero-accuracy");
+        const leaguesEl = document.getElementById("hero-leagues");
+        const refreshedEl = document.getElementById("hero-refreshed");
+        if (accuracyEl && data.accuracy_pct != null) {
+            accuracyEl.textContent = `${(Number(data.accuracy_pct) * 100).toFixed(0)}%`;
+        }
+        if (leaguesEl && data.league_count != null) {
+            leaguesEl.textContent = `${data.league_count}+`;
+        }
+        if (refreshedEl && data.refreshed_at) {
+            const d = new Date(data.refreshed_at);
+            const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: "America/New_York" });
+            const date = d.toLocaleDateString([], { month: "short", day: "numeric", timeZone: "America/New_York" });
+            refreshedEl.textContent = `${date} ${time}`;
+        }
+    } catch (_err) {
+        // stats are non-critical
+    }
+}
+
 async function preloadHomeData() {
-    // The home page is the only page that renders the top-picks widget. Every
-    // other page loads its own data through initializeActivePage() and never
-    // touches the top-picks DOM, so we skip the home widget everywhere else.
-    //
-    // Previously this function also fired five legacy /api/upcoming/* fetches
-    // (global, mls, extra, cups, world-cup) on EVERY page load, regardless of
-    // whether the home panel was visible. That made 5 wasted API calls per
-    // non-home page load and pushed real users over the 60 req/min/IP rate
-    // limit when they clicked through several pages in quick succession.
     const isHomePage = document.body?.dataset?.activePage === "home";
     if (!isHomePage || !topPicksList) {
         return;
     }
+    loadHomeStats();
     try {
         const resp = await fetch("/api/top-picks?limit=12");
         const data = await resp.json().catch(() => ({}));
@@ -1280,9 +1297,6 @@ async function preloadHomeData() {
     } catch (err) {
         console.error("Failed to fetch top picks", err);
     }
-    // If the dedicated endpoint failed, leave the existing "Loading future
-    // games..." placeholder so the user sees a clear empty state rather than
-    // five random rows from a different page.
 }
 
 

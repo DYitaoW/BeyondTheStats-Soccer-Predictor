@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+_last_pipeline_run: datetime | None = None
+
 import joblib
 import pandas as pd
 from flask import Flask, jsonify, render_template, request, send_from_directory
@@ -1340,22 +1342,22 @@ def _run_full_pipeline_once():
         proc = subprocess.run(
             [sys.executable, RUN_ALL_PIPELINE],
             cwd=PROJECT_DIR,
-            capture_output=True,
-            text=True,
             timeout=3600,
             check=False,
         )
-        if proc.stdout:
-            print(proc.stdout.strip())
         if proc.returncode != 0:
-            print("[refresh] Daily pipeline failed.")
-            if proc.stderr:
-                print(proc.stderr.strip())
+            print(f"[refresh] Daily pipeline failed with rc={proc.returncode}.")
             return False
+        print("[refresh] Daily pipeline finished successfully.")
+    except subprocess.TimeoutExpired:
+        print("[refresh] Daily pipeline timed out after 3600s.")
+        return False
     except Exception as exc:
         print(f"[refresh] Daily pipeline error: {exc}")
         return False
 
+    global _last_pipeline_run
+    _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
     with _ctx_lock:
         _ctx_global = None
         _ctx_mls = None
@@ -1666,8 +1668,13 @@ def api_refresh():
     if not _refresh_auth_ok():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
+    backend_refresh = app.config.get("_backend_refresh")
+    if backend_refresh:
+        backend_refresh(trigger="manual")
+        return jsonify({"ok": True, "message": "Refresh started."})
+
     def _run():
-        print("[refresh] Manual refresh requested via API.")
+        print("[refresh] Manual refresh requested via API (legacy path).")
         _run_full_pipeline_once()
 
     threading.Thread(target=_run, daemon=True, name="manual-refresh").start()
@@ -2091,6 +2098,24 @@ def api_league_tables():
     else:
         data = _load_projected_tables(GLOBAL_PROJECTED_TABLE_FILE)
     return jsonify({"ok": True, **data})
+
+
+@app.get("/api/stats")
+def api_stats():
+    """Return overall site stats: accuracy, league count, last refresh time."""
+    global _last_pipeline_run
+    try:
+        rows, stats, league_stats = _load_upcoming_rows(GLOBAL_UPCOMING_FILE, "global")
+        accuracy_pct = (stats or {}).get("accuracy_pct", 0.0)
+    except Exception:
+        accuracy_pct = 0.0
+    refreshed_at = _last_pipeline_run.isoformat() if _last_pipeline_run else None
+    return jsonify({
+        "ok": True,
+        "accuracy_pct": accuracy_pct,
+        "league_count": 18,
+        "refreshed_at": refreshed_at,
+    })
 
 
 @app.post("/api/feedback")

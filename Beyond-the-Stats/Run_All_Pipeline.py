@@ -304,6 +304,32 @@ def _run_shared_post_steps(args, api_token):
     return sub
 
 
+def _check_dependencies():
+    """Verify required modules are importable and log their versions."""
+    required = {
+        "pandas": "pd",
+        "numpy": "np",
+        "sklearn": "scikit-learn",
+        "joblib": "joblib",
+        "requests": "requests",
+        "bs4": "beautifulsoup4",
+    }
+    print("\n--- Pre-flight dependency check ---")
+    all_ok = True
+    for mod_name, pkg_name in required.items():
+        try:
+            mod = __import__(mod_name)
+            ver = getattr(mod, "__version__", "unknown")
+            print(f"  [OK] {pkg_name} {ver}")
+        except ImportError:
+            print(f"  [MISSING] {pkg_name} ({mod_name})")
+            all_ok = False
+    if not all_ok:
+        print("  [WARN] Some dependencies are missing; pipeline may fail.")
+    print(f"  Python {sys.version.split()[0]} on {sys.platform}")
+    print("--- End pre-flight check ---\n")
+
+
 def run_full_pipeline(args, api_token, results=None):
     """Run every pipeline step and record success/failure in `results`.
 
@@ -324,6 +350,8 @@ def run_full_pipeline(args, api_token, results=None):
     if results is None:
         results = {}
     py = sys.executable  # noqa: F841  (kept for backwards-compat with external callers)
+
+    _check_dependencies()
 
     workers = max(1, min(int(getattr(args, "workers", 1) or 1), MAX_SUBPIPELINE_WORKERS))
     sub_tasks = []
@@ -370,6 +398,18 @@ def run_full_pipeline(args, api_token, results=None):
     results.update(_run_shared_post_steps(args, api_token))
     print(f"  [TIMING] post-pipeline steps: {time.monotonic() - post_start:.1f}s")
     print(f"\n[TIMING] full pipeline: {time.monotonic() - pipeline_start:.1f}s")
+
+    # Print step summary
+    print("\n--- Pipeline Step Summary ---")
+    passed = sum(1 for v in results.values() if v)
+    failed = sum(1 for v in results.values() if not v)
+    skipped = sum(1 for k in results.keys() if k.endswith("_failed"))
+    for step_name, ok in sorted(results.items()):
+        status = "[OK]" if ok else "[FAIL]"
+        print(f"  {status} {step_name}")
+    print(f"  Total: {len(results)} steps, {passed} passed, {failed} failed"
+          + (f" ({skipped} skipped)" if skipped else ""))
+    print("--- End Summary ---\n")
 
     return results
 

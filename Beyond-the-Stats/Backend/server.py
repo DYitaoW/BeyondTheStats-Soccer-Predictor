@@ -223,6 +223,7 @@ class BackendServer:
             sys.path.insert(0, str(WEBSITE_DIR))
             import app as website_app
 
+            website_app.app.config["_backend_refresh"] = self._run_pipeline_in_background
             FlaskApp(website_app.app, options).run()
         except Exception as exc:
             LOG.exception("[flask] gunicorn crashed: %s -- falling back to dev", exc)
@@ -237,6 +238,7 @@ class BackendServer:
             return
         # Disable the website's own scheduler thread -- the backend owns
         # scheduling, so we don't want the in-process loop firing concurrently.
+        website_app.app.config["_backend_refresh"] = self._run_pipeline_in_background
         if hasattr(website_app, "start_daily_refresh_scheduler"):
             website_app.start_daily_refresh_scheduler = lambda *a, **kw: None
         try:
