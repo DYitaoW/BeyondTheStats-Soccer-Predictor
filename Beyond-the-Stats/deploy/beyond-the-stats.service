@@ -8,13 +8,13 @@ Wants=network-online.target
 Type=simple
 User=dylan
 Group=dylan
-WorkingDirectory=/opt/beyond-the-stats/Beyond-the-Stats
-Environment="PATH=/opt/beyond-the-stats/Beyond-the-Stats/.venv/bin"
+WorkingDirectory=/home/dylan/bts/Beyond-the-Stats
+Environment="PATH=/home/dylan/bts/Beyond-the-Stats/.venv/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="PYTHONDONTWRITEBYTECODE=1"
 Environment="FOOTBALL_DATA_API_TOKEN=f35c03c275474bbdbff0197ed691a041"
 Environment="ALLOWED_ORIGINS=https://beyondthestatsapp.com,https://www.beyondthestatsapp.com,https://beyond-the-stats.pages.dev,http://localhost:8099"
-ExecStart=/opt/beyond-the-stats/Beyond-the-Stats/.venv/bin/python run_backend.py --memory-limit-gb 14 --no-watcher --no-website --national-window-days 60 --port 8099
+ExecStart=/home/dylan/bts/Beyond-the-Stats/.venv/bin/python run_backend.py --memory-limit-gb 14 --no-watcher --no-website --national-window-days 60 --port 8099
 Restart=on-failure
 RestartSec=30
 TimeoutStopSec=60
