@@ -716,6 +716,19 @@ def main():
     if hasattr(args, "competition_workers"):
         setattr(args, "competition_workers", max(0, int(getattr(args, "competition_workers", 0) or 0)))
 
+    print("\n" + "=" * 70)
+    print("  Daily Pipeline starting")
+    print(f"  Python: {sys.version.split()[0]} on {sys.platform}")
+    print(f"  CWD: {Path.cwd()}")
+    print(f"  Args: {sys.argv}")
+    print(f"  API token set: {bool(api_token)}")
+    print(f"  Workers: {getattr(args, 'workers', 'default')}")
+    print(f"  Skip: global={getattr(args, 'skip_global', False)}"
+          f" mls={getattr(args, 'skip_mls', False)}"
+          f" extra={getattr(args, 'skip_extra', False)}")
+    print(f"  continue_on_error: {getattr(args, 'continue_on_error', False)}")
+    print("=" * 70 + "\n")
+
     iteration = 0
     while not _shutdown_requested:
         iteration += 1
