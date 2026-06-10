@@ -290,20 +290,22 @@ class BackendServer:
         if not self._pipeline_lock.acquire(blocking=False):
             LOG.info("[pipeline] already running; skipping trigger=%s", trigger)
             return
+
+        started = False
+        skip_reason = None
         try:
             if self._memory_monitor is not None:
                 reading = self._memory_monitor.current()
                 if reading.utilization_pct >= 100.0:
-                    LOG.error(
-                        "[pipeline] over memory budget (%.1f MB / %.1f MB) -- skipping",
-                        reading.rss_mb,
-                        reading.limit_mb,
+                    skip_reason = (
+                        f"over memory budget ({reading.rss_mb:.1f} MB / "
+                        f"{reading.limit_mb:.1f} MB)"
                     )
                     return
             cmd = self._build_pipeline_cmd()
             LOG.info("[pipeline] starting (trigger=%s) -> journald", trigger)
             subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-            self._pipeline_proc = subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd,
                 cwd=str(PROJECT_ROOT),
                 stdout=subprocess.PIPE,
@@ -311,9 +313,31 @@ class BackendServer:
                 text=True,
                 env=subprocess_env,
             )
+            self._pipeline_proc = proc
+            started = True
             self._tee_pipeline_output()
-        finally:
-            # Lock is released by ``_pipeline_done`` once the subprocess exits.
+        except Exception:
+            LOG.exception("[pipeline] failed to start")
+            if started:
+                try:
+                    self._pipeline_proc.stdout.close()  # type: ignore[union-attr]
+                except Exception:
+                    pass
+            else:
+                self._pipeline_proc = None
+                self._release_lock()
+            return
+
+        if skip_reason:
+            LOG.error("[pipeline] %s -- skipping trigger=%s", skip_reason, trigger)
+            self._release_lock()
+            return
+
+    def _release_lock(self) -> None:
+        """Safely release the pipeline lock."""
+        try:
+            self._pipeline_lock.release()
+        except RuntimeError:
             pass
 
     def _tee_pipeline_output(self) -> None:
@@ -365,6 +389,7 @@ class BackendServer:
         try:
             import app as website_app
             website_app._last_pipeline_run = self._last_run
+            website_app._save_last_refresh()
         except Exception:
             pass
         try:

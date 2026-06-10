@@ -6,8 +6,9 @@ import urllib.parse
 import urllib.request
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from io import StringIO
+from bs4 import BeautifulSoup
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
@@ -40,6 +41,7 @@ TEAM_NAME_ALIASES = {
     "nottm forest": "Nott'm Forest",
 }
 TRANSFERMARKT_SEARCH_URL = "https://www.transfermarkt.com/schnellsuche/ergebnis/schnellsuche?query={query}"
+TRANSFERMARKT_BASE_URL = "https://www.transfermarkt.com"
 TRANSFERMARKT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -48,7 +50,7 @@ TRANSFERMARKT_HEADERS = {
     "Connection": "keep-alive",
     "Referer": "https://www.transfermarkt.com/",
 }
-TOP_MARKET_VALUE_FILE = "team_top_market_value_players.json"
+SQUAD_VALUES_FILE = "mls_squad_values.json"
 MLS_TRANSFERMARKT_QUERY_ALIASES = {
     "Charlotte": "Charlotte FC",
     "CF Montreal": "Montreal Impact",
@@ -63,22 +65,6 @@ MLS_TRANSFERMARKT_QUERY_ALIASES = {
     "DC United": "D.C. United",
     "D.C. United": "D.C. United",
 }
-PLAYER_POSITION_SUFFIXES = [
-    "Goalkeeper",
-    "Centre-Back",
-    "Left-Back",
-    "Right-Back",
-    "Defensive Midfield",
-    "Central Midfield",
-    "Attacking Midfield",
-    "Left Midfield",
-    "Right Midfield",
-    "Left Winger",
-    "Right Winger",
-    "Second Striker",
-    "Centre-Forward",
-    "Striker",
-]
 
 def fetch_html(url, retries=2, pause_seconds=1.5):
     for attempt in range(retries):
@@ -409,122 +395,6 @@ def season_recency_coefficient(age):
     return 0.12
 
 
-def parse_market_value_to_eur(value_text):
-    if pd.isna(value_text):
-        return 0
-    text = str(value_text).strip().lower().replace(",", ".")
-    if not text or text == "-":
-        return 0
-    text = text.replace("€", "").replace("eur", "").strip()
-    multiplier = 1
-    if text.endswith("m"):
-        multiplier = 1_000_000
-        text = text[:-1]
-    elif text.endswith("k"):
-        multiplier = 1_000
-        text = text[:-1]
-    try:
-        return int(float(text) * multiplier)
-    except Exception:
-        return 0
-
-
-def normalize_player_key(name):
-    text = str(name).strip().lower()
-    text = (
-        text.replace("á", "a")
-        .replace("à", "a")
-        .replace("ä", "a")
-        .replace("â", "a")
-        .replace("é", "e")
-        .replace("è", "e")
-        .replace("ë", "e")
-        .replace("ê", "e")
-        .replace("í", "i")
-        .replace("ì", "i")
-        .replace("ï", "i")
-        .replace("î", "i")
-        .replace("ó", "o")
-        .replace("ò", "o")
-        .replace("ö", "o")
-        .replace("ô", "o")
-        .replace("ú", "u")
-        .replace("ù", "u")
-        .replace("ü", "u")
-        .replace("û", "u")
-        .replace("ñ", "n")
-        .replace("ç", "c")
-    )
-    text = re.sub(r"[^a-z0-9 ]+", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
-def strip_position_suffix(player_name):
-    name = str(player_name).strip()
-    changed = True
-    while changed:
-        changed = False
-        for suffix in PLAYER_POSITION_SUFFIXES:
-            if name.endswith(suffix):
-                name = name[: -len(suffix)].strip()
-                changed = True
-    return name
-
-
-def detect_position_from_raw_player_text(raw_text):
-    text = str(raw_text).strip().lower()
-    if "winger" in text or "striker" in text or "centre-forward" in text or "second striker" in text:
-        return "attack"
-    if "attacking midfield" in text or "midfield" in text:
-        return "midfield"
-    if "goalkeeper" in text:
-        return "goalkeeper"
-    if "back" in text or "defender" in text or "centre-back" in text:
-        return "defense"
-    return "unknown"
-
-def _normalize_column_name(col):
-    if isinstance(col, tuple):
-        parts = [str(part).strip() for part in col if str(part).strip().lower() not in {"", "nan", "none"}]
-        text = " ".join(parts).strip()
-    else:
-        text = str(col).strip()
-    return re.sub(r"\s+", " ", text).strip().lower()
-
-
-def _find_player_market_columns(table):
-    player_col = None
-    market_col = None
-    for col in table.columns:
-        norm = _normalize_column_name(col)
-        if player_col is None and ("player" in norm or norm == "name"):
-            player_col = col
-        if market_col is None and (("market" in norm and "value" in norm) or norm in {"mv", "m.v.", "marketvalue"}):
-            market_col = col
-    return player_col, market_col
-
-
-def fetch_injured_player_keys(club_url, club_id):
-    injury_url = club_url.replace("/startseite/verein/", "/sperrenundverletzungen/verein/")
-    html = fetch_html(injury_url)
-    if not html:
-        return set()
-
-    tables = pd.read_html(StringIO(html))
-    injured = set()
-    for table in tables:
-        cols = [str(col) for col in table.columns]
-        if "Player" not in cols:
-            continue
-        for raw_name in table["Player"].dropna().tolist():
-            candidate = strip_position_suffix(raw_name)
-            if not candidate or candidate.lower() == "injuries":
-                continue
-            injured.add(normalize_player_key(candidate))
-    return injured
-
-
 def find_transfermarkt_club_link(team_name):
     query = MLS_TRANSFERMARKT_QUERY_ALIASES.get(team_name, team_name)
     encoded = urllib.parse.quote(query)
@@ -538,73 +408,59 @@ def find_transfermarkt_club_link(team_name):
         return None, None
     relative = match.group(1)
     club_id = match.group(2)
-    return f"https://www.transfermarkt.com{relative}", club_id
+    return f"{TRANSFERMARKT_BASE_URL}{relative}", club_id
 
 
-def fetch_top_market_value_players(club_url, club_id, season_id, injured_player_keys):
-    # Use squad page for current season to get player market values in one request.
-    squad_url = club_url.replace("/startseite/verein/", "/kader/verein/") + f"/saison_id/{season_id}"
-    candidate_urls = [squad_url]
-    if season_id > 2000:
-        candidate_urls.append(club_url.replace("/startseite/verein/", "/kader/verein/") + f"/saison_id/{season_id - 1}")
-
-    player_table = None
-    for candidate in candidate_urls:
-        html = fetch_html(candidate)
-        if not html:
-            continue
-
-        tables = pd.read_html(StringIO(html))
-        for table in tables:
-            player_col, market_col = _find_player_market_columns(table)
-            if player_col is not None and market_col is not None:
-                player_table = table[[player_col, market_col]].copy()
-                player_table.columns = ["Player", "Market value"]
-                break
-        if player_table is not None and not player_table.empty:
-            break
-
-    if player_table is None or player_table.empty:
-        return []
-
-    work = player_table[["Player", "Market value"]].copy()
-    work["position_group"] = work["Player"].map(detect_position_from_raw_player_text)
-    work["player_clean"] = work["Player"].map(strip_position_suffix)
-    work["player_key"] = work["player_clean"].map(normalize_player_key)
-    work["market_value_eur"] = work["Market value"].map(parse_market_value_to_eur)
-    work = work[work["market_value_eur"] > 0]
-    if injured_player_keys:
-        work = work[~work["player_key"].isin(injured_player_keys)]
-    if work.empty:
-        return []
-    work = work.drop_duplicates(subset=["player_key"]).sort_values("market_value_eur", ascending=False).head(5)
-
-    top_players = []
-    for _, row in work.iterrows():
-        top_players.append(
-            {
-                "player": str(row["player_clean"]).strip(),
-                "position_group": str(row["position_group"]).strip(),
-                "market_value": str(row["Market value"]).strip(),
-                "market_value_eur": int(row["market_value_eur"]),
-            }
-        )
-    return top_players
+def parse_squad_value_from_html(html):
+    if not html:
+        return 0.0
+    soup = BeautifulSoup(html, "html.parser")
+    wrapper = soup.find("a", class_="data-header__market-value-wrapper")
+    if wrapper is None:
+        return 0.0
+    raw_text = wrapper.get_text(" ", strip=True)
+    text = raw_text.replace(",", "").replace("€", "").replace("EUR", "").strip().lower()
+    multiplier = 1.0
+    if "bn" in text or "billion" in text:
+        multiplier = 1000.0
+    elif "k" in text or "thousand" in text or "thsd" in text:
+        multiplier = 0.001
+    match = re.search(r"\d+(?:\.\d+)?", text)
+    if not match:
+        return 0.0
+    return float(match.group(0)) * multiplier
 
 
-def build_top_market_value_players_file():
+def fetch_club_squad_value(team_name, club_url, club_id):
+    if not club_url:
+        return {"squad_value_eur_m": 0.0, "status": "no_url"}
+    html = fetch_html(club_url)
+    if not html:
+        return {"squad_value_eur_m": 0.0, "status": "fetch_failed"}
+    value = parse_squad_value_from_html(html)
+    if value <= 0:
+        return {"squad_value_eur_m": 0.0, "status": "not_found"}
+    return {
+        "squad_value_eur_m": round(value, 2),
+        "team_id": str(club_id) if club_id else "",
+        "source_url": club_url,
+        "updated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "status": "ok",
+    }
+
+
+def build_squad_values_file():
     files = get_target_season_files()
     if not files:
         raise ValueError("No processed season CSV files found.")
 
     latest_file = files[-1]
     latest_path = os.path.join(PROCESSED_DIR, latest_file)
-    latest_start_year = parse_season_start_year(os.path.basename(latest_file)) or datetime.now().year
     df = read_csv_fast(latest_path)
     teams = sorted(set(df["HomeTeam"].dropna()) | set(df["AwayTeam"].dropna()))
 
     previous = {}
-    previous_path = os.path.join(OUTPUT_DIR, TOP_MARKET_VALUE_FILE)
+    previous_path = os.path.join(OUTPUT_DIR, SQUAD_VALUES_FILE)
     if os.path.exists(previous_path):
         try:
             with open(previous_path, "r", encoding="utf-8") as file:
@@ -615,7 +471,8 @@ def build_top_market_value_players_file():
     output = {
         "season": latest_file.replace(".csv", ""),
         "source_file": latest_file,
-        "generated_at_utc": datetime.utcnow().replace(microsecond=0).isoformat(),
+        "generated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "source": "transfermarkt.com",
         "teams": {},
     }
 
@@ -627,60 +484,38 @@ def build_top_market_value_players_file():
             club_url, club_id = find_transfermarkt_club_link(team_name)
             if not club_url or not club_id:
                 cached = (previous.get("teams", {}) or {}).get(team_name)
-                if cached and cached.get("top_5_players"):
+                if cached and cached.get("squad_value_eur_m", 0) > 0:
                     output["teams"][team_name] = {**cached, "status": "cached_club_not_found"}
                 else:
-                    output["teams"][team_name] = {
-                        "status": "club_not_found",
-                        "top_5_players": [],
-                    }
+                    output["teams"][team_name] = {"squad_value_eur_m": 0.0, "status": "club_not_found"}
                 continue
 
-            try:
-                injured_player_keys = fetch_injured_player_keys(club_url, club_id)
-            except Exception:
-                injured_player_keys = set()
-            top_players = fetch_top_market_value_players(club_url, club_id, latest_start_year, injured_player_keys)
-            if top_players:
-                output["teams"][team_name] = {
-                    "status": "ok",
-                    "club_id": club_id,
-                    "club_url": club_url,
-                    "injured_players_excluded": len(injured_player_keys),
-                    "top_5_players": top_players,
-                }
-                print(f"Market values: {team_name} ({len(top_players)} players)")
+            result = fetch_club_squad_value(team_name, club_url, club_id)
+            if result.get("squad_value_eur_m", 0) > 0:
+                output["teams"][team_name] = result
+                print(f"Squad value: {team_name} (€{result['squad_value_eur_m']:.2f}m)")
             else:
                 cached = (previous.get("teams", {}) or {}).get(team_name)
-                if cached and cached.get("top_5_players"):
-                    output["teams"][team_name] = {**cached, "status": "cached_no_values_found"}
-                    print(f"Market values: {team_name} (cached)")
+                if cached and cached.get("squad_value_eur_m", 0) > 0:
+                    output["teams"][team_name] = {**cached, "status": "cached"}
+                    print(f"Squad value: {team_name} (cached €{cached['squad_value_eur_m']:.2f}m)")
                 else:
-                    output["teams"][team_name] = {
-                        "status": "no_values_found",
-                        "club_id": club_id,
-                        "club_url": club_url,
-                        "injured_players_excluded": len(injured_player_keys),
-                        "top_5_players": [],
-                    }
-                    print(f"Market values: {team_name} (no values)")
+                    output["teams"][team_name] = result
+                    print(f"Squad value: {team_name} (not found)")
         except Exception:
             cached = (previous.get("teams", {}) or {}).get(team_name)
-            if cached and cached.get("top_5_players"):
+            if cached and cached.get("squad_value_eur_m", 0) > 0:
                 output["teams"][team_name] = {**cached, "status": "cached_fetch_failed"}
-                print(f"Market values: {team_name} (cached)")
+                print(f"Squad value: {team_name} (cached)")
             else:
-                output["teams"][team_name] = {
-                    "status": "fetch_failed",
-                    "top_5_players": [],
-                }
-                print(f"Market values: {team_name} (failed)")
+                output["teams"][team_name] = {"squad_value_eur_m": 0.0, "status": "fetch_failed"}
+                print(f"Squad value: {team_name} (failed)")
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    with open(os.path.join(OUTPUT_DIR, TOP_MARKET_VALUE_FILE), "w", encoding="utf-8") as file:
+    with open(os.path.join(OUTPUT_DIR, SQUAD_VALUES_FILE), "w", encoding="utf-8") as file:
         json.dump(output, file, indent=4)
 
-    print(f"Top market value players written to {TOP_MARKET_VALUE_FILE}")
+    print(f"MLS squad values written to {SQUAD_VALUES_FILE}")
 
 # function used to build a file to store the current (last 10 game) stats for each team in the current season
 def build_current_form_file():
@@ -898,4 +733,4 @@ def sort_all_seasons():
 if __name__ == "__main__":
     sort_all_seasons()
     build_current_form_file()
-    build_top_market_value_players_file()
+    build_squad_values_file()

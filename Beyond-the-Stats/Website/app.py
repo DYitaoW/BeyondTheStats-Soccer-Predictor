@@ -38,6 +38,7 @@ class AveragedProbaClassifier:
 
 WEBSITE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(WEBSITE_DIR)
+LAST_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_refresh.json")
 FILES_DIR = os.path.join(PROJECT_DIR, "files")
 MLS_FILES_DIR = os.path.join(PROJECT_DIR, "MLS", "files")
 EXTRA_FILES_DIR = os.path.join(PROJECT_DIR, "Extra-leagues", "files")
@@ -52,6 +53,7 @@ CUP_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_c
 CUP_COMPLETED_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "completed_cup_predictions.csv")
 MLS_UPCOMING_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 EXTRA_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Extra-leagues", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
+NATIONAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_national_team_predictions.csv")
 GLOBAL_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_league_tables.csv")
 CUP_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_tables.csv")
 CUP_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_brackets.json")
@@ -75,6 +77,39 @@ CUP_COMPETITIONS = {
     "Europe/Conference League",
 }
 STATIC_PREDICTIONS = os.environ.get("STATIC_PREDICTIONS", "1").strip().lower() in {"1", "true", "yes"}
+
+
+def _save_last_refresh() -> None:
+    """Persist _last_pipeline_run to a file so it survives server restarts."""
+    dt = _last_pipeline_run
+    if dt is None:
+        return
+    try:
+        os.makedirs(os.path.dirname(LAST_REFRESH_FILE), exist_ok=True)
+        with open(LAST_REFRESH_FILE, "w") as f:
+            json.dump({"last_refresh_utc": dt.isoformat()}, f)
+    except Exception:
+        pass
+
+
+def _load_last_refresh() -> datetime | None:
+    """Load the persisted last-refresh timestamp from disk."""
+    if not os.path.exists(LAST_REFRESH_FILE):
+        return None
+    try:
+        with open(LAST_REFRESH_FILE, "r") as f:
+            data = json.load(f)
+        raw = data.get("last_refresh_utc", "")
+        if raw:
+            return datetime.fromisoformat(raw)
+    except Exception:
+        pass
+    return None
+
+
+# Initialize from persisted file so the timestamp survives server restarts.
+_last_pipeline_run = _load_last_refresh()
+
 LOW_MEMORY_STATIC = os.environ.get("LOW_MEMORY_STATIC", "1").strip().lower() in {"1", "true", "yes"}
 STATIC_PREDICTIONS_CACHE = os.environ.get("STATIC_PREDICTIONS_CACHE", "0").strip().lower() in {"1", "true", "yes"}
 STATIC_PREDICTIONS_GLOBAL_FILE = os.environ.get("STATIC_PREDICTIONS_GLOBAL_FILE", GLOBAL_UPCOMING_FILE)
@@ -505,7 +540,7 @@ def _load_context(pm_mod):
     current_form = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json"))
     league_strength = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "league_strength.json")) or {}
     market_value_data = pm_mod.load_json_if_exists(
-        os.path.join(pm_mod.TEAM_DATA_DIR, "team_top_market_value_players.json")
+        os.path.join(pm_mod.TEAM_DATA_DIR, "mls_squad_values.json")
     ) or {}
     dynamic_form = pm_mod.build_dynamic_form_from_matches(matches)
 
@@ -888,6 +923,8 @@ def _build_persistent_accuracy_stats(mode, rows):
             if str(k).strip() == MLS_COMPETITION
         }
     elif mode == "extra":
+        filtered = {}
+    elif mode == "national":
         filtered = {}
     elif mode == "cups":
         filtered = {
@@ -1353,6 +1390,7 @@ def _run_full_pipeline_once():
 
     global _last_pipeline_run
     _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
+    _save_last_refresh()
     with _ctx_lock:
         _ctx_global = None
         _ctx_mls = None
@@ -1621,11 +1659,9 @@ def api_world_cup():
 @app.post("/api/refresh")
 def api_refresh():
     """Trigger a full pipeline refresh in the background."""
-    global _last_pipeline_run
     if not _refresh_auth_ok():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
-    _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
     backend_refresh = app.config.get("_backend_refresh")
     if backend_refresh:
         backend_refresh(trigger="manual")
@@ -1637,6 +1673,22 @@ def api_refresh():
 
     threading.Thread(target=_run, daemon=True, name="manual-refresh").start()
     return jsonify({"ok": True, "message": "Refresh started."})
+
+
+@app.get("/api/last-refresh")
+def api_last_refresh():
+    """Return the timestamp of the last successful pipeline run.
+    
+    The iOS app can compare this with its own cached timestamp to decide
+    whether to reload data or use the cache.
+    """
+    global _last_pipeline_run
+    if _last_pipeline_run is None:
+        return jsonify({"ok": True, "last_refresh_utc": None})
+    return jsonify({
+        "ok": True,
+        "last_refresh_utc": _last_pipeline_run.isoformat(),
+    })
 
 
 MOBILE_FEED_FILE = os.path.join(PROJECT_DIR, "Output", "mobile_app_feed.json")
@@ -1888,6 +1940,14 @@ def api_upcoming_extra():
     return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
 
 
+@app.get("/api/upcoming/national")
+def api_upcoming_national():
+    """Return upcoming national-team fixtures (friendlies, Nations League,
+    World Cup qualifiers, continental tournaments, etc.)."""
+    rows, stats, league_stats = _load_upcoming_rows(NATIONAL_UPCOMING_FILE, "national")
+    return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
+
+
 @app.get("/api/upcoming/cups")
 def api_upcoming_cups():
     """Return upcoming cup fixtures and persistent accuracy stats."""
@@ -2084,6 +2144,7 @@ def api_top_picks():
         ("mls", MLS_UPCOMING_FILE),
         ("extra", EXTRA_UPCOMING_FILE),
         ("cups", CUP_UPCOMING_FILE),
+        ("national", NATIONAL_UPCOMING_FILE),
     ):
         rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source)
         for row in rows:

@@ -752,7 +752,7 @@ def build_prediction_context():
     head_to_head = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "head_to_head.json"))
     current_form = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "current_form.json"))
     league_strength = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "league_strength.json")) or {}
-    market_value_data = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "team_top_market_value_players.json")) or {}
+    market_value_data = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "mls_squad_values.json")) or {}
     dynamic_form = pm.build_dynamic_form_from_matches(matches)
 
     if (
