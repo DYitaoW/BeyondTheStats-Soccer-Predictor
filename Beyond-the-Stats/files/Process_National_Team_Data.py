@@ -1751,45 +1751,6 @@ def train_national_result_model(X, y):
     label_encoder = LabelEncoder()
     y_encoded = label_encoder.fit_transform(y)
 
-    if XGBClassifier is not None:
-        try:
-            model = XGBClassifier(
-                n_estimators=400,
-                max_depth=8,
-                learning_rate=0.05,
-                subsample=0.9,
-                colsample_bytree=0.9,
-                objective="multi:softprob",
-                num_class=len(label_encoder.classes_),
-                eval_metric="mlogloss",
-                random_state=42,
-                tree_method="hist",
-                device="cuda",
-                n_jobs=NATIONAL_MODEL_THREADS,
-            )
-            model.fit(X, y_encoded)
-            return model, label_encoder, "xgboost-gpu"
-        except Exception:
-            try:
-                model = XGBClassifier(
-                    n_estimators=400,
-                    max_depth=8,
-                    learning_rate=0.05,
-                    subsample=0.9,
-                    colsample_bytree=0.9,
-                    objective="multi:softprob",
-                    num_class=len(label_encoder.classes_),
-                    eval_metric="mlogloss",
-                    random_state=42,
-                    tree_method="hist",
-                    device="cpu",
-                    n_jobs=NATIONAL_MODEL_THREADS,
-                )
-                model.fit(X, y_encoded)
-                return model, label_encoder, "xgboost-cpu"
-            except Exception:
-                pass
-
     model = RandomForestClassifier(
         n_estimators=200,
         max_depth=12,
@@ -1802,46 +1763,9 @@ def train_national_result_model(X, y):
 
 
 def train_national_goal_regressor(X, y, random_state):
-    if XGBRegressor is not None:
-        try:
-            model = XGBRegressor(
-                n_estimators=300,
-                max_depth=8,
-                learning_rate=0.05,
-                subsample=0.9,
-                colsample_bytree=0.9,
-                objective="reg:squarederror",
-                eval_metric="rmse",
-                random_state=random_state,
-                tree_method="hist",
-                device="cuda",
-                n_jobs=NATIONAL_MODEL_THREADS,
-            )
-            model.fit(X, y)
-            return model, "xgboost-gpu"
-        except Exception:
-            try:
-                model = XGBRegressor(
-                    n_estimators=300,
-                    max_depth=8,
-                    learning_rate=0.05,
-                    subsample=0.9,
-                    colsample_bytree=0.9,
-                    objective="reg:squarederror",
-                    eval_metric="rmse",
-                    random_state=random_state,
-                    tree_method="hist",
-                    device="cpu",
-                    n_jobs=NATIONAL_MODEL_THREADS,
-                )
-                model.fit(X, y)
-                return model, "xgboost-cpu"
-            except Exception:
-                pass
-
     model = RandomForestRegressor(
-        n_estimators=160,
-        max_depth=10,
+        n_estimators=200,
+        max_depth=12,
         min_samples_leaf=2,
         random_state=random_state,
         n_jobs=NATIONAL_MODEL_THREADS,

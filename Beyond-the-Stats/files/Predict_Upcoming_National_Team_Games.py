@@ -298,7 +298,7 @@ def adjust_for_knockout(probabilities, stage):
     probabilities = normalize_probabilities(probabilities)
     if not national.stage_is_knockout(stage):
         return probabilities
-    draw_carry = probabilities["D"] * 0.55
+    draw_carry = probabilities["D"] * 0.35
     probabilities["D"] -= draw_carry
     non_draw = probabilities["H"] + probabilities["A"]
     if non_draw > 0:
