@@ -1997,6 +1997,39 @@ def run_pipeline(args):
         pd.DataFrame(recent_rows).to_csv(RAW_MATCHES_FILE, index=False)
     print(f"[TIMING] fetch_recent_espn_matches: {time.monotonic() - step_t0:.1f}s ({len(recent_rows)} matches)")
 
+    # Retry failed fetches: after both sources have run, check for missing data.
+    if not args.skip_fetch:
+        retry_squad_targets = [t for t in target_teams if squad_values.get(canonical_team_name(t), 0) == 0]
+        if retry_squad_targets:
+            print(f"[RETRY] {len(retry_squad_targets)} teams missing squad values; retrying Transfermarkt...")
+            time.sleep(3)
+            try:
+                build_squad_values_file(list(retry_squad_targets), refresh=True, max_workers=max(1, TRANSFERMARKT_FETCH_WORKERS // 2))
+                retry_payload = load_json_or_csv_records(args.squad_values_file)
+                if retry_payload:
+                    squad_values.update(normalize_squad_values_payload(retry_payload))
+                print(f"  Transfermarkt retry complete for {len(retry_squad_targets)} teams.")
+            except Exception as exc:
+                print(f"  Transfermarkt retry failed: {exc}")
+        teams_with_few_matches = [t for t in target_teams if len(by_team.get(t, [])) < min(LAST_N_MATCHES, 5)]
+        if teams_with_few_matches:
+            print(f"[RETRY] {len(teams_with_few_matches)} teams have <{min(LAST_N_MATCHES,5)} recent matches; retrying ESPN fetch with delay...")
+            time.sleep(3)
+            extra_rows, extra_by = fetch_recent_espn_matches(teams_with_few_matches, args.lookback_days)
+            if extra_rows:
+                existing_ids = {r.get("match_id", "") for r in recent_rows if r.get("match_id")}
+                new_rows = [r for r in extra_rows if r.get("match_id", "") not in existing_ids]
+                recent_rows.extend(new_rows)
+                for team in teams_with_few_matches:
+                    team_key = normalize_team_key(team)
+                    for row in extra_rows:
+                        if normalize_team_key(row.get("home_team", "")) == team_key or normalize_team_key(row.get("away_team", "")) == team_key:
+                            if row.get("match_id", "") not in existing_ids:
+                                by_team[team].append(row)
+                    by_team[team] = sorted(by_team[team], key=lambda r: r["match_datetime_utc"], reverse=True)[:LAST_N_MATCHES]
+                print(f"  ESPN retry added {len(new_rows)} new matches.")
+            pd.DataFrame(recent_rows).to_csv(RAW_MATCHES_FILE, index=False)
+
     step_t0 = time.monotonic()
     team_context = build_team_context(target_teams, by_team, rankings, squad_values)
     processed_rows = []

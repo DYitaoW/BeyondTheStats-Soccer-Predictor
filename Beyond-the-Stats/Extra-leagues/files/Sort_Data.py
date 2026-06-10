@@ -697,15 +697,33 @@ def build_current_form_file():
 
     for team, matches in team_matches.items():
         recent = matches[-10:]
+        total_weight = 0.0
+        weighted_wins = 0.0
+        weighted_draws = 0.0
+        weighted_losses = 0.0
+        weighted_points = 0.0
+        weighted_gf = 0.0
+        weighted_ga = 0.0
+        for idx, match in enumerate(recent):
+            w = 2.0 if idx >= len(recent) - 5 else 1.0
+            total_weight += w
+            result = match["result"]
+            if result == "W":
+                weighted_wins += w
+            elif result == "D":
+                weighted_draws += w
+            elif result == "L":
+                weighted_losses += w
+            weighted_points += w * (3 if result == "W" else 1 if result == "D" else 0)
+            weighted_gf += w * match["gf"]
+            weighted_ga += w * match["ga"]
 
-        wins = sum(1 for match in recent if match["result"] == "W")
-        draws = sum(1 for match in recent if match["result"] == "D")
-        losses = sum(1 for match in recent if match["result"] == "L")
-        points = wins * 3 + draws
-
-        goals_for = sum(match["gf"] for match in recent)
-        goals_against = sum(match["ga"] for match in recent)
-        recent_count = len(recent)
+        wins = round(weighted_wins * 10.0 / total_weight) if total_weight > 0 else 0
+        draws = round(weighted_draws * 10.0 / total_weight) if total_weight > 0 else 0
+        losses = round(weighted_losses * 10.0 / total_weight) if total_weight > 0 else 0
+        points = round(weighted_points * 10.0 / total_weight) if total_weight > 0 else 0
+        goals_for = round(weighted_gf * 10.0 / total_weight, 2) if total_weight > 0 else 0.0
+        goals_against = round(weighted_ga * 10.0 / total_weight, 2) if total_weight > 0 else 0.0
 
         last_game = matches[-1] if matches else {}
 
@@ -716,8 +734,8 @@ def build_current_form_file():
             "draws_last_10": draws,
             "losses_last_10": losses,
             "points_last_10": points,
-            "avg_goals_for_last_10": round(goals_for / recent_count, 2) if recent_count else 0.0,
-            "avg_goals_against_last_10": round(goals_against / recent_count, 2) if recent_count else 0.0,
+            "avg_goals_for_last_10": goals_for / 10.0 if recent else 0.0,
+            "avg_goals_against_last_10": goals_against / 10.0 if recent else 0.0,
             "previous_match_win_odds": last_game.get("win_odds"),
             "previous_match_draw_odds": last_game.get("draw_odds"),
             "previous_match_lose_odds": last_game.get("lose_odds"),

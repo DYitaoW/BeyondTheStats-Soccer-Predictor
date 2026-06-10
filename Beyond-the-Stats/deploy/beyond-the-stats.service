@@ -13,7 +13,7 @@ Environment="PATH=/home/dylan/bts/Beyond-the-Stats/.venv/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="PYTHONDONTWRITEBYTECODE=1"
 Environment="FOOTBALL_DATA_API_TOKEN=f35c03c275474bbdbff0197ed691a041"
-Environment="ALLOWED_ORIGINS=https://beyondthestatsapp.com,https://www.beyondthestatsapp.com,https://beyond-the-stats.pages.dev,http://localhost:8099"
+Environment="ALLOWED_ORIGINS=https://beyondthestatsapp.com,https://www.beyondthestatsapp.com,https://api.beyondthestatsapp.com,https://beyond-the-stats.pages.dev,http://localhost:8099,http://localhost:5000"
 ExecStart=/home/dylan/bts/Beyond-the-Stats/.venv/bin/python run_backend.py --memory-limit-gb 14 --no-watcher --no-website --national-window-days 60 --port 8099
 Restart=on-failure
 RestartSec=30
