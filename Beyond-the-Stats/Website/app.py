@@ -81,6 +81,9 @@ STATIC_PREDICTIONS_GLOBAL_FILE = os.environ.get("STATIC_PREDICTIONS_GLOBAL_FILE"
 STATIC_PREDICTIONS_MLS_FILE = os.environ.get("STATIC_PREDICTIONS_MLS_FILE", MLS_UPCOMING_FILE)
 STATIC_PREDICTIONS_EXTRA_FILE = os.environ.get("STATIC_PREDICTIONS_EXTRA_FILE", EXTRA_UPCOMING_FILE)
 REFRESH_API_TOKEN = os.environ.get("REFRESH_API_TOKEN", "").strip()
+NOTIFICATIONS_API_KEY = os.environ.get("NOTIFICATIONS_API_KEY", "").strip()
+_notifications = deque(maxlen=100)
+_device_tokens = set()
 if FILES_DIR not in sys.path:
     sys.path.insert(0, FILES_DIR)
 if MLS_FILES_DIR not in sys.path:
@@ -1369,47 +1372,8 @@ def _run_full_pipeline_once():
     return True
 
 
-def _seconds_until_next_refresh(refresh_hour, refresh_minute, tz_name):
-    """Return seconds until the next local scheduled refresh time."""
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = ZoneInfo("UTC")
-    now = datetime.now(tz)
-    target = now.replace(hour=refresh_hour, minute=refresh_minute, second=0, microsecond=0)
-    if target <= now:
-        target = target + timedelta(days=1)
-    return max(1, int((target - now).total_seconds())), target
-
-
-def _daily_refresh_loop(refresh_hour, refresh_minute, tz_name):
-    """Run the full pipeline exactly once per day at configured local time."""
-    while True:
-        wait_seconds, target = _seconds_until_next_refresh(refresh_hour, refresh_minute, tz_name)
-        print(
-            f"[refresh] Next model refresh scheduled for {target.isoformat()} "
-            f"({wait_seconds} seconds)."
-        )
-        time.sleep(wait_seconds)
-        print("[refresh] Starting scheduled daily refresh...")
-        ok = _run_full_pipeline_once()
-        if ok:
-            print("[refresh] Scheduled daily refresh complete.")
-
-
-def start_daily_refresh_scheduler(refresh_hour=3, refresh_minute=0, tz_name="America/New_York"):
-    """Start background scheduler thread for once-daily model refresh."""
-    thread = threading.Thread(
-        target=_daily_refresh_loop,
-        args=(refresh_hour, refresh_minute, tz_name),
-        daemon=True,
-        name="daily-model-refresh",
-    )
-    thread.start()
-    print(
-        "[startup] Daily model refresh enabled at "
-        f"{refresh_hour:02d}:{refresh_minute:02d} ({tz_name})."
-    )
+# Scheduler removed — BackendServer handles pipeline scheduling.
+# Previously _seconds_until_next_refresh, _daily_refresh_loop, and start_daily_refresh_scheduler were here.
 
 
 def _should_run_startup_tasks(debug_mode):
@@ -1657,9 +1621,11 @@ def api_world_cup():
 @app.post("/api/refresh")
 def api_refresh():
     """Trigger a full pipeline refresh in the background."""
+    global _last_pipeline_run
     if not _refresh_auth_ok():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
+    _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
     backend_refresh = app.config.get("_backend_refresh")
     if backend_refresh:
         backend_refresh(trigger="manual")
@@ -1815,6 +1781,49 @@ def api_predict_extra():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "prediction": result})
+
+
+@app.post("/api/notifications")
+def api_push_notification():
+    """Push a notification to the in-memory queue. Requires API key auth."""
+    key = request.headers.get("X-Notifications-Key", "").strip()
+    if NOTIFICATIONS_API_KEY and key != NOTIFICATIONS_API_KEY:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    title = str(payload.get("title", "")).strip()
+    body = str(payload.get("body", "")).strip()
+    if not title or not body:
+        return jsonify({"ok": False, "error": "title and body required"}), 400
+    _notifications.append({
+        "id": len(_notifications),
+        "title": title,
+        "body": body,
+        "created_at": datetime.now(UTC).isoformat(),
+        "type": payload.get("type", "info"),
+    })
+    return jsonify({"ok": True})
+
+
+@app.get("/api/notifications")
+def api_get_notifications():
+    """Return recent notifications."""
+    limit = min(int(request.args.get("limit", "20")), 100)
+    items = list(_notifications)[-limit:]
+    return jsonify({"ok": True, "notifications": items})
+
+
+@app.post("/api/notifications/register")
+def api_register_device():
+    """Register a device token for push notifications."""
+    key = request.headers.get("X-Notifications-Key", "").strip()
+    if NOTIFICATIONS_API_KEY and key != NOTIFICATIONS_API_KEY:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get("token", "")).strip()
+    if not token:
+        return jsonify({"ok": False, "error": "token required"}), 400
+    _device_tokens.add(token)
+    return jsonify({"ok": True, "registered": True})
 
 
 @app.get("/api/h2h")
@@ -2310,36 +2319,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable Werkzeug file-change reloader (requires --debug)",
     )
-    parser.add_argument("--disable-daily-refresh", action="store_true", help="Disable once-daily model refresh")
-    parser.add_argument("--daily-refresh-hour", type=int, default=3, help="Hour (0-23) for daily model refresh")
-    parser.add_argument("--daily-refresh-minute", type=int, default=0, help="Minute (0-59) for daily model refresh")
-    parser.add_argument(
-        "--daily-refresh-tz",
-        default="America/New_York",
-        help="IANA timezone for daily model refresh (example: America/New_York)",
-    )
     args = parser.parse_args()
 
-    if not (0 <= args.daily_refresh_hour <= 23):
-        raise SystemExit("--daily-refresh-hour must be between 0 and 23")
-    if not (0 <= args.daily_refresh_minute <= 59):
-        raise SystemExit("--daily-refresh-minute must be between 0 and 59")
     if args.reload and not args.debug:
         raise SystemExit("--reload requires --debug")
 
-    # Default behavior: a single Flask process, no reloader. Pass --debug --reload
-    # together to get the Werkzeug file-watcher (which spawns a reloader child).
     use_reloader = bool(args.debug and args.reload)
-
-    if _should_run_startup_tasks(args.debug or use_reloader):
-        run_live_results_updater()
-        update_accuracy_history_files()
-        if not args.disable_daily_refresh:
-            start_daily_refresh_scheduler(
-                refresh_hour=args.daily_refresh_hour,
-                refresh_minute=args.daily_refresh_minute,
-                tz_name=args.daily_refresh_tz,
-            )
 
     if args.host == "0.0.0.0":
         try:

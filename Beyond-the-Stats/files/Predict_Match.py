@@ -254,54 +254,8 @@ def build_competition_offsets(league_strength, competition_tables):
     return offsets
 
 
-def refresh_league_strength_coefficients(league_strength, season_teams):
-    """Recompute and blend league-strength coefficients from latest season team stats."""
-    existing = dict(league_strength) if isinstance(league_strength, dict) else {}
-    comp_rows = {}
-    for season_key, teams in (season_teams or {}).items():
-        competition = os.path.dirname(str(season_key)).replace("\\", "/").strip()
-        if not competition or not isinstance(teams, dict):
-            continue
-        year = parse_start_year_from_key(season_key)
-        if year < 0:
-            continue
-        current = comp_rows.get(competition)
-        if current is None or year > current["year"]:
-            current = {"year": year, "rows": []}
-            comp_rows[competition] = current
-        rows = current["rows"]
-        for stats in teams.values():
-            row = clean_stats_dict(stats if isinstance(stats, dict) else {})
-            games = float(row.get("games", 0.0) or 0.0)
-            if games <= 0:
-                continue
-            ppg = float(row.get("points", 0.0) or 0.0) / games
-            gdpg = (float(row.get("goals_scored", 0.0) or 0.0) - float(row.get("goals_conceded", 0.0) or 0.0)) / games
-            rows.append((ppg, gdpg))
-
-    scored = {}
-    for competition, payload in comp_rows.items():
-        rows = payload.get("rows", [])
-        if not rows:
-            continue
-        avg_ppg = sum(r[0] for r in rows) / len(rows)
-        avg_gdpg = sum(r[1] for r in rows) / len(rows)
-        scored[competition] = avg_ppg + 0.35 * avg_gdpg
-
-    if not scored:
-        return existing
-    vals = list(scored.values())
-    low = min(vals)
-    high = max(vals)
-    spread = max(1e-6, high - low)
-    updated = dict(existing)
-    for competition, score in scored.items():
-        norm = (score - low) / spread if spread > 0 else 0.5
-        inferred = 0.72 + 0.33 * norm
-        old = float(existing.get(competition, 0.85) or 0.85)
-        blended = 0.65 * old + 0.35 * inferred
-        updated[competition] = round(max(0.65, min(1.10, blended)), 4)
-    return updated
+# League-strength coefficients are now static (set during initial Sort_Data.py run and never recalculated).
+# Previously refresh_league_strength_coefficients() was defined here.
 
 
 def build_dynamic_form_from_matches(matches):
@@ -940,8 +894,6 @@ def main():
     head_to_head = replace_nan_with_sentinel(head_to_head)
     current_form = replace_nan_with_sentinel(current_form)
     league_strength = replace_nan_with_sentinel(league_strength)
-    league_strength = refresh_league_strength_coefficients(league_strength, season_teams)
-    save_json(os.path.join(TEAM_DATA_DIR, "league_strength.json"), league_strength)
 
     if not isinstance(current_form, dict):
         current_form = {"teams": {}}

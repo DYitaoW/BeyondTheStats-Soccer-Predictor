@@ -361,8 +361,12 @@ class BackendServer:
             self._last_run.isoformat(),
             self._last_status,
         )
-        # Mobile-app feed + Output/ publish are already part of the pipeline
-        # in Daily_Pipeline.py, so the backend only spawns the run.
+        # Propagate the finish time to the Flask app so /api/stats returns it.
+        try:
+            import app as website_app
+            website_app._last_pipeline_run = self._last_run
+        except Exception:
+            pass
         try:
             self._pipeline_lock.release()
         except RuntimeError:

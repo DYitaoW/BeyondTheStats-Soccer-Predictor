@@ -154,15 +154,11 @@ def is_cup_competition(competition_name):
     return str(competition_name).strip() in CUP_COMPETITIONS
 
 
-def is_likely_neutral_site(competition_name, stage_name, venue_name):
+def is_likely_neutral_site(competition_name, stage_name, venue_name=""):
     competition_name = str(competition_name).strip()
     stage_name = str(stage_name).strip().upper()
-    venue_name = str(venue_name).strip().lower()
-
-    # Finals are neutral in the target cups, and Wembley semis/finals are neutral for the FA Cup.
+    # Only finals are treated as neutral; venue name is no longer parsed.
     if stage_name == "FINAL":
-        return True
-    if competition_name == "England/FA Cup" and venue_name and "wembley" in venue_name:
         return True
     return False
 
