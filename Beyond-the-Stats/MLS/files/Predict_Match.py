@@ -34,13 +34,6 @@ MLS_DRAW_BLEND = 0.20
 MLS_ADJUSTMENT_WEIGHT = 0.45
 MLS_MARKET_SHIFT_MAX = 0.075
 MLS_MARKET_SHIFT_SCALE = 0.10
-MLS_MARKET_POSITION_WEIGHTS = {
-    "attack": 2.05,
-    "midfield": 0.95,
-    "defense": 0.55,
-    "goalkeeper": 0.5,
-    "unknown": 1.0,
-}
 MLS_RANDOMIZER_MAX_DELTA = 0.16
 MLS_HOME_ADV_MIN_SHIFT = 0.03
 MLS_HOME_ADV_MAX_SHIFT = 0.13
@@ -821,14 +814,7 @@ def mls_home_advantage_shift(home_team, prediction_season, season_teams):
 def market_value_team_score(team_name, market_value_data):
     teams = (market_value_data or {}).get("teams", {})
     team_entry = teams.get(team_name, {})
-    players = team_entry.get("top_5_players", [])
-    score = 0.0
-    for player in players:
-        value_eur = float(player.get("market_value_eur", 0) or 0)
-        position_group = str(player.get("position_group", "unknown")).strip().lower()
-        pos_weight = MLS_MARKET_POSITION_WEIGHTS.get(position_group, MLS_MARKET_POSITION_WEIGHTS["unknown"])
-        score += value_eur * pos_weight
-    return score
+    return float(team_entry.get("squad_value_eur_m", 0) or 0)
 
 
 def apply_league_strength_adjustment(probabilities, home_strength, away_strength):
@@ -1025,7 +1011,7 @@ def main():
     head_to_head = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "head_to_head.json"))
     current_form = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "current_form.json"))
     league_strength = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "league_strength.json")) or {}
-    market_value_data = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "team_top_market_value_players.json")) or {}
+    market_value_data = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "mls_squad_values.json")) or {}
     dynamic_form = build_dynamic_form_from_matches(matches)
 
     if (
@@ -1388,7 +1374,7 @@ def main():
             f"base model H/D/A {raw_probabilities['H'] * 100:.1f}/{raw_probabilities['D'] * 100:.1f}/{raw_probabilities['A'] * 100:.1f}, "
             f"league shift {league_direction_shift:+.3f}, form shift {form_shift:+.3f} (disabled), "
             f"season shift {season_shift:+.3f}, table shift {table_shift:+.3f}, home shift {home_adv_shift:+.3f}, "
-            f"market shift {market_shift:+.3f} (attacker-weighted and capped)."
+            f"market shift {market_shift:+.3f} (squad-value capped)."
         )
         print(f"Predicted score: {home_team} {predicted_score_home} - {predicted_score_away} {away_team}")
         print(f"Predicted shots: {home_team} {predicted_home_shots:.1f} | {away_team} {predicted_away_shots:.1f}")
@@ -1423,8 +1409,8 @@ def main():
                 f"H {final_probabilities['H']:.3f}, D {final_probabilities['D']:.3f}, A {final_probabilities['A']:.3f}"
             )
             print(
-                f"Market value adj (weighted top-5: {home_team} {home_market_score/1_000_000:.1f}M vs "
-                f"{away_team} {away_market_score/1_000_000:.1f}M, shift {market_shift:.3f})"
+                f"Market value adj (squad total: {home_team} €{home_market_score:.1f}M vs "
+                f"{away_team} €{away_market_score:.1f}M, shift {market_shift:.3f})"
             )
             print(
                 f"Implied decimal odds: {home_team} {final_odds['H']}, Draw {final_odds['D']}, {away_team} {final_odds['A']} "

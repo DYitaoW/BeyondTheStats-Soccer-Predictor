@@ -136,7 +136,6 @@ def main():
     print("\nSorting extra-league team data...")
     sort_data.sort_all_seasons()
     sort_data.build_current_form_file()
-    sort_data.build_top_market_value_players_file()
     print("\nExtra leagues pipeline complete (download + process + sort).")
 
 
