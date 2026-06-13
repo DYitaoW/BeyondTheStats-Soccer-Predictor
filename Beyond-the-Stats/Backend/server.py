@@ -65,6 +65,10 @@ class BackendConfig:
     daily_refresh_hour: int = DEFAULT_REFRESH_HOUR
     daily_refresh_minute: int = DEFAULT_REFRESH_MINUTE
     daily_refresh_tz: str = DEFAULT_REFRESH_TZ
+    # Full model retrain: once per week on this day (0=Mon ... 6=Sun)
+    weekly_model_refresh_day: int = 1  # Tuesday
+    weekly_model_refresh_hour: int = DEFAULT_REFRESH_HOUR
+    weekly_model_refresh_minute: int = DEFAULT_REFRESH_MINUTE
     pipeline_workers: int = 3  # 3 = run global/MLS/extra sub-pipelines in parallel
     pipeline_competition_workers: int = 0  # 0 = auto
     pipeline_window_days: int = 3
@@ -285,11 +289,18 @@ class BackendServer:
     # Pipeline
     # ------------------------------------------------------------------
 
-    def _run_pipeline_in_background(self, trigger: str = "scheduled") -> None:
+    def _run_pipeline_in_background(self, trigger: str = "scheduled", full_retrain: bool = False, wait_for_lock: bool = False) -> None:
         """Spawn the daily pipeline as a subprocess. Non-blocking."""
-        if not self._pipeline_lock.acquire(blocking=False):
-            LOG.info("[pipeline] already running; skipping trigger=%s", trigger)
-            return
+        if wait_for_lock:
+            # Scheduled runs: wait for lock (up to 10 min) so daily 2 AM run isn't skipped
+            if not self._pipeline_lock.acquire(blocking=True, timeout=600):
+                LOG.warning("[pipeline] timed out waiting for lock; skipping trigger=%s", trigger)
+                return
+        else:
+            # Manual triggers: don't wait, skip if locked
+            if not self._pipeline_lock.acquire(blocking=False):
+                LOG.info("[pipeline] already running; skipping trigger=%s", trigger)
+                return
 
         started = False
         skip_reason = None
@@ -302,8 +313,8 @@ class BackendServer:
                         f"{reading.limit_mb:.1f} MB)"
                     )
                     return
-            cmd = self._build_pipeline_cmd()
-            LOG.info("[pipeline] starting (trigger=%s) -> journald", trigger)
+            cmd = self._build_pipeline_cmd(full_retrain=full_retrain)
+            LOG.info("[pipeline] starting (trigger=%s, full_retrain=%s) -> journald", trigger, full_retrain)
             subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             proc = subprocess.Popen(
                 cmd,
@@ -390,6 +401,7 @@ class BackendServer:
             import app as website_app
             website_app._last_pipeline_run = self._last_run
             website_app._save_last_refresh()
+            website_app._save_last_data_refresh()
         except Exception:
             pass
         try:
@@ -397,7 +409,7 @@ class BackendServer:
         except RuntimeError:
             pass
 
-    def _build_pipeline_cmd(self) -> list[str]:
+    def _build_pipeline_cmd(self, full_retrain: bool = True) -> list[str]:
         cfg = self.config
         cmd = [
             sys.executable,
@@ -419,6 +431,8 @@ class BackendServer:
             cmd.append("--skip-extra")
         if cfg.pipeline_skip_global:
             cmd.append("--skip-global")
+        if not full_retrain:
+            cmd.append("--skip-model-train")
         return cmd
 
     # ------------------------------------------------------------------
@@ -495,17 +509,33 @@ class BackendServer:
     # Scheduler loop
     # ------------------------------------------------------------------
 
+    def _is_model_refresh_day(self, dt: datetime) -> bool:
+        """Return True if dt falls on the configured weekly model refresh day."""
+        # Monday=0 ... Sunday=6
+        return dt.weekday() == self.config.weekly_model_refresh_day
+
     def _scheduler_loop(self) -> None:
         while not self._stop.is_set():
+            now = datetime.now()
+            # Determine next target time: if today is model refresh day, use weekly
+            # model refresh time; otherwise use daily refresh time.
+            if self._is_model_refresh_day(now):
+                target_hour = self.config.weekly_model_refresh_hour
+                target_minute = self.config.weekly_model_refresh_minute
+            else:
+                target_hour = self.config.daily_refresh_hour
+                target_minute = self.config.daily_refresh_minute
+
             target = next_run_after(
-                now=datetime.now(),
-                hour=self.config.daily_refresh_hour,
-                minute=self.config.daily_refresh_minute,
+                now=now,
+                hour=target_hour,
+                minute=target_minute,
                 tz_name=self.config.daily_refresh_tz,
             )
             wait_s = seconds_until(target)
             LOG.info(
-                "[scheduler] next full pipeline at %s (in %.1f h)",
+                "[scheduler] next %s pipeline at %s (in %.1f h)",
+                "full model retrain" if self._is_model_refresh_day(target) else "light refresh",
                 target.isoformat(),
                 wait_s / 3600.0,
             )
@@ -513,12 +543,11 @@ class BackendServer:
             end = time.monotonic() + wait_s
             while not self._stop.is_set() and time.monotonic() < end:
                 self._stop.wait(timeout=30.0)
-                # If a pipeline finished while we slept, harvest its lock
-                # so the next run isn't blocked.
                 self._reap_pipeline()
             if self._stop.is_set():
                 break
-            self._run_pipeline_in_background(trigger="scheduled")
+            is_model_day = self._is_model_refresh_day(target)
+            self._run_pipeline_in_background(trigger="scheduled", full_retrain=is_model_day, wait_for_lock=True)
             # Wait for completion (or up to timeout) so we don't fire
             # another scheduled run while the previous is still going.
             self._wait_for_pipeline(timeout_s=self.config.pipeline_timeout_s)

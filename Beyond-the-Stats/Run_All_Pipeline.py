@@ -75,6 +75,11 @@ def parse_args():
             "0 = auto (min(CPU_count, 4)); 1 = serial; N = use N processes."
         ),
     )
+    parser.add_argument(
+        "--skip-model-train",
+        action="store_true",
+        help="Skip model cache building (retraining) steps; only fetch data and update predictions.",
+    )
     return parser.parse_args()
 
 
@@ -152,11 +157,12 @@ def _run_global_subpipeline(args, api_token):
         [py, str(FILES_DIR / "Sort_Data.py")],
         continue_on_error=args.continue_on_error,
     )
-    sub["global_build_model_cache"] = run_step(
-        "[global] Build model cache (non-interactive)",
-        [py, str(FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
-        continue_on_error=args.continue_on_error,
-    )
+    if not args.skip_model_train:
+        sub["global_build_model_cache"] = run_step(
+            "[global] Build model cache (non-interactive)",
+            [py, str(FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
+            continue_on_error=args.continue_on_error,
+        )
     upcoming_cmd = [py, str(FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)]
     if api_token:
         upcoming_cmd += ["--api-token", api_token]
@@ -217,12 +223,13 @@ def _run_mls_subpipeline(args, api_token):
         [py, str(MLS_FILES_DIR / "Download_Latest_Data.py")],
         continue_on_error=args.continue_on_error,
     )
-    sub["mls_build_model_cache"] = run_step(
-        "[mls] Build model cache (non-interactive)",
-        [py, str(MLS_FILES_DIR / "Predict_Match.py")],
-        continue_on_error=args.continue_on_error,
-        input_text="n\nq\n",
-    )
+    if not args.skip_model_train:
+        sub["mls_build_model_cache"] = run_step(
+            "[mls] Build model cache (non-interactive)",
+            [py, str(MLS_FILES_DIR / "Predict_Match.py")],
+            continue_on_error=args.continue_on_error,
+            input_text="n\nq\n",
+        )
     mls_upcoming_cmd = [py, str(MLS_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)]
     if api_token:
         mls_upcoming_cmd += ["--api-token", api_token]
@@ -250,12 +257,13 @@ def _run_extra_subpipeline(args, api_token):
         [py, str(EXTRA_FILES_DIR / "Download_Latest_Data.py")],
         continue_on_error=args.continue_on_error,
     )
-    sub["extra_build_model_cache"] = run_step(
-        "[extra] Build model cache (non-interactive)",
-        [py, str(EXTRA_FILES_DIR / "Predict_Match.py")],
-        continue_on_error=args.continue_on_error,
-        input_text="n\nq\n",
-    )
+    if not args.skip_model_train:
+        sub["extra_build_model_cache"] = run_step(
+            "[extra] Build model cache (non-interactive)",
+            [py, str(EXTRA_FILES_DIR / "Predict_Match.py")],
+            continue_on_error=args.continue_on_error,
+            input_text="n\nq\n",
+        )
     sub["extra_upcoming_matchweek"] = run_step(
         "[extra] Upcoming matchweek predictions",
         [py, str(EXTRA_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)],
