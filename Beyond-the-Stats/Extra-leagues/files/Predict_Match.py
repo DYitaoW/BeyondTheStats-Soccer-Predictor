@@ -53,6 +53,65 @@ TRAIN_WORKERS = int(os.getenv("SOCCER_TRAIN_WORKERS", str(max(1, min(4, CPU_COUN
 MODEL_THREADS = int(os.getenv("SOCCER_MODEL_THREADS", str(max(1, CPU_COUNT // TRAIN_WORKERS))))
 
 
+def align_predicted_score(pred_home_goals: float, pred_away_goals: float, prediction: str,
+                          max_iter: int = 10) -> tuple[int, int]:
+    """
+    Adjust predicted goals so the rounded score matches the predicted outcome.
+
+    Args:
+        pred_home_goals: Raw predicted home goals (float)
+        pred_away_goals: Raw predicted away goals (float)
+        prediction: "H" (home win), "D" (draw), or "A" (away win)
+        max_iter: Maximum adjustment iterations
+
+    Returns:
+        (home_goals_int, away_goals_int) where the rounded score matches the prediction.
+    """
+    h = max(0.0, pred_home_goals)
+    a = max(0.0, pred_away_goals)
+
+    def score_matches(hi, ai):
+        if hi > ai:
+            return "H"
+        if hi == ai:
+            return "D"
+        return "A"
+
+    for _ in range(max_iter):
+        hi = int(round(h))
+        ai = int(round(a))
+        if score_matches(hi, ai) == prediction:
+            return hi, ai
+        # Nudge the raw goals toward the needed outcome
+        if prediction == "H" and hi <= ai:
+            h += 0.15
+            a = max(0.0, a - 0.05)
+        elif prediction == "A" and hi >= ai:
+            a += 0.15
+            h = max(0.0, h - 0.05)
+        elif prediction == "D":
+            if hi > ai:
+                h -= 0.1
+                a += 0.1
+            elif hi < ai:
+                h += 0.1
+                a -= 0.1
+            else:
+                break
+        else:
+            break
+    # Fallback: force minimal valid score
+    hi = int(round(h))
+    ai = int(round(a))
+    if prediction == "H" and hi <= ai:
+        hi = ai + 1
+    elif prediction == "A" and hi >= ai:
+        ai = hi + 1
+    elif prediction == "D" and hi != ai:
+        ai = hi
+    return max(0, hi), max(0, ai)
+
+
 def load_json(path):
     with open(path, "r", encoding="utf-8") as file:
         return json.load(file)
@@ -1365,8 +1424,9 @@ def main():
         prediction = max(probabilities, key=probabilities.get)
         predicted_home_goals = max(0.0, float(home_goal_reg.predict(X_match)[0]))
         predicted_away_goals = max(0.0, float(away_goal_reg.predict(X_match)[0]))
-        predicted_score_home = int(round(predicted_home_goals))
-        predicted_score_away = int(round(predicted_away_goals))
+        predicted_score_home, predicted_score_away = align_predicted_score(
+            predicted_home_goals, predicted_away_goals, prediction
+        )
         predicted_home_shots = max(0.0, float(home_shot_reg.predict(X_match)[0]))
         predicted_away_shots = max(0.0, float(away_shot_reg.predict(X_match)[0]))
         predicted_home_sot = max(0.0, float(home_sot_reg.predict(X_match)[0]))

@@ -62,6 +62,7 @@ EXTRA_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Extra-leagues", "Data", 
 MLS_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "projected_mls_playoff_bracket.json")
 LIVE_RESULTS_UPDATER = os.path.join(FILES_DIR, "Update_Live_Prediction_Results.py")
 RUN_ALL_PIPELINE = os.path.join(PROJECT_DIR, "Run_All_Pipeline.py")
+LAST_DATA_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_data_refresh.json")
 TEAM_NAME_DISPLAY_MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "team_name_mapping_master.json")
 TOP_SCORERS_FILE = os.path.join(PROJECT_DIR, "Data", "Team_Data", "current_season_top_scorers.json")
 USE_DISPLAY_NAME_MAPPING = False
@@ -100,6 +101,32 @@ def _load_last_refresh() -> datetime | None:
         with open(LAST_REFRESH_FILE, "r") as f:
             data = json.load(f)
         raw = data.get("last_refresh_utc", "")
+        if raw:
+            return datetime.fromisoformat(raw)
+    except Exception:
+        pass
+    return None
+
+
+def _save_last_data_refresh() -> None:
+    """Persist the last data refresh timestamp (for any pipeline run)."""
+    dt = datetime.now(ZoneInfo("America/New_York"))
+    try:
+        os.makedirs(os.path.dirname(LAST_DATA_REFRESH_FILE), exist_ok=True)
+        with open(LAST_DATA_REFRESH_FILE, "w") as f:
+            json.dump({"last_data_refresh_utc": dt.isoformat()}, f)
+    except Exception:
+        pass
+
+
+def _load_last_data_refresh() -> datetime | None:
+    """Load the persisted last data refresh timestamp from disk."""
+    if not os.path.exists(LAST_DATA_REFRESH_FILE):
+        return None
+    try:
+        with open(LAST_DATA_REFRESH_FILE, "r") as f:
+            data = json.load(f)
+        raw = data.get("last_data_refresh_utc", "")
         if raw:
             return datetime.fromisoformat(raw)
     except Exception:
@@ -1691,6 +1718,23 @@ def api_last_refresh():
     })
 
 
+@app.get("/api/last-data-refresh")
+def api_last_data_refresh():
+    """Return the timestamp of the last data refresh (any pipeline run).
+    
+    The iOS app can compare this with its own cached timestamp to decide
+    whether to reload data or use the cache. This is updated on every
+    pipeline run (both full retrain and light refresh).
+    """
+    dt = _load_last_data_refresh()
+    if dt is None:
+        return jsonify({"ok": True, "last_data_refresh_utc": None})
+    return jsonify({
+        "ok": True,
+        "last_data_refresh_utc": dt.isoformat(),
+    })
+
+
 MOBILE_FEED_FILE = os.path.join(PROJECT_DIR, "Output", "mobile_app_feed.json")
 _UPCOMING_CSV_FILES = {
     "global": os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv"),
@@ -1921,15 +1965,14 @@ def api_h2h():
 
 @app.get("/api/upcoming/global")
 def api_upcoming_global():
-    """Return upcoming global fixtures and persistent accuracy stats."""
-    rows, stats, league_stats = _load_upcoming_rows(GLOBAL_UPCOMING_FILE, "global")
-    return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
-
-
-@app.get("/api/upcoming/mls")
-def api_upcoming_mls():
-    """Return upcoming MLS fixtures and persistent accuracy stats."""
-    rows, stats, league_stats = _load_upcoming_rows(MLS_UPCOMING_FILE, "mls")
+    """Return upcoming global fixtures (club + national team) and persistent accuracy stats."""
+    global_rows, global_stats, global_league_stats = _load_upcoming_rows(GLOBAL_UPCOMING_FILE, "global")
+    national_rows, national_stats, national_league_stats = _load_upcoming_rows(NATIONAL_UPCOMING_FILE, "national")
+    rows = global_rows + national_rows
+    stats = global_stats.copy()
+    stats["pending_total"] = global_stats.get("pending_total", 0) + national_stats.get("pending_total", 0)
+    stats["total_predictions"] = stats.get("settled_total", 0) + stats.get("pending_total", 0)
+    league_stats = global_league_stats + national_league_stats
     return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
 
 
@@ -1937,14 +1980,6 @@ def api_upcoming_mls():
 def api_upcoming_extra():
     """Return upcoming extra-league fixtures and persistent accuracy stats."""
     rows, stats, league_stats = _load_upcoming_rows(EXTRA_UPCOMING_FILE, "extra")
-    return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
-
-
-@app.get("/api/upcoming/national")
-def api_upcoming_national():
-    """Return upcoming national-team fixtures (friendlies, Nations League,
-    World Cup qualifiers, continental tournaments, etc.)."""
-    rows, stats, league_stats = _load_upcoming_rows(NATIONAL_UPCOMING_FILE, "national")
     return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
 
 
