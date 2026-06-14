@@ -4,6 +4,7 @@ import re
 import hashlib
 import random
 import math
+import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from datetime import datetime
@@ -110,6 +111,52 @@ def align_predicted_score(pred_home_goals: float, pred_away_goals: float, predic
     elif prediction == "D" and hi != ai:
         ai = hi
     return max(0, hi), max(0, ai)
+
+
+def sample_score_from_probs(prob_home: float, prob_draw: float, prob_away: float,
+                            base_home_xg: float, base_away_xg: float,
+                            prediction: str, rng: np.random.Generator) -> tuple[int, int]:
+    """
+    Sample a realistic score from Poisson distributions calibrated to win probabilities.
+    """
+    eps = 1e-6
+    ph = max(prob_home, eps)
+    pa = max(prob_away, eps)
+    pd = max(prob_draw, eps)
+
+    base_total = base_home_xg + base_away_xg
+    if base_total <= 0:
+        base_total = 2.6
+
+    strength_ratio = ph / pa if pa > 0 else 3.0
+    strength_ratio = max(0.2, min(5.0, strength_ratio))
+
+    draw_factor = 1.0 + pd * 0.5
+    lambda_h = base_total * strength_ratio / (strength_ratio + 1.0) * draw_factor
+    lambda_a = base_total / (strength_ratio + 1.0) * draw_factor
+
+    lambda_h *= 1.05
+
+    max_attempts = 50
+    for _ in range(max_attempts):
+        hg = int(rng.poisson(lambda_h))
+        ag = int(rng.poisson(lambda_a))
+        hg = max(0, min(hg, 6))
+        ag = max(0, min(ag, 6))
+
+        if (prediction == "H" and hg > ag) or \
+           (prediction == "A" and ag > hg) or \
+           (prediction == "D" and hg == ag):
+            return hg, ag
+
+    hg, ag = int(round(base_home_xg)), int(round(base_away_xg))
+    if prediction == "H" and hg <= ag:
+        hg = ag + 1
+    elif prediction == "A" and ag <= hg:
+        ag = hg + 1
+    elif prediction == "D" and hg != ag:
+        ag = hg
+    return max(0, hg), max(0, ag)
 
 
 def load_json(path):
@@ -1422,10 +1469,14 @@ def main():
         final_probabilities = dict(probabilities)
 
         prediction = max(probabilities, key=probabilities.get)
-        predicted_home_goals = max(0.0, float(home_goal_reg.predict(X_match)[0]))
-        predicted_away_goals = max(0.0, float(away_goal_reg.predict(X_match)[0]))
-        predicted_score_home, predicted_score_away = align_predicted_score(
-            predicted_home_goals, predicted_away_goals, prediction
+        base_home_xg = max(0.0, float(home_goal_reg.predict(X_match)[0]))
+        base_away_xg = max(0.0, float(away_goal_reg.predict(X_match)[0]))
+        rng = np.random.default_rng(seed)
+        predicted_score_home, predicted_score_away = sample_score_from_probs(
+            probabilities.get("H", 0.0),
+            probabilities.get("D", 0.0),
+            probabilities.get("A", 0.0),
+            base_home_xg, base_away_xg, prediction, rng
         )
         predicted_home_shots = max(0.0, float(home_shot_reg.predict(X_match)[0]))
         predicted_away_shots = max(0.0, float(away_shot_reg.predict(X_match)[0]))
