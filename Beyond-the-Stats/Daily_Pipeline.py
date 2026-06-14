@@ -160,6 +160,11 @@ def parse_args():
             "0 = auto; 1 = serial. Currently the inner sim loop dominates, so this is a no-op stub."
         ),
     )
+    parser.add_argument(
+        "--skip-model-train",
+        action="store_true",
+        help="Skip model cache building (retraining) steps; only fetch data and update predictions.",
+    )
     return parser.parse_args()
 
 

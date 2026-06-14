@@ -1074,78 +1074,133 @@ renderStats(
 }
 
 function renderUpcoming(target, rows, selectedLeague) {
-if (!rows.length) {
-    target.innerHTML = "<p>No upcoming predictions found.</p>";
-    return;
-}
-const visibleRows = rowsForLeagueSelection(rows, selectedLeague);
-if (!visibleRows.length) {
-    target.innerHTML = "<p>No upcoming predictions for this league.</p>";
-    return;
-}
-const byDay = {};
-for (const r of visibleRows) {
-    const key = `${r.weekday || ""} ${r.date_label || ""}`.trim();
-    byDay[key] = byDay[key] || [];
-    byDay[key].push(r);
-}
-const days = Object.keys(byDay);
-let html = "";
-let idx = 0;
-for (const day of days) {
-    html += `<div class="day-title">${day}</div><div class="kick-card-grid">`;
-    for (const r of byDay[day]) {
-    idx += 1;
-    const homeGoals = (r.pred_home_goals === null || r.pred_home_goals === undefined) ? "NA" : r.pred_home_goals;
-    const awayGoals = (r.pred_away_goals === null || r.pred_away_goals === undefined) ? "NA" : r.pred_away_goals;
-    const settled = String(r.actual_result || "").trim().match(/^[HDA]$/i);
-    const isCorrect = String(r.is_correct || "").trim().toLowerCase();
-    let rowClass = "";
-    let statusText = "Pending";
-    if (settled) {
-        if (isCorrect === "1" || isCorrect === "true") {
-        rowClass = "match-correct";
-        statusText = "Correct";
-        } else {
-        rowClass = "match-wrong";
-        statusText = "Wrong";
+    if (!rows.length) {
+        target.innerHTML = "<p>No upcoming predictions found.</p>";
+        return;
+    }
+    const visibleRows = rowsForLeagueSelection(rows, selectedLeague);
+    if (!visibleRows.length) {
+        target.innerHTML = "<p>No upcoming predictions for this league.</p>";
+        return;
+    }
+    // Pagination state
+    const PAGE_SIZE = 30;
+    let currentPage = 0;
+    const totalPages = Math.ceil(visibleRows.length / PAGE_SIZE);
+
+    const byDay = {};
+    for (const r of visibleRows) {
+        const key = `${r.weekday || ""} ${r.date_label || ""}`.trim();
+        byDay[key] = byDay[key] || [];
+        byDay[key].push(r);
+    }
+    const days = Object.keys(byDay);
+
+    // Flatten with day separators for pagination
+    const flatItems = [];
+    for (const day of days) {
+        flatItems.push({ type: 'day', label: day });
+        for (const r of byDay[day]) {
+            flatItems.push({ type: 'match', data: r });
         }
     }
-    const confidence = Math.max(Number(r.prob_home) || 0, Number(r.prob_draw) || 0, Number(r.prob_away) || 0);
-    html += `
-        <article class="match-row kick-match-card ${rowClass}">
-        <button
-            class="match-toggle"
-            type="button"
-            data-home-team="${escapeHtml(r.home_team)}"
-            data-away-team="${escapeHtml(r.away_team)}"
-            aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head"
-        >
-            <div class="kick-head">
-            <div class="kick-league">${r.competition}</div>
-            <div class="confidence-pill">${pctLabel(confidence)}% confidence</div>
-            </div>
-            <div class="matchup">${r.home_team} vs ${r.away_team}</div>
-            <div class="match-meta">Prediction: <span class="winner-line">${r.winner_label}</span></div>
-            ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
-            <div class="match-meta"><strong>Predicted score:</strong> ${r.home_team} ${homeGoals} - ${awayGoals} ${r.away_team}</div>
-            <div class="probability-track">
-                <div style="width: ${r.prob_home}%; background-color: #55d37a;" title="${r.home_team}"></div>
-                <div style="width: ${r.prob_draw}%; background-color: #93a4b3;" title="Draw"></div>
-                <div style="width: ${r.prob_away}%; background-color: #7297ff;" title="${r.away_team}"></div>
-            </div>
-            <div class="probability-labels">
-                <span>H: ${pctLabel(r.prob_home)}%</span> <span>D: ${pctLabel(r.prob_draw)}%</span> <span>A: ${pctLabel(r.prob_away)}%</span>
-            </div>
-            <div class="match-meta"><strong>Status:</strong> ${statusText}</div>
-            <div class="match-meta"><strong>Click:</strong> Open head to head</div>
-        </button>
-        </article>
-    `;
+
+    function renderPage(page) {
+        const start = page * PAGE_SIZE;
+        const end = Math.min(start + PAGE_SIZE, flatItems.length);
+        const fragment = document.createDocumentFragment();
+        
+        for (let i = start; i < end; i++) {
+            const item = flatItems[i];
+            if (item.type === 'day') {
+                const div = document.createElement('div');
+                div.className = 'day-title';
+                div.textContent = item.label;
+                fragment.appendChild(div);
+                const grid = document.createElement('div');
+                grid.className = 'kick-card-grid';
+                fragment.appendChild(grid);
+            } else {
+                const r = item.data;
+                const grid = fragment.lastElementChild;
+                if (!grid || !grid.classList.contains('kick-card-grid')) continue;
+                
+                const article = document.createElement('article');
+                const homeGoals = (r.pred_home_goals === null || r.pred_home_goals === undefined) ? "NA" : r.pred_home_goals;
+                const awayGoals = (r.pred_away_goals === null || r.pred_away_goals === undefined) ? "NA" : r.pred_away_goals;
+                const settled = String(r.actual_result || "").trim().match(/^[HDA]$/i);
+                const isCorrect = String(r.is_correct || "").trim().toLowerCase();
+                let rowClass = "";
+                let statusText = "Pending";
+                if (settled) {
+                    if (isCorrect === "1" || isCorrect === "true") {
+                        rowClass = "match-correct";
+                        statusText = "Correct";
+                    } else {
+                        rowClass = "match-wrong";
+                        statusText = "Wrong";
+                    }
+                }
+                const confidence = Math.max(Number(r.prob_home) || 0, Number(r.prob_draw) || 0, Number(r.prob_away) || 0);
+                
+                article.className = `match-row kick-match-card ${rowClass}`;
+                article.innerHTML = `
+                    <button class="match-toggle" type="button"
+                        data-home-team="${escapeHtml(r.home_team)}"
+                        data-away-team="${escapeHtml(r.away_team)}"
+                        aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
+                        <div class="kick-head">
+                            <div class="kick-league">${escapeHtml(r.competition)}</div>
+                            <div class="confidence-pill">${pctLabel(Math.max(Number(r.prob_home) || 0, Number(r.prob_draw) || 0, Number(r.prob_away) || 0))}% confidence</div>
+                        </div>
+                        <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
+                        <div class="match-meta">Prediction: <span class="winner-line">${escapeHtml(r.winner_label)}</span></div>
+                        ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
+                        <div class="match-meta"><strong>Predicted score:</strong> ${escapeHtml(r.home_team)} ${homeGoals} - ${awayGoals} ${escapeHtml(r.away_team)}</div>
+                        <div class="probability-track">
+                            <div style="width: ${r.prob_home}%; background-color: #55d37a;" title="${escapeHtml(r.home_team)}"></div>
+                            <div style="width: ${r.prob_draw}%; background-color: #93a4b3;" title="Draw"></div>
+                            <div style="width: ${r.prob_away}%; background-color: #7297ff;" title="${escapeHtml(r.away_team)}"></div>
+                        </div>
+                        <div class="probability-labels">
+                            <span>H: ${pctLabel(r.prob_home)}%</span> <span>D: ${pctLabel(r.prob_draw)}%</span> <span>A: ${pctLabel(r.prob_away)}%</span>
+                        </div>
+                        <div class="match-meta"><strong>Status:</strong> ${statusText}</div>
+                        <div class="match-meta"><strong>Click:</strong> Open head to head</div>
+                    </button>
+                `;
+                grid.appendChild(article);
+            }
+        }
+        
+        target.innerHTML = '';
+        target.appendChild(fragment);
+        
+        // Add pagination controls
+        if (totalPages > 1) {
+            const pagination = document.createElement('div');
+            pagination.className = 'pagination-controls';
+            pagination.style.cssText = 'display:flex;justify-content:center;gap:8px;margin-top:16px;padding:8px;';
+            pagination.innerHTML = `
+                <button class="page-btn" data-page="${Math.max(0, currentPage - 1)}" ${currentPage === 0 ? 'disabled' : ''}>← Prev</button>
+                <span class="page-info">Page ${currentPage + 1} of ${totalPages}</span>
+                <button class="page-btn" data-page="${Math.min(totalPages - 1, currentPage + 1)}" ${currentPage === totalPages - 1 ? 'disabled' : ''}>Next →</button>
+            `;
+            target.appendChild(pagination);
+            
+            pagination.querySelectorAll('.page-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const page = parseInt(btn.dataset.page, 10);
+                    if (!isNaN(page) && page !== currentPage) {
+                        currentPage = page;
+                        renderPage(currentPage);
+                    }
+                });
+            });
+        }
     }
-    html += "</div>";
-}
-target.innerHTML = html;
+
+    renderPage(currentPage);
 }
 
 function toConfidence(row) {

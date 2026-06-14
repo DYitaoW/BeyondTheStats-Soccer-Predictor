@@ -3,6 +3,7 @@ import os
 import re
 import hashlib
 import random
+import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from datetime import datetime
