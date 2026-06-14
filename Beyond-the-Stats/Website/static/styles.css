@@ -68,9 +68,7 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: "Segoe UI", Tahoma, sans-serif;
-  background:
-    radial-gradient(1000px 500px at 50% -10%, rgba(85, 211, 122, 0.18), transparent 60%),
-    linear-gradient(180deg, var(--bg-soft) 0%, var(--bg) 30%, var(--bg) 100%);
+  background: var(--bg);
   color: var(--text);
 }
 
@@ -88,7 +86,6 @@ body {
   padding: 12px 14px;
   border: 1px solid var(--topbar-border);
   border-radius: 14px;
-  backdrop-filter: blur(10px);
   background: var(--topbar-bg);
   display: grid;
   grid-template-rows: auto auto;
@@ -282,7 +279,7 @@ body {
 .hero {
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: linear-gradient(180deg, rgba(85, 211, 122, 0.08), rgba(85, 211, 122, 0.01));
+  background: var(--card);
   padding: 28px 20px;
   margin-bottom: 18px;
 }
@@ -428,7 +425,6 @@ h1 {
   background: var(--card);
   padding: 16px;
   margin-bottom: 14px;
-  box-shadow: 0 10px 20px rgba(4, 8, 11, 0.25);
 }
 
 h3 {
@@ -555,6 +551,7 @@ button:hover {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 12px;
+  contain: layout style;
 }
 
 .kick-match-card {
@@ -1494,4 +1491,39 @@ body:not(.dark-mode) .match-row.match-wrong {
 .match-card-probability-labels strong {
   color: var(--text);
   font-weight: 600;
+}
+
+.pagination-controls {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 8px;
+}
+.pagination-controls .page-btn {
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: 999px;
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.pagination-controls .page-btn:hover:not(:disabled) {
+  background: var(--btn-secondary-hover-bg);
+  color: var(--btn-secondary-hover-text);
+}
+.pagination-controls .page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pagination-controls .page-info {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0 12px;
 }
