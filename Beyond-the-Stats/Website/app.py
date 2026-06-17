@@ -757,13 +757,16 @@ BREAK_PERIODS = {"Halftime", "HT", "Half Time"}
 def _get_todays_competitions():
     """Return {competition: [kickoff_et, ...]} for competitions with games today.
 
-    Reads the upcoming predictions CSVs saved by the daily pipeline to find
-    which competitions have games on the current date and at what times.
+    Checks all available data sources:
+      1. Upcoming predictions CSVs (club, MLS, extra, cups, national team)
+      2. World Cup projection JSON (group-stage + knockout fixtures)
+      3. Cup bracket JSON (knockout fixtures)
     """
-    today_iso = date.today().isoformat()
+    today_date = date.today()
     now_et = datetime.now(ZoneInfo("America/New_York"))
     todays = defaultdict(list)
 
+    # ── Source 1: upcoming predictions CSVs ──────────────────────
     for csv_path in _UPCOMING_CSV_FILES.values():
         if not os.path.exists(csv_path):
             continue
@@ -771,23 +774,113 @@ def _get_todays_competitions():
             frame = pd.read_csv(csv_path, dtype=str)
         except Exception:
             continue
-        for _, row in frame.iterrows():
+        try:
+            parsed_dates = pd.to_datetime(frame["match_date"], errors="coerce", dayfirst=True)
+        except Exception:
+            continue
+        today_mask = parsed_dates.dt.date == today_date
+        if not today_mask.any():
+            continue
+
+        for _, row in frame[today_mask].iterrows():
             comp = str(row.get("competition", "") or "").strip()
             if comp not in LIVE_SCORE_COMPETITIONS:
                 continue
-            match_date = str(row.get("match_date", "") or "").strip()
-            if match_date == today_iso:
-                kickoff_utc_str = str(row.get("match_datetime_utc", "") or "").strip()
-                if kickoff_utc_str:
-                    try:
-                        dt_utc = datetime.fromisoformat(kickoff_utc_str.replace("Z", "+00:00"))
-                        kickoff_et = dt_utc.astimezone(ZoneInfo("America/New_York"))
-                    except Exception:
+            kickoff_utc_str = str(row.get("match_datetime_utc", "") or "").strip()
+            if kickoff_utc_str:
+                try:
+                    dt_utc = pd.to_datetime(kickoff_utc_str, errors="coerce")
+                    if pd.notna(dt_utc):
+                        if dt_utc.tz is None:
+                            dt_utc = dt_utc.tz_localize("UTC")
+                        kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
+                    else:
                         kickoff_et = now_et
-                else:
+                except Exception:
                     kickoff_et = now_et
-                todays[comp].append(kickoff_et)
+            else:
+                kickoff_et = now_et
+            todays[comp].append(kickoff_et)
+
+    # ── Source 2: World Cup projection JSON ──────────────────────
+    if "FIFA/World Cup" not in todays and os.path.exists(WORLD_CUP_PROJECTION_FILE):
+        try:
+            with open(WORLD_CUP_PROJECTION_FILE, "r", encoding="utf-8") as fh:
+                wc_data = json.load(fh)
+        except Exception:
+            wc_data = {}
+
+        _extract_fixture_kickoffs(wc_data, "FIFA/World Cup", today_date, now_et, todays)
+
+    # ── Source 3: cup bracket JSON ───────────────────────────────
+    if os.path.exists(CUP_PROJECTED_BRACKET_FILE):
+        try:
+            with open(CUP_PROJECTED_BRACKET_FILE, "r", encoding="utf-8") as fh:
+                cup_data = json.load(fh)
+        except Exception:
+            cup_data = {}
+
+        if isinstance(cup_data, dict):
+            for comp_name in list(LIVE_SCORE_COMPETITIONS.keys()):
+                if comp_name in todays:
+                    continue
+                comp_fixtures = cup_data.get(comp_name)
+                if comp_fixtures:
+                    _extract_fixture_kickoffs(
+                        {"fixtures": comp_fixtures}, comp_name, today_date, now_et, todays
+                    )
+
     return {k: sorted(v) for k, v in todays.items()}
+
+
+def _extract_fixture_kickoffs(source, comp_name, today_date, now_et, out_dict):
+    """Parse fixture entries from world_cup_projection.json or cup bracket JSON
+    and add their kickoffs to *out_dict* if they fall on *today_date*."""
+    # World Cup: look for group_tables (which have fixture dates embedded) and
+    # knockout rounds.  Cup bracket: look for "fixtures" or round lists.
+    if "knockout" in source:
+        for round_data in source["knockout"]:
+            if isinstance(round_data, list):
+                for match in round_data:
+                    _add_if_today(match, comp_name, today_date, now_et, out_dict)
+            elif isinstance(round_data, dict):
+                _add_if_today(round_data, comp_name, today_date, now_et, out_dict)
+
+    if "group_tables" in source:
+        for group_name, teams in source["group_tables"].items():
+            for entry in teams:
+                if isinstance(entry, dict):
+                    _add_if_today(entry, comp_name, today_date, now_et, out_dict)
+
+    if "fixtures" in source:
+        for match in source["fixtures"]:
+            if isinstance(match, dict):
+                _add_if_today(match, comp_name, today_date, now_et, out_dict)
+
+    # Cup bracket: rounds like "round_1", "quarter_finals", etc.
+    for key, val in source.items():
+        if isinstance(key, str) and key.startswith("round_"):
+            if isinstance(val, list):
+                for match in val:
+                    if isinstance(match, dict):
+                        _add_if_today(match, comp_name, today_date, now_et, out_dict)
+
+
+def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
+    """If *entry* has a date field matching today, add its kickoff."""
+    raw = str(entry.get("match_date") or entry.get("date") or entry.get("kickoff") or "")
+    if not raw:
+        return
+    try:
+        dt = pd.to_datetime(raw, errors="coerce", dayfirst=True)
+        if pd.isna(dt) or dt.date() != today_date:
+            return
+        if dt.tz is None:
+            dt = dt.tz_localize("UTC")
+        kickoff_et = dt.tz_convert(ZoneInfo("America/New_York"))
+        out_dict[comp_name].append(kickoff_et)
+    except Exception:
+        pass
 
 
 def _live_score_poller_loop():
@@ -809,7 +902,8 @@ def _live_score_poller_loop():
 
             active_comps = {}
             if todays_comps:
-                # Use CSV data to only poll competitions whose games are imminent or live.
+                # Smart polling: only poll competitions with games today whose
+                # kickoff is within the 5-min pre-window or still live (3.5h).
                 for comp, kickoffs in todays_comps.items():
                     espn_id = LIVE_SCORE_COMPETITIONS.get(comp)
                     if not espn_id:
@@ -821,9 +915,9 @@ def _live_score_poller_loop():
                             active_comps[comp] = espn_id
                             break
             else:
-                # No CSV data for today (stale predictions / pipeline not run yet).
-                # Fall back to polling all known competitions so live scores
-                # still work even without an up-to-date predictions file.
+                # Fallback: no data source has games for today — poll every
+                # known competition so we never miss a game the pipeline
+                # hasn't picked up yet.
                 active_comps = dict(LIVE_SCORE_COMPETITIONS)
 
             results = {}
@@ -1957,6 +2051,7 @@ _UPCOMING_CSV_FILES = {
     "cups": os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_cup_predictions.csv"),
     "national": os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_national_team_predictions.csv"),
 }
+WORLD_CUP_PROJECTION_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
 
 
 @app.get("/api/mobile/feed")
