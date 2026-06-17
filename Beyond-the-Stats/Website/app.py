@@ -774,32 +774,37 @@ def _get_todays_competitions():
             frame = pd.read_csv(csv_path, dtype=str)
         except Exception:
             continue
-        try:
-            parsed_dates = pd.to_datetime(frame["match_date"], errors="coerce", dayfirst=False)
-        except Exception:
-            continue
-        today_mask = parsed_dates.dt.date == today_date
-        if not today_mask.any():
-            continue
-
-        for _, row in frame[today_mask].iterrows():
+        for _, row in frame.iterrows():
             comp = str(row.get("competition", "") or "").strip()
             if comp not in LIVE_SCORE_COMPETITIONS:
                 continue
+            # Use match_datetime_utc converted to ET to determine if the
+            # game falls on today in the LOCAL timezone (not UTC date).
             kickoff_utc_str = str(row.get("match_datetime_utc", "") or "").strip()
             if kickoff_utc_str:
                 try:
                     dt_utc = pd.to_datetime(kickoff_utc_str, errors="coerce")
-                    if pd.notna(dt_utc):
-                        if dt_utc.tz is None:
-                            dt_utc = dt_utc.tz_localize("UTC")
-                        kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
-                    else:
-                        kickoff_et = now_et
+                    if pd.isna(dt_utc):
+                        continue
+                    if dt_utc.tz is None:
+                        dt_utc = dt_utc.tz_localize("UTC")
+                    kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
+                    if kickoff_et.date() != today_date:
+                        continue
                 except Exception:
-                    kickoff_et = now_et
+                    continue
             else:
-                kickoff_et = now_et
+                # Fallback to match_date column if no datetime available
+                md = str(row.get("match_date", "") or "").strip()
+                if not md:
+                    continue
+                try:
+                    dt = pd.to_datetime(md, errors="coerce", dayfirst=False)
+                    if pd.isna(dt) or dt.date() != today_date:
+                        continue
+                    kickoff_et = dt.tz_localize(ZoneInfo("America/New_York")) if dt.tz is None else dt
+                except Exception:
+                    continue
             todays[comp].append(kickoff_et)
 
     # ── Source 2: World Cup projection JSON ──────────────────────
@@ -2283,9 +2288,15 @@ def api_debug_live_score_sources():
             entry["size_bytes"] = os.path.getsize(path)
             entry["mtime_utc"] = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc).isoformat()
             try:
-                df = pd.read_csv(path, dtype=str)
+                df = pd.read_csv(csv_path, dtype=str)
                 entry["rows"] = len(df)
-                if "match_date" in df.columns:
+                if "match_datetime_utc" in df.columns:
+                    utc_dates = pd.to_datetime(df["match_datetime_utc"], errors="coerce")
+                    et_dates = utc_dates.dt.tz_localize("UTC", ambiguous="NaT").dt.tz_convert(ZoneInfo("America/New_York")) if utc_dates.notna().any() else utc_dates
+                    entry["date_range"] = [et_dates.min().strftime("%Y-%m-%d") if pd.notna(et_dates.min()) else None,
+                                           et_dates.max().strftime("%Y-%m-%d") if pd.notna(et_dates.max()) else None]
+                    entry["today_count"] = int((et_dates.dt.date == date.today()).sum())
+                elif "match_date" in df.columns:
                     parsed = pd.to_datetime(df["match_date"], errors="coerce", dayfirst=False)
                     entry["date_range"] = [parsed.min().strftime("%Y-%m-%d") if pd.notna(parsed.min()) else None,
                                            parsed.max().strftime("%Y-%m-%d") if pd.notna(parsed.max()) else None]
