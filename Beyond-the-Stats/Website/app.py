@@ -8,7 +8,7 @@ import time
 import urllib.request
 from collections import deque, defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -759,7 +759,7 @@ def _get_todays_competitions():
 
     Checks all available data sources:
       1. Upcoming predictions CSVs (club, MLS, extra, cups, national team)
-      2. World Cup projection JSON (group-stage + knockout fixtures)
+      2. World Cup projection JSON (group_fixtures + knockout rounds)
       3. Cup bracket JSON (knockout fixtures)
     """
     today_date = date.today()
@@ -775,7 +775,7 @@ def _get_todays_competitions():
         except Exception:
             continue
         try:
-            parsed_dates = pd.to_datetime(frame["match_date"], errors="coerce", dayfirst=True)
+            parsed_dates = pd.to_datetime(frame["match_date"], errors="coerce", dayfirst=False)
         except Exception:
             continue
         today_mask = parsed_dates.dt.date == today_date
@@ -810,7 +810,17 @@ def _get_todays_competitions():
         except Exception:
             wc_data = {}
 
-        _extract_fixture_kickoffs(wc_data, "FIFA/World Cup", today_date, now_et, todays)
+        # group_fixtures — list of dicts with match_date, match_datetime_utc etc.
+        for fixture in wc_data.get("group_fixtures") or []:
+            if isinstance(fixture, dict):
+                _add_if_today(fixture, "FIFA/World Cup", today_date, now_et, todays)
+
+        # knockout rounds
+        for round_list in (wc_data.get("knockout") or {}).values():
+            if isinstance(round_list, list):
+                for match in round_list:
+                    if isinstance(match, dict):
+                        _add_if_today(match, "FIFA/World Cup", today_date, now_et, todays)
 
     # ── Source 3: cup bracket JSON ───────────────────────────────
     if os.path.exists(CUP_PROJECTED_BRACKET_FILE):
@@ -824,55 +834,25 @@ def _get_todays_competitions():
             for comp_name in list(LIVE_SCORE_COMPETITIONS.keys()):
                 if comp_name in todays:
                     continue
-                comp_fixtures = cup_data.get(comp_name)
-                if comp_fixtures:
-                    _extract_fixture_kickoffs(
-                        {"fixtures": comp_fixtures}, comp_name, today_date, now_et, todays
-                    )
+                # Cup bracket has entries like {"England/FA Cup": {round_name: [...]}}
+                comp_entry = cup_data.get(comp_name)
+                if isinstance(comp_entry, dict):
+                    for round_name, matches in comp_entry.items():
+                        if isinstance(matches, list):
+                            for match in matches:
+                                if isinstance(match, dict):
+                                    _add_if_today(match, comp_name, today_date, now_et, todays)
 
     return {k: sorted(v) for k, v in todays.items()}
-
-
-def _extract_fixture_kickoffs(source, comp_name, today_date, now_et, out_dict):
-    """Parse fixture entries from world_cup_projection.json or cup bracket JSON
-    and add their kickoffs to *out_dict* if they fall on *today_date*."""
-    # World Cup: look for group_tables (which have fixture dates embedded) and
-    # knockout rounds.  Cup bracket: look for "fixtures" or round lists.
-    if "knockout" in source:
-        for round_data in source["knockout"]:
-            if isinstance(round_data, list):
-                for match in round_data:
-                    _add_if_today(match, comp_name, today_date, now_et, out_dict)
-            elif isinstance(round_data, dict):
-                _add_if_today(round_data, comp_name, today_date, now_et, out_dict)
-
-    if "group_tables" in source:
-        for group_name, teams in source["group_tables"].items():
-            for entry in teams:
-                if isinstance(entry, dict):
-                    _add_if_today(entry, comp_name, today_date, now_et, out_dict)
-
-    if "fixtures" in source:
-        for match in source["fixtures"]:
-            if isinstance(match, dict):
-                _add_if_today(match, comp_name, today_date, now_et, out_dict)
-
-    # Cup bracket: rounds like "round_1", "quarter_finals", etc.
-    for key, val in source.items():
-        if isinstance(key, str) and key.startswith("round_"):
-            if isinstance(val, list):
-                for match in val:
-                    if isinstance(match, dict):
-                        _add_if_today(match, comp_name, today_date, now_et, out_dict)
 
 
 def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
     """If *entry* has a date field matching today, add its kickoff."""
     raw = str(entry.get("match_date") or entry.get("date") or entry.get("kickoff") or "")
-    if not raw:
+    if not raw or raw in ("", "nan", "None", "NaT"):
         return
     try:
-        dt = pd.to_datetime(raw, errors="coerce", dayfirst=True)
+        dt = pd.to_datetime(raw, errors="coerce", dayfirst=False)
         if pd.isna(dt) or dt.date() != today_date:
             return
         if dt.tz is None:
@@ -2290,6 +2270,41 @@ def api_h2h():
     })
 
 
+@app.get("/api/debug/live-score-sources")
+def api_debug_live_score_sources():
+    """Debug endpoint: show what _get_todays_competitions() detects and which files exist/stale."""
+    info = {}
+    info["today_date"] = date.today().isoformat()
+    info["now_et"] = datetime.now(ZoneInfo("America/New_York")).isoformat()
+    info["csv_files"] = {}
+    for name, path in _UPCOMING_CSV_FILES.items():
+        entry = {"exists": os.path.exists(path)}
+        if entry["exists"]:
+            entry["size_bytes"] = os.path.getsize(path)
+            entry["mtime_utc"] = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc).isoformat()
+            try:
+                df = pd.read_csv(path, dtype=str)
+                entry["rows"] = len(df)
+                if "match_date" in df.columns:
+                    parsed = pd.to_datetime(df["match_date"], errors="coerce", dayfirst=False)
+                    entry["date_range"] = [parsed.min().strftime("%Y-%m-%d") if pd.notna(parsed.min()) else None,
+                                           parsed.max().strftime("%Y-%m-%d") if pd.notna(parsed.max()) else None]
+                    entry["today_count"] = int((parsed.dt.date == date.today()).sum())
+                entry["competitions"] = sorted(df["competition"].dropna().unique().tolist()) if "competition" in df.columns else []
+            except Exception as e:
+                entry["read_error"] = str(e)
+        info["csv_files"][name] = entry
+    info["wc_projection"] = {"exists": os.path.exists(WORLD_CUP_PROJECTION_FILE)}
+    if info["wc_projection"]["exists"]:
+        info["wc_projection"]["size_bytes"] = os.path.getsize(WORLD_CUP_PROJECTION_FILE)
+    info["cup_bracket"] = {"exists": os.path.exists(CUP_PROJECTED_BRACKET_FILE)}
+    if info["cup_bracket"]["exists"]:
+        info["cup_bracket"]["size_bytes"] = os.path.getsize(CUP_PROJECTED_BRACKET_FILE)
+    todays_comps = _get_todays_competitions()
+    info["todays_competitions"] = {k: [v.isoformat() for v in vs] for k, vs in todays_comps.items()}
+    return jsonify({"ok": True, "debug": info})
+
+
 @app.get("/api/team")
 def api_team():
     """Return form, recent results, upcoming games, and head-to-head vs all opponents for one team.
@@ -2378,6 +2393,7 @@ def api_help():
             {"method": "GET", "path": "/api/h2h?team1=&team2=&mode=", "desc": "Head-to-head and form data for two teams"},
             {"method": "GET", "path": "/api/team?team=&mode=", "desc": "Form, upcoming games, and H2H for a single team"},
             {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores (polled from ESPN every 90s)"},
+            {"method": "GET", "path": "/api/debug/live-score-sources", "desc": "Debug: what data sources the live score poller sees"},
             {"method": "GET", "path": "/api/upcoming/global", "desc": "Upcoming global fixtures (club + national team)"},
             {"method": "GET", "path": "/api/upcoming/extra", "desc": "Upcoming extra-league fixtures"},
             {"method": "GET", "path": "/api/upcoming/cups", "desc": "Upcoming cup fixtures"},
