@@ -1,8 +1,12 @@
 import pandas as pd
 import os
 import re
+from collections import defaultdict
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Head-to-head tiebreaker leagues: La Liga, La Liga 2, Serie A, Serie B, Liga Portugal.
+H2H_TIEBREAKER_PREFIXES = {"laligastat", "laliga2stat", "seriaastat", "seriabstat", "portstat"}
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_FOLDER = os.path.join(BASE_DIR, "Data", "Raw_Data")
@@ -104,16 +108,20 @@ def has_required_general_data(df, start_year):
     return complete_rows >= MIN_COMPLETENESS_RATIO
 
 
-def add_table_context_columns(df):
+def add_table_context_columns(df, competition=""):
     required = {"HomeTeam", "AwayTeam", "FTR", "FTHG", "FTAG"}
     if not required.issubset(df.columns):
         return df
+
+    use_h2h = competition in H2H_TIEBREAKER_PREFIXES
 
     teams = sorted(set(df["HomeTeam"].dropna()) | set(df["AwayTeam"].dropna()))
     table = {
         team: {"points": 0, "gf": 0, "ga": 0, "gd": 0, "played": 0}
         for team in teams
     }
+    # Track head-to-head between every pair: h2h[a][b] = {pts, gd, gf, ga}
+    h2h = defaultdict(lambda: defaultdict(lambda: {"pts": 0, "gd": 0, "gf": 0, "ga": 0}))
     position_map = {team: idx + 1 for idx, team in enumerate(teams)}
 
     home_points_before = []
@@ -122,15 +130,48 @@ def add_table_context_columns(df):
     away_pos_before = []
 
     def rank_positions():
-        ranked = sorted(
-            teams,
-            key=lambda t: (
-                -table[t]["points"],
-                -table[t]["gd"],
-                -table[t]["gf"],
-                t,
-            ),
-        )
+        if not use_h2h:
+            ranked = sorted(
+                teams,
+                key=lambda t: (
+                    -table[t]["points"],
+                    -table[t]["gd"],
+                    -table[t]["gf"],
+                    t,
+                ),
+            )
+        else:
+            pts_groups = defaultdict(list)
+            for t in teams:
+                pts_groups[table[t]["points"]].append(t)
+            ranked = []
+            for pts in sorted(pts_groups, reverse=True):
+                tied = pts_groups[pts]
+                if len(tied) == 1:
+                    ranked.append(tied[0])
+                else:
+                    h2h_scores = defaultdict(lambda: {"pts": 0, "gd": 0, "gf": 0})
+                    for t1 in tied:
+                        for t2 in tied:
+                            if t1 == t2:
+                                continue
+                            rec = h2h[t1].get(t2, {})
+                            if rec:
+                                h2h_scores[t1]["pts"] += rec.get("pts", 0)
+                                h2h_scores[t1]["gd"] += rec.get("gd", 0)
+                                h2h_scores[t1]["gf"] += rec.get("gf", 0)
+                    sorted_tied = sorted(
+                        tied,
+                        key=lambda t: (
+                            -h2h_scores[t]["pts"],
+                            -h2h_scores[t]["gd"],
+                            -h2h_scores[t]["gf"],
+                            -table[t]["gd"],
+                            -table[t]["gf"],
+                            t,
+                        ),
+                    )
+                    ranked.extend(sorted_tied)
         return {team: pos + 1 for pos, team in enumerate(ranked)}
 
     for row in df.itertuples(index=False):
@@ -170,6 +211,23 @@ def add_table_context_columns(df):
             table[home]["points"] += 1
             table[away]["points"] += 1
 
+        if use_h2h:
+            h2h_rec = h2h[home][away]
+            h2h_rev = h2h[away][home]
+            if ftr == "H":
+                h2h_rec["pts"] += 3
+            elif ftr == "A":
+                h2h_rev["pts"] += 3
+            else:
+                h2h_rec["pts"] += 1
+                h2h_rev["pts"] += 1
+            h2h_rec["gd"] += hg - ag
+            h2h_rec["gf"] += hg
+            h2h_rec["ga"] += ag
+            h2h_rev["gd"] += ag - hg
+            h2h_rev["gf"] += ag
+            h2h_rev["ga"] += hg
+
         position_map = rank_positions()
 
     df["HomePointsBefore"] = home_points_before
@@ -198,7 +256,10 @@ def process_one_file(rel_path):
     if "Date" in df.columns:
         df = df.sort_values("Date")
 
-    df = add_table_context_columns(df)
+    fname = os.path.basename(rel_path)
+    prefix_match = re.match(r"^([a-z0-9]+stat)\d{4}-\d{2}\.csv$", fname, re.IGNORECASE)
+    competition_prefix = prefix_match.group(1).lower() if prefix_match else ""
+    df = add_table_context_columns(df, competition=competition_prefix)
 
     if "FTR" in df.columns:
         df["ResultNum"] = df["FTR"].map(result_map)
