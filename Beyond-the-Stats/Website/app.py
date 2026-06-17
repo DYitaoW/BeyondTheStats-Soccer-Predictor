@@ -5,12 +5,56 @@ import threading
 import importlib.util
 import subprocess
 import time
-from collections import deque
+import urllib.request
+from collections import deque, defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 _last_pipeline_run: datetime | None = None
+
+# ── Live Score Polling ──────────────────────────────────────────
+LIVE_SCORE_ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+
+LIVE_SCORE_COMPETITIONS = {
+    # Club leagues
+    "England/Premier League": "eng.1",
+    "England/Championship": "eng.2",
+    "Spain/La Liga": "esp.1",
+    "Spain/La Liga 2": "esp.2",
+    "Italy/Serie A": "ita.1",
+    "Italy/Serie B": "ita.2",
+    "Germany/Bundesliga": "ger.1",
+    "Germany/Bundesliga 2": "ger.2",
+    "France/Ligue 1": "fra.1",
+    "France/Ligue 2": "fra.2",
+    "Portugal/Liga Portugal": "por.1",
+    "Netherlands/Eredivisie": "ned.1",
+    "United States/MLS": "usa.1",
+    # Cups
+    "England/FA Cup": "eng.fa",
+    "England/League Cup": "eng.efl",
+    "UEFA/Champions League": "uefa.champions",
+    "UEFA/Europa League": "uefa.europa",
+    "UEFA/Conference League": "uefa.europa.conf",
+    # National team / World Cup
+    "FIFA/World Cup": "fifa.world",
+    "FIFA/World Cup Qualifying - UEFA": "fifa.worldq.uefa",
+    "FIFA/World Cup Qualifying - CONMEBOL": "fifa.worldq.conmebol",
+    "FIFA/World Cup Qualifying - CONCACAF": "fifa.worldq.concacaf",
+    "FIFA/Friendly": "fifa.friendly",
+    "UEFA/European Championship": "uefa.euro",
+    "UEFA/Nations League": "uefa.nations",
+    "CONMEBOL/Copa America": "conmebol.america",
+    "CONCACAF/Gold Cup": "concacaf.gold",
+    "CAF/Africa Cup of Nations": "caf.nations",
+}
+
+_live_scores: dict[str, dict] = {}
+_live_scores_lock = threading.Lock()
+
+# ── End Live Score Polling ──────────────────────────────────────
 
 import joblib
 import pandas as pd
@@ -650,6 +694,171 @@ def _latest_season_for_competition(season_teams, competition, fallback, parse_st
             best_year = year
             best_key = season_key
     return best_key or fallback
+
+
+# ── Live Score Poller ───────────────────────────────────────────
+
+LIVE_SCORE_FETCH_TIMEOUT = 15
+
+
+def _parse_espn_live_event(event):
+    """Parse a single ESPN event dict into a minimal live-score payload."""
+    try:
+        comp = event.get("competitions") or [{}]
+        comp_data = comp[0] if comp else {}
+        competitors = comp_data.get("competitors") or []
+        if len(competitors) < 2:
+            return None
+        home = competitors[0] if competitors[0].get("homeAway") == "home" else competitors[1]
+        away = competitors[1] if competitors[0].get("homeAway") == "home" else competitors[0]
+        status = comp_data.get("status") or {}
+        type_detail = status.get("type") or {}
+        state = type_detail.get("state", "pre")
+        detail = type_detail.get("detail", "")
+        clock = comp_data.get("clock") or ""
+        display_clock = f"{clock} {detail}" if clock else detail
+        return {
+            "match_id": str(event.get("id", "")),
+            "home_team": str(home.get("team", {}).get("displayName", "")),
+            "away_team": str(away.get("team", {}).get("displayName", "")),
+            "home_score": _to_int(home.get("score")),
+            "away_score": _to_int(away.get("score")),
+            "status": state,
+            "period": detail,
+            "clock": display_clock.strip(),
+            "kickoff_utc": event.get("date", ""),
+        }
+    except Exception:
+        return None
+
+
+def _fetch_competition_scores(comp_name, espn_id, today_str):
+    """Fetch ESPN scoreboard for one competition/date, return parsed games."""
+    url = f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard?dates={today_str}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception:
+        return []
+    events = data.get("events") or []
+    games = []
+    for ev in events:
+        parsed = _parse_espn_live_event(ev)
+        if parsed:
+            parsed["competition"] = comp_name
+            games.append(parsed)
+    return games
+
+
+BREAK_PERIODS = {"Halftime", "HT", "Half Time"}
+
+
+def _get_todays_competitions():
+    """Return {competition: [kickoff_et, ...]} for competitions with games today.
+
+    Reads the upcoming predictions CSVs saved by the daily pipeline to find
+    which competitions have games on the current date and at what times.
+    """
+    today_iso = date.today().isoformat()
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    todays = defaultdict(list)
+
+    for csv_path in _UPCOMING_CSV_FILES.values():
+        if not os.path.exists(csv_path):
+            continue
+        try:
+            frame = pd.read_csv(csv_path, dtype=str)
+        except Exception:
+            continue
+        for _, row in frame.iterrows():
+            comp = str(row.get("competition", "") or "").strip()
+            if comp not in LIVE_SCORE_COMPETITIONS:
+                continue
+            match_date = str(row.get("match_date", "") or "").strip()
+            if match_date == today_iso:
+                kickoff_utc_str = str(row.get("match_datetime_utc", "") or "").strip()
+                if kickoff_utc_str:
+                    try:
+                        dt_utc = datetime.fromisoformat(kickoff_utc_str.replace("Z", "+00:00"))
+                        kickoff_et = dt_utc.astimezone(ZoneInfo("America/New_York"))
+                    except Exception:
+                        kickoff_et = now_et
+                else:
+                    kickoff_et = now_et
+                todays[comp].append(kickoff_et)
+    return {k: sorted(v) for k, v in todays.items()}
+
+
+def _live_score_poller_loop():
+    """Background thread: poll ESPN for live scores every 90 seconds.
+
+    Only polls competitions that have games today per the daily pipeline's
+    predictions CSVs.  A competition is polled when at least one of its
+    games has a kickoff within the next 5 minutes.  Once polled, it stays
+    active as long as at least one game is live (status="in" and not on a
+    named break like Halftime).  When all games finish or go on break,
+    polling stops until the next game's 5-minute pre-window.
+    """
+    while True:
+        try:
+            today_str = date.today().strftime("%Y%m%d")
+            now_et = datetime.now(ZoneInfo("America/New_York"))
+
+            todays_comps = _get_todays_competitions()
+
+            # Only poll competitions that have a game within the 5-min pre-window
+            # or that could still be live (started within the last 3.5 hours).
+            active_comps = {}
+            for comp, kickoffs in todays_comps.items():
+                espn_id = LIVE_SCORE_COMPETITIONS.get(comp)
+                if not espn_id:
+                    continue
+                for k in kickoffs:
+                    window_start = k - timedelta(minutes=5)
+                    window_end = k + timedelta(hours=3, minutes=30)
+                    if window_start <= now_et <= window_end:
+                        active_comps[comp] = espn_id
+                        break
+
+            results = {}
+            if active_comps:
+                with ThreadPoolExecutor(max_workers=min(8, len(active_comps))) as pool:
+                    ft_to_name = {
+                        pool.submit(_fetch_competition_scores, name, eid, today_str): name
+                        for name, eid in active_comps.items()
+                    }
+                    for ft in as_completed(ft_to_name):
+                        name = ft_to_name[ft]
+                        try:
+                            games = ft.result()
+                            if not games:
+                                continue
+                            # Only keep this competition if at least one game is
+                            # actively live and NOT on a named break (Halftime/HT).
+                            has_live = any(
+                                g.get("status") == "in"
+                                and g.get("period", "") not in BREAK_PERIODS
+                                for g in games
+                            )
+                            if has_live:
+                                results[name] = {
+                                    "competition": name,
+                                    "games": games,
+                                    "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+                                }
+                        except Exception:
+                            pass
+
+            with _live_scores_lock:
+                _live_scores.clear()
+                _live_scores.update(results)
+        except Exception:
+            pass
+        time.sleep(90)
+
+
+# ── End Live Score Poller ───────────────────────────────────────
 
 
 def get_context(mode="global"):
@@ -1922,6 +2131,24 @@ def api_register_device():
     return jsonify({"ok": True, "registered": True})
 
 
+@app.get("/api/live-scores")
+def api_live_scores():
+    """Return live scores for active competitions (polled every 5 min from ESPN).
+
+    Query params:
+        competition  -- optional, filter to specific competition(s) (comma-separated)
+    """
+    comp_filter = request.args.get("competition", "").strip()
+    with _live_scores_lock:
+        if not _live_scores:
+            return jsonify({"ok": True, "competitions": {}, "message": "No live games at this time."})
+        if comp_filter:
+            wanted = {c.strip() for c in comp_filter.split(",") if c.strip()}
+            filtered = {k: v for k, v in _live_scores.items() if k in wanted}
+            return jsonify({"ok": True, "competitions": filtered})
+        return jsonify({"ok": True, "competitions": dict(_live_scores)})
+
+
 @app.get("/api/h2h")
 def api_h2h():
     """Return head-to-head and form data for two teams."""
@@ -1960,6 +2187,107 @@ def api_h2h():
         "h2h_data": h2h_data,
         "h2h_data_reverse": h2h_data_reverse,
         "h2h_total_games": h2h_total_games,
+    })
+
+
+@app.get("/api/team")
+def api_team():
+    """Return form, recent results, upcoming games, and head-to-head vs all opponents for one team.
+
+    Query params:
+        team  -- team name (required)
+        mode  -- global / mls / extra (default: global)
+    """
+    team_input = request.args.get("team", "").strip()
+    mode = request.args.get("mode", "global").strip().lower()
+
+    if STATIC_PREDICTIONS:
+        if mode == "mls":
+            pm_mod = pm_mls
+        elif mode == "extra":
+            pm_mod = pm_extra
+        else:
+            pm_mod = pm_global
+        head_to_head, current_form = _load_h2h_and_form(pm_mod)
+        ctx = type("StaticCtx", (), {"head_to_head": head_to_head, "current_form": current_form})
+    else:
+        ctx = get_context(mode)
+
+    if not team_input:
+        return jsonify({"ok": False, "error": "Missing team"}), 400
+    team = _team_name_for_db(team_input)
+
+    team_form = _normalize_recent_form_payload(ctx.current_form.get("teams", {}).get(team, {}))
+
+    all_h2h = {}
+    h2h_opponents = ctx.head_to_head.get(team, {})
+    for opponent, payload in h2h_opponents.items():
+        all_h2h[opponent] = _normalize_h2h_payload(payload)
+
+    upcoming = []
+    csv_path = _UPCOMING_CSV_FILES.get(mode) or _UPCOMING_CSV_FILES.get("global")
+    if csv_path and os.path.exists(csv_path):
+        try:
+            frame = pd.read_csv(csv_path, dtype=str)
+            team_lower = team.lower()
+            for _, row in frame.iterrows():
+                home = str(row.get("home_team", "") or "").strip()
+                away = str(row.get("away_team", "") or "").strip()
+                if team_lower not in (home.lower(), away.lower()):
+                    continue
+                upcoming.append({
+                    "competition": str(row.get("competition", "") or "").strip(),
+                    "match_date": str(row.get("match_date", "") or "").strip(),
+                    "match_datetime_utc": str(row.get("match_datetime_utc", "") or "").strip(),
+                    "home_team": home,
+                    "away_team": away,
+                    "predicted_result": str(row.get("predicted_result", "") or "").strip(),
+                })
+        except Exception:
+            pass
+
+    return jsonify({
+        "ok": True,
+        "team": team,
+        "form": team_form,
+        "upcoming_games": upcoming,
+        "head_to_head": all_h2h,
+    })
+
+
+@app.get("/api/help")
+def api_help():
+    """List all available API endpoints with brief descriptions."""
+    return jsonify({
+        "ok": True,
+        "endpoints": [
+            {"method": "GET", "path": "/api/help", "desc": "List all available API endpoints"},
+            {"method": "GET", "path": "/api/teams?mode=global|mls|extra", "desc": "List teams for a given mode"},
+            {"method": "GET", "path": "/api/world-cup", "desc": "World Cup projection data"},
+            {"method": "POST", "path": "/api/refresh", "desc": "Trigger a full pipeline refresh"},
+            {"method": "GET", "path": "/api/last-refresh", "desc": "Timestamp of last successful pipeline run"},
+            {"method": "GET", "path": "/api/last-data-refresh", "desc": "Timestamp of last data refresh (any pipeline run)"},
+            {"method": "GET", "path": "/api/mobile/feed", "desc": "Full mobile-app feed JSON"},
+            {"method": "GET", "path": "/api/mobile/widget?league=&team=&limit=&mode=", "desc": "Lightweight widget feed with filters"},
+            {"method": "POST", "path": "/api/predict", "desc": "Predict outcome for a specific match"},
+            {"method": "POST", "path": "/api/predict/mls", "desc": "Predict outcome for an MLS match"},
+            {"method": "POST", "path": "/api/predict/extra", "desc": "Predict outcome for an extra-league match"},
+            {"method": "POST", "path": "/api/notifications", "desc": "Send a push notification"},
+            {"method": "GET", "path": "/api/notifications", "desc": "Retrieve recent notifications"},
+            {"method": "POST", "path": "/api/notifications/register", "desc": "Register a device for push notifications"},
+            {"method": "GET", "path": "/api/h2h?team1=&team2=&mode=", "desc": "Head-to-head and form data for two teams"},
+            {"method": "GET", "path": "/api/team?team=&mode=", "desc": "Form, upcoming games, and H2H for a single team"},
+            {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores (polled from ESPN every 90s)"},
+            {"method": "GET", "path": "/api/upcoming/global", "desc": "Upcoming global fixtures (club + national team)"},
+            {"method": "GET", "path": "/api/upcoming/extra", "desc": "Upcoming extra-league fixtures"},
+            {"method": "GET", "path": "/api/upcoming/cups", "desc": "Upcoming cup fixtures"},
+            {"method": "GET", "path": "/api/upcoming/world-cup", "desc": "Upcoming World Cup group-stage fixtures"},
+            {"method": "GET", "path": "/api/top-picks", "desc": "Top picks for the upcoming matchweek"},
+            {"method": "GET", "path": "/api/league-tables?mode=global|mls|extra|cups", "desc": "Projected league tables"},
+            {"method": "GET", "path": "/api/stats", "desc": "Overall site statistics (accuracy, league count)"},
+            {"method": "POST", "path": "/api/feedback", "desc": "Submit user feedback"},
+            {"method": "GET", "path": "/api/scorers", "desc": "Top scorers by competition"},
+        ],
     })
 
 
@@ -2421,6 +2749,9 @@ if __name__ == "__main__":
         raise SystemExit("--reload requires --debug")
 
     use_reloader = bool(args.debug and args.reload)
+
+    threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
+    print("[startup] Live score poller started (90-second interval, smart-comp filtering).")
 
     if args.host == "0.0.0.0":
         try:
