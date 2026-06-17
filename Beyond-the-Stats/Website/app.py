@@ -807,19 +807,24 @@ def _live_score_poller_loop():
 
             todays_comps = _get_todays_competitions()
 
-            # Only poll competitions that have a game within the 5-min pre-window
-            # or that could still be live (started within the last 3.5 hours).
             active_comps = {}
-            for comp, kickoffs in todays_comps.items():
-                espn_id = LIVE_SCORE_COMPETITIONS.get(comp)
-                if not espn_id:
-                    continue
-                for k in kickoffs:
-                    window_start = k - timedelta(minutes=5)
-                    window_end = k + timedelta(hours=3, minutes=30)
-                    if window_start <= now_et <= window_end:
-                        active_comps[comp] = espn_id
-                        break
+            if todays_comps:
+                # Use CSV data to only poll competitions whose games are imminent or live.
+                for comp, kickoffs in todays_comps.items():
+                    espn_id = LIVE_SCORE_COMPETITIONS.get(comp)
+                    if not espn_id:
+                        continue
+                    for k in kickoffs:
+                        window_start = k - timedelta(minutes=5)
+                        window_end = k + timedelta(hours=3, minutes=30)
+                        if window_start <= now_et <= window_end:
+                            active_comps[comp] = espn_id
+                            break
+            else:
+                # No CSV data for today (stale predictions / pipeline not run yet).
+                # Fall back to polling all known competitions so live scores
+                # still work even without an up-to-date predictions file.
+                active_comps = dict(LIVE_SCORE_COMPETITIONS)
 
             results = {}
             if active_comps:
