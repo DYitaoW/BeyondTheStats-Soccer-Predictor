@@ -53,6 +53,13 @@ LIVE_SCORE_COMPETITIONS = {
 
 _live_scores: dict[str, dict] = {}
 _live_scores_lock = threading.Lock()
+LIVE_SCORE_HISTORY_FILE = os.path.join(PROJECT_DIR, "Data", "live_score_history.json")
+PREDICTION_TRACKING_FILE = os.path.join(PROJECT_DIR, "Data", "prediction_tracking.json")
+
+# ── Standings Cache ───────────────────────────────────────────
+_real_tables: dict[str, dict] = {}
+_real_tables_lock = threading.Lock()
+REAL_TABLES_CACHE_TTL = 300  # 5 minutes
 
 # ── End Live Score Polling ──────────────────────────────────────
 
@@ -722,32 +729,72 @@ def _parse_espn_live_event(event):
         away_team_name = str(away.get("team", {}).get("displayName", ""))
 
         goalscorers = []
-        home_scorers = home.get("scoringSummaries") or []
-        for g in home_scorers:
-            if g.get("type") in ("goal", "ownGoal", "penalty"):
+        red_cards = []
+        for side_key, side_label in ((home, "home"), (away, "away")):
+            for g in (side_key.get("scoringSummaries") or []):
+                gtype = g.get("type", "")
                 athlete = g.get("athlete") or {}
                 name = athlete.get("displayName", g.get("description", ""))
                 time_str = g.get("time", "")
-                goalscorers.append({
-                    "team": "home",
-                    "scorer": str(name),
-                    "minute": str(time_str),
-                    "type": g.get("type", "goal"),
-                })
-        away_scorers = away.get("scoringSummaries") or []
-        for g in away_scorers:
-            if g.get("type") in ("goal", "ownGoal", "penalty"):
-                athlete = g.get("athlete") or {}
-                name = athlete.get("displayName", g.get("description", ""))
-                time_str = g.get("time", "")
-                goalscorers.append({
-                    "team": "away",
-                    "scorer": str(name),
-                    "minute": str(time_str),
-                    "type": g.get("type", "goal"),
-                })
+                if gtype in ("goal", "ownGoal", "penalty"):
+                    goalscorers.append({
+                        "team": side_label,
+                        "scorer": str(name),
+                        "minute": str(time_str),
+                        "type": gtype,
+                    })
+                elif gtype == "redCard":
+                    red_cards.append({
+                        "team": side_label,
+                        "player": str(name),
+                        "minute": str(time_str),
+                    })
 
-        return {
+        # ── Bracket / round info from ESPN tournament data ────
+        tournament_info = comp_data.get("tournament") or {}
+        round_info = comp_data.get("round") or {}
+        round_name = str(round_info.get("name", "")) or str(tournament_info.get("round", ""))
+        bracket_slot = _to_int(round_info.get("number", round_info.get("position", 0)))
+
+        # ── Lineups (starting XI + subs) ────────────────────
+        home_lineup = []
+        for p in (home.get("lineup") or []):
+            ath = p.get("athlete") or {}
+            pos = p.get("position") or {}
+            home_lineup.append({
+                "player": str(ath.get("displayName", "")),
+                "position": str(pos.get("displayName", "")),
+                "jersey": str(p.get("jersey", "")),
+            })
+        home_subs = []
+        for p in (home.get("substitutes") or []):
+            ath = p.get("athlete") or {}
+            pos = p.get("position") or {}
+            home_subs.append({
+                "player": str(ath.get("displayName", "")),
+                "position": str(pos.get("displayName", "")),
+                "jersey": str(p.get("jersey", "")),
+            })
+        away_lineup = []
+        for p in (away.get("lineup") or []):
+            ath = p.get("athlete") or {}
+            pos = p.get("position") or {}
+            away_lineup.append({
+                "player": str(ath.get("displayName", "")),
+                "position": str(pos.get("displayName", "")),
+                "jersey": str(p.get("jersey", "")),
+            })
+        away_subs = []
+        for p in (away.get("substitutes") or []):
+            ath = p.get("athlete") or {}
+            pos = p.get("position") or {}
+            away_subs.append({
+                "player": str(ath.get("displayName", "")),
+                "position": str(pos.get("displayName", "")),
+                "jersey": str(p.get("jersey", "")),
+            })
+
+        result = {
             "match_id": str(event.get("id", "")),
             "home_team": home_team_name,
             "away_team": away_team_name,
@@ -758,9 +805,263 @@ def _parse_espn_live_event(event):
             "clock": display_clock.strip(),
             "kickoff_utc": event.get("date", ""),
             "goalscorers": goalscorers,
+            "red_cards": red_cards,
         }
+        if round_name:
+            result["round"] = round_name
+            result["round_order"] = bracket_slot
+        if home_lineup:
+            result["home_lineup"] = home_lineup
+            result["home_subs"] = home_subs
+        if away_lineup:
+            result["away_lineup"] = away_lineup
+            result["away_subs"] = away_subs
+        return result
     except Exception:
         return None
+
+
+def _load_live_score_history():
+    if not os.path.exists(LIVE_SCORE_HISTORY_FILE):
+        return []
+    try:
+        with open(LIVE_SCORE_HISTORY_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _save_live_score_history(games):
+    os.makedirs(os.path.dirname(LIVE_SCORE_HISTORY_FILE), exist_ok=True)
+    with open(LIVE_SCORE_HISTORY_FILE, "w") as f:
+        json.dump(games, f, indent=2)
+
+
+def _merge_completed_to_history():
+    """Move finished games from _live_scores into persistent history file."""
+    history = _load_live_score_history()
+    historic_ids = {g["match_id"] for g in history if g.get("match_id")}
+    new_games = []
+    cleared_standings = set()
+    with _live_scores_lock:
+        for comp_name, comp_data in _live_scores.items():
+            for g in comp_data.get("games", []):
+                if g.get("status") == "post" and g.get("match_id") not in historic_ids:
+                    entry = dict(g)
+                    entry.setdefault("completed_at", datetime.now(timezone.utc).isoformat())
+                    new_games.append(entry)
+                    historic_ids.add(entry["match_id"])
+                    cleared_standings.add(comp_name)
+    for comp in cleared_standings:
+        _clear_standings_cache(comp)
+        _clear_leaders_cache(comp)
+    if new_games:
+        history.extend(new_games)
+        history.sort(key=lambda x: x.get("kickoff_utc", ""), reverse=True)
+        _save_live_score_history(history)
+    # Track predictions for newly completed games against our CSV predictions.
+    if new_games:
+        _track_prediction_results(new_games)
+
+
+# ── Prediction Tracking ──────────────────────────────────────
+
+_UEFA_COMPETITIONS = {"UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League"}
+
+_UPCOMING_CSV_MODE_MAP = {
+    "England/Premier League": "global",
+    "England/Championship": "global",
+    "Spain/La Liga": "global",
+    "Spain/La Liga 2": "global",
+    "Italy/Serie A": "global",
+    "Italy/Serie B": "global",
+    "Germany/Bundesliga": "global",
+    "Germany/Bundesliga 2": "global",
+    "France/Ligue 1": "global",
+    "France/Ligue 2": "global",
+    "Portugal/Liga Portugal": "global",
+    "Netherlands/Eredivisie": "global",
+    "England/FA Cup": "cups",
+    "England/League Cup": "cups",
+    "UEFA/Champions League": "cups",
+    "UEFA/Europa League": "cups",
+    "UEFA/Conference League": "cups",
+    "Germany/DFB-Pokal": "cups",
+    "FIFA/World Cup": "national",
+    "FIFA/World Cup Qualifying - UEFA": "national",
+    "FIFA/World Cup Qualifying - CONMEBOL": "national",
+    "FIFA/World Cup Qualifying - CONCACAF": "national",
+    "FIFA/Friendly": "national",
+    "UEFA/European Championship": "national",
+    "UEFA/Nations League": "national",
+    "CONMEBOL/Copa America": "national",
+    "CONCACAF/Gold Cup": "national",
+    "CAF/Africa Cup of Nations": "national",
+    "United States/MLS": "mls",
+}
+
+
+def _get_week_start(dt, competition):
+    """Return the start of the current prediction week for a competition.
+
+    Most leagues: Thursday through Wednesday (matches on weekends).
+    UEFA competitions: Monday through Friday (UCL/UEL/UECL midweek).
+    """
+    if competition in _UEFA_COMPETITIONS:
+        return dt - timedelta(days=dt.weekday())  # Monday = 0
+    days_since_thursday = (dt.weekday() - 3) % 7
+    return dt - timedelta(days=days_since_thursday)
+
+
+def _load_prediction_tracking():
+    if not os.path.exists(PREDICTION_TRACKING_FILE):
+        return {"all_time": {"total": {"correct": 0, "incorrect": 0}, "by_league": {}},
+                "weekly": {}, "per_team": {}}
+    try:
+        with open(PREDICTION_TRACKING_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {"all_time": {"total": {"correct": 0, "incorrect": 0}, "by_league": {}},
+                "weekly": {}, "per_team": {}}
+
+
+def _save_prediction_tracking(data):
+    os.makedirs(os.path.dirname(PREDICTION_TRACKING_FILE), exist_ok=True)
+    with open(PREDICTION_TRACKING_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _load_predictions_for_competition(comp_name):
+    """Load upcoming prediction rows from the CSV matching *comp_name*."""
+    mode = _UPCOMING_CSV_MODE_MAP.get(comp_name)
+    if not mode:
+        return []
+    csv_path = _UPCOMING_CSV_FILES.get(mode)
+    if not csv_path or not os.path.exists(csv_path):
+        return []
+    try:
+        df = pd.read_csv(csv_path, dtype=str)
+    except Exception:
+        return []
+    rows = []
+    for _, row in df.iterrows():
+        comp = str(row.get("competition", "") or "").strip()
+        if comp != comp_name:
+            continue
+        rows.append({
+            "home_team": str(row.get("home_team", "") or "").strip(),
+            "away_team": str(row.get("away_team", "") or "").strip(),
+            "match_datetime_utc": str(row.get("match_datetime_utc", "") or "").strip(),
+            "predicted_result": str(row.get("predicted_result", "") or "").strip(),
+            "prob_home": str(row.get("prob_home", "") or "").strip(),
+            "prob_draw": str(row.get("prob_draw", "") or "").strip(),
+            "prob_away": str(row.get("prob_away", "") or "").strip(),
+        })
+    return rows
+
+
+def _compute_actual_result(home_score, away_score):
+    if home_score is None or away_score is None:
+        return None
+    if home_score > away_score:
+        return "H"
+    if away_score > home_score:
+        return "A"
+    return "D"
+
+
+def _ensure(d, *keys):
+    for k in keys:
+        d = d.setdefault(k, {"correct": 0, "incorrect": 0})
+    return d
+
+
+def _track_prediction_results(completed_games):
+    """Match completed ESPN games against our CSV predictions and update tracking."""
+    tracking = _load_prediction_tracking()
+    now = datetime.now()
+    for g in completed_games:
+        comp = g.get("competition", "")
+        home = g.get("home_team", "").strip().lower()
+        away = g.get("away_team", "").strip().lower()
+        hs = g.get("home_score")
+        aws = g.get("away_score")
+        actual = _compute_actual_result(hs, aws)
+        if not actual:
+            continue
+
+        # Find matching prediction row
+        predictions = _load_predictions_for_competition(comp)
+        matched = None
+        for p in predictions:
+            if p["home_team"].strip().lower() == home and p["away_team"].strip().lower() == away:
+                matched = p
+                break
+            # Try reversed (home/away might be swapped in CSV)
+            if p["home_team"].strip().lower() == away and p["away_team"].strip().lower() == home:
+                matched = p
+                actual = {"H": "A", "A": "H", "D": "D"}[actual]
+                break
+
+        if not matched:
+            continue
+
+        pred = matched["predicted_result"]
+        correct = pred == actual
+
+        # -- All-time --
+        _ensure(tracking, "all_time", "total")
+        if correct:
+            tracking["all_time"]["total"]["correct"] += 1
+        else:
+            tracking["all_time"]["total"]["incorrect"] += 1
+
+        _ensure(tracking, "all_time", "by_league", comp)
+        if correct:
+            tracking["all_time"]["by_league"][comp]["correct"] += 1
+        else:
+            tracking["all_time"]["by_league"][comp]["incorrect"] += 1
+
+        # -- Weekly --
+        week_start = _get_week_start(now, comp)
+        week_key = week_start.isoformat()
+        weekly = tracking.setdefault("weekly", {})
+        current_week = weekly.setdefault(week_key, {"week_start": week_key, "by_league": {}})
+        wl = current_week["by_league"].setdefault(comp, {"correct": 0, "incorrect": 0})
+        if correct:
+            wl["correct"] += 1
+        else:
+            wl["incorrect"] += 1
+
+        # -- Per-team tracking (last 10) --
+        teams_to_update = [
+            (g.get("home_team", "").strip(), g.get("away_team", "").strip()),
+            (g.get("away_team", "").strip(), g.get("home_team", "").strip()),
+        ]
+        for team_name, opponent in teams_to_update:
+            if not team_name:
+                continue
+            pentry = {
+                "match_id": g.get("match_id", ""),
+                "opponent": opponent,
+                "competition": comp,
+                "prediction": pred,
+                "prob_home": matched.get("prob_home", ""),
+                "prob_draw": matched.get("prob_draw", ""),
+                "prob_away": matched.get("prob_away", ""),
+                "actual_result": actual,
+                "correct": correct,
+                "kickoff_utc": g.get("kickoff_utc", ""),
+            }
+            pt = tracking.setdefault("per_team", {})
+            tdata = pt.setdefault(team_name, {"predictions": []})
+            tdata["predictions"].insert(0, pentry)
+            tdata["predictions"] = tdata["predictions"][:10]
+            total = len(tdata["predictions"])
+            tdata["total"] = total
+            tdata["accuracy"] = round(sum(1 for x in tdata["predictions"] if x["correct"]) / total, 3) if total else 0
+
+    _save_prediction_tracking(tracking)
 
 
 def _fetch_competition_scores(comp_name, espn_id, today_str):
@@ -780,6 +1081,282 @@ def _fetch_competition_scores(comp_name, espn_id, today_str):
             parsed["competition"] = comp_name
             games.append(parsed)
     return games
+
+
+_STANDINGS_STAT_NAMES = {
+    "points": "points",
+    "rank": "rank",
+    "gamesPlayed": "played",
+    "wins": "wins",
+    "losses": "losses",
+    "ties": "draws",
+    "goalsFor": "goals_for",
+    "goalsAgainst": "goals_against",
+    "goalDifference": "goal_difference",
+    "form": "form",
+    "winPct": "win_pct",
+    "gamesBehind": "gb",
+    "streak": "streak",
+}
+
+
+def _parse_standings_entry(entry):
+    """Parse a single ESPN standings entry into a normalized dict."""
+    team = entry.get("team") or {}
+    stats_raw = {s["name"]: s["value"] for s in (entry.get("stats") or []) if s.get("name") is not None}
+    result = {"team": str(team.get("displayName", "")), "team_id": str(team.get("id", ""))}
+    for espn_name, our_name in _STANDINGS_STAT_NAMES.items():
+        val = stats_raw.get(espn_name)
+        if val is not None:
+            try:
+                result[our_name] = int(float(val))
+            except (ValueError, TypeError):
+                result[our_name] = str(val)
+    return result
+
+
+def _fetch_standings(comp_name, espn_id):
+    """Fetch and parse ESPN standings for a competition.
+
+    Tries the basic URL first, then falls back to season-specific URLs
+    to handle competitions whose season has ended (European leagues in June,
+    etc.).  Returns a normalized dict or None.
+    """
+    now = datetime.now()
+    # Derive candidate season years: current year, then the most recent
+    # European season start (current_year-1 if before August, else current_year).
+    candidate_seasons = [str(now.year)]
+    if now.month < 8:
+        candidate_seasons.append(str(now.year - 1))
+    else:
+        candidate_seasons.append(str(now.year))
+    candidate_urls = [f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/standings"]
+    for s in candidate_seasons:
+        candidate_urls.append(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/standings?season={s}")
+
+    data = None
+    for url in candidate_urls:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
+                data = json.loads(resp.read().decode())
+            if data.get("standings"):
+                break
+        except Exception:
+            continue
+
+    if data is None:
+        return None
+
+    standings_list = data.get("standings") or []
+    if not standings_list:
+        return None
+
+    # Find the "total" or "overall" standing type (ignore home/away splits).
+    primary = standings_list[0]
+    for s in standings_list:
+        if s.get("type") in ("total", "overall"):
+            primary = s
+            break
+
+    groups = []
+    children = primary.get("children")
+    if children:
+        # Group/tournament format (World Cup groups, UCL groups, etc.)
+        for child in children:
+            group_name = str(child.get("name", "")) or str(child.get("abbreviation", ""))
+            entries = [_parse_standings_entry(e) for e in (child.get("entries") or [])]
+            entries.sort(key=lambda x: x.get("rank", 999))
+            groups.append({"name": group_name, "entries": entries})
+    else:
+        # Single league table format
+        entries = [_parse_standings_entry(e) for e in (primary.get("entries") or [])]
+        entries.sort(key=lambda x: x.get("rank", 999))
+        groups.append({"name": str(primary.get("name", "Overall")), "entries": entries})
+
+    if not groups:
+        return None
+
+    return {
+        "competition": comp_name,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "groups": groups,
+    }
+
+
+def _get_or_fetch_standings(comp_name):
+    """Return cached standings for *comp_name*, or fetch+store if stale/missing."""
+    espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
+    if not espn_id:
+        return None
+    now = datetime.now()
+    with _real_tables_lock:
+        cached = _real_tables.get(comp_name)
+        if cached:
+            updated = cached.get("updated_at", "")
+            try:
+                age = (now - datetime.fromisoformat(updated)).total_seconds()
+            except Exception:
+                age = REAL_TABLES_CACHE_TTL + 1
+            if age < REAL_TABLES_CACHE_TTL:
+                return cached
+    data = _fetch_standings(comp_name, espn_id)
+    if data:
+        with _real_tables_lock:
+            _real_tables[comp_name] = data
+    return data
+
+
+def _clear_standings_cache(comp_name):
+    """Force next fetch of *comp_name* standings to hit ESPN."""
+    with _real_tables_lock:
+        _real_tables.pop(comp_name, None)
+
+
+# ── Individual Leaders (goals, assists, cards) ─────────────────
+
+_real_leaders: dict[str, dict] = {}
+_real_leaders_lock = threading.Lock()
+REAL_LEADERS_CACHE_TTL = 600  # 10 minutes (changes less frequently than tables)
+
+LEADER_CATEGORY_LABELS = {
+    "goals": "Goals",
+    "assists": "Assists",
+    "yellowCards": "Yellow Cards",
+    "yellowCard": "Yellow Cards",
+    "redCards": "Red Cards",
+    "redCard": "Red Cards",
+    "shotsOnGoal": "Shots on Goal",
+    "shotsOnGoalPerGame": "Shots/Game",
+    "passes": "Passes",
+    "passAccuracy": "Pass Accuracy",
+    "tackles": "Tackles",
+    "interceptions": "Interceptions",
+    "fouls": "Fouls",
+    "offsides": "Offsides",
+    "saves": "Saves",
+    "cleanSheet": "Clean Sheets",
+    "cleanSheets": "Clean Sheets",
+    "minutesPlayed": "Minutes",
+    "appearances": "Appearances",
+    "gameStarted": "Starts",
+    "gameWinningGoals": "GWG",
+    "hatTricks": "Hat Tricks",
+    "penaltyKickGoals": "PK Goals",
+    "penaltyKickAttempts": "PK Att",
+    "ownGoals": "Own Goals",
+    "crosses": "Crosses",
+    "corners": "Corners",
+    "blocks": "Blocks",
+    "clearances": "Clearances",
+    "aerialsWon": "Aerials Won",
+    "duelsWon": "Duels Won",
+}
+
+
+def _fetch_leaders(comp_name, espn_id):
+    """Fetch ESPN statistical leaders for a competition.
+
+    Returns a normalized dict with:
+        competition, updated_at, categories: {category_key: [{rank, player, team, value}]}
+    Returns None if no leaders data is available.
+    """
+    now = datetime.now()
+    candidate_seasons = [str(now.year)]
+    if now.month < 8:
+        candidate_seasons.append(str(now.year - 1))
+    else:
+        candidate_seasons.append(str(now.year))
+    candidate_urls = [f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/statistics/leaders"]
+    for s in candidate_seasons:
+        candidate_urls.append(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/statistics/leaders?season={s}")
+
+    data = None
+    for url in candidate_urls:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
+                data = json.loads(resp.read().decode())
+            if data.get("leaders"):
+                break
+        except Exception:
+            continue
+
+    if data is None:
+        return None
+
+    leaders_list = data.get("leaders") or []
+    if not leaders_list:
+        return None
+
+    categories = {}
+    for cat in leaders_list:
+        abbr = cat.get("abbreviation", "") or cat.get("shortDisplayName", "")
+        if not abbr:
+            continue
+        entries = cat.get("leaders") or []
+        parsed_entries = []
+        for rank_idx, entry in enumerate(entries, 1):
+            athlete = entry.get("athlete") or {}
+            team_info = athlete.get("team") or {}
+            player_name = str(athlete.get("displayName", "") or athlete.get("shortName", ""))
+            team_name = str(team_info.get("displayName", "") or "")
+            raw_val = entry.get("value", entry.get("displayValue", ""))
+            try:
+                val = int(float(raw_val))
+            except (ValueError, TypeError):
+                val = raw_val
+            if player_name:
+                parsed_entries.append({
+                    "rank": rank_idx,
+                    "player": player_name,
+                    "team": team_name,
+                    "value": val,
+                })
+        if parsed_entries:
+            label = LEADER_CATEGORY_LABELS.get(abbr, abbr)
+            categories[abbr] = {
+                "label": label,
+                "entries": parsed_entries,
+            }
+
+    if not categories:
+        return None
+
+    return {
+        "competition": comp_name,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "categories": categories,
+    }
+
+
+def _get_or_fetch_leaders(comp_name):
+    """Return cached leaders for *comp_name*, or fetch+store if stale/missing."""
+    espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
+    if not espn_id:
+        return None
+    now = datetime.now()
+    with _real_leaders_lock:
+        cached = _real_leaders.get(comp_name)
+        if cached:
+            updated = cached.get("updated_at", "")
+            try:
+                age = (now - datetime.fromisoformat(updated)).total_seconds()
+            except Exception:
+                age = REAL_LEADERS_CACHE_TTL + 1
+            if age < REAL_LEADERS_CACHE_TTL:
+                return cached
+    data = _fetch_leaders(comp_name, espn_id)
+    if data:
+        with _real_leaders_lock:
+            _real_leaders[comp_name] = data
+    return data
+
+
+def _clear_leaders_cache(comp_name):
+    """Force next fetch of *comp_name* leaders to hit ESPN."""
+    with _real_leaders_lock:
+        _real_leaders.pop(comp_name, None)
 
 
 BREAK_PERIODS = {"Halftime", "HT", "Half Time"}
@@ -922,21 +1499,44 @@ def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
         pass
 
 
-def _live_score_poller_loop():
-    """Background thread: poll ESPN for live scores every 90 seconds.
+def _compute_poll_interval(now, results, active_comps, todays_comps):
+    """Return the sleep interval in seconds before the next poll cycle.
 
-    Polls every known competition on every cycle.  ESPN's scoreboard API
-    only returns events for the requested date, so empty responses are
-    skipped and do not appear in _live_scores.  Finished games from today
-    persist across poll cycles via merge-by-match_id.
+    - 90 seconds  if any game is in-progress
+    - 900 seconds  if any game kicks off within 90 minutes
+    - 1800 seconds otherwise (no games or all finished)
+    """
+    # Check live results for in-progress games
+    for comp_data in results.values():
+        for g in comp_data.get("games", []):
+            if g.get("status") == "in":
+                return 90
+
+    # Check if any kickoffs are within 90 minutes
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    for kickoffs in todays_comps.values():
+        for kt in kickoffs:
+            try:
+                if isinstance(kt, datetime):
+                    diff = (kt - now_et).total_seconds()
+                    if 0 <= diff <= 5400:  # within 90 minutes
+                        return 900
+            except Exception:
+                continue
+    return 1800
+
+
+def _live_score_poller_loop():
+    """Background thread: poll ESPN for live scores.
+
+    Poll interval adapts dynamically:
+      90s  during live games,
+      900s (15min) when games kick off within 90 minutes,
+      1800s (30min) otherwise.
     """
     while True:
         try:
             today_str = date.today().strftime("%Y%m%d")
-            # Poll competitions that have games today per the available data
-            # sources (CSVs, WC projection, cup bracket).  No time-window
-            # filtering — ESPN only returns events for the requested date.
-            # When no data source has games, poll all 28 as a safety net.
             todays_comps = _get_todays_competitions()
             if todays_comps:
                 active_comps = {}
@@ -970,9 +1570,10 @@ def _live_score_poller_loop():
                             traceback.print_exc()
 
             with _live_scores_lock:
-                # Day boundary: clear when the date changes (midnight ET).
+                # Day boundary: save finished games then clear.
                 _today_for_poller = date.today().isoformat()
                 if getattr(_live_score_poller_loop, "_poller_date", None) != _today_for_poller:
+                    _merge_completed_to_history()
                     _live_scores.clear()
                     _live_score_poller_loop._poller_date = _today_for_poller
                 # Merge new results into existing so finished games persist.
@@ -987,10 +1588,15 @@ def _live_score_poller_loop():
                         "games": list(games_by_id.values()),
                         "last_polled_utc": comp_data["last_polled_utc"],
                     }
+            # Persist any newly completed games to history file.
+            _merge_completed_to_history()
         except Exception:
             import traceback
             traceback.print_exc()
-        time.sleep(90)
+
+        now = datetime.now()
+        interval = _compute_poll_interval(now, results, active_comps, todays_comps)
+        time.sleep(interval)
 
 
 # Start the live score poller at import time (works with both gunicorn and direct python app.py).
@@ -2419,6 +3025,278 @@ def api_debug_poller_state():
     return jsonify({"ok": True, "state": state})
 
 
+@app.get("/api/live-score-history")
+def api_live_score_history():
+    """Return historical completed games, filterable by league and date range.
+
+    Query params:
+        league   -- filter by competition name (substring match, case-insensitive)
+        from     -- start date (ISO, e.g. 2026-06-01), filters by kickoff_utc >=
+        to       -- end date (ISO, e.g. 2026-06-18), filters by kickoff_utc <=
+        page     -- page number (default 1)
+        per_page -- results per page (default 50, max 200)
+    """
+    league = request.args.get("league", "").strip()
+    from_date = request.args.get("from", "").strip()
+    to_date = request.args.get("to", "").strip()
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        per_page = min(200, max(1, int(request.args.get("per_page", "50"))))
+    except (ValueError, TypeError):
+        per_page = 50
+
+    games = _load_live_score_history()
+
+    if league:
+        league_lower = league.lower()
+        games = [g for g in games if league_lower in g.get("competition", "").lower()]
+    if from_date:
+        games = [g for g in games if g.get("kickoff_utc", "") >= from_date]
+    if to_date:
+        games = [g for g in games if g.get("kickoff_utc", "") <= to_date]
+
+    games.sort(key=lambda g: g.get("kickoff_utc", ""), reverse=True)
+
+    total = len(games)
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_games = games[start:end]
+
+    return jsonify({
+        "ok": True,
+        "games": page_games,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    })
+
+
+@app.get("/api/cup-bracket")
+def api_cup_bracket():
+    """Return real bracket for a cup competition, built from completed, in-progress,
+    and upcoming games.
+
+    Query params:
+        competition  -- required, e.g. "England/FA Cup", "FIFA/World Cup",
+                        "UEFA/Champions League"
+    """
+    comp = request.args.get("competition", "").strip()
+    if not comp:
+        return jsonify({"ok": False, "error": "Missing 'competition' parameter"}), 400
+    if comp not in LIVE_SCORE_COMPETITIONS:
+        return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
+
+    matches = []
+
+    # 1. Completed games from live score history
+    history = _load_live_score_history()
+    seen_ids = set()
+    for g in history:
+        if g.get("competition") == comp:
+            mid = g.get("match_id", "")
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    # 2. In-progress / finished today from live scores
+    with _live_scores_lock:
+        current = _live_scores.get(comp, {}).get("games", [])
+    for g in current:
+        mid = g.get("match_id", "")
+        if mid not in seen_ids:
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    # 3. Upcoming games from the projected cup bracket JSON
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket_data, dict):
+        comp_entry = bracket_data.get(comp)
+        if isinstance(comp_entry, dict):
+            for round_name, round_matches in comp_entry.items():
+                if isinstance(round_matches, list):
+                    for entry in round_matches:
+                        if not isinstance(entry, dict):
+                            continue
+                        hm = str(entry.get("home_team", "") or "")
+                        aw = str(entry.get("away_team", "") or "")
+                        if not hm or not aw:
+                            continue
+                        matches.append({
+                            "home_team": hm,
+                            "away_team": aw,
+                            "home_score": None,
+                            "away_score": None,
+                            "status": "pre",
+                            "kickoff_utc": str(entry.get("match_datetime_utc", "") or ""),
+                            "round": round_name,
+                            "competition": comp,
+                            "match_id": str(entry.get("match_id", "") or ""),
+                        })
+
+    # 4. Group by round
+    rounds = {}
+    for g in matches:
+        rnd = g.get("round", "")
+        if not rnd:
+            rnd = "Match"
+        order = g.get("round_order", 0)
+        if not isinstance(order, (int, float)):
+            try:
+                order = int(order)
+            except (ValueError, TypeError):
+                order = 0
+        if rnd not in rounds:
+            rounds[rnd] = {"name": rnd, "order": order, "matches": []}
+        # Sort by round_order if available, or by order of appearance
+        winner = None
+        if g.get("status") == "post":
+            hs = g.get("home_score")
+            aws = g.get("away_score")
+            if hs is not None and aws is not None:
+                if hs > aws:
+                    winner = g.get("home_team", "")
+                elif aws > hs:
+                    winner = g.get("away_team", "")
+        rounds[rnd]["matches"].append({
+            "home_team": g.get("home_team", ""),
+            "away_team": g.get("away_team", ""),
+            "home_score": g.get("home_score"),
+            "away_score": g.get("away_score"),
+            "status": g.get("status", "pre"),
+            "winner": winner,
+            "kickoff_utc": g.get("kickoff_utc", ""),
+            "match_id": g.get("match_id", ""),
+        })
+
+    # Sort rounds by order
+    sorted_rounds = sorted(rounds.values(), key=lambda r: (r["order"], r["name"]))
+    # Sort matches within each round by kickoff
+    for rnd in sorted_rounds:
+        rnd["matches"].sort(key=lambda m: m.get("kickoff_utc", ""))
+
+    return jsonify({
+        "ok": True,
+        "competition": comp,
+        "rounds": sorted_rounds,
+    })
+
+
+@app.get("/api/real-tables")
+def api_real_tables():
+    """Return real league tables from ESPN for one or all competitions.
+
+    Query params:
+        competition  -- optional, fetch a specific competition only
+                        (e.g. "England/Premier League", "FIFA/World Cup")
+                        If omitted, returns tables for all known competitions.
+        refresh      -- if "1" or "true", bypasses cache and fetches fresh data
+    """
+    comp_filter = request.args.get("competition", "").strip()
+    force_refresh = request.args.get("refresh", "").strip().lower() in ("1", "true")
+
+    if comp_filter:
+        if comp_filter not in LIVE_SCORE_COMPETITIONS:
+            return jsonify({"ok": False, "error": f"Unknown competition: {comp_filter}"}), 400
+        if force_refresh:
+            _clear_standings_cache(comp_filter)
+        table = _get_or_fetch_standings(comp_filter)
+        return jsonify({"ok": True, "table": table})
+
+    results = {}
+    for comp_name in LIVE_SCORE_COMPETITIONS:
+        if force_refresh:
+            _clear_standings_cache(comp_name)
+        table = _get_or_fetch_standings(comp_name)
+        if table:
+            results[comp_name] = table
+    return jsonify({"ok": True, "tables": results, "total": len(results)})
+
+
+@app.get("/api/real-tables/competitions")
+def api_real_tables_competitions():
+    """Return list of competitions that have available standings data (cached or known)."""
+    available = []
+    for comp_name in LIVE_SCORE_COMPETITIONS:
+        cached = None
+        with _real_tables_lock:
+            cached = _real_tables.get(comp_name)
+        available.append({
+            "competition": comp_name,
+            "cached": cached is not None,
+        })
+    return jsonify({"ok": True, "competitions": available})
+
+
+@app.get("/api/real-tables/leaders")
+def api_real_tables_leaders():
+    """Return individual statistical leaders from ESPN for a competition.
+
+    Query params:
+        competition  -- required, e.g. "England/Premier League", "FIFA/World Cup"
+        refresh      -- if "1" or "true", bypasses cache
+    """
+    comp_filter = request.args.get("competition", "").strip()
+    if not comp_filter:
+        return jsonify({"ok": False, "error": "Missing 'competition' parameter"}), 400
+    if comp_filter not in LIVE_SCORE_COMPETITIONS:
+        return jsonify({"ok": False, "error": f"Unknown competition: {comp_filter}"}), 400
+    force_refresh = request.args.get("refresh", "").strip().lower() in ("1", "true")
+    if force_refresh:
+        _clear_leaders_cache(comp_filter)
+    data = _get_or_fetch_leaders(comp_filter)
+    if data is None:
+        return jsonify({
+            "ok": True,
+            "leaders": None,
+            "note": "No leaders data available for this competition (knockout cup or no stats).",
+        })
+    return jsonify({"ok": True, "leaders": data})
+
+
+@app.get("/api/prediction-stats")
+def api_prediction_stats():
+    """Return overall prediction tracking statistics.
+
+    Returns all-time correct/incorrect counts (total and per-league),
+    current week results (as integer counts), and the current week's
+    start date.
+    """
+    tracking = _load_prediction_tracking()
+    now = datetime.now()
+
+    # Summarise all-time
+    all_time = tracking.get("all_time", {"total": {"correct": 0, "incorrect": 0}, "by_league": {}})
+
+    # Summarise current week per competition
+    week_summary = {}
+    weekly = tracking.get("weekly", {})
+    for week_key, week_data in weekly.items():
+        ws = week_data.get("week_start", "")
+        try:
+            ws_dt = datetime.fromisoformat(ws).date() if ws else None
+        except Exception:
+            ws_dt = None
+        if ws_dt is None:
+            continue
+        # Check if this week is the current week for each competition
+        for comp in week_data.get("by_league", {}):
+            comp_ws = _get_week_start(now, comp).date()
+            if ws_dt == comp_ws:
+                week_summary[comp] = week_data["by_league"][comp]
+
+    return jsonify({
+        "ok": True,
+        "all_time": all_time,
+        "current_week": {
+            "by_league": week_summary,
+        },
+    })
+
+
 @app.get("/api/team")
 def api_team():
     """Return form, recent results, upcoming games, and head-to-head vs all opponents for one team.
@@ -2475,12 +3353,26 @@ def api_team():
         except Exception:
             pass
 
+    # ── Per-team prediction accuracy ───────────────────────
+    team_pred_data = {}
+    tracking = _load_prediction_tracking()
+    pt = tracking.get("per_team", {})
+    team_key = team
+    if team_key in pt:
+        team_pred_data = pt[team_key]
+    # Also check the display-name variant
+    for tname, tdata in pt.items():
+        if tname.strip().lower() == team.lower() and team_key != tname:
+            team_pred_data = tdata
+            break
+
     return jsonify({
         "ok": True,
         "team": team,
         "form": team_form,
         "upcoming_games": upcoming,
         "head_to_head": all_h2h,
+        "prediction_accuracy": team_pred_data,
     })
 
 
@@ -2505,9 +3397,12 @@ def api_help():
             {"method": "GET", "path": "/api/notifications", "desc": "Retrieve recent notifications"},
             {"method": "POST", "path": "/api/notifications/register", "desc": "Register a device for push notifications"},
             {"method": "GET", "path": "/api/h2h?team1=&team2=&mode=", "desc": "Head-to-head and form data for two teams"},
-            {"method": "GET", "path": "/api/team?team=&mode=", "desc": "Form, upcoming games, and H2H for a single team"},
-            {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores (polled from ESPN every 90s)"},
+            {"method": "GET", "path": "/api/team?team=&mode=", "desc": "Form, upcoming games, H2H, and per-team prediction accuracy"},
+            {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores (polled from ESPN, includes lineups & red cards)"},
+            {"method": "GET", "path": "/api/live-score-history?league=&from=&to=&page=&per_page=", "desc": "Historical completed games, filterable by league and date"},
             {"method": "GET", "path": "/api/debug/live-score-sources", "desc": "Debug: what data sources the live score poller sees"},
+            {"method": "GET", "path": "/api/debug/manual-poll", "desc": "Debug: manually run one ESPN poll cycle"},
+            {"method": "GET", "path": "/api/debug/poller-state", "desc": "Debug: show live score poller internal state"},
             {"method": "GET", "path": "/api/upcoming/global", "desc": "Upcoming global fixtures (club + national team)"},
             {"method": "GET", "path": "/api/upcoming/extra", "desc": "Upcoming extra-league fixtures"},
             {"method": "GET", "path": "/api/upcoming/cups", "desc": "Upcoming cup fixtures"},
@@ -2517,6 +3412,11 @@ def api_help():
             {"method": "GET", "path": "/api/stats", "desc": "Overall site statistics (accuracy, league count)"},
             {"method": "POST", "path": "/api/feedback", "desc": "Submit user feedback"},
             {"method": "GET", "path": "/api/scorers", "desc": "Top scorers by competition"},
+            {"method": "GET", "path": "/api/real-tables?competition=&refresh=", "desc": "Real league tables from ESPN (league or group format)"},
+            {"method": "GET", "path": "/api/real-tables/competitions", "desc": "List competitions with cached standings data"},
+            {"method": "GET", "path": "/api/real-tables/leaders?competition=&refresh=", "desc": "Individual stat leaders from ESPN (goals, assists, cards, etc.)"},
+            {"method": "GET", "path": "/api/cup-bracket?competition=", "desc": "Real cup bracket from ESPN + history data"},
+            {"method": "GET", "path": "/api/prediction-stats", "desc": "Prediction tracking: all-time and current-week correct/incorrect counts"},
         ],
     })
 
