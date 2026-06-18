@@ -732,25 +732,28 @@ def _parse_espn_live_event(event):
 
         goalscorers = []
         red_cards = []
-        for side_key, side_label in ((home, "home"), (away, "away")):
-            for g in (side_key.get("scoringSummaries") or []):
-                gtype = g.get("type", "")
-                athlete = g.get("athlete") or {}
-                name = athlete.get("displayName", g.get("description", ""))
-                time_str = g.get("time", "")
-                if gtype in ("goal", "ownGoal", "penalty"):
-                    goalscorers.append({
-                        "team": side_label,
-                        "scorer": str(name),
-                        "minute": str(time_str),
-                        "type": gtype,
-                    })
-                elif gtype == "redCard":
-                    red_cards.append({
-                        "team": side_label,
-                        "player": str(name),
-                        "minute": str(time_str),
-                    })
+        details = comp_data.get("details") or []
+        home_team_id = str(home.get("id", ""))
+        away_team_id = str(away.get("id", ""))
+        for d in details:
+            side = "home" if str(d.get("team", {}).get("id", "")) == home_team_id else "away"
+            if d.get("scoringPlay"):
+                athletes = d.get("athletesInvolved") or [{}]
+                athlete = athletes[0] if athletes else {}
+                goalscorers.append({
+                    "team": side,
+                    "scorer": str(athlete.get("displayName", d.get("text", ""))),
+                    "minute": str(d.get("clock", {}).get("displayValue", "")),
+                    "type": str(d.get("type", {}).get("text", "")),
+                })
+            elif d.get("redCard"):
+                athletes = d.get("athletesInvolved") or [{}]
+                athlete = athletes[0] if athletes else {}
+                red_cards.append({
+                    "team": side,
+                    "player": str(athlete.get("displayName", "")),
+                    "minute": str(d.get("clock", {}).get("displayValue", "")),
+                })
 
         # ── Bracket / round info from ESPN tournament data ────
         tournament_info = comp_data.get("tournament") or {}
@@ -758,43 +761,16 @@ def _parse_espn_live_event(event):
         round_name = str(round_info.get("name", "")) or str(tournament_info.get("round", ""))
         bracket_slot = _to_int(round_info.get("number", round_info.get("position", 0)))
 
-        # ── Lineups (starting XI + subs) ────────────────────
-        home_lineup = []
-        for p in (home.get("lineup") or []):
-            ath = p.get("athlete") or {}
-            pos = p.get("position") or {}
-            home_lineup.append({
-                "player": str(ath.get("displayName", "")),
-                "position": str(pos.get("displayName", "")),
-                "jersey": str(p.get("jersey", "")),
-            })
-        home_subs = []
-        for p in (home.get("substitutes") or []):
-            ath = p.get("athlete") or {}
-            pos = p.get("position") or {}
-            home_subs.append({
-                "player": str(ath.get("displayName", "")),
-                "position": str(pos.get("displayName", "")),
-                "jersey": str(p.get("jersey", "")),
-            })
-        away_lineup = []
-        for p in (away.get("lineup") or []):
-            ath = p.get("athlete") or {}
-            pos = p.get("position") or {}
-            away_lineup.append({
-                "player": str(ath.get("displayName", "")),
-                "position": str(pos.get("displayName", "")),
-                "jersey": str(p.get("jersey", "")),
-            })
-        away_subs = []
-        for p in (away.get("substitutes") or []):
-            ath = p.get("athlete") or {}
-            pos = p.get("position") or {}
-            away_subs.append({
-                "player": str(ath.get("displayName", "")),
-                "position": str(pos.get("displayName", "")),
-                "jersey": str(p.get("jersey", "")),
-            })
+        # ── Game statistics ────────────────────────────────
+        EXCLUDED_STATS = {"shotAssists", "goalAssists", "appearances"}
+        home_stats = {}
+        for s in (home.get("statistics") or []):
+            if s.get("name") not in EXCLUDED_STATS:
+                home_stats[s["name"]] = s.get("displayValue", "")
+        away_stats = {}
+        for s in (away.get("statistics") or []):
+            if s.get("name") not in EXCLUDED_STATS:
+                away_stats[s["name"]] = s.get("displayValue", "")
 
         result = {
             "match_id": str(event.get("id", "")),
@@ -809,15 +785,13 @@ def _parse_espn_live_event(event):
             "goalscorers": goalscorers,
             "red_cards": red_cards,
         }
+        if home_stats:
+            result["home_stats"] = home_stats
+        if away_stats:
+            result["away_stats"] = away_stats
         if round_name:
             result["round"] = round_name
             result["round_order"] = bracket_slot
-        if home_lineup:
-            result["home_lineup"] = home_lineup
-            result["home_subs"] = home_subs
-        if away_lineup:
-            result["away_lineup"] = away_lineup
-            result["away_subs"] = away_subs
         return result
     except Exception:
         return None
@@ -1504,8 +1478,8 @@ def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
 def _compute_poll_interval(now, results, active_comps, todays_comps):
     """Return the sleep interval in seconds before the next poll cycle.
 
-    - 90 seconds  if any game is in-progress
-    - 900 seconds  if any game kicks off within 90 minutes
+    - 90 seconds  if any game is in-progress or just kicked off (past 90 min)
+    - wakes up at the nearest future kickoff if within 90 minutes
     - 1800 seconds otherwise (no games or all finished)
     """
     # Check live results for in-progress games
@@ -1514,17 +1488,27 @@ def _compute_poll_interval(now, results, active_comps, todays_comps):
             if g.get("status") == "in":
                 return 90
 
-    # Check if any kickoffs are within 90 minutes
     now_et = datetime.now(ZoneInfo("America/New_York"))
-    for kickoffs in todays_comps.values():
+    nearest_future = None
+
+    for comp_name, kickoffs in todays_comps.items():
         for kt in kickoffs:
             try:
                 if isinstance(kt, datetime):
                     diff = (kt - now_et).total_seconds()
-                    if 0 <= diff <= 5400:  # within 90 minutes
-                        return 900
+                    # Game started within last 90 min -> poll at 90s
+                    if -5400 <= diff <= 0:
+                        return 90
+                    # Future kickoff — track the nearest one
+                    if diff > 0 and (nearest_future is None or diff < nearest_future):
+                        nearest_future = diff
             except Exception:
                 continue
+
+    # Wake up at nearest future kickoff time so we switch to 90s immediately
+    if nearest_future is not None and nearest_future < 5400:
+        return max(10, nearest_future + 5)
+
     return 1800
 
 
