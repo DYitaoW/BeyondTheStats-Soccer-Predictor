@@ -182,6 +182,8 @@ def _run_global_subpipeline(args, api_token):
         continue_on_error=args.continue_on_error,
     )
     national_process_cmd = [py, str(FILES_DIR / "Process_National_Team_Data.py"), "--world-cup-only"]
+    if args.skip_model_train:
+        national_process_cmd.append("--skip-squad-values")
     sub["national_world_cup_model"] = run_step(
         "[global] National team World Cup model",
         national_process_cmd,
@@ -218,9 +220,12 @@ def _run_mls_subpipeline(args, api_token):
     sub = {}
     comp_workers = int(getattr(args, "competition_workers", 0) or 0)
 
+    mls_dl_cmd = [py, str(MLS_FILES_DIR / "Download_Latest_Data.py")]
+    if args.skip_model_train:
+        mls_dl_cmd.append("--skip-squad-values")
     sub["mls_download_process_sort"] = run_step(
         "[mls] Download/process/sort latest data",
-        [py, str(MLS_FILES_DIR / "Download_Latest_Data.py")],
+        mls_dl_cmd,
         continue_on_error=args.continue_on_error,
     )
     if not args.skip_model_train:
