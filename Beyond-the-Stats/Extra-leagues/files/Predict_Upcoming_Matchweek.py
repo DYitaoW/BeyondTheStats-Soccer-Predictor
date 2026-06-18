@@ -283,6 +283,10 @@ def predict_fixture(ctx, home_raw, away_raw, competition_hint):
     prediction = max(probabilities, key=probabilities.get)
     home_goals = max(0.0, float(ctx["home_goal_reg"].predict(X_match)[0]))
     away_goals = max(0.0, float(ctx["away_goal_reg"].predict(X_match)[0]))
+
+    # Align predicted scores to match the most likely result
+    aligned_home, aligned_away = pm.align_predicted_score(home_goals, away_goals, prediction)
+
     home_shots = max(0.0, float(ctx["home_shot_reg"].predict(X_match)[0]))
     away_shots = max(0.0, float(ctx["away_shot_reg"].predict(X_match)[0]))
     home_sot = max(0.0, float(ctx["home_sot_reg"].predict(X_match)[0]))
@@ -296,8 +300,8 @@ def predict_fixture(ctx, home_raw, away_raw, competition_hint):
         "prob_home": round(probabilities["H"], 6),
         "prob_draw": round(probabilities["D"], 6),
         "prob_away": round(probabilities["A"], 6),
-        "pred_home_goals": round(home_goals, 3),
-        "pred_away_goals": round(away_goals, 3),
+        "pred_home_goals": aligned_home,
+        "pred_away_goals": aligned_away,
         "pred_home_shots": round(home_shots, 3),
         "pred_away_shots": round(away_shots, 3),
         "pred_home_sot": round(home_sot, 3),

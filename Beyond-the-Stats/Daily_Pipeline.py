@@ -21,6 +21,7 @@ scheduler + mobile-feed writer on top of it.
 import argparse
 import csv
 import json
+import os
 import signal
 import sys
 import time
@@ -663,6 +664,21 @@ def publish_to_output(output_dir=None):
 # Main scheduler
 # ---------------------------------------------------------------------------
 
+LAST_REFRESH_FILE = SP_DIR / "Data" / "last_refresh.json"
+
+
+def _write_pipeline_timestamp() -> None:
+    """Write last_refresh.json so /api/last-refresh is current even if
+    the parent process (gunicorn/BackendServer) crashed mid-pipeline."""
+    try:
+        LAST_REFRESH_FILE.parent.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(UTC).replace(microsecond=0)
+        LAST_REFRESH_FILE.write_text(
+            json.dumps({"last_refresh_utc": now.isoformat()}), encoding="utf-8"
+        )
+    except Exception as exc:
+        print(f"[WARN] Could not write {LAST_REFRESH_FILE}: {exc}")
+
 def _import_pipeline_runner():
     """Import `run_full_pipeline` from the sibling Run_All_Pipeline module."""
     if str(SP_DIR) not in sys.path:
@@ -750,6 +766,8 @@ def main():
             print(f"[ERROR] Pipeline exited with code {exc.code}")
         except Exception as exc:
             print(f"[ERROR] Pipeline failed: {exc}")
+
+        _write_pipeline_timestamp()
 
         try:
             build_mobile_app_feed(pipeline_ok, step_results, output_path)

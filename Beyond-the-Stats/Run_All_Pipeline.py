@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -17,6 +18,8 @@ LOCAL_KEYS_FILE = FILES_DIR / "local_api_keys.json"
 
 DEFAULT_SUBPIPELINE_WORKERS = 3
 MAX_SUBPIPELINE_WORKERS = 3
+
+LAST_REFRESH_FILE = SP_DIR / "Data" / "last_refresh.json"
 
 
 def parse_args():
@@ -427,10 +430,24 @@ def run_full_pipeline(args, api_token, results=None):
     return results
 
 
+def _write_pipeline_timestamp() -> None:
+    """Write last_refresh.json so /api/last-refresh is current even if
+    the parent process (gunicorn/BackendServer) crashed mid-pipeline."""
+    try:
+        LAST_REFRESH_FILE.parent.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(UTC).replace(microsecond=0)
+        LAST_REFRESH_FILE.write_text(
+            json.dumps({"last_refresh_utc": now.isoformat()}), encoding="utf-8"
+        )
+    except Exception as exc:
+        print(f"[WARN] Could not write {LAST_REFRESH_FILE}: {exc}")
+
+
 def main():
     args = parse_args()
     api_token = load_api_token()
     run_full_pipeline(args, api_token)
+    _write_pipeline_timestamp()
     print("\nPipeline complete.")
 
 
