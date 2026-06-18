@@ -717,16 +717,47 @@ def _parse_espn_live_event(event):
         detail = type_detail.get("detail", "")
         clock = comp_data.get("clock") or ""
         display_clock = f"{clock} {detail}" if clock else detail
+
+        home_team_name = str(home.get("team", {}).get("displayName", ""))
+        away_team_name = str(away.get("team", {}).get("displayName", ""))
+
+        goalscorers = []
+        home_scorers = home.get("scoringSummaries") or []
+        for g in home_scorers:
+            if g.get("type") in ("goal", "ownGoal", "penalty"):
+                athlete = g.get("athlete") or {}
+                name = athlete.get("displayName", g.get("description", ""))
+                time_str = g.get("time", "")
+                goalscorers.append({
+                    "team": "home",
+                    "scorer": str(name),
+                    "minute": str(time_str),
+                    "type": g.get("type", "goal"),
+                })
+        away_scorers = away.get("scoringSummaries") or []
+        for g in away_scorers:
+            if g.get("type") in ("goal", "ownGoal", "penalty"):
+                athlete = g.get("athlete") or {}
+                name = athlete.get("displayName", g.get("description", ""))
+                time_str = g.get("time", "")
+                goalscorers.append({
+                    "team": "away",
+                    "scorer": str(name),
+                    "minute": str(time_str),
+                    "type": g.get("type", "goal"),
+                })
+
         return {
             "match_id": str(event.get("id", "")),
-            "home_team": str(home.get("team", {}).get("displayName", "")),
-            "away_team": str(away.get("team", {}).get("displayName", "")),
+            "home_team": home_team_name,
+            "away_team": away_team_name,
             "home_score": _to_int(home.get("score")),
             "away_score": _to_int(away.get("score")),
             "status": state,
             "period": detail,
             "clock": display_clock.strip(),
             "kickoff_utc": event.get("date", ""),
+            "goalscorers": goalscorers,
         }
     except Exception:
         return None
@@ -923,20 +954,20 @@ def _live_score_poller_loop():
                         pool.submit(_fetch_competition_scores, name, eid, today_str): name
                         for name, eid in active_comps.items()
                     }
-                    for ft in as_completed(ft_to_name):
-                        name = ft_to_name[ft]
-                        try:
-                            games = ft.result()
-                            if not games:
-                                continue
-                            # Keep all games for today — live, finished, or upcoming.
-                            results[name] = {
-                                "competition": name,
-                                "games": games,
-                                "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
-                            }
-                        except Exception:
-                            pass
+        for ft in as_completed(ft_to_name):
+            name = ft_to_name[ft]
+            try:
+                games = ft.result()
+                if not games:
+                    continue
+                results[name] = {
+                    "competition": name,
+                    "games": games,
+                    "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+                }
+            except Exception:
+                import traceback
+                traceback.print_exc()
 
             with _live_scores_lock:
                 # Day boundary: clear when the date changes (midnight ET).
@@ -957,7 +988,8 @@ def _live_score_poller_loop():
                         "last_polled_utc": comp_data["last_polled_utc"],
                     }
         except Exception:
-            pass
+            import traceback
+            traceback.print_exc()
         time.sleep(90)
 
 
