@@ -894,38 +894,26 @@ def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
 def _live_score_poller_loop():
     """Background thread: poll ESPN for live scores every 90 seconds.
 
-    Only polls competitions that have games today per the daily pipeline's
-    predictions CSVs.  A competition is polled when at least one of its
-    games has a kickoff within the next 5 minutes.  Once polled, it stays
-    active as long as at least one game is live (status="in" and not on a
-    named break like Halftime).  When all games finish or go on break,
-    polling stops until the next game's 5-minute pre-window.
+    Polls every known competition on every cycle.  ESPN's scoreboard API
+    only returns events for the requested date, so empty responses are
+    skipped and do not appear in _live_scores.  Finished games from today
+    persist across poll cycles via merge-by-match_id.
     """
     while True:
         try:
             today_str = date.today().strftime("%Y%m%d")
-            now_et = datetime.now(ZoneInfo("America/New_York"))
-
+            # Poll competitions that have games today per the available data
+            # sources (CSVs, WC projection, cup bracket).  No time-window
+            # filtering — ESPN only returns events for the requested date.
+            # When no data source has games, poll all 28 as a safety net.
             todays_comps = _get_todays_competitions()
-
-            active_comps = {}
             if todays_comps:
-                # Smart polling: only poll competitions with games today whose
-                # kickoff is within the 5-min pre-window or still live (3.5h).
-                for comp, kickoffs in todays_comps.items():
-                    espn_id = LIVE_SCORE_COMPETITIONS.get(comp)
-                    if not espn_id:
-                        continue
-                    for k in kickoffs:
-                        window_start = k - timedelta(minutes=5)
-                        window_end = k + timedelta(hours=3, minutes=30)
-                        if window_start <= now_et <= window_end:
-                            active_comps[comp] = espn_id
-                            break
+                active_comps = {}
+                for comp in todays_comps:
+                    eid = LIVE_SCORE_COMPETITIONS.get(comp)
+                    if eid:
+                        active_comps[comp] = eid
             else:
-                # Fallback: no data source has games for today — poll every
-                # known competition so we never miss a game the pipeline
-                # hasn't picked up yet.
                 active_comps = dict(LIVE_SCORE_COMPETITIONS)
 
             results = {}
@@ -2348,6 +2336,31 @@ def api_debug_live_score_sources():
     todays_comps = _get_todays_competitions()
     info["todays_competitions"] = {k: [v.isoformat() for v in vs] for k, vs in todays_comps.items()}
     return jsonify({"ok": True, "debug": info})
+
+
+@app.get("/api/debug/manual-poll")
+def api_debug_manual_poll():
+    """Manually run one ESPN poll cycle and return the results."""
+    today_str = date.today().strftime("%Y%m%d")
+    all_results = {}
+    for comp_name, espn_id in LIVE_SCORE_COMPETITIONS.items():
+        try:
+            games = _fetch_competition_scores(comp_name, espn_id, today_str)
+        except Exception:
+            continue
+        if games:
+            all_results[comp_name] = {
+                "competition": comp_name,
+                "games": games,
+                "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+            }
+    return jsonify({
+        "ok": True,
+        "today_str": today_str,
+        "competitions_found": len(all_results),
+        "total_games": sum(len(v["games"]) for v in all_results.values()),
+        "live_scores": all_results,
+    })
 
 
 @app.get("/api/team")
