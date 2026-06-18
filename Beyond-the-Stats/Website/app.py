@@ -2288,7 +2288,7 @@ def api_debug_live_score_sources():
             entry["size_bytes"] = os.path.getsize(path)
             entry["mtime_utc"] = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc).isoformat()
             try:
-                df = pd.read_csv(csv_path, dtype=str)
+                df = pd.read_csv(path, dtype=str)
                 entry["rows"] = len(df)
                 if "match_datetime_utc" in df.columns:
                     utc_dates = pd.to_datetime(df["match_datetime_utc"], errors="coerce")
