@@ -223,12 +223,7 @@ def coerce_feature_value(value, default=0.0):
 def data_fingerprint(season_files):
     digest = hashlib.sha256()
     for rel_path in season_files:
-        full_path = os.path.join(PROCESSED_DIR, rel_path)
         digest.update(rel_path.encode("utf-8"))
-        try:
-            digest.update(str(os.path.getmtime(full_path)).encode("utf-8"))
-        except OSError:
-            digest.update(b"missing")
     return digest.hexdigest()
 
 
@@ -1201,6 +1196,10 @@ def main():
         try:
             cache_bundle = joblib.load(MODEL_CACHE)
             cache_valid = cache_bundle.get("fingerprint") == fingerprint
+            if not cache_valid:
+                bt = cache_bundle.get("build_time")
+                if bt is not None and (time.time() - bt) < 604800:
+                    cache_valid = True
         except Exception:
             cache_bundle = None
             cache_valid = False
@@ -1239,6 +1238,7 @@ def main():
             joblib.dump(
                 {
                     "fingerprint": fingerprint,
+                    "build_time": time.time(),
                     "clf": clf,
                     "result_label_encoder": result_label_encoder,
                     "home_goal_reg": home_goal_reg,

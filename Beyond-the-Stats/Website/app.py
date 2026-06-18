@@ -53,8 +53,6 @@ LIVE_SCORE_COMPETITIONS = {
 
 _live_scores: dict[str, dict] = {}
 _live_scores_lock = threading.Lock()
-LIVE_SCORE_HISTORY_FILE = os.path.join(PROJECT_DIR, "Data", "live_score_history.json")
-PREDICTION_TRACKING_FILE = os.path.join(PROJECT_DIR, "Data", "prediction_tracking.json")
 
 # ── Standings Cache ───────────────────────────────────────────
 _real_tables: dict[str, dict] = {}
@@ -116,6 +114,8 @@ RUN_ALL_PIPELINE = os.path.join(PROJECT_DIR, "Run_All_Pipeline.py")
 LAST_DATA_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_data_refresh.json")
 TEAM_NAME_DISPLAY_MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "team_name_mapping_master.json")
 TOP_SCORERS_FILE = os.path.join(PROJECT_DIR, "Data", "Team_Data", "current_season_top_scorers.json")
+LIVE_SCORE_HISTORY_FILE = os.path.join(PROJECT_DIR, "Data", "live_score_history.json")
+PREDICTION_TRACKING_FILE = os.path.join(PROJECT_DIR, "Data", "prediction_tracking.json")
 USE_DISPLAY_NAME_MAPPING = False
 MLS_COMPETITION = "United States/MLS"
 CUP_COMPETITIONS = {
@@ -608,9 +608,11 @@ def _load_context(pm_mod):
     bundle = joblib.load(pm_mod.MODEL_CACHE)
     fingerprint = pm_mod.data_fingerprint(season_files)
     if bundle.get("fingerprint") != fingerprint:
-        raise RuntimeError(
-            "Model cache is stale for current processed data. Rebuild by running Predict_Match.py."
-        )
+        bt = bundle.get("build_time")
+        if bt is None or (time.time() - bt) >= 604800:
+            raise RuntimeError(
+                "Model cache is stale for current processed data. Rebuild by running Predict_Match.py."
+            )
 
     overall_teams = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "overall_teams.json"))
     season_teams = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "season_teams.json"))
