@@ -993,6 +993,13 @@ def _live_score_poller_loop():
         time.sleep(90)
 
 
+# Start the live score poller at import time (works with both gunicorn and direct python app.py).
+if not getattr(_live_score_poller_loop, "_started", False):
+    _live_score_poller_loop._started = True
+    threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
+    print("[startup] Live score poller started (90-second interval, smart-comp filtering).")
+
+
 # ── End Live Score Poller ───────────────────────────────────────
 
 
@@ -2972,9 +2979,6 @@ if __name__ == "__main__":
         raise SystemExit("--reload requires --debug")
 
     use_reloader = bool(args.debug and args.reload)
-
-    threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
-    print("[startup] Live score poller started (90-second interval, smart-comp filtering).")
 
     if args.host == "0.0.0.0":
         try:
