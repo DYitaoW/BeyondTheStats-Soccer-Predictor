@@ -52,7 +52,7 @@ LIVE_SCORE_COMPETITIONS = {
 }
 
 _live_scores: dict[str, dict] = {}
-_live_scores_lock = threading.Lock()
+_live_scores_lock = threading.RLock()
 
 # ── Standings Cache ───────────────────────────────────────────
 _real_tables: dict[str, dict] = {}
@@ -2371,6 +2371,9 @@ def _run_full_pipeline_once():
         )
         if proc.returncode != 0:
             print(f"[refresh] Daily pipeline failed with rc={proc.returncode}.")
+            global _last_pipeline_run
+            _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
+            _save_last_refresh()
             return False
         print("[refresh] Daily pipeline finished successfully.")
     except subprocess.TimeoutExpired:

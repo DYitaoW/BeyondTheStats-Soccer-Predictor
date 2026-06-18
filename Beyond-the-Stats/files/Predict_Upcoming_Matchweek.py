@@ -1261,6 +1261,9 @@ def predict_fixture(row, context):
 
     prediction = max(probabilities, key=probabilities.get)
 
+    # Align predicted scores to match the most likely result
+    aligned_home, aligned_away = pm.align_predicted_score(pred_home_goals, pred_away_goals, prediction)
+
     key = make_prediction_key(match_date, competition, home_team, away_team)
     match_datetime_utc = str(row.get("match_datetime_utc", "")).strip()
     return {
@@ -1278,8 +1281,8 @@ def predict_fixture(row, context):
         "prob_home": round(probabilities["H"], 6),
         "prob_draw": round(probabilities["D"], 6),
         "prob_away": round(probabilities["A"], 6),
-        "pred_home_goals": round(pred_home_goals, 3),
-        "pred_away_goals": round(pred_away_goals, 3),
+        "pred_home_goals": aligned_home,
+        "pred_away_goals": aligned_away,
         "pred_home_shots": round(pred_home_shots, 3),
         "pred_away_shots": round(pred_away_shots, 3),
         "pred_home_sot": round(pred_home_sot, 3),
