@@ -1669,6 +1669,16 @@ def _predict(home_raw, away_raw, mode="global"):
             "pred_away_shots": round(_to_float(record.get("pred_away_shots", 0.0)), 2),
             "pred_home_sot": round(_to_float(record.get("pred_home_sot", 0.0)), 2),
             "pred_away_sot": round(_to_float(record.get("pred_away_sot", 0.0)), 2),
+            "prob_home_goals_0": _to_float(record.get("prob_home_goals_0")),
+            "prob_home_goals_1plus": _to_float(record.get("prob_home_goals_1plus")),
+            "prob_home_goals_2plus": _to_float(record.get("prob_home_goals_2plus")),
+            "prob_away_goals_0": _to_float(record.get("prob_away_goals_0")),
+            "prob_away_goals_1plus": _to_float(record.get("prob_away_goals_1plus")),
+            "prob_away_goals_2plus": _to_float(record.get("prob_away_goals_2plus")),
+            "prob_both_score": _to_float(record.get("prob_both_score")),
+            "prob_over_1_5": _to_float(record.get("prob_over_1_5")),
+            "prob_over_2_5": _to_float(record.get("prob_over_2_5")),
+            "prob_over_3_5": _to_float(record.get("prob_over_3_5")),
         }
 
     ctx = get_context(mode)
@@ -1993,6 +2003,16 @@ def _load_upcoming_rows(csv_path, mode=None):
                 "pred_home_sot",
                 "pred_away_sot",
                 "probability_reasoning",
+                "prob_home_goals_0",
+                "prob_home_goals_1plus",
+                "prob_home_goals_2plus",
+                "prob_away_goals_0",
+                "prob_away_goals_1plus",
+                "prob_away_goals_2plus",
+                "prob_both_score",
+                "prob_over_1_5",
+                "prob_over_2_5",
+                "prob_over_3_5",
                 "actual_result",
                 "match_datetime_utc",
                 "match_datetime_et",
@@ -2122,6 +2142,16 @@ def _load_upcoming_rows(csv_path, mode=None):
                 "prob_away_text": _format_percent_value(pa_raw),
                 "pred_home_goals": int(pd.to_numeric(row.get("pred_home_goals"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("pred_home_goals"), errors="coerce")) else None,
                 "pred_away_goals": int(pd.to_numeric(row.get("pred_away_goals"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("pred_away_goals"), errors="coerce")) else None,
+                "prob_home_goals_0": _to_float(row.get("prob_home_goals_0")),
+                "prob_home_goals_1plus": _to_float(row.get("prob_home_goals_1plus")),
+                "prob_home_goals_2plus": _to_float(row.get("prob_home_goals_2plus")),
+                "prob_away_goals_0": _to_float(row.get("prob_away_goals_0")),
+                "prob_away_goals_1plus": _to_float(row.get("prob_away_goals_1plus")),
+                "prob_away_goals_2plus": _to_float(row.get("prob_away_goals_2plus")),
+                "prob_both_score": _to_float(row.get("prob_both_score")),
+                "prob_over_1_5": _to_float(row.get("prob_over_1_5")),
+                "prob_over_2_5": _to_float(row.get("prob_over_2_5")),
+                "prob_over_3_5": _to_float(row.get("prob_over_3_5")),
                 "reasoning": str(row.get("probability_reasoning", "")).strip(),
                 "actual_result": str(row.get("actual_result", "")).strip(),
                 "is_correct": (
@@ -2358,7 +2388,7 @@ def run_live_results_updater():
 
 def _run_full_pipeline_once():
     """Run full data/model refresh pipeline and reload in-memory predictor contexts."""
-    global _ctx_global, _ctx_mls, _ctx_extra
+    global _ctx_global, _ctx_mls, _ctx_extra, _last_pipeline_run
     if not os.path.exists(RUN_ALL_PIPELINE):
         print(f"[refresh] Pipeline runner not found: {RUN_ALL_PIPELINE}")
         return False
@@ -2371,7 +2401,6 @@ def _run_full_pipeline_once():
         )
         if proc.returncode != 0:
             print(f"[refresh] Daily pipeline failed with rc={proc.returncode}.")
-            global _last_pipeline_run
             _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
             _save_last_refresh()
             return False
@@ -2383,7 +2412,6 @@ def _run_full_pipeline_once():
         print(f"[refresh] Daily pipeline error: {exc}")
         return False
 
-    global _last_pipeline_run
     _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
     _save_last_refresh()
     with _ctx_lock:
@@ -3559,6 +3587,16 @@ def api_upcoming_world_cup():
             "prob_away_text": _format_percent_value(pa_raw),
             "pred_home_goals": ph_goals_int,
             "pred_away_goals": pa_goals_int,
+            "prob_home_goals_0": _to_float(fixture.get("prob_home_goals_0")),
+            "prob_home_goals_1plus": _to_float(fixture.get("prob_home_goals_1plus")),
+            "prob_home_goals_2plus": _to_float(fixture.get("prob_home_goals_2plus")),
+            "prob_away_goals_0": _to_float(fixture.get("prob_away_goals_0")),
+            "prob_away_goals_1plus": _to_float(fixture.get("prob_away_goals_1plus")),
+            "prob_away_goals_2plus": _to_float(fixture.get("prob_away_goals_2plus")),
+            "prob_both_score": _to_float(fixture.get("prob_both_score")),
+            "prob_over_1_5": _to_float(fixture.get("prob_over_1_5")),
+            "prob_over_2_5": _to_float(fixture.get("prob_over_2_5")),
+            "prob_over_3_5": _to_float(fixture.get("prob_over_3_5")),
             "reasoning": "",
             "actual_result": "",
             "is_correct": "",

@@ -113,6 +113,66 @@ def align_predicted_score(pred_home_goals: float, pred_away_goals: float, predic
     return max(0, hi), max(0, ai)
 
 
+def compute_goal_probabilities(lambda_home: float, lambda_away: float) -> dict:
+    """Compute Poisson-based goal event probabilities from expected goals (lambdas).
+
+    Returns a dict with keys:
+      prob_home_goals_0, prob_home_goals_1plus, prob_home_goals_2plus,
+      prob_away_goals_0, prob_away_goals_1plus, prob_away_goals_2plus,
+      prob_both_score, prob_over_1_5, prob_over_2_5, prob_over_3_5
+    """
+    eps = 1e-9
+    lh = max(lambda_home, eps)
+    la = max(lambda_away, eps)
+
+    def poisson_pmf(k, lam):
+        return math.exp(-lam) * (lam ** k) / math.factorial(k)
+
+    p_h0 = poisson_pmf(0, lh)
+    p_h1 = poisson_pmf(1, lh)
+    p_h2 = poisson_pmf(2, lh)
+    p_a0 = poisson_pmf(0, la)
+    p_a1 = poisson_pmf(1, la)
+    p_a2 = poisson_pmf(2, la)
+
+    prob_home_goals_0 = round(p_h0, 6)
+    prob_home_goals_1plus = round(1.0 - p_h0, 6)
+    prob_home_goals_2plus = round(1.0 - p_h0 - p_h1, 6)
+    prob_away_goals_0 = round(p_a0, 6)
+    prob_away_goals_1plus = round(1.0 - p_a0, 6)
+    prob_away_goals_2plus = round(1.0 - p_a0 - p_a1, 6)
+    prob_both_score = round((1.0 - p_h0) * (1.0 - p_a0), 6)
+
+    p_over_1_5 = 1.0
+    for h in range(0, 3):
+        for a in range(0, 3):
+            if h + a <= 1:
+                p_over_1_5 -= poisson_pmf(h, lh) * poisson_pmf(a, la)
+    p_over_2_5 = 1.0
+    for h in range(0, 4):
+        for a in range(0, 4):
+            if h + a <= 2:
+                p_over_2_5 -= poisson_pmf(h, lh) * poisson_pmf(a, la)
+    p_over_3_5 = 1.0
+    for h in range(0, 5):
+        for a in range(0, 5):
+            if h + a <= 3:
+                p_over_3_5 -= poisson_pmf(h, lh) * poisson_pmf(a, la)
+
+    return {
+        "prob_home_goals_0": prob_home_goals_0,
+        "prob_home_goals_1plus": prob_home_goals_1plus,
+        "prob_home_goals_2plus": prob_home_goals_2plus,
+        "prob_away_goals_0": prob_away_goals_0,
+        "prob_away_goals_1plus": prob_away_goals_1plus,
+        "prob_away_goals_2plus": prob_away_goals_2plus,
+        "prob_both_score": prob_both_score,
+        "prob_over_1_5": round(p_over_1_5, 6),
+        "prob_over_2_5": round(p_over_2_5, 6),
+        "prob_over_3_5": round(p_over_3_5, 6),
+    }
+
+
 def sample_score_from_probs(prob_home: float, prob_draw: float, prob_away: float,
                             base_home_xg: float, base_away_xg: float,
                             prediction: str, rng: np.random.Generator) -> tuple[int, int]:

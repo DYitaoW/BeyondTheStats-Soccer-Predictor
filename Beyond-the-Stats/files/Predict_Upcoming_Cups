@@ -2,6 +2,7 @@ import argparse
 import difflib
 import json
 import os
+import sys
 import urllib.error
 import urllib.request
 import unicodedata
@@ -11,6 +12,7 @@ import requests
 import joblib
 import pandas as pd
 
+sys.path.insert(0, os.path.dirname(__file__))
 import Download_Latest_Data as download_latest
 import Predict_Match as pm
 
