@@ -954,20 +954,20 @@ def _live_score_poller_loop():
                         pool.submit(_fetch_competition_scores, name, eid, today_str): name
                         for name, eid in active_comps.items()
                     }
-        for ft in as_completed(ft_to_name):
-            name = ft_to_name[ft]
-            try:
-                games = ft.result()
-                if not games:
-                    continue
-                results[name] = {
-                    "competition": name,
-                    "games": games,
-                    "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
-                }
-            except Exception:
-                import traceback
-                traceback.print_exc()
+                    for ft in as_completed(ft_to_name):
+                        name = ft_to_name[ft]
+                        try:
+                            games = ft.result()
+                            if not games:
+                                continue
+                            results[name] = {
+                                "competition": name,
+                                "games": games,
+                                "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+                            }
+                        except Exception:
+                            import traceback
+                            traceback.print_exc()
 
             with _live_scores_lock:
                 # Day boundary: clear when the date changes (midnight ET).
