@@ -2363,6 +2363,23 @@ def api_debug_manual_poll():
     })
 
 
+@app.get("/api/debug/poller-state")
+def api_debug_poller_state():
+    """Show what the poller thread currently has stored and its last poll timing."""
+    with _live_scores_lock:
+        state = {
+            "poll_competitions": list(_live_scores.keys()),
+            "total_games": sum(len(v.get("games", [])) for v in _live_scores.values()),
+            "last_polled_utc": max(
+                (v.get("last_polled_utc", "") for v in _live_scores.values()),
+                default=None,
+            ),
+            "poller_date": getattr(_live_score_poller_loop, "_poller_date", None),
+            "live_scores": _live_scores,
+        }
+    return jsonify({"ok": True, "state": state})
+
+
 @app.get("/api/team")
 def api_team():
     """Return form, recent results, upcoming games, and head-to-head vs all opponents for one team.
