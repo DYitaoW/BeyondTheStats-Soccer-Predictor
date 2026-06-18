@@ -1599,11 +1599,17 @@ def _live_score_poller_loop():
         time.sleep(interval)
 
 
-# Start the live score poller at import time (works with both gunicorn and direct python app.py).
-if not getattr(_live_score_poller_loop, "_started", False):
-    _live_score_poller_loop._started = True
-    threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
-    print("[startup] Live score poller started (90-second interval, smart-comp filtering).")
+def start_live_score_poller() -> None:
+    """Start the live score poller thread if not already running.
+
+    Called by BackendServer on Steam Deck (gunicorn) and by ``__main__``
+    in dev mode.  Safe to call multiple times — the ``_started`` guard
+    ensures only one thread is created.
+    """
+    if not getattr(start_live_score_poller, "_started", False):
+        start_live_score_poller._started = True
+        threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
+        print("[startup] Live score poller started (90-second interval, smart-comp filtering).")
 
 
 # ── End Live Score Poller ───────────────────────────────────────
@@ -3889,6 +3895,8 @@ if __name__ == "__main__":
             print(f"\n * Connect from other devices at: http://{ip}:{args.port}\n")
         except Exception:
             pass
+
+    start_live_score_poller()
 
     app.run(
         host=args.host,
