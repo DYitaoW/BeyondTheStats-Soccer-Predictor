@@ -131,8 +131,13 @@ def main():
             out_path = os.path.join(target_dir, name)
 
             # Older historical files are stable; only refresh recent seasons.
+            # European seasons (Aug-May) are considered complete once past June 1 of end_year.
+            now = datetime.now()
+            season_end_year = start_year + 1
+            season_complete = (now.year > season_end_year or
+                               (now.year == season_end_year and now.month >= 6))
             refresh_cutoff = current_year - REFRESH_RECENT_SEASONS
-            should_refresh = start_year >= refresh_cutoff
+            should_refresh = start_year >= refresh_cutoff and not season_complete
             if os.path.exists(out_path) and not should_refresh:
                 print(f"Kept {name}")
                 continue
