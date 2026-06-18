@@ -1,3 +1,4 @@
+import argparse
 import os
 from datetime import datetime
 from io import StringIO
@@ -22,6 +23,16 @@ REFRESH_RECENT_SEASONS = 2
 LEGACY_FILE_PATTERN = re.compile(rf"^{FILE_PREFIX}\d{{4}}-\d{{2}}\.csv$", re.IGNORECASE)
 
 RAW_REQUIRED_COLUMNS = ["Season", "Date", "Home", "Away", "HG", "AG", "Res"]
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--skip-squad-values",
+        action="store_true",
+        help="Skip Transfermarkt squad value scraping (weekly-only operation).",
+    )
+    return parser.parse_args()
 
 
 def season_label(start_year):
@@ -53,6 +64,7 @@ def normalize_season(value):
 
 
 def main():
+    args = parse_args()
     os.makedirs(TARGET_DIR, exist_ok=True)
     current_year = datetime.now().year
 
@@ -119,7 +131,8 @@ def main():
     print("\nSorting MLS team data...")
     sort_data.sort_all_seasons()
     sort_data.build_current_form_file()
-    sort_data.build_squad_values_file()
+    if not args.skip_squad_values:
+        sort_data.build_squad_values_file()
     print("\nMLS pipeline complete (download + process + sort).")
 
 

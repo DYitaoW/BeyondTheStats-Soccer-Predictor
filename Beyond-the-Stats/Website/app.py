@@ -800,9 +800,14 @@ def _get_todays_competitions():
                     continue
                 try:
                     dt = pd.to_datetime(md, errors="coerce", dayfirst=False)
-                    if pd.isna(dt) or dt.date() != today_date:
+                    if pd.isna(dt):
                         continue
-                    kickoff_et = dt.tz_localize(ZoneInfo("America/New_York")) if dt.tz is None else dt
+                    if dt.tz is None:
+                        kickoff_et = dt.tz_localize(ZoneInfo("America/New_York"))
+                    else:
+                        kickoff_et = dt.tz_convert(ZoneInfo("America/New_York"))
+                    if kickoff_et.date() != today_date:
+                        continue
                 except Exception:
                     continue
             todays[comp].append(kickoff_et)
@@ -852,18 +857,36 @@ def _get_todays_competitions():
 
 
 def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
-    """If *entry* has a date field matching today, add its kickoff."""
+    """If *entry* has a date field matching today in ET, add its kickoff."""
+    # Prefer match_datetime_utc — the most reliable source for date-in-ET.
+    dt_utc_str = str(entry.get("match_datetime_utc", "") or "").strip()
+    if dt_utc_str and dt_utc_str not in ("", "nan", "None", "NaT"):
+        try:
+            dt_utc = pd.to_datetime(dt_utc_str, errors="coerce")
+            if not pd.isna(dt_utc):
+                if dt_utc.tz is None:
+                    dt_utc = dt_utc.tz_localize("UTC")
+                kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
+                if kickoff_et.date() == today_date:
+                    out_dict[comp_name].append(kickoff_et)
+                return
+        except Exception:
+            pass
+    # Fallback to match_date / date / kickoff (naive date — assume ET).
     raw = str(entry.get("match_date") or entry.get("date") or entry.get("kickoff") or "")
     if not raw or raw in ("", "nan", "None", "NaT"):
         return
     try:
         dt = pd.to_datetime(raw, errors="coerce", dayfirst=False)
-        if pd.isna(dt) or dt.date() != today_date:
+        if pd.isna(dt):
             return
         if dt.tz is None:
-            dt = dt.tz_localize("UTC")
-        kickoff_et = dt.tz_convert(ZoneInfo("America/New_York"))
-        out_dict[comp_name].append(kickoff_et)
+            dt = dt.tz_localize(ZoneInfo("America/New_York"))
+        else:
+            dt = dt.tz_convert(ZoneInfo("America/New_York"))
+        if dt.date() != today_date:
+            return
+        out_dict[comp_name].append(dt)
     except Exception:
         pass
 
@@ -918,25 +941,33 @@ def _live_score_poller_loop():
                             games = ft.result()
                             if not games:
                                 continue
-                            # Only keep this competition if at least one game is
-                            # actively live and NOT on a named break (Halftime/HT).
-                            has_live = any(
-                                g.get("status") == "in"
-                                and g.get("period", "") not in BREAK_PERIODS
-                                for g in games
-                            )
-                            if has_live:
-                                results[name] = {
-                                    "competition": name,
-                                    "games": games,
-                                    "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
-                                }
+                            # Keep all games for today — live, finished, or upcoming.
+                            results[name] = {
+                                "competition": name,
+                                "games": games,
+                                "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+                            }
                         except Exception:
                             pass
 
             with _live_scores_lock:
-                _live_scores.clear()
-                _live_scores.update(results)
+                # Day boundary: clear when the date changes (midnight ET).
+                _today_for_poller = date.today().isoformat()
+                if getattr(_live_score_poller_loop, "_poller_date", None) != _today_for_poller:
+                    _live_scores.clear()
+                    _live_score_poller_loop._poller_date = _today_for_poller
+                # Merge new results into existing so finished games persist.
+                for comp_name, comp_data in results.items():
+                    existing = _live_scores.get(comp_name, {"games": []})
+                    games_by_id = {g["match_id"]: g for g in existing["games"] if g.get("match_id")}
+                    for g in comp_data.get("games", []):
+                        if g.get("match_id"):
+                            games_by_id[g["match_id"]] = g
+                    _live_scores[comp_name] = {
+                        "competition": comp_name,
+                        "games": list(games_by_id.values()),
+                        "last_polled_utc": comp_data["last_polled_utc"],
+                    }
         except Exception:
             pass
         time.sleep(90)
@@ -2292,7 +2323,10 @@ def api_debug_live_score_sources():
                 entry["rows"] = len(df)
                 if "match_datetime_utc" in df.columns:
                     utc_dates = pd.to_datetime(df["match_datetime_utc"], errors="coerce")
-                    et_dates = utc_dates.dt.tz_localize("UTC", ambiguous="NaT").dt.tz_convert(ZoneInfo("America/New_York")) if utc_dates.notna().any() else utc_dates
+                    if hasattr(utc_dates.dt, "tz") and utc_dates.dt.tz is not None:
+                        et_dates = utc_dates.dt.tz_convert(ZoneInfo("America/New_York"))
+                    else:
+                        et_dates = utc_dates.dt.tz_localize("UTC", ambiguous="NaT").dt.tz_convert(ZoneInfo("America/New_York"))
                     entry["date_range"] = [et_dates.min().strftime("%Y-%m-%d") if pd.notna(et_dates.min()) else None,
                                            et_dates.max().strftime("%Y-%m-%d") if pd.notna(et_dates.max()) else None]
                     entry["today_count"] = int((et_dates.dt.date == date.today()).sum())

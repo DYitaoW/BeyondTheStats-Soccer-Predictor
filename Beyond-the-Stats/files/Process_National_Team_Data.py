@@ -185,6 +185,11 @@ def parse_cli_args():
         default=SQUAD_VALUES_MAX_AGE_DAYS,
         help="Force a Transfermarkt refresh when the squad-values file is older than this many days. Set to 0 to disable the staleness override (the file is only refreshed when --refresh-squad-values is passed).",
     )
+    parser.add_argument(
+        "--skip-squad-values",
+        action="store_true",
+        help="Skip Transfermarkt squad value refreshes (weekly-only operation).",
+    )
     return parser.parse_args()
 
 
@@ -1900,10 +1905,15 @@ def run_pipeline(args):
     print(f"[TIMING] load_fifa_rankings: {time.monotonic() - step_t0:.1f}s")
 
     step_t0 = time.monotonic()
-    refresh_squad = bool(getattr(args, "refresh_squad_values", False)) or not os.path.exists(args.squad_values_file)
-    squad_cache_days = getattr(args, "squad_cache_days", SQUAD_VALUES_MAX_AGE_DAYS)
-    if squad_cache_days is None:
-        squad_cache_days = SQUAD_VALUES_MAX_AGE_DAYS
+    skip_squad = args.skip_squad_values
+    if not skip_squad:
+        refresh_squad = bool(getattr(args, "refresh_squad_values", False)) or not os.path.exists(args.squad_values_file)
+        squad_cache_days = getattr(args, "squad_cache_days", SQUAD_VALUES_MAX_AGE_DAYS)
+        if squad_cache_days is None:
+            squad_cache_days = SQUAD_VALUES_MAX_AGE_DAYS
+    else:
+        refresh_squad = False
+        squad_cache_days = 0
     squad_values = load_squad_values(
         args.squad_values_file,
         refresh=refresh_squad,
@@ -1923,18 +1933,19 @@ def run_pipeline(args):
 
     # Retry failed fetches: after both sources have run, check for missing data.
     if not args.skip_fetch:
-        retry_squad_targets = [t for t in target_teams if squad_values.get(canonical_team_name(t), 0) == 0]
-        if retry_squad_targets:
-            print(f"[RETRY] {len(retry_squad_targets)} teams missing squad values; retrying Transfermarkt...")
-            time.sleep(3)
-            try:
-                build_squad_values_file(list(retry_squad_targets), refresh=True, max_workers=max(1, TRANSFERMARKT_FETCH_WORKERS // 2))
-                retry_payload = load_json_or_csv_records(args.squad_values_file)
-                if retry_payload:
-                    squad_values.update(normalize_squad_values_payload(retry_payload))
-                print(f"  Transfermarkt retry complete for {len(retry_squad_targets)} teams.")
-            except Exception as exc:
-                print(f"  Transfermarkt retry failed: {exc}")
+        if not skip_squad:
+            retry_squad_targets = [t for t in target_teams if squad_values.get(canonical_team_name(t), 0) == 0]
+            if retry_squad_targets:
+                print(f"[RETRY] {len(retry_squad_targets)} teams missing squad values; retrying Transfermarkt...")
+                time.sleep(3)
+                try:
+                    build_squad_values_file(list(retry_squad_targets), refresh=True, max_workers=max(1, TRANSFERMARKT_FETCH_WORKERS // 2))
+                    retry_payload = load_json_or_csv_records(args.squad_values_file)
+                    if retry_payload:
+                        squad_values.update(normalize_squad_values_payload(retry_payload))
+                    print(f"  Transfermarkt retry complete for {len(retry_squad_targets)} teams.")
+                except Exception as exc:
+                    print(f"  Transfermarkt retry failed: {exc}")
         teams_with_few_matches = [t for t in target_teams if len(by_team.get(t, [])) < min(LAST_N_MATCHES, 5)]
         if teams_with_few_matches:
             print(f"[RETRY] {len(teams_with_few_matches)} teams have <{min(LAST_N_MATCHES,5)} recent matches; retrying ESPN fetch with delay...")
