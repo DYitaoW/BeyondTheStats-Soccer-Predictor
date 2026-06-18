@@ -108,6 +108,16 @@ RESULT_COLUMNS = [
     "pred_away_shots",
     "pred_home_sot",
     "pred_away_sot",
+    "prob_home_goals_0",
+    "prob_home_goals_1plus",
+    "prob_home_goals_2plus",
+    "prob_away_goals_0",
+    "prob_away_goals_1plus",
+    "prob_away_goals_2plus",
+    "prob_both_score",
+    "prob_over_1_5",
+    "prob_over_2_5",
+    "prob_over_3_5",
     "actual_home_goals",
     "actual_away_goals",
     "actual_result",
@@ -1261,6 +1271,9 @@ def predict_fixture(row, context):
 
     prediction = max(probabilities, key=probabilities.get)
 
+    # Compute Poisson-based goal probabilities from raw expected goals
+    goal_probs = pm.compute_goal_probabilities(pred_home_goals, pred_away_goals)
+
     # Align predicted scores to match the most likely result
     aligned_home, aligned_away = pm.align_predicted_score(pred_home_goals, pred_away_goals, prediction)
 
@@ -1287,6 +1300,7 @@ def predict_fixture(row, context):
         "pred_away_shots": round(pred_away_shots, 3),
         "pred_home_sot": round(pred_home_sot, 3),
         "pred_away_sot": round(pred_away_sot, 3),
+        **goal_probs,
         "actual_home_goals": None,
         "actual_away_goals": None,
         "actual_result": None,

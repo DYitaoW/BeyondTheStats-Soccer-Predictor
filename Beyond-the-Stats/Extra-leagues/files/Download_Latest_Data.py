@@ -1,9 +1,12 @@
 import os
+import sys
 import urllib.request
 from datetime import datetime
 from io import StringIO
 
 import pandas as pd
+
+sys.path.insert(0, os.path.dirname(__file__))
 import Process_Data as process_data
 import Sort_Data as sort_data
 

@@ -1,21 +1,3 @@
-# Utility to load all available raw CSVs into a single DataFrame for fallback use
-def fetch_source_dataframe():
-    frames = []
-    for comp in COMPETITIONS:
-        league_code = comp["league_code"]
-        # Find all CSVs for this league in RAW_DATA_DIR
-        for fname in os.listdir(RAW_DATA_DIR):
-            if fname.endswith(".csv") and league_code in fname:
-                fpath = os.path.join(RAW_DATA_DIR, fname)
-                try:
-                    df = pd.read_csv(fpath)
-                    frames.append(df)
-                except Exception:
-                    continue
-    if not frames:
-        return pd.DataFrame()
-    # Concatenate all, ignore index
-    return pd.concat(frames, ignore_index=True, sort=False)
 import os
 import urllib.request
 from datetime import datetime
@@ -26,6 +8,10 @@ import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
+
+
+# Utility to load all available raw CSVs into a single DataFrame for fallback use
+def fetch_source_dataframe():
 
 # Data source format expected:
 # https://www.football-data.co.uk/mmz4281/{season_code}/{league_code}.csv
@@ -50,7 +36,6 @@ COMPETITIONS = [
     {"country": "Belgium", "league": "First Division A", "league_code": "B1", "file_prefix": "belgiestat"},
     {"country": "Scotland", "league": "Premiership", "league_code": "SC0", "file_prefix": "scotpremstat"},
     {"country": "Turkey", "league": "Super Lig", "league_code": "T1", "file_prefix": "turkstat"},
-    {"country": "France", "league": "Ligue 2", "league_code": "F2", "file_prefix": "ligue2stat"},
 ]
 
 GENERAL_REQUIRED_COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR", "HS", "HST", "AS", "AST"]
