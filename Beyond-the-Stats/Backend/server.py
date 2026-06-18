@@ -227,6 +227,7 @@ class BackendServer:
             import app as website_app
 
             website_app.app.config["_backend_refresh"] = self._run_pipeline_in_background
+            website_app.start_live_score_poller()
             FlaskApp(website_app.app, options).run()
         except Exception as exc:
             LOG.exception("[flask] gunicorn crashed: %s -- falling back to dev", exc)
@@ -294,8 +295,13 @@ class BackendServer:
         if wait_for_lock:
             # Scheduled runs: wait for lock (up to 10 min) so daily 2 AM run isn't skipped
             if not self._pipeline_lock.acquire(blocking=True, timeout=600):
-                LOG.warning("[pipeline] timed out waiting for lock; skipping trigger=%s", trigger)
-                return
+                LOG.warning("[pipeline] timed out waiting for lock; force-killing stuck process trigger=%s", trigger)
+                self._kill_pipeline_blocking()
+                self._reap_pipeline()
+                # Force-acquire now that the process is dead
+                if not self._pipeline_lock.acquire(blocking=True, timeout=30):
+                    LOG.error("[pipeline] still cannot acquire lock after force-kill; skipping trigger=%s", trigger)
+                    return
         else:
             # Manual triggers: don't wait, skip if locked
             if not self._pipeline_lock.acquire(blocking=False):
