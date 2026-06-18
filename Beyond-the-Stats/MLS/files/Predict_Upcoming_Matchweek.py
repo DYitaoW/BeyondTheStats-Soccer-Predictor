@@ -5,6 +5,7 @@ import os
 import urllib.error
 import urllib.request
 import unicodedata
+import time
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -726,9 +727,11 @@ def build_prediction_context():
 
     fingerprint = pm.data_fingerprint(season_files)
     if bundle.get("fingerprint") != fingerprint:
-        raise RuntimeError(
-            "Model cache is stale for current processed data. Run Predict_Match.py to rebuild before predicting matchweek."
-        )
+        bt = bundle.get("build_time")
+        if bt is None or (time.time() - bt) >= 604800:
+            raise RuntimeError(
+                "Model cache is stale for current processed data. Run Predict_Match.py to rebuild before predicting matchweek."
+            )
 
     required_keys = {
         "clf",

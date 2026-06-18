@@ -1830,6 +1830,7 @@ def build_context_bundle(team_context, recent_rows, target_teams):
         "model_type": model_type,
         "backend": backend,
         "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+        "build_time": time.time(),
         "fingerprint": fingerprint,
         "clf": clf,
         "result_label_encoder": label_encoder,

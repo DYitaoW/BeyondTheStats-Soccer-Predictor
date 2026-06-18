@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import datetime
 import subprocess
 import sys
+import time
 
 import joblib
 import pandas as pd
@@ -344,7 +345,9 @@ def load_context():
         rebuild_model_cache_once()
         bundle = joblib.load(pm.MODEL_CACHE)
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
-        raise RuntimeError("Model cache is stale. Rebuild by running Predict_Match.py.")
+        bt = bundle.get("build_time")
+        if bt is None or (time.time() - bt) >= 604800:
+            raise RuntimeError("Model cache is stale. Rebuild by running Predict_Match.py.")
 
     overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
     season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))
