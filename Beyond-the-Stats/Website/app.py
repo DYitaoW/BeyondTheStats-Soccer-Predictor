@@ -5,6 +5,8 @@ import threading
 import importlib.util
 import subprocess
 import time
+import math
+import re
 import urllib.request
 from collections import deque, defaultdict
 from dataclasses import dataclass
@@ -13,6 +15,10 @@ from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 _last_pipeline_run: datetime | None = None
+
+# Cache for h2h/form data to avoid re-reading CSVs on every request.
+# Keyed by pm_mod.TEAM_DATA_DIR, value is (mtime_summary, (head_to_head, current_form)).
+_h2h_form_cache: dict[str, tuple[float, tuple[dict, dict]]] = {}
 
 # ── Live Score Polling ──────────────────────────────────────────
 LIVE_SCORE_ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
@@ -454,6 +460,28 @@ def _to_float(value, default=0.0):
         return default
 
 
+def _get_goal_prob(row, col_name):
+    """Return goal probability from CSV column or compute from predicted goals."""
+    val = row.get(col_name)
+    if val is not None:
+        try:
+            f = float(val)
+            if not pd.isna(f):
+                return round(f, 6)
+        except Exception:
+            pass
+    try:
+        hg = float(row.get("pred_home_goals", 0))
+        ag = float(row.get("pred_away_goals", 0))
+    except Exception:
+        return None
+    try:
+        probs = pm_global.compute_goal_probabilities(hg, ag)
+        return round(float(probs.get(col_name, 0)), 6)
+    except Exception:
+        return None
+
+
 def _load_static_predictions(path):
     if not path or not os.path.exists(path):
         return {}, set()
@@ -514,6 +542,16 @@ def _load_static_predictions(path):
             "pred_home_sot": _to_float(row.get(hst_col)) if hst_col else 0.0,
             "pred_away_sot": _to_float(row.get(ast_col)) if ast_col else 0.0,
         }
+        hg = record.get("pred_home_goals", 0.0)
+        ag = record.get("pred_away_goals", 0.0)
+        try:
+            goal_probs = pm_global.compute_goal_probabilities(float(hg), float(ag))
+        except Exception:
+            goal_probs = {}
+        for gp_key in ["prob_home_goals_0", "prob_home_goals_1plus", "prob_home_goals_2plus",
+                        "prob_away_goals_0", "prob_away_goals_1plus", "prob_away_goals_2plus",
+                        "prob_both_score", "prob_over_1_5", "prob_over_2_5", "prob_over_3_5"]:
+            record[gp_key] = goal_probs.get(gp_key, None)
         lookup[key] = record
         teams.add(home)
         teams.add(away)
@@ -556,7 +594,21 @@ def _load_teams_from_team_data(pm_mod):
     return sorted({str(team).strip() for team in teams if str(team).strip()})
 
 
-def _load_h2h_and_form(pm_mod):
+def _load_h2h_and_form(pm_mod, use_cache=True):
+    cache_key = pm_mod.TEAM_DATA_DIR
+    if use_cache and cache_key in _h2h_form_cache:
+        mtime_sum, result = _h2h_form_cache[cache_key]
+        # Check if either JSON file has changed since we cached.
+        h2h_path = os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json")
+        form_path = os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json")
+        current_sum = 0.0
+        for p in (h2h_path, form_path):
+            try:
+                current_sum += os.path.getmtime(p)
+            except Exception:
+                pass
+        if current_sum == mtime_sum:
+            return result
     head_to_head = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json"))
     current_form = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json"))
     try:
@@ -594,7 +646,18 @@ def _load_h2h_and_form(pm_mod):
             if key not in current_form_teams[team] or current_form_teams[team][key] is None:
                 current_form_teams[team][key] = value
 
-    return head_to_head or {}, current_form
+    result = (head_to_head or {}, current_form)
+    if use_cache:
+        # Compute an mtime summary for cache invalidation.
+        mtime_sum = 0.0
+        for p in (os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json"),
+                  os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json")):
+            try:
+                mtime_sum += os.path.getmtime(p)
+            except Exception:
+                pass
+        _h2h_form_cache[cache_key] = (mtime_sum, result)
+    return result
 
 def _load_context(pm_mod):
     """Load cached model bundle and supporting team data for one predictor mode."""
@@ -1512,6 +1575,330 @@ def _compute_poll_interval(now, results, active_comps, todays_comps):
     return 1800
 
 
+def _fetch_event_summary(comp_name, espn_id, event_id):
+    """Fetch ESPN summary for a single event to get lineups."""
+    url = "%s/%s/summary?event=%s" % (LIVE_SCORE_ESPN_BASE, espn_id, event_id)
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
+            return json.loads(resp.read().decode())
+    except Exception:
+        return None
+
+
+def _parse_espn_lineups(summary_data):
+    """Extract lineups from ESPN summary endpoint rosters.
+
+    Returns a dict mapping "home" / "away" to:
+        {
+            "formation": "4-2-3-1",
+            "startXI": [{ "name": "...", "number": ..., "position": "...", "grid": "..." }],
+            "substitutes": [{ "name": "...", "number": ..., "position": "..." }],
+        }
+    or empty dict if rosters not available.
+    """
+    rosters = summary_data.get("rosters") or []
+    if not rosters or len(rosters) < 2:
+        return {}
+    result = {}
+    has_lineup_data = False
+    for r in rosters:
+        side = "home" if r.get("homeAway") == "home" else "away"
+        formation = r.get("formation") or ""
+        roster = r.get("roster") or []
+        startXI = []
+        substitutes = []
+        for entry in roster:
+            athlete = entry.get("athlete") or {}
+            position = entry.get("position") or {}
+            name = str(athlete.get("displayName") or athlete.get("fullName") or "")
+            number = entry.get("jersey")
+            if number is not None:
+                try:
+                    number = int(number)
+                except (ValueError, TypeError):
+                    number = None
+            pos_abbr = str(position.get("abbreviation") or "")
+            grid = entry.get("formationPlace") or ""
+            player = {"name": name}
+            if number is not None:
+                player["number"] = number
+            if pos_abbr:
+                player["position"] = pos_abbr
+            if entry.get("starter") and grid:
+                player["grid"] = grid
+                startXI.append(player)
+            else:
+                substitutes.append(player)
+        result[side] = {
+            "formation": formation,
+            "startXI": startXI,
+            "substitutes": substitutes,
+        }
+        if startXI:
+            has_lineup_data = True
+    return result if has_lineup_data else {}
+
+
+def _parse_espn_head_to_head(summary_data):
+    """Extract head-to-head history from summary.
+
+    Returns list of past match results between the two teams, or [] if unavailable.
+    """
+    h2h = summary_data.get("headToHeadGames") or []
+    results = []
+    for entry in h2h:
+        events = entry.get("events") or []
+        for ev in events:
+            comps = ev.get("competitions") or []
+            for c in comps:
+                comps_list = c.get("competitors") or []
+                if len(comps_list) < 2:
+                    continue
+                teams = {}
+                for comp in comps_list:
+                    side = "home" if comp.get("homeAway") == "home" else "away"
+                    teams[side] = comp.get("team", {}).get("displayName", "")
+                results.append({
+                    "date": ev.get("date", "")[:10],
+                    "home_team": teams.get("home", ""),
+                    "away_team": teams.get("away", ""),
+                    "home_score": comps_list[0].get("score"),
+                    "away_score": comps_list[1].get("score"),
+                    "winner": "home" if any(c.get("winner") for c in comps_list if c.get("homeAway") == "home") else "away" if any(c.get("winner") for c in comps_list if c.get("homeAway") == "away") else "draw",
+                })
+    return results
+
+
+def _parse_espn_last_five(summary_data):
+    """Extract last 5 games for each team from summary.
+
+    Returns dict mapping team name to list of recent results.
+    """
+    last5 = summary_data.get("lastFiveGames") or []
+    result = {}
+    for entry in last5:
+        team = entry.get("team", {}).get("displayName", "")
+        events = entry.get("events") or []
+        team_results = []
+        for ev in events:
+            comps = ev.get("competitions") or []
+            for c in comps:
+                comps_list = c.get("competitors") or []
+                if len(comps_list) < 2:
+                    continue
+                teams = {}
+                for comp in comps_list:
+                    side = "home" if comp.get("homeAway") == "home" else "away"
+                    teams[side] = comp.get("team", {}).get("displayName", "")
+                team_results.append({
+                    "date": ev.get("date", "")[:10],
+                    "home_team": teams.get("home", ""),
+                    "away_team": teams.get("away", ""),
+                    "home_score": comps_list[0].get("score"),
+                    "away_score": comps_list[1].get("score"),
+                    "result": "W" if any(c.get("winner") and c.get("homeAway") == "home" and teams.get("home") == team for c in comps_list) or any(c.get("winner") and c.get("homeAway") == "away" and teams.get("away") == team for c in comps_list) else "L" if any(c.get("winner") for c in comps_list) else "D",
+                })
+        if team:
+            result[team] = team_results
+    return result
+
+
+def _parse_espn_key_events(summary_data):
+    """Extract key match events from summary.
+
+    Returns list of event dicts with type, text, period, clock, team.
+    """
+    events = summary_data.get("keyEvents") or []
+    result = []
+    for ev in events:
+        entry = {
+            "type": str(ev.get("type", {}).get("text", "")),
+            "text": str(ev.get("text", "")),
+            "short_text": str(ev.get("shortText", "")),
+            "period": ev.get("period", {}).get("number"),
+            "clock": str(ev.get("clock", {}).get("displayValue", "")),
+            "scoring_play": bool(ev.get("scoringPlay")),
+        }
+        team = ev.get("team") or {}
+        if team.get("id"):
+            entry["team_id"] = str(team["id"])
+        athlete = ev.get("athlete") or {}
+        if athlete.get("id"):
+            entry["athlete_id"] = str(athlete["id"])
+            entry["athlete_name"] = str(athlete.get("displayName", ""))
+        result.append(entry)
+    return result
+
+
+def _parse_espn_boxscore_stats(summary_data):
+    """Extract per-team boxscore statistics from summary.
+
+    Returns dict mapping "home" / "away" to list of stat objects
+    {name, displayName, displayValue}, or empty dict.
+    """
+    boxscore = summary_data.get("boxscore") or {}
+    teams = boxscore.get("teams") or []
+    if not teams or len(teams) < 2:
+        return {}
+    result = {}
+    for t in teams:
+        side = "home" if t.get("homeAway") == "home" else "away"
+        stats = t.get("statistics") or []
+        result[side] = [{
+            "name": s.get("name", ""),
+            "display_name": s.get("displayName", ""),
+            "value": s.get("displayValue", ""),
+        } for s in stats if s.get("name")]
+    return result
+
+
+def _parse_elapsed_minutes(clock_str, period_str):
+    """Parse elapsed match minutes from ESPN clock/period strings."""
+    clock_str = str(clock_str or "0'").strip()
+    period_str = str(period_str or "").strip().lower()
+    if "halftime" in period_str or ("half" in period_str and "1st" in period_str):
+        return 45
+    nums = re.findall(r"\d+", clock_str.split("+")[0])
+    if not nums:
+        return 0
+    base = int(nums[0])
+    if "+" in clock_str:
+        extra = re.findall(r"\d+", clock_str.split("+")[1] if "+" in clock_str else "")
+        if extra:
+            base += int(extra[0])
+    if "2nd" in period_str or "second" in period_str:
+        return min(45 + max(0, base), 99)
+    return min(base, 50)
+
+
+def _poisson_match_probs(lambda_h, lambda_a):
+    """Compute P(H), P(D), P(A) from Poisson final-score distribution."""
+    max_g = 10
+    home_pmf = [math.exp(-lambda_h) * (lambda_h ** h) / math.factorial(h) for h in range(max_g + 1)]
+    away_pmf = [math.exp(-lambda_a) * (lambda_a ** a) / math.factorial(a) for a in range(max_g + 1)]
+    p_h = p_d = p_a = 0.0
+    for h in range(max_g + 1):
+        for a in range(max_g + 1):
+            prob = home_pmf[h] * away_pmf[a]
+            if h > a:
+                p_h += prob
+            elif h == a:
+                p_d += prob
+            else:
+                p_a += prob
+    total = p_h + p_d + p_a
+    if total > 0:
+        return {"prob_home": round(p_h / total, 4), "prob_draw": round(p_d / total, 4), "prob_away": round(p_a / total, 4)}
+    return {"prob_home": 0.34, "prob_draw": 0.33, "prob_away": 0.33}
+
+
+def _normalize_team_for_live(name):
+    """Normalize team name for matching between ESPN API and prediction CSV."""
+    n = str(name or "").strip().lower()
+    n = re.sub(r"\s+", " ", n)
+    n = n.replace("&", "and")
+    n = re.sub(r"[^a-z0-9 ]", "", n)
+    return n.strip()
+
+
+def _build_live_prematch_index():
+    """Build {(norm_home, norm_away, comp): record} from today's upcoming CSVs."""
+    index = {}
+    for csv_path in _UPCOMING_CSV_FILES.values():
+        if not os.path.exists(csv_path):
+            continue
+        try:
+            frame = pd.read_csv(csv_path, dtype=str)
+        except Exception:
+            continue
+        for _, row in frame.iterrows():
+            comp = str(row.get("competition", "")).strip()
+            home = str(row.get("home_team", "")).strip()
+            away = str(row.get("away_team", "")).strip()
+            if not comp or not home or not away:
+                continue
+            key = (_normalize_team_for_live(home), _normalize_team_for_live(away), comp)
+            try:
+                fhg = float(row.get("pred_home_goals", 0))
+                fag = float(row.get("pred_away_goals", 0))
+            except Exception:
+                fhg, fag = 1.4, 1.2
+            index[key] = {
+                "pred_home_goals": max(0.1, fhg),
+                "pred_away_goals": max(0.1, fag),
+                "predicted_result": str(row.get("predicted_result", "")).strip(),
+            }
+    return index
+
+
+def _match_prematch_record(home_team, away_team, comp_name, prematch_index):
+    """Try to find a matching pre-match record using multiple strategies."""
+    nh = _normalize_team_for_live(home_team)
+    na = _normalize_team_for_live(away_team)
+    key = (nh, na, comp_name)
+    rec = prematch_index.get(key)
+    if rec is not None:
+        return rec
+    db_home = _team_name_for_db(home_team)
+    db_away = _team_name_for_db(away_team)
+    if db_home != home_team or db_away != away_team:
+        key2 = (_normalize_team_for_live(db_home), _normalize_team_for_live(db_away), comp_name)
+        rec = prematch_index.get(key2)
+        if rec is not None:
+            return rec
+    for csv_key, csv_rec in prematch_index.items():
+        csv_nh, csv_na, csv_comp = csv_key
+        if csv_comp != comp_name:
+            continue
+        if (nh in csv_nh or csv_nh in nh) and (na in csv_na or csv_na in na):
+            return csv_rec
+    return None
+
+
+def _compute_live_prediction(game, prematch):
+    """Compute in-play prediction from live game state and optional pre-match data."""
+    if game.get("status") != "in":
+        return None
+    home_score = game.get("home_score") or 0
+    away_score = game.get("away_score") or 0
+    elapsed = _parse_elapsed_minutes(game.get("clock", "0'"), game.get("period", ""))
+    time_frac = max(0.05, (95 - elapsed) / 90.0)
+    if prematch:
+        home_xg = prematch.get("pred_home_goals", 1.4)
+        away_xg = prematch.get("pred_away_goals", 1.2)
+    else:
+        home_xg, away_xg = 1.4, 1.2
+    rem_home = max(0.0, home_xg * time_frac)
+    rem_away = max(0.0, away_xg * time_frac)
+    for rc in game.get("red_cards", []):
+        if rc.get("team") == "home":
+            rem_home *= 0.65
+        else:
+            rem_away *= 0.65
+    home_stats = game.get("home_stats", {}) or {}
+    away_stats = game.get("away_stats", {}) or {}
+    hs = _to_float_or_none(home_stats.get("totalShots")) or 0
+    ha = _to_float_or_none(away_stats.get("totalShots")) or 0
+    hst = _to_float_or_none(home_stats.get("shotsOnTarget")) or 0
+    ast = _to_float_or_none(away_stats.get("shotsOnTarget")) or 0
+    # Stat-based adjustment
+    shot_ratio = hs / max(hs + ha, 1)
+    sot_ratio = hst / max(hst + ast, 1)
+    strength = 0.5 + (shot_ratio - 0.5) * 0.3 + (sot_ratio - 0.5) * 0.3
+    strength = max(0.2, min(0.8, strength))
+    rem_home *= strength * 2.0
+    rem_away *= (1.0 - strength) * 2.0
+    total_home = home_score + rem_home
+    total_away = away_score + rem_away
+    probs = _poisson_match_probs(total_home, total_away)
+    probs["home_score"] = home_score
+    probs["away_score"] = away_score
+    probs["elapsed"] = elapsed
+    probs["time_remaining_frac"] = round(time_frac, 3)
+    return probs
+
+
 def _live_score_poller_loop():
     """Background thread: poll ESPN for live scores.
 
@@ -1576,6 +1963,101 @@ def _live_score_poller_loop():
                     }
             # Persist any newly completed games to history file.
             _merge_completed_to_history()
+
+            # ── Fetch summary data for active games ─────────────
+            # Tracks which match_ids have had static data (h2h, last5) fetched.
+            if not hasattr(_live_score_poller_loop, "_summary_static_done"):
+                _live_score_poller_loop._summary_static_done = set()
+            summary_static_done = _live_score_poller_loop._summary_static_done
+            try:
+                games_needing_summary = []
+                for comp_name, comp_data in list(_live_scores.items()):
+                    espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
+                    if not espn_id:
+                        continue
+                    for g in comp_data.get("games", []):
+                        mid = g.get("match_id")
+                        if not mid:
+                            continue
+                        status = g.get("status", "")
+                        if status == "in":
+                            games_needing_summary.append((comp_name, espn_id, mid, "live"))
+                        elif status == "pre" and mid not in summary_static_done:
+                            games_needing_summary.append((comp_name, espn_id, mid, "static"))
+                if games_needing_summary:
+                    def _fetch_summary(args):
+                        comp_name, espn_id, match_id, fetch_type = args
+                        data = _fetch_event_summary(comp_name, espn_id, match_id)
+                        if not data:
+                            return None
+                        result = {"match_id": match_id, "comp_name": comp_name}
+                        lineups = _parse_espn_lineups(data)
+                        if lineups:
+                            result["lineups"] = lineups
+                        h2h = _parse_espn_head_to_head(data)
+                        if h2h:
+                            result["head_to_head"] = h2h
+                        last5 = _parse_espn_last_five(data)
+                        if last5:
+                            result["last_five"] = last5
+                        key_events = _parse_espn_key_events(data)
+                        if key_events:
+                            result["key_events"] = key_events
+                        boxscore = _parse_espn_boxscore_stats(data)
+                        if boxscore:
+                            result["boxscore_stats"] = boxscore
+                        result["fetch_type"] = fetch_type
+                        return result
+                    with ThreadPoolExecutor(max_workers=min(6, len(games_needing_summary))) as pool:
+                        summary_futures = [pool.submit(_fetch_summary, args) for args in games_needing_summary]
+                        for ft in as_completed(summary_futures):
+                            try:
+                                sresult = ft.result()
+                                if not sresult:
+                                    continue
+                                mid = sresult["match_id"]
+                                comp_name = sresult["comp_name"]
+                                with _live_scores_lock:
+                                    comp = _live_scores.get(comp_name)
+                                    if not comp:
+                                        continue
+                                    for g in comp.get("games", []):
+                                        if g.get("match_id") != mid:
+                                            continue
+                                        if "lineups" in sresult:
+                                            g["lineups"] = sresult["lineups"]
+                                        if "head_to_head" in sresult and "head_to_head" not in g:
+                                            g["head_to_head"] = sresult["head_to_head"]
+                                        if "last_five" in sresult and "last_five" not in g:
+                                            g["last_five"] = sresult["last_five"]
+                                        if "key_events" in sresult:
+                                            g["key_events"] = sresult["key_events"]
+                                        if "boxscore_stats" in sresult:
+                                            g["boxscore_stats"] = sresult["boxscore_stats"]
+                                        break
+                                if sresult.get("fetch_type") == "static":
+                                    summary_static_done.add(mid)
+                            except Exception:
+                                pass
+            except Exception:
+                import traceback
+                traceback.print_exc()
+
+            # Compute live in-play predictions for active games.
+            try:
+                prematch_index = _build_live_prematch_index()
+                for comp_name in list(_live_scores.keys()):
+                    for g in _live_scores[comp_name].get("games", []):
+                        if g.get("status") == "in":
+                            prematch = _match_prematch_record(
+                                g.get("home_team", ""), g.get("away_team", ""),
+                                comp_name, prematch_index,
+                            )
+                            lp = _compute_live_prediction(g, prematch)
+                            if lp is not None:
+                                g["live_prediction"] = lp
+            except Exception:
+                pass
         except Exception:
             import traceback
             traceback.print_exc()
@@ -1653,16 +2135,16 @@ def _predict(home_raw, away_raw, mode="global"):
             "pred_away_shots": round(_to_float(record.get("pred_away_shots", 0.0)), 2),
             "pred_home_sot": round(_to_float(record.get("pred_home_sot", 0.0)), 2),
             "pred_away_sot": round(_to_float(record.get("pred_away_sot", 0.0)), 2),
-            "prob_home_goals_0": _to_float(record.get("prob_home_goals_0")),
-            "prob_home_goals_1plus": _to_float(record.get("prob_home_goals_1plus")),
-            "prob_home_goals_2plus": _to_float(record.get("prob_home_goals_2plus")),
-            "prob_away_goals_0": _to_float(record.get("prob_away_goals_0")),
-            "prob_away_goals_1plus": _to_float(record.get("prob_away_goals_1plus")),
-            "prob_away_goals_2plus": _to_float(record.get("prob_away_goals_2plus")),
-            "prob_both_score": _to_float(record.get("prob_both_score")),
-            "prob_over_1_5": _to_float(record.get("prob_over_1_5")),
-            "prob_over_2_5": _to_float(record.get("prob_over_2_5")),
-            "prob_over_3_5": _to_float(record.get("prob_over_3_5")),
+            "prob_home_goals_0": _get_goal_prob(record, "prob_home_goals_0"),
+            "prob_home_goals_1plus": _get_goal_prob(record, "prob_home_goals_1plus"),
+            "prob_home_goals_2plus": _get_goal_prob(record, "prob_home_goals_2plus"),
+            "prob_away_goals_0": _get_goal_prob(record, "prob_away_goals_0"),
+            "prob_away_goals_1plus": _get_goal_prob(record, "prob_away_goals_1plus"),
+            "prob_away_goals_2plus": _get_goal_prob(record, "prob_away_goals_2plus"),
+            "prob_both_score": _get_goal_prob(record, "prob_both_score"),
+            "prob_over_1_5": _get_goal_prob(record, "prob_over_1_5"),
+            "prob_over_2_5": _get_goal_prob(record, "prob_over_2_5"),
+            "prob_over_3_5": _get_goal_prob(record, "prob_over_3_5"),
         }
 
     ctx = get_context(mode)
@@ -1781,6 +2263,9 @@ def _predict(home_raw, away_raw, mode="global"):
     home_display = _team_name_for_display(home_team)
     away_display = _team_name_for_display(away_team)
 
+    goal_probs = pm.compute_goal_probabilities(home_goals, away_goals)
+    aligned_home, aligned_away = pm.align_predicted_score(home_goals, away_goals, prediction)
+
     return {
         "home_team": home_display,
         "away_team": away_display,
@@ -1796,6 +2281,16 @@ def _predict(home_raw, away_raw, mode="global"):
         "pred_away_shots": round(away_shots, 2),
         "pred_home_sot": round(home_sot, 2),
         "pred_away_sot": round(away_sot, 2),
+        "prob_home_goals_0": round(goal_probs.get("prob_home_goals_0", 0), 6),
+        "prob_home_goals_1plus": round(goal_probs.get("prob_home_goals_1plus", 0), 6),
+        "prob_home_goals_2plus": round(goal_probs.get("prob_home_goals_2plus", 0), 6),
+        "prob_away_goals_0": round(goal_probs.get("prob_away_goals_0", 0), 6),
+        "prob_away_goals_1plus": round(goal_probs.get("prob_away_goals_1plus", 0), 6),
+        "prob_away_goals_2plus": round(goal_probs.get("prob_away_goals_2plus", 0), 6),
+        "prob_both_score": round(goal_probs.get("prob_both_score", 0), 6),
+        "prob_over_1_5": round(goal_probs.get("prob_over_1_5", 0), 6),
+        "prob_over_2_5": round(goal_probs.get("prob_over_2_5", 0), 6),
+        "prob_over_3_5": round(goal_probs.get("prob_over_3_5", 0), 6),
     }
 
 
@@ -2126,16 +2621,16 @@ def _load_upcoming_rows(csv_path, mode=None):
                 "prob_away_text": _format_percent_value(pa_raw),
                 "pred_home_goals": int(pd.to_numeric(row.get("pred_home_goals"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("pred_home_goals"), errors="coerce")) else None,
                 "pred_away_goals": int(pd.to_numeric(row.get("pred_away_goals"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("pred_away_goals"), errors="coerce")) else None,
-                "prob_home_goals_0": _to_float(row.get("prob_home_goals_0")),
-                "prob_home_goals_1plus": _to_float(row.get("prob_home_goals_1plus")),
-                "prob_home_goals_2plus": _to_float(row.get("prob_home_goals_2plus")),
-                "prob_away_goals_0": _to_float(row.get("prob_away_goals_0")),
-                "prob_away_goals_1plus": _to_float(row.get("prob_away_goals_1plus")),
-                "prob_away_goals_2plus": _to_float(row.get("prob_away_goals_2plus")),
-                "prob_both_score": _to_float(row.get("prob_both_score")),
-                "prob_over_1_5": _to_float(row.get("prob_over_1_5")),
-                "prob_over_2_5": _to_float(row.get("prob_over_2_5")),
-                "prob_over_3_5": _to_float(row.get("prob_over_3_5")),
+                "prob_home_goals_0": _get_goal_prob(row, "prob_home_goals_0"),
+                "prob_home_goals_1plus": _get_goal_prob(row, "prob_home_goals_1plus"),
+                "prob_home_goals_2plus": _get_goal_prob(row, "prob_home_goals_2plus"),
+                "prob_away_goals_0": _get_goal_prob(row, "prob_away_goals_0"),
+                "prob_away_goals_1plus": _get_goal_prob(row, "prob_away_goals_1plus"),
+                "prob_away_goals_2plus": _get_goal_prob(row, "prob_away_goals_2plus"),
+                "prob_both_score": _get_goal_prob(row, "prob_both_score"),
+                "prob_over_1_5": _get_goal_prob(row, "prob_over_1_5"),
+                "prob_over_2_5": _get_goal_prob(row, "prob_over_2_5"),
+                "prob_over_3_5": _get_goal_prob(row, "prob_over_3_5"),
                 "reasoning": str(row.get("probability_reasoning", "")).strip(),
                 "actual_result": str(row.get("actual_result", "")).strip(),
                 "is_correct": (
@@ -2329,6 +2824,55 @@ def _to_float_or_none(value):
     if pd.isna(num):
         return None
     return float(num)
+
+
+_RECENT_MATCHES_CACHE = {}
+_RECENT_MATCHES_CACHE_TIME = 0
+
+
+def _load_team_recent_matches(team, processed_dir, limit=10):
+    """Return last N matches for a team from Processed_Data CSVs with dates and opponents."""
+    now = time.time()
+    cache_key = f"{team}|{limit}"
+    cached = _RECENT_MATCHES_CACHE.get(cache_key)
+    if cached and (now - _RECENT_MATCHES_CACHE_TIME) < 300:
+        return cached
+    if not os.path.exists(processed_dir):
+        return []
+    rows = []
+    for root, _, files in os.walk(processed_dir):
+        for name in sorted(files):
+            if not name.endswith(".csv"):
+                continue
+            path = os.path.join(root, name)
+            try:
+                df = pd.read_csv(path, usecols=lambda c: c in {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"})
+            except Exception:
+                continue
+            if "HomeTeam" not in df.columns or "AwayTeam" not in df.columns:
+                continue
+            mask = (df["HomeTeam"] == team) | (df["AwayTeam"] == team)
+            if not mask.any():
+                continue
+            sub = df[mask]
+            for _, r in sub.iterrows():
+                is_home = r["HomeTeam"] == team
+                rows.append({
+                    "date": str(r.get("Date", "")),
+                    "competition": os.path.basename(os.path.dirname(path)) or "Unknown",
+                    "home_team": r["HomeTeam"],
+                    "away_team": r["AwayTeam"],
+                    "home_score": int(r["FTHG"]) if pd.notna(r.get("FTHG")) else None,
+                    "away_score": int(r["FTAG"]) if pd.notna(r.get("FTAG")) else None,
+                    "result": str(r.get("FTR", "")),
+                    "is_home": bool(is_home),
+                    "opponent": str(r["AwayTeam"]) if is_home else str(r["HomeTeam"]),
+                })
+    rows.sort(key=lambda x: x["date"], reverse=True)
+    result = rows[:limit]
+    _RECENT_MATCHES_CACHE[cache_key] = result
+    _RECENT_MATCHES_CACHE_TIME = now
+    return result
 
 
 def _normalize_recent_form_payload(payload):
@@ -3341,6 +3885,7 @@ def api_team():
         head_to_head, current_form = _load_h2h_and_form(pm_mod)
         ctx = type("StaticCtx", (), {"head_to_head": head_to_head, "current_form": current_form})
     else:
+        pm_mod = pm_mls if mode == "mls" else (pm_extra if mode == "extra" else pm_global)
         ctx = get_context(mode)
 
     if not team_input:
@@ -3348,6 +3893,8 @@ def api_team():
     team = _team_name_for_db(team_input)
 
     team_form = _normalize_recent_form_payload(ctx.current_form.get("teams", {}).get(team, {}))
+
+    recent_matches = _load_team_recent_matches(team, pm_mod.PROCESSED_DIR, 10)
 
     all_h2h = {}
     h2h_opponents = ctx.head_to_head.get(team, {})
@@ -3393,6 +3940,7 @@ def api_team():
         "ok": True,
         "team": team,
         "form": team_form,
+        "recent_matches": recent_matches,
         "upcoming_games": upcoming,
         "head_to_head": all_h2h,
         "prediction_accuracy": team_pred_data,
@@ -3421,7 +3969,7 @@ def api_help():
             {"method": "POST", "path": "/api/notifications/register", "desc": "Register a device for push notifications"},
             {"method": "GET", "path": "/api/h2h?team1=&team2=&mode=", "desc": "Head-to-head and form data for two teams"},
             {"method": "GET", "path": "/api/team?team=&mode=", "desc": "Form, upcoming games, H2H, and per-team prediction accuracy"},
-            {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores (polled from ESPN, includes lineups & red cards)"},
+            {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores (polled from ESPN, includes lineups, goalscorers, red cards & live predictions)"},
             {"method": "GET", "path": "/api/live-score-history?league=&from=&to=&page=&per_page=", "desc": "Historical completed games, filterable by league and date"},
             {"method": "GET", "path": "/api/debug/live-score-sources", "desc": "Debug: what data sources the live score poller sees"},
             {"method": "GET", "path": "/api/debug/manual-poll", "desc": "Debug: manually run one ESPN poll cycle"},
@@ -3571,16 +4119,16 @@ def api_upcoming_world_cup():
             "prob_away_text": _format_percent_value(pa_raw),
             "pred_home_goals": ph_goals_int,
             "pred_away_goals": pa_goals_int,
-            "prob_home_goals_0": _to_float(fixture.get("prob_home_goals_0")),
-            "prob_home_goals_1plus": _to_float(fixture.get("prob_home_goals_1plus")),
-            "prob_home_goals_2plus": _to_float(fixture.get("prob_home_goals_2plus")),
-            "prob_away_goals_0": _to_float(fixture.get("prob_away_goals_0")),
-            "prob_away_goals_1plus": _to_float(fixture.get("prob_away_goals_1plus")),
-            "prob_away_goals_2plus": _to_float(fixture.get("prob_away_goals_2plus")),
-            "prob_both_score": _to_float(fixture.get("prob_both_score")),
-            "prob_over_1_5": _to_float(fixture.get("prob_over_1_5")),
-            "prob_over_2_5": _to_float(fixture.get("prob_over_2_5")),
-            "prob_over_3_5": _to_float(fixture.get("prob_over_3_5")),
+            "prob_home_goals_0": _get_goal_prob(fixture, "prob_home_goals_0"),
+            "prob_home_goals_1plus": _get_goal_prob(fixture, "prob_home_goals_1plus"),
+            "prob_home_goals_2plus": _get_goal_prob(fixture, "prob_home_goals_2plus"),
+            "prob_away_goals_0": _get_goal_prob(fixture, "prob_away_goals_0"),
+            "prob_away_goals_1plus": _get_goal_prob(fixture, "prob_away_goals_1plus"),
+            "prob_away_goals_2plus": _get_goal_prob(fixture, "prob_away_goals_2plus"),
+            "prob_both_score": _get_goal_prob(fixture, "prob_both_score"),
+            "prob_over_1_5": _get_goal_prob(fixture, "prob_over_1_5"),
+            "prob_over_2_5": _get_goal_prob(fixture, "prob_over_2_5"),
+            "prob_over_3_5": _get_goal_prob(fixture, "prob_over_3_5"),
             "reasoning": "",
             "actual_result": "",
             "is_correct": "",

@@ -13,6 +13,7 @@ import joblib
 import pandas as pd
 from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, RandomForestRegressor
 from sklearn.preprocessing import LabelEncoder
+from sklearn.linear_model import LogisticRegression
 
 try:
     from xgboost import XGBClassifier, XGBRegressor
@@ -1164,6 +1165,50 @@ def train_all_regressors(X, targets):
     return results
 
 
+GOAL_PROB_TARGETS = [
+    ("goal_prob_home_0", lambda hg, ag: (hg == 0).astype(int)),
+    ("goal_prob_home_1plus", lambda hg, ag: (hg >= 1).astype(int)),
+    ("goal_prob_home_2plus", lambda hg, ag: (hg >= 2).astype(int)),
+    ("goal_prob_away_0", lambda hg, ag: (ag == 0).astype(int)),
+    ("goal_prob_away_1plus", lambda hg, ag: (ag >= 1).astype(int)),
+    ("goal_prob_away_2plus", lambda hg, ag: (ag >= 2).astype(int)),
+    ("goal_prob_both_score", lambda hg, ag: ((hg > 0) & (ag > 0)).astype(int)),
+    ("goal_prob_over_1_5", lambda hg, ag: ((hg + ag) > 1).astype(int)),
+    ("goal_prob_over_2_5", lambda hg, ag: ((hg + ag) > 2).astype(int)),
+    ("goal_prob_over_3_5", lambda hg, ag: ((hg + ag) > 3).astype(int)),
+]
+
+GOAL_PROB_RESULT_KEYS = [
+    "prob_home_goals_0", "prob_home_goals_1plus", "prob_home_goals_2plus",
+    "prob_away_goals_0", "prob_away_goals_1plus", "prob_away_goals_2plus",
+    "prob_both_score", "prob_over_1_5", "prob_over_2_5", "prob_over_3_5",
+]
+
+
+def train_goal_prob_model(X_train, y_train, random_state):
+    model = LogisticRegression(max_iter=1000, random_state=random_state, n_jobs=MODEL_THREADS)
+    model.fit(X_train, y_train)
+    return model
+
+
+def train_all_goal_prob_models(X, matches):
+    hg = matches["FTHG"]
+    ag = matches["FTAG"]
+    models = {}
+    for name, fn in GOAL_PROB_TARGETS:
+        models[name] = train_goal_prob_model(X, fn(hg, ag), hash(name) % (2**31))
+    return models
+
+
+def predict_goal_probabilities(X_match, goal_prob_models):
+    result = {}
+    for (name, _), result_key in zip(GOAL_PROB_TARGETS, GOAL_PROB_RESULT_KEYS):
+        model = goal_prob_models[name]
+        proba = model.predict_proba(X_match)[0]
+        result[result_key] = round(float(proba[1]), 6)
+    return result
+
+
 def main():
     matches, season_files = load_training_matches(PROCESSED_DIR)
 
@@ -1259,6 +1304,7 @@ def main():
         away_shot_reg = cache_bundle["away_shot_reg"]
         home_sot_reg = cache_bundle["home_sot_reg"]
         away_sot_reg = cache_bundle["away_sot_reg"]
+        goal_prob_models = cache_bundle.get("goal_prob_models")
         train_columns = cache_bundle["train_columns"]
         backend = cache_bundle.get("backend", "cached")
     else:
@@ -1280,6 +1326,7 @@ def main():
         away_shot_reg = regs["away_shot_reg"]
         home_sot_reg = regs["home_sot_reg"]
         away_sot_reg = regs["away_sot_reg"]
+        goal_prob_models = train_all_goal_prob_models(X, matches)
         try:
             joblib.dump(
                 {
@@ -1293,6 +1340,7 @@ def main():
                     "away_shot_reg": away_shot_reg,
                     "home_sot_reg": home_sot_reg,
                     "away_sot_reg": away_sot_reg,
+                    "goal_prob_models": goal_prob_models,
                     "train_columns": train_columns,
                     "backend": backend,
                 },

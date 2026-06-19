@@ -200,6 +200,7 @@ def build_context():
 
     latest_start_year = max(pm.parse_start_year_from_key(k) for k in season_teams.keys())
     latest_season = season_files[-1].replace(".csv", "")
+    goal_prob_models = bundle["goal_prob_models"]
     available = sorted(set(matches["HomeTeam"].dropna()) | set(matches["AwayTeam"].dropna()))
 
     return {
@@ -211,6 +212,7 @@ def build_context():
         "away_shot_reg": bundle["away_shot_reg"],
         "home_sot_reg": bundle["home_sot_reg"],
         "away_sot_reg": bundle["away_sot_reg"],
+        "goal_prob_models": goal_prob_models,
         "train_columns": bundle["train_columns"],
         "overall_teams": overall_teams,
         "season_teams": season_teams,
@@ -295,7 +297,7 @@ def predict_fixture(ctx, home_raw, away_raw, competition_hint):
     away_goals = max(0.0, float(ctx["away_goal_reg"].predict(X_match)[0]))
 
     # Compute Poisson-based goal probabilities from raw expected goals
-    goal_probs = pm.compute_goal_probabilities(home_goals, away_goals)
+    goal_probs = pm.predict_goal_probabilities(X_match, context["goal_prob_models"])
 
     # Align predicted scores to match the most likely result
     aligned_home, aligned_away = pm.align_predicted_score(home_goals, away_goals, prediction)

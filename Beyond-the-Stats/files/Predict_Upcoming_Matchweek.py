@@ -1053,6 +1053,7 @@ def build_prediction_context():
         "away_shot_reg",
         "home_sot_reg",
         "away_sot_reg",
+        "goal_prob_models",
         "train_columns",
     }
     missing = sorted(k for k in required_keys if k not in bundle)
@@ -1099,6 +1100,7 @@ def build_prediction_context():
     away_shot_reg = bundle["away_shot_reg"]
     home_sot_reg = bundle["home_sot_reg"]
     away_sot_reg = bundle["away_sot_reg"]
+    goal_prob_models = bundle["goal_prob_models"]
     train_columns = bundle["train_columns"]
 
     team_competition_map = {}
@@ -1119,6 +1121,7 @@ def build_prediction_context():
         "away_shot_reg": away_shot_reg,
         "home_sot_reg": home_sot_reg,
         "away_sot_reg": away_sot_reg,
+        "goal_prob_models": goal_prob_models,
         "overall_teams": overall_teams,
         "season_teams": season_teams,
         "head_to_head": head_to_head,
@@ -1271,8 +1274,8 @@ def predict_fixture(row, context):
 
     prediction = max(probabilities, key=probabilities.get)
 
-    # Compute Poisson-based goal probabilities from raw expected goals
-    goal_probs = pm.compute_goal_probabilities(pred_home_goals, pred_away_goals)
+    # Compute goal probabilities from trained LogisticRegression models
+    goal_probs = pm.predict_goal_probabilities(X_match, context["goal_prob_models"])
 
     # Align predicted scores to match the most likely result
     aligned_home, aligned_away = pm.align_predicted_score(pred_home_goals, pred_away_goals, prediction)
