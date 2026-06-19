@@ -1204,7 +1204,7 @@ def simulate_knockout_stage(knockout_fixtures, group_tables, third_place_table, 
     last_winner = ""
     # Per-fixture rows in the same shape as project_knockout so a single sim's
     # bracket can drive the website display when the sim's champion matches the
-    # 1000-sim aggregate's highest-odds winner.
+    # 5000-sim aggregate's highest-odds winner.
     projected = {}
 
     for stage in sorted(fixtures_by_stage.keys(), key=lambda value: STAGE_ORDER[value]):
@@ -1381,7 +1381,7 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
     # Per-sim results (group_tables, third_place_table, knockout, champion) keyed
     # by the sim's RNG seed. The `display_sim` key stores the sim selected as the
     # website display (its champion matches the highest-odds winner from the
-    # 1000-sim aggregate). Default -1 indicates none chosen yet.
+    # 5000-sim aggregate). Default -1 indicates none chosen yet.
     per_sim_results = []
     display_sim_index = -1
 
@@ -1437,7 +1437,7 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
         winner_probabilities[team] = round(percentage, 2)
 
     # Pick the sim whose champion matches the highest-odds winner from the
-    # 1000-sim aggregate. If no sim in the 1000 produces that champion (rare
+    # 5000-sim aggregate. If no sim in the 5000 produces that champion (rare
     # when the top probability is low), run additional sims with new seeds
     # until one matches, with a max-attempts cap.
     target_champion = ""
@@ -1480,7 +1480,7 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
                 print(f"    Match found on attempt {attempt + 1} (seed {extra_seed}).")
                 break
         if display_sim is None:
-            print(f"    No match after {max_extra_attempts} extra attempts. Falling back to the 1000-sim aggregate for display.")
+            print(f"    No match after {max_extra_attempts} extra attempts. Falling back to the 5000-sim aggregate for display.")
 
     # Free the per_sim_results list (~22 MB) as soon as we've picked the
     # display sim. It is only used inside run_simulations for the display-sim
@@ -1514,18 +1514,18 @@ def build_projection(args):
     knockout_fixtures = [row for row in fixtures if row.get("stage") in STAGE_ORDER]
     groups, team_to_group = infer_groups(group_fixtures)
 
-    # Run 1000 simulations FIRST so we can use sim-aggregated qualifiers for
+    # Run 5000 simulations FIRST so we can use sim-aggregated qualifiers for
     # the deterministic knockout projection. Group-stage + third-place
     # AGGREGATE output drives the winner/position probabilities (used by the
     # website summary cards). The DISPLAYED group tables, third-place table,
     # knockout bracket, and champion come from a SINGLE sim whose champion
-    # matches the highest-odds winner from the 1000-sim aggregate — so the
+    # matches the highest-odds winner from the 5000-sim aggregate — so the
     # website's "champion" card matches the displayed bracket end-to-end and
     # the third-place Pts/GD/GF reflect the actual group results, not sim
     # averages. Live WC results (if any) are applied deterministically inside
     # each sim's group stage.
     print("Generating tournament simulations...")
-    simulation_stats = run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group)
+    simulation_stats = run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group, num_simulations=5000)
 
     real_fixture_counts = _count_real_fixtures_per_team(group_fixtures)
     aggregated_group_tables = aggregate_sim_group_tables(
@@ -1550,7 +1550,7 @@ def build_projection(args):
         display_sim_seed = display_sim.get("seed")
     else:
         # No sim produced the highest-odds winner (rare, only when the top
-        # probability is very low). Fall back to the 1000-sim aggregate for
+        # probability is very low). Fall back to the 5000-sim aggregate for
         # the displayed groups/third place + a deterministic knockout fed
         # with the aggregate qualifiers.
         display_group_tables = aggregated_group_tables
@@ -1595,13 +1595,13 @@ def build_projection(args):
             "The eight best third-place teams qualify using points, goal difference, goals scored, then deterministic fallback.",
             "Round-of-32 third-place slots follow ESPN/FIFA published candidate group constraints for the 2026 bracket.",
             "Knockout rounds are projected without draws; tied model outcomes advance the side with the higher non-draw probability.",
-            "Winner/position probabilities are aggregated across 1000 tournament simulations (mode position + sim-averaged W/D/L/Pts/GD/GF/GA).",
-            "The displayed group tables, third-place table, knockout bracket, and champion come from a SINGLE sim whose champion matches the highest-odds winner from the 1000-sim aggregate, so the bracket ends at the displayed champion and the third-place Pts/GD/GF reflect the actual group results (not sim averages). If no sim in the first 1000 produced that champion, additional sims are run (max 500 extra attempts) until one matches.",
+            "Winner/position probabilities are aggregated across 5000 tournament simulations (mode position + sim-averaged W/D/L/Pts/GD/GF/GA).",
+            "The displayed group tables, third-place table, knockout bracket, and champion come from a SINGLE sim whose champion matches the highest-odds winner from the 5000-sim aggregate, so the bracket ends at the displayed champion and the third-place Pts/GD/GF reflect the actual group results (not sim averages). If no sim in the first 5000 produced that champion, additional sims are run (max 500 extra attempts) until one matches.",
         ],
         "groups_inferred_from_schedule": True,
         # Primary fields rendered by the website (world_cup.js) come from a
         # SINGLE sim whose champion matches the highest-odds winner from the
-        # 1000-sim aggregate. Internally consistent end-to-end: third-place
+        # 5000-sim aggregate. Internally consistent end-to-end: third-place
         # Pts/GD/GF reflect the actual group results, and the displayed bracket
         # leads to the displayed champion.
         "group_tables": display_group_tables,
@@ -1619,7 +1619,7 @@ def build_projection(args):
             for item in group_fixture_predictions.get(group, [])
         ],
         # Only aggregate percentages + display-sim index are exposed. The
-        # full 1000 sims are not shipped through the website.
+        # full 5000 sims are not shipped through the website.
         "simulations": public_simulations,
     }
     return payload

@@ -2777,6 +2777,15 @@ def _load_json_payload(path):
         return None
 
 
+def _file_mtime_utc(path):
+    """Return file modification time as ISO-8601 UTC string, or None."""
+    try:
+        ts = os.path.getmtime(path)
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+    except Exception:
+        return None
+
+
 def _to_int(value):
     """Best-effort integer coercion for display-safe counters."""
     try:
@@ -4331,21 +4340,32 @@ def api_top_picks():
 
 @app.get("/api/league-tables")
 def api_league_tables():
-    """Return projected league tables (and MLS playoff bracket when requested)."""
+    """Return projected league tables (and MLS playoff bracket when requested).
+
+    Includes a ``last_prediction_refresh`` field with the file mtime in UTC.
+    """
     mode = str(request.args.get("mode", "global")).strip().lower()
     if mode == "mls":
-        data = _load_projected_tables(MLS_PROJECTED_TABLE_FILE)
+        csv_path = MLS_PROJECTED_TABLE_FILE
+        data = _load_projected_tables(csv_path)
         bracket = _load_json_payload(MLS_PROJECTED_BRACKET_FILE)
+        data["last_prediction_refresh"] = _file_mtime_utc(csv_path)
         return jsonify({"ok": True, **data, "bracket": bracket})
     if mode == "cups":
-        data = _load_projected_tables(CUP_PROJECTED_TABLE_FILE)
+        csv_path = CUP_PROJECTED_TABLE_FILE
+        data = _load_projected_tables(csv_path)
         brackets = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+        data["last_prediction_refresh"] = _file_mtime_utc(csv_path)
         return jsonify({"ok": True, **data, "cup_brackets": brackets})
     if mode == "extra":
-        data = _load_projected_tables(EXTRA_PROJECTED_TABLE_FILE)
+        csv_path = EXTRA_PROJECTED_TABLE_FILE
+        data = _load_projected_tables(csv_path)
+        data["last_prediction_refresh"] = _file_mtime_utc(csv_path)
         return jsonify({"ok": True, **data})
     else:
-        data = _load_projected_tables(GLOBAL_PROJECTED_TABLE_FILE)
+        csv_path = GLOBAL_PROJECTED_TABLE_FILE
+        data = _load_projected_tables(csv_path)
+        data["last_prediction_refresh"] = _file_mtime_utc(csv_path)
     return jsonify({"ok": True, **data})
 
 
