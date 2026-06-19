@@ -10,9 +10,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 
 
-# Utility to load all available raw CSVs into a single DataFrame for fallback use
-def fetch_source_dataframe():
-
 # Data source format expected:
 # https://www.football-data.co.uk/mmz4281/{season_code}/{league_code}.csv
 # Example season_code: 2526 (for 2025-26)
