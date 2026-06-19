@@ -1955,7 +1955,11 @@ def _live_score_poller_loop():
                     games_by_id = {g["match_id"]: g for g in existing["games"] if g.get("match_id")}
                     for g in comp_data.get("games", []):
                         if g.get("match_id"):
-                            games_by_id[g["match_id"]] = g
+                            mid = g["match_id"]
+                            if mid in games_by_id:
+                                games_by_id[mid].update(g)
+                            else:
+                                games_by_id[mid] = g
                     _live_scores[comp_name] = {
                         "competition": comp_name,
                         "games": list(games_by_id.values()),
