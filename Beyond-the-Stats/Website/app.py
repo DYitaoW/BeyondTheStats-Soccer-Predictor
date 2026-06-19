@@ -1541,7 +1541,7 @@ def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
 def _compute_poll_interval(now, results, active_comps, todays_comps):
     """Return the sleep interval in seconds before the next poll cycle.
 
-    - 90 seconds  if any game is in-progress or just kicked off (past 90 min)
+    - 60 seconds  if any game is in-progress or just kicked off (past 90 min)
     - wakes up at the nearest future kickoff if within 90 minutes
     - 1800 seconds otherwise (no games or all finished)
     """
@@ -1549,7 +1549,7 @@ def _compute_poll_interval(now, results, active_comps, todays_comps):
     for comp_data in results.values():
         for g in comp_data.get("games", []):
             if g.get("status") == "in":
-                return 90
+                return 60
 
     now_et = datetime.now(ZoneInfo("America/New_York"))
     nearest_future = None
@@ -1559,9 +1559,9 @@ def _compute_poll_interval(now, results, active_comps, todays_comps):
             try:
                 if isinstance(kt, datetime):
                     diff = (kt - now_et).total_seconds()
-                    # Game started within last 90 min -> poll at 90s
+                    # Game started within last 90 min -> poll at 60s
                     if -5400 <= diff <= 0:
-                        return 90
+                        return 60
                     # Future kickoff — track the nearest one
                     if diff > 0 and (nearest_future is None or diff < nearest_future):
                         nearest_future = diff
