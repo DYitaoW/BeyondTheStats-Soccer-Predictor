@@ -175,8 +175,9 @@ class BackendServer:
         """Run gunicorn in-process via ``gunicorn.app.base.BaseApplication``."""
         from gunicorn.app.base import BaseApplication
 
-        # Cap workers at 4 so we leave headroom for the pipeline processes.
-        workers = max(2, min(4, (os.cpu_count() or 2)))
+        # Single worker with 4 threads — sufficient for this load and avoids
+        # having 4 redundant poller threads (threads don't survive os.fork).
+        workers = 1
 
         class FlaskApp(BaseApplication):
             def __init__(inner_self, app, options=None):
@@ -206,7 +207,10 @@ class BackendServer:
             import app as website_app
 
             website_app.app.config["_backend_refresh"] = self._run_pipeline_in_background
-            website_app.start_live_score_poller()
+            # Start the poller inside the worker (after fork) — threading.Thread
+            # objects do not survive os.fork(), so starting it here in the arbiter
+            # would leave every worker with an empty _live_scores dict.
+            options["post_worker_init"] = lambda _worker: website_app.start_live_score_poller()
             FlaskApp(website_app.app, options).run()
         except Exception as exc:
             LOG.exception("[flask] gunicorn crashed: %s -- falling back to dev", exc)
