@@ -1083,18 +1083,48 @@ function renderUpcoming(target, rows, selectedLeague) {
         target.innerHTML = "<p>No upcoming predictions for this league.</p>";
         return;
     }
-    // Pagination state
     const PAGE_SIZE = 30;
     let currentPage = 0;
-    const totalPages = Math.ceil(visibleRows.length / PAGE_SIZE);
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    // Only show games from today onward; hide past games from the UI.
+    const futureRows = visibleRows.filter(r => {
+        const d = (r.match_date || "").slice(0, 10);
+        return d >= todayStr;
+    });
+
+    if (!futureRows.length) {
+        target.innerHTML = "<p>No upcoming predictions for this league.</p>";
+        return;
+    }
 
     const byDay = {};
-    for (const r of visibleRows) {
+    for (const r of futureRows) {
         const key = `${r.weekday || ""} ${r.date_label || ""}`.trim();
         byDay[key] = byDay[key] || [];
         byDay[key].push(r);
     }
-    const days = Object.keys(byDay);
+
+    // Sort rows within each day by match_datetime_et (ISO string in ET, sorts chronologically).
+    for (const key of Object.keys(byDay)) {
+        byDay[key].sort((a, b) => {
+            const ta = a.match_datetime_et || "";
+            const tb = b.match_datetime_et || "";
+            if (ta && tb) return ta < tb ? -1 : ta > tb ? 1 : 0;
+            if (ta) return -1;
+            if (tb) return 1;
+            return 0;
+        });
+    }
+
+    // Sort days chronologically by the earliest match_datetime_et in each day.
+    const days = Object.keys(byDay).sort((a, b) => {
+        const da = byDay[a][0]?.match_datetime_et || "";
+        const db = byDay[b][0]?.match_datetime_et || "";
+        if (da && db) return da < db ? -1 : da > db ? 1 : 0;
+        return 0;
+    });
 
     // Flatten with day separators for pagination
     const flatItems = [];
@@ -1104,6 +1134,7 @@ function renderUpcoming(target, rows, selectedLeague) {
             flatItems.push({ type: 'match', data: r });
         }
     }
+    const totalPages = Math.ceil(flatItems.length / PAGE_SIZE);
 
     function renderPage(page) {
         const start = page * PAGE_SIZE;
