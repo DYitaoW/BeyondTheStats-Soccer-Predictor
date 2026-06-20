@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 
@@ -722,7 +722,9 @@ def main():
         totals_added = update_accuracy_totals_from_frame(totals, cup_df)
         totals["updated_at_utc"] = datetime.now(UTC).replace(microsecond=0).isoformat()
         save_json(ACCURACY_TOTALS_FILE, totals)
-        cup_df, removed_completed = _drop_completed_rows(cup_df, today=datetime.now().date())
+        today_local = datetime.now().date()
+        prev_monday = today_local - timedelta(days=today_local.weekday() + 7)
+        cup_df, removed_completed = _drop_completed_rows(cup_df, today=prev_monday)
 
     _write_csv(COMPLETED_CUP_PREDICTIONS_FILE, completed_df, CUP_HISTORY_COLUMNS)
     _write_csv(CUP_PREDICTIONS_FILE, cup_df, CUP_HISTORY_COLUMNS)
