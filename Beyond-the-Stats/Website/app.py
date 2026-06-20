@@ -1641,7 +1641,9 @@ def _compute_poll_interval(now, results, active_comps, todays_comps):
     """Return the sleep interval in seconds before the next poll cycle.
 
     - 60 seconds  if any game is in-progress or just kicked off (past 90 min)
-    - wakes up at the nearest future kickoff if within 90 minutes
+    - 900 seconds (15 min) when a game kicks off within the next 60 minutes
+    - wakes up at the nearest milestone (1hr/45min/30min/15min/game-start)
+      for games between 1-2 hours away
     - 1800 seconds otherwise (no games or all finished)
     """
     # Check live results for in-progress games
@@ -1661,15 +1663,21 @@ def _compute_poll_interval(now, results, active_comps, todays_comps):
                     # Game started within last 90 min -> poll at 60s
                     if -5400 <= diff <= 0:
                         return 60
+                    # Future kickoff within 60 min -> poll every 15 min
+                    # Hits milestones: 1hr, 45min, 30min, 15min before, then game start
+                    if 0 < diff <= 3600:
+                        return 900
                     # Future kickoff — track the nearest one
                     if diff > 0 and (nearest_future is None or diff < nearest_future):
                         nearest_future = diff
             except Exception:
                 continue
 
-    # Wake up at nearest future kickoff time so we switch to 90s immediately
-    if nearest_future is not None and nearest_future < 5400:
-        return max(10, nearest_future + 5)
+    # Wake up at nearest future kickoff time minus 60 min so pre-match polling starts
+    if nearest_future is not None and nearest_future < 7200:
+        # Wake at nearest_future - 3600 so we start 15-min polling 1hr before kickoff
+        wake_at = nearest_future - 3600
+        return max(10, wake_at)
 
     return 1800
 
@@ -2056,10 +2064,16 @@ def _live_score_poller_loop():
     """Background thread: poll ESPN for live scores.
 
     Poll interval adapts dynamically:
-      90s  during live games,
-      900s (15min) when games kick off within 90 minutes,
+      60s   during live games or games just kicked off (past 90 min),
+      900s (15min) when a game kicks off within 60 minutes (pre-match),
+      wakes at nearest_future - 1h when games are 1-2h away,
       1800s (30min) otherwise.
+    Summaries (lineups, h2h, key events) fetched every cycle for ALL games.
     """
+    # Init defaults so a crash in one cycle doesn't leave them undefined.
+    todays_comps = {}
+    active_comps = {}
+    results = {}
     while True:
         try:
             today_str = date.today().strftime("%Y%m%d")
@@ -2104,11 +2118,18 @@ def _live_score_poller_loop():
                     with _live_summary_cache_lock:
                         _live_summary_cache.clear()
                     _live_score_poller_loop._poller_date = _today_for_poller
+                    _live_score_poller_loop._summary_lineups_done = set()
                 # Merge new results into existing so finished games persist.
                 for comp_name, comp_data in results.items():
+                    new_games = comp_data.get("games", [])
                     existing = _live_scores.get(comp_name, {"games": []})
+                    # Guard: if ESPN transiently returns 0 games but we already
+                    # have data, keep the existing games to avoid "no live games"
+                    # flickering across poll cycles.
+                    if not new_games and existing.get("games"):
+                        continue
                     games_by_id = {g["match_id"]: g for g in existing["games"] if g.get("match_id")}
-                    for g in comp_data.get("games", []):
+                    for g in new_games:
                         if g.get("match_id"):
                             g["competition"] = comp_name
                             mid = g["match_id"]
@@ -2131,11 +2152,13 @@ def _live_score_poller_loop():
             # Persist any newly completed games to history file.
             _merge_completed_to_history()
 
-            # ── Fetch summary data for active games ─────────────
-            # Tracks which match_ids have had static data (h2h, last5) fetched.
-            if not hasattr(_live_score_poller_loop, "_summary_static_done"):
-                _live_score_poller_loop._summary_static_done = set()
-            summary_static_done = _live_score_poller_loop._summary_static_done
+            # ── Fetch summary data for active games ──────────────────
+            # - pre:   fetch until lineups are captured (once available), then stop
+            # - in:    fetch every cycle (key_events & boxscore change in real time)
+            # - post:  fetch once if cache empty (final data capture)
+            if not hasattr(_live_score_poller_loop, "_summary_lineups_done"):
+                _live_score_poller_loop._summary_lineups_done = set()
+            summary_lineups_done = _live_score_poller_loop._summary_lineups_done
             try:
                 games_needing_summary = []
                 for comp_name, comp_data in list(_live_scores.items()):
@@ -2147,20 +2170,15 @@ def _live_score_poller_loop():
                         if not mid:
                             continue
                         status = g.get("status", "")
-                        # Fetch summary for in-play games every cycle; for pre
-                        # games once (static); for post games once only if the
-                        # cache is empty (data was lost during in→post transition
-                        # under older code, or summary_static_done from the pre
-                        # phase blocked the needed re-fetch).
                         if status == "in":
-                            games_needing_summary.append((comp_name, espn_id, mid, "live"))
-                        elif status == "pre" and mid not in summary_static_done:
-                            games_needing_summary.append((comp_name, espn_id, mid, "static"))
+                            games_needing_summary.append((comp_name, espn_id, mid))
+                        elif status == "pre" and mid not in summary_lineups_done:
+                            games_needing_summary.append((comp_name, espn_id, mid))
                         elif status == "post" and mid not in _live_summary_cache:
-                            games_needing_summary.append((comp_name, espn_id, mid, "static"))
+                            games_needing_summary.append((comp_name, espn_id, mid))
                 if games_needing_summary:
                     def _fetch_summary(args):
-                        comp_name, espn_id, match_id, fetch_type = args
+                        comp_name, espn_id, match_id = args
                         data = _fetch_event_summary(comp_name, espn_id, match_id)
                         if not data:
                             return None
@@ -2180,7 +2198,6 @@ def _live_score_poller_loop():
                         boxscore = _parse_espn_boxscore_stats(data)
                         if boxscore:
                             result["boxscore_stats"] = boxscore
-                        result["fetch_type"] = fetch_type
                         return result
                     with ThreadPoolExecutor(max_workers=min(6, len(games_needing_summary))) as pool:
                         summary_futures = [pool.submit(_fetch_summary, args) for args in games_needing_summary]
@@ -2204,8 +2221,8 @@ def _live_score_poller_loop():
                                     if "boxscore_stats" in sresult:
                                         cache_entry["boxscore_stats"] = sresult["boxscore_stats"]
                                     _live_summary_cache[mid] = cache_entry
-                                if sresult.get("fetch_type") == "static":
-                                    summary_static_done.add(mid)
+                                if "lineups" in sresult:
+                                    summary_lineups_done.add(mid)
                             except Exception:
                                 pass
             except Exception:
@@ -2255,7 +2272,7 @@ def start_live_score_poller() -> None:
     if not getattr(start_live_score_poller, "_started", False):
         start_live_score_poller._started = True
         threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
-        print("[startup] Live score poller started (90-second interval, smart-comp filtering).")
+        print("[startup] Live score poller started (60s live / 15min pre-match / 30min idle).")
 
 
 # ── End Live Score Poller ───────────────────────────────────────
