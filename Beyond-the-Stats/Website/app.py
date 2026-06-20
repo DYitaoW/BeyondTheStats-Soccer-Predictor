@@ -553,6 +553,176 @@ def _get_goal_prob(row, col_name):
         return None
 
 
+# ── Pre-match advanced prediction helpers ─────────────────────
+
+def _poisson_pmf(k, lam):
+    """Poisson probability mass function P(X=k) for mean λ."""
+    if lam <= 0:
+        return 1.0 if k == 0 else 0.0
+    return (lam ** k) * math.exp(-lam) / math.factorial(k)
+
+
+def _safe_float(v, default=0.0):
+    """Convert to float, returning *default* on None / NaN / error."""
+    if v is None:
+        return default
+    try:
+        f = float(v)
+        if math.isnan(f):
+            return default
+        return f
+    except (ValueError, TypeError, OverflowError):
+        return default
+
+
+def _compute_correct_score_dist(pred_home_goals, pred_away_goals, max_goals=5):
+    """Full correct-score distribution via independent Poisson.
+
+    Returns top-20 scorelines sorted by probability descending, each as
+    ``{"home": int, "away": int, "prob": float}``.
+    """
+    hg = max(0.01, _safe_float(pred_home_goals, 0.0))
+    ag = max(0.01, _safe_float(pred_away_goals, 0.0))
+    scores = []
+    total = 0.0
+    for h in range(max_goals + 1):
+        ph = _poisson_pmf(h, hg)
+        for a in range(max_goals + 1):
+            p = ph * _poisson_pmf(a, ag)
+            if p > 0.001:
+                scores.append({"home": h, "away": a, "prob": round(p, 6)})
+                total += p
+    if total > 0:
+        for s in scores:
+            s["prob"] = round(s["prob"] / total, 6)
+    scores.sort(key=lambda x: x["prob"], reverse=True)
+    return scores[:20]
+
+
+def _compute_double_chance(prob_home, prob_draw, prob_away):
+    """Double-chance probabilities (1X / 12 / X2) from 0-1 probs."""
+    ph = _safe_float(prob_home, 0.0)
+    pdv = _safe_float(prob_draw, 0.0)
+    pa = _safe_float(prob_away, 0.0)
+    t = ph + pdv + pa
+    if t <= 0:
+        return {}
+    return {
+        "home_or_draw": round((ph + pdv) / t * 100, 2),
+        "home_or_away": round((ph + pa) / t * 100, 2),
+        "draw_or_away": round((pdv + pa) / t * 100, 2),
+    }
+
+
+def _compute_asian_handicap(pred_home_goals, pred_away_goals, prob_home=None, prob_draw=None, prob_away=None, max_goals=5):
+    """Compute key Asian handicap lines.
+
+    Lines 0, -0.5, +0.5 use match H/D/A probabilities when available (most
+    accurate).  Lines requiring goal margins (-1.0, +1.0, -1.5, etc.) use a
+    Poisson distribution from expected goals.
+
+    Returns dict mapping handicap line (str like ``"-0.5"``) to a dict with
+    ``"home"`` and ``"away"`` probabilities.
+    """
+    lines = {}
+
+    # Simple lines from match probabilities
+    ph = _safe_float(prob_home, None)
+    pdv = _safe_float(prob_draw, None)
+    pa = _safe_float(prob_away, None)
+    if ph is not None and pdv is not None and pa is not None:
+        total = ph + pdv + pa
+        if total > 0:
+            lines["0"] = {"home": round((ph + pdv * 0.5) / total, 6), "away": round((pa + pdv * 0.5) / total, 6)}
+            lines["-0.5"] = {"home": round(ph / total, 6), "away": round((pdv + pa) / total, 6)}
+            lines["+0.5"] = {"home": round((ph + pdv) / total, 6), "away": round(pa / total, 6)}
+
+    # Margin-dependent lines from Poisson distribution
+    hg = max(0.01, _safe_float(pred_home_goals, 0.0))
+    ag = max(0.01, _safe_float(pred_away_goals, 0.0))
+    dist = {}
+    total_p = 0.0
+    for h in range(max_goals + 1):
+        php = _poisson_pmf(h, hg)
+        for a in range(max_goals + 1):
+            p = php * _poisson_pmf(a, ag)
+            gd = h - a
+            dist[gd] = dist.get(gd, 0.0) + p
+            total_p += p
+    if total_p > 0:
+        dist = {k: v / total_p for k, v in dist.items()}
+
+    def _gd_prob(cmp):
+        return sum(p for gd, p in dist.items() if cmp(gd))
+
+    for line in [-2.0, -1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0]:
+        if str(line) in lines:
+            continue
+        if line <= 0:
+            need = abs(line)
+            if need == int(need):
+                p_h = _gd_prob(lambda g, n=need: g > n) + _gd_prob(lambda g, n=need: g == n) * 0.5
+                p_a = _gd_prob(lambda g, n=need: g < n) + _gd_prob(lambda g, n=need: g == n) * 0.5
+            else:
+                p_h = _gd_prob(lambda g, n=need: g > n)
+                p_a = _gd_prob(lambda g, n=need: g < n)
+        else:
+            if line == int(line):
+                p_h = _gd_prob(lambda g, n=line: g > -n) + _gd_prob(lambda g, n=line: g == -n) * 0.5
+                p_a = _gd_prob(lambda g, n=line: g < -n) + _gd_prob(lambda g, n=line: g == -n) * 0.5
+            else:
+                p_h = _gd_prob(lambda g, n=line: g > -n)
+                p_a = _gd_prob(lambda g, n=line: g < -n)
+        lines[str(line)] = {"home": round(p_h, 6), "away": round(p_a, 6)}
+    return lines
+
+
+# ── ESPN summary data parsers (venue, officials, broadcasts) ──
+
+def _parse_espn_game_info(summary_data):
+    """Extract venue, attendance, and officials from ESPN summary ``gameInfo``.
+
+    Returns dict with keys:
+        ``venue`` (str), ``attendance`` (int/None), ``officials`` (list)
+    or empty dict if unavailable.
+    """
+    game_info = summary_data.get("gameInfo") or {}
+    venue = game_info.get("venue") or {}
+    broadcasts = summary_data.get("broadcasts") or []
+    result = {}
+    if venue.get("fullName"):
+        result["venue"] = str(venue["fullName"])
+    att = game_info.get("attendance")
+    if att is not None:
+        try:
+            result["attendance"] = int(att)
+        except (ValueError, TypeError):
+            pass
+    officials_list = game_info.get("officials") or []
+    if officials_list:
+        refs = []
+        for off in officials_list:
+            name = str(off.get("fullName", ""))
+            pos = str(off.get("position", {}).get("displayName", ""))
+            if name:
+                refs.append({"name": name, "role": pos})
+        if refs:
+            result["officials"] = refs
+    if broadcasts:
+        tv = []
+        for b in broadcasts:
+            media = b.get("media") or {}
+            mkt = b.get("market") or {}
+            tv.append({
+                "network": str(media.get("shortName", media.get("name", ""))),
+                "type": str(b.get("type", {}).get("shortName", "")),
+                "region": str(mkt.get("type", "")),
+            })
+        if tv:
+            result["broadcasts"] = tv
+    return result
+
+
 def _load_static_predictions(path):
     if not path or not os.path.exists(path):
         return {}, set()
@@ -932,6 +1102,8 @@ def _parse_espn_live_event(event):
             "match_id": str(event.get("id", "")),
             "home_team": home_team_name,
             "away_team": away_team_name,
+            "home_team_id": home_team_id,
+            "away_team_id": away_team_id,
             "home_score": _to_int(home.get("score")),
             "away_score": _to_int(away.get("score")),
             "status": state,
@@ -1981,82 +2153,224 @@ def _match_prematch_record(home_team, away_team, comp_name, prematch_index):
     return None
 
 
+# ── Live advanced prediction helpers ──────────────────────────
+
+def _compute_live_next_to_score(game, effective_gd, home_stats, away_stats, time_frac):
+    """Probability the next goal is scored by home, away, or no more goals.
+
+    Uses effective GD, stat imbalance, and time remaining to estimate.
+    """
+    if time_frac <= 0.05:
+        return {"home": 0.02, "away": 0.02, "none": 0.96}
+    shots_h = _to_float_or_none(home_stats.get("totalShots")) or 0
+    shots_a = _to_float_or_none(away_stats.get("totalShots")) or 0
+    sot_h = _to_float_or_none(home_stats.get("shotsOnTarget")) or 0
+    sot_a = _to_float_or_none(away_stats.get("shotsOnTarget")) or 0
+    corners_h = _to_float_or_none(home_stats.get("corners")) or 0
+    corners_a = _to_float_or_none(away_stats.get("corners")) or 0
+    total_shots = max(shots_h + shots_a, 1)
+    total_sot = max(sot_h + sot_a, 1)
+    total_corners = max(corners_h + corners_a, 1)
+
+    # Base threat from stats
+    home_edge = 0.15 * (shots_h - shots_a) / total_shots + 0.25 * (sot_h - sot_a) / total_sot + 0.10 * (corners_h - corners_a) / total_corners
+    home_edge = max(-0.5, min(0.5, home_edge))
+
+    # Effective GD shifts threat: trailing team pushes harder
+    gd_shift = -effective_gd * 0.15
+    home_threat = 0.5 + home_edge + gd_shift
+    home_threat = max(0.1, min(0.9, home_threat))
+
+    p_any_goal = 0.55 * time_frac + 0.10
+    p_any_goal = max(0.02, min(0.90, p_any_goal))
+    p_home_next = home_threat * p_any_goal
+    p_away_next = (1.0 - home_threat) * p_any_goal
+    p_none = 1.0 - p_home_next - p_away_next
+
+    return {
+        "home": round(p_home_next, 4),
+        "away": round(p_away_next, 4),
+        "none": round(p_none, 4),
+    }
+
+
+def _compute_live_comeback_prob(live_probs, home_score, away_score):
+    """Probability the trailing team avoids defeat (draws or wins).
+
+    Returns 0 when tied; otherwise the draw + trailing-team-win probability.
+    """
+    if home_score == away_score:
+        return 0.0
+    if home_score < away_score:
+        return round(live_probs.get("prob_home", 0) + live_probs.get("prob_draw", 0), 4)
+    return round(live_probs.get("prob_away", 0) + live_probs.get("prob_draw", 0), 4)
+
+
+def _compute_live_momentum(game, elapsed):
+    """Momentum indicator from recent key events (last 15 min of game time).
+
+    Returns dict with ``"trend"`` (-1 to 1, positive = home), ``"label"`` str,
+    and ``"events_recent"`` int.
+    """
+    key_events = game.get("key_events") or []
+    if not key_events:
+        return {"trend": 0.0, "label": "neutral", "events_recent": 0}
+    cutoff_min = max(0, elapsed - 15)
+    recent = []
+    for ev in key_events:
+        try:
+            clock_str = str(ev.get("clock", "0"))
+            nums = re.findall(r"\d+", clock_str)
+            ev_min = int(nums[0]) if nums else 0
+            ev_period = ev.get("period", 1) or 1
+            total_min = ev_min + (ev_period - 1) * 45
+        except (ValueError, IndexError):
+            total_min = elapsed
+        if total_min >= cutoff_min and total_min <= elapsed:
+            recent.append(ev)
+    weights = {"goal": 3.0, "yellow card": 0.5, "red card": 2.0, "substitution": 0.3, "missed penalty": 0.8, "penalty": 1.5, "own goal": 2.5}
+    score = 0.0
+    for ev in recent:
+        ev_type = str(ev.get("type", ev.get("short_text", ev.get("text", "")))).lower()
+        w = 1.0
+        for kw, weight in weights.items():
+            if kw in ev_type:
+                w = weight
+                break
+        scoring = ev.get("scoring_play", False)
+        if scoring and w == 1.0:
+            w = 3.0
+        team_id = ev.get("team_id", "")
+        if not team_id:
+            continue
+        is_home = team_id == str(game.get("home_team_id", ""))
+        score += w if is_home else -w
+
+    max_score = max(1.0, sum(weights.values()) * 2)
+    trend = max(-1.0, min(1.0, score / max_score))
+    label = "home" if trend > 0.15 else ("away" if trend < -0.15 else "neutral")
+    return {"trend": round(trend, 3), "label": label, "events_recent": len(recent)}
+
+
 def _compute_live_prediction(game, prematch):
     """Compute in-play prediction from live game state and pre-match data.
 
-    Blends two information sources:
-    1. **Live Poisson** — actual score + remaining expected goals (scaled by
-       time, adjusted for red cards and in-game shot/SOT dominance).
-    2. **Pre-match probabilities** — the model's pre-game win/draw/away odds,
-       which encode full team-strength information that in-game stats alone
-       cannot capture (e.g. a strong team that conceded early should still
-       have elevated odds to equalise).
+    Uses a **logit scoreline model** with pre-match strength pull:
 
-    The blend weight is ``time_remaining_frac``: early in the game the
-    pre-match prior dominates; late in the game the live Poisson state
-    takes over.  This prevents early fluke goals from over-riting the
-    model's team-strength assessment.
+    1. **Effective goal difference** — actual goals + stat adjustment (shots,
+       shots-on-target, corners) + red-card penalty + *pre-match pull* that
+       shifts the GD toward the model's expected goal difference (heavy early,
+       decays with time).
+    2. **Logit confidence** — convert :math:`|GD|` to a base log-odds via
+       :math:`\\text{logit}(0.5 + 0.12 \\cdot |GD|)`, then add a time boost
+       :math:`|GD| \\cdot 2.0 \\cdot (1 - time\\_frac)`.  The logistic inverse
+       keeps the result in (0, 1) without ever exceeding 1.0.
+    3. **No probability blend** — pre-match probability blend would double-count
+       the strength information that is already baked into the effective GD via
+       the pull.  The pull is the single channel for pre-match influence.
     """
     if game.get("status") != "in":
         return None
     home_score = game.get("home_score") or 0
     away_score = game.get("away_score") or 0
+    goal_diff = home_score - away_score
     elapsed = _parse_elapsed_minutes(game.get("clock", "0'"), game.get("period", ""))
     time_frac = max(0.05, (95 - elapsed) / 90.0)
+
+    # ── Pre-match strength pull (decays with time) ─────────────
+    # Positive prem_xg_diff = home favoured.  The pull shifts the effective
+    # GD toward the pre-match expectation, so a favourite that is leading gets
+    # a boost while a favourite that is trailing gets the deficit reduced.
     if prematch:
-        home_xg = prematch.get("pred_home_goals", 1.4)
-        away_xg = prematch.get("pred_away_goals", 1.2)
+        prem_xg_diff = prematch.get("pred_home_goals", 1.4) - prematch.get("pred_away_goals", 1.2)
     else:
-        home_xg, away_xg = 1.4, 1.2
-    rem_home = max(0.0, home_xg * time_frac)
-    rem_away = max(0.0, away_xg * time_frac)
-    for rc in game.get("red_cards", []):
-        if rc.get("team") == "home":
-            rem_home *= 0.65
-        else:
-            rem_away *= 0.65
+        prem_xg_diff = 0.0
+    prem_pull = prem_xg_diff * time_frac * 0.3  # max ~30 % of pre-match edge early
+
+    # ── In-game statistics adjustment ──────────────────────────
     home_stats = game.get("home_stats", {}) or {}
     away_stats = game.get("away_stats", {}) or {}
-    hs = _to_float_or_none(home_stats.get("totalShots")) or 0
-    ha = _to_float_or_none(away_stats.get("totalShots")) or 0
-    hst = _to_float_or_none(home_stats.get("shotsOnTarget")) or 0
-    ast = _to_float_or_none(away_stats.get("shotsOnTarget")) or 0
-    # Stat-based adjustment
-    shot_ratio = hs / max(hs + ha, 1)
-    sot_ratio = hst / max(hst + ast, 1)
-    strength = 0.5 + (shot_ratio - 0.5) * 0.3 + (sot_ratio - 0.5) * 0.3
-    strength = max(0.2, min(0.8, strength))
-    rem_home *= strength * 2.0
-    rem_away *= (1.0 - strength) * 2.0
-    total_home = home_score + rem_home
-    total_away = away_score + rem_away
-    live_probs = _poisson_match_probs(total_home, total_away)
 
-    # Blend with pre-match probabilities using time remaining as weight.
-    # Early game (high time_frac) → pre-match dominates
-    # Late game  (low time_frac)  → live Poisson dominates
-    prematch_ph = prematch.get("prob_home", 0) if prematch else 0
-    prematch_pd = prematch.get("prob_draw", 0) if prematch else 0
-    prematch_pa = prematch.get("prob_away", 0) if prematch else 0
-    uses_prematch_probs = (prematch_ph + prematch_pd + prematch_pa) > 0
-    if uses_prematch_probs:
-        w = time_frac  # blend weight for pre-match probs
-        live_ph = live_probs.get("prob_home", 0.34)
-        live_pd = live_probs.get("prob_draw", 0.33)
-        live_pa = live_probs.get("prob_away", 0.33)
-        blended_ph = prematch_ph * w + live_ph * (1 - w)
-        blended_pd = prematch_pd * w + live_pd * (1 - w)
-        blended_pa = prematch_pa * w + live_pa * (1 - w)
-        bt = blended_ph + blended_pd + blended_pa
-        if bt > 0:
-            live_probs["prob_home"] = round(blended_ph / bt, 4)
-            live_probs["prob_draw"] = round(blended_pd / bt, 4)
-            live_probs["prob_away"] = round(blended_pa / bt, 4)
+    shots_h = _to_float_or_none(home_stats.get("totalShots")) or 0
+    shots_a = _to_float_or_none(away_stats.get("totalShots")) or 0
+    sot_h = _to_float_or_none(home_stats.get("shotsOnTarget")) or 0
+    sot_a = _to_float_or_none(away_stats.get("shotsOnTarget")) or 0
+    corners_h = _to_float_or_none(home_stats.get("corners")) or 0
+    corners_a = _to_float_or_none(away_stats.get("corners")) or 0
+
+    total_shots = max(shots_h + shots_a, 1)
+    total_sot = max(sot_h + sot_a, 1)
+    total_corners = max(corners_h + corners_a, 1)
+
+    shot_diff = (shots_h - shots_a) / total_shots
+    sot_diff = (sot_h - sot_a) / total_sot
+    corner_diff = (corners_h - corners_a) / total_corners
+
+    # Stats contribute up to ~0.50 to effective goal difference
+    stat_adjustment = 0.15 * shot_diff + 0.25 * sot_diff + 0.10 * corner_diff
+
+    # Red cards: each red card against the opponent is worth 0.5 goals
+    reds_h = sum(1 for rc in game.get("red_cards", []) if rc.get("team") == "home")
+    reds_a = sum(1 for rc in game.get("red_cards", []) if rc.get("team") == "away")
+    red_adjustment = (reds_a - reds_h) * 0.5
+
+    effective_gd = goal_diff + stat_adjustment + red_adjustment + prem_pull
+
+    # ── Scoreline-confidence model (logit space) ───────────────
+    abs_gd = abs(effective_gd)
+    DRAW_RATIO = 0.75  # among non-leading outcomes, 75% draws, 25% losses
+
+    if abs_gd < 0.01:
+        # Effectively tied — draw probability grows sharply as time runs out.
+        # Last ~7 minutes (88+ min) → ~86 % draw, ~7 % each side.
+        w = 1.0 - time_frac
+        p_home = max(0.001, 0.33 - 0.28 * w)
+        p_draw = max(0.001, 0.34 + 0.56 * w)
+        p_away = max(0.001, 0.33 - 0.28 * w)
+    else:
+        # Time-independent base win prob from goal difference
+        base_p = min(0.99, 0.50 + abs_gd * 0.12)
+        base_logit = math.log(base_p / (1.0 - base_p))
+        # Time boost in log-odds space; late-game pushes confidence higher
+        logit_boost = abs_gd * 2.0 * (1.0 - time_frac)
+        final_logit = base_logit + logit_boost
+        p_lead = 1.0 / (1.0 + math.exp(-final_logit))
+        p_draw = max(0.001, (1.0 - p_lead) * DRAW_RATIO)
+        p_lose = (1.0 - p_lead) - p_draw
+        if effective_gd > 0:
+            p_home, p_away = p_lead, p_lose
+        else:
+            p_home, p_away = p_lose, p_lead
+
+    # Clamp & normalise
+    p_home = max(0.001, min(0.999, p_home))
+    p_draw = max(0.001, min(0.999, p_draw))
+    p_away = max(0.001, min(0.999, p_away))
+    total = p_home + p_draw + p_away
+    live_probs = {
+        "prob_home": round(p_home / total, 4),
+        "prob_draw": round(p_draw / total, 4),
+        "prob_away": round(p_away / total, 4),
+    }
 
     live_probs["home_score"] = home_score
     live_probs["away_score"] = away_score
     live_probs["elapsed"] = elapsed
     live_probs["time_remaining_frac"] = round(time_frac, 3)
+
+    # ── Next team to score ─────────────────────────────────────
+    live_probs["next_to_score"] = _compute_live_next_to_score(
+        game, effective_gd, home_stats, away_stats, time_frac,
+    )
+
+    # ── Comeback probability ───────────────────────────────────
+    live_probs["comeback_prob"] = _compute_live_comeback_prob(
+        live_probs, home_score, away_score,
+    )
+
+    # ── Momentum ───────────────────────────────────────────────
+    live_probs["momentum"] = _compute_live_momentum(game, elapsed)
+
     return live_probs
 
 
@@ -2198,6 +2512,9 @@ def _live_score_poller_loop():
                         boxscore = _parse_espn_boxscore_stats(data)
                         if boxscore:
                             result["boxscore_stats"] = boxscore
+                        game_info = _parse_espn_game_info(data)
+                        if game_info:
+                            result["game_info"] = game_info
                         return result
                     with ThreadPoolExecutor(max_workers=min(6, len(games_needing_summary))) as pool:
                         summary_futures = [pool.submit(_fetch_summary, args) for args in games_needing_summary]
@@ -2220,6 +2537,8 @@ def _live_score_poller_loop():
                                         cache_entry["key_events"] = sresult["key_events"]
                                     if "boxscore_stats" in sresult:
                                         cache_entry["boxscore_stats"] = sresult["boxscore_stats"]
+                                    if "game_info" in sresult:
+                                        cache_entry["game_info"] = sresult["game_info"]
                                     _live_summary_cache[mid] = cache_entry
                                 if "lineups" in sresult:
                                     summary_lineups_done.add(mid)
@@ -2340,6 +2659,20 @@ def _predict(home_raw, away_raw, mode="global"):
             "prob_over_1_5": _get_goal_prob(record, "prob_over_1_5"),
             "prob_over_2_5": _get_goal_prob(record, "prob_over_2_5"),
             "prob_over_3_5": _get_goal_prob(record, "prob_over_3_5"),
+            "correct_score_dist": _compute_correct_score_dist(
+                record.get("pred_home_goals"), record.get("pred_away_goals"),
+            ),
+            "double_chance": _compute_double_chance(
+                _to_float(record.get("prob_home", 0.0)),
+                _to_float(record.get("prob_draw", 0.0)),
+                _to_float(record.get("prob_away", 0.0)),
+            ),
+            "asian_handicap": _compute_asian_handicap(
+                record.get("pred_home_goals"), record.get("pred_away_goals"),
+                prob_home=_to_float(record.get("prob_home", 0.0)),
+                prob_draw=_to_float(record.get("prob_draw", 0.0)),
+                prob_away=_to_float(record.get("prob_away", 0.0)),
+            ),
         }
 
     ctx = get_context(mode)
@@ -2486,6 +2819,16 @@ def _predict(home_raw, away_raw, mode="global"):
         "prob_over_1_5": round(goal_probs.get("prob_over_1_5", 0), 6),
         "prob_over_2_5": round(goal_probs.get("prob_over_2_5", 0), 6),
         "prob_over_3_5": round(goal_probs.get("prob_over_3_5", 0), 6),
+        "correct_score_dist": _compute_correct_score_dist(home_goals, away_goals),
+        "double_chance": _compute_double_chance(
+            probabilities.get("H", 0), probabilities.get("D", 0), probabilities.get("A", 0),
+        ),
+        "asian_handicap": _compute_asian_handicap(
+            home_goals, away_goals,
+            prob_home=probabilities.get("H", 0),
+            prob_draw=probabilities.get("D", 0),
+            prob_away=probabilities.get("A", 0),
+        ),
     }
 
 
@@ -2832,6 +3175,20 @@ def _load_upcoming_rows(csv_path, mode=None):
                 "prob_over_1_5": _get_goal_prob(row, "prob_over_1_5"),
                 "prob_over_2_5": _get_goal_prob(row, "prob_over_2_5"),
                 "prob_over_3_5": _get_goal_prob(row, "prob_over_3_5"),
+                "correct_score_dist": _compute_correct_score_dist(
+                    row.get("pred_home_goals"), row.get("pred_away_goals"),
+                ),
+                "double_chance": _compute_double_chance(
+                    ph_raw / 100.0 if ph_raw else 0,
+                    pdv_raw / 100.0 if pdv_raw else 0,
+                    pa_raw / 100.0 if pa_raw else 0,
+                ),
+                "asian_handicap": _compute_asian_handicap(
+                    row.get("pred_home_goals"), row.get("pred_away_goals"),
+                    prob_home=ph_raw / 100.0 if ph_raw else None,
+                    prob_draw=pdv_raw / 100.0 if pdv_raw else None,
+                    prob_away=pa_raw / 100.0 if pa_raw else None,
+                ),
                 "reasoning": str(row.get("probability_reasoning", "")).strip(),
                 "actual_result": str(row.get("actual_result", "")).strip(),
                 "is_correct": (
