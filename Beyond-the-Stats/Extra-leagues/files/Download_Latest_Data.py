@@ -1,3 +1,10 @@
+"""
+Download Extra Leagues fixture data from football-data.co.uk.
+
+Same pattern as the MLS downloader — fetches lower-tier European leagues,
+processes and sorts them.  These leagues share the same ``Process_Data``
+and ``Sort_Data`` logic as the global pipeline.
+"""
 import os
 import sys
 import urllib.request

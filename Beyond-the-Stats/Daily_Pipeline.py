@@ -18,14 +18,28 @@ The pipeline step list mirrors `Run_All_Pipeline.py`; this script is just the
 scheduler + mobile-feed writer on top of it.
 """
 
+"""
+Scheduled daily pipeline runner — wraps ``Run_All_Pipeline`` in a scheduler loop.
+
+Runs continuously on the Steam Deck as a long-lived process.  On Tuesday it
+executes a full retrain (model + data); on other days it runs a light refresh
+(data only, ``--skip-model-train`` / ``--skip-squad-values``).
+
+Key differences from ``Run_All_Pipeline``:
+- Scheduler loop with configurable window (``--window-days``)
+- After each pipeline run, builds the mobile-app feed JSON
+- Publishes output files to a deployment directory
+- Decides full vs. light refresh based on ``weekly_model_refresh_day``
+"""
 import argparse
-import csv
+import hashlib
 import json
 import os
-import signal
+import re
+import subprocess
 import sys
 import time
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 SP_DIR = Path(__file__).resolve().parent

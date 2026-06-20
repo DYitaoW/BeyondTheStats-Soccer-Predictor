@@ -1,3 +1,15 @@
+"""
+Predict upcoming fixtures — reads ``upcoming_matchweek.csv`` and outputs
+``upcoming_matchweek_predictions.csv`` for each competition.
+
+Called as a sub-pipeline step by ``Run_All_Pipeline``.  For each fixture it:
+- Loads the cached model bundle (regressor + goal-prob models)
+- Builds the feature frame (rolling averages, form, etc.)
+- Calls ``Predict_Match.predict_fixture()``
+- Stores predicted scores, probabilities, and goal-line odds
+
+Three copies: global / MLS / Extra-leagues.
+"""
 import argparse
 import difflib
 import json

@@ -1,3 +1,16 @@
+"""
+World Cup simulation engine — group stage + knockout tournament projections.
+
+Invoked as part of the national-team sub-pipeline when a World Cup event
+is active.  Uses the trained national-team model to simulate every remaining
+match 5000 times, then aggregates the results into:
+- Group tables (points, GD, qualification probability)
+- Knockout bracket with per-match probabilities
+- Champion / finalist / semi-finalist odds
+
+The ``Project_World_Cup/display/`` output feeds the website's World Cup
+prediction page.
+"""
 import argparse
 import json
 import math

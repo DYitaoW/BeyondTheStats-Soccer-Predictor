@@ -1,3 +1,13 @@
+"""
+Sort processed match data into team-level head-to-head and form files.
+
+Takes the processed CSVs (from ``Process_Data``) and produces:
+- ``head_to_head.json`` — per-pair match history
+- ``current_form.json`` — per-team recent form (last 5+) with features
+- ``current_season_top_scorers.json`` — top scorer data (if available)
+
+Used by the website's head-to-head and team pages.
+"""
 import pandas as pd
 import os
 import json

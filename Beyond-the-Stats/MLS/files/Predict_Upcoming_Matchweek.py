@@ -1,3 +1,10 @@
+"""
+Predict upcoming MLS fixtures — identical workflow to global version.
+
+Reads ``upcoming_matchweek.csv`` for MLS competitions, loads the MLS model
+cache, and writes ``upcoming_matchweek_predictions.csv`` with predicted scores
+and probabilities.
+"""
 import argparse
 import difflib
 import json

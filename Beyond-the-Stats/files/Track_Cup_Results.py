@@ -313,14 +313,27 @@ def append_completed_predictions(existing_completed, settled_frame):
     return merged, added
 
 
-def _drop_completed_rows(frame):
+def _drop_completed_rows(frame, today=None):
+    """Drop completed (settled) rows, but only for dates *before* today.
+
+    Games from today are kept even if settled so they still appear on
+    the website — the frontend can show the actual result alongside
+    the prediction.  Pass ``today=None`` (default) to drop all settled
+    rows regardless of date (legacy / cleanup mode).
+    """
     if frame is None or frame.empty or "actual_result" not in frame.columns:
         return frame, 0
     settled_mask = frame["actual_result"].astype(str).str.strip().str.upper().isin({"H", "D", "A"})
-    removed = int(settled_mask.sum())
+    if today is not None and "match_date" in frame.columns:
+        parsed_dates = pd.to_datetime(frame["match_date"], errors="coerce").dt.normalize()
+        today_ts = pd.Timestamp(today)
+        drop_mask = settled_mask & (parsed_dates < today_ts)
+    else:
+        drop_mask = settled_mask
+    removed = int(drop_mask.sum())
     if removed == 0:
         return frame, 0
-    return frame[~settled_mask].copy(), removed
+    return frame[~drop_mask].copy(), removed
 
 
 def _numeric_int(value, default=0):
@@ -709,7 +722,7 @@ def main():
         totals_added = update_accuracy_totals_from_frame(totals, cup_df)
         totals["updated_at_utc"] = datetime.now(UTC).replace(microsecond=0).isoformat()
         save_json(ACCURACY_TOTALS_FILE, totals)
-        cup_df, removed_completed = _drop_completed_rows(cup_df)
+        cup_df, removed_completed = _drop_completed_rows(cup_df, today=datetime.now().date())
 
     _write_csv(COMPLETED_CUP_PREDICTIONS_FILE, completed_df, CUP_HISTORY_COLUMNS)
     _write_csv(CUP_PREDICTIONS_FILE, cup_df, CUP_HISTORY_COLUMNS)

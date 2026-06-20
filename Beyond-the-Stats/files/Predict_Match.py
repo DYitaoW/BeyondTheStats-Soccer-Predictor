@@ -1,3 +1,25 @@
+"""
+ML model training + prediction for European club matches.
+
+This is the core model file — three nearly-identical copies exist:
+- ``files/Predict_Match.py`` (global / European)
+- ``MLS/files/Predict_Match.py``
+- ``Extra-leagues/files/Predict_Match.py``
+
+Responsibilities
+----------------
+1. **Feature engineering** — ``add_all_features()`` builds rolling-averages,
+   form indicators, and derived stats from raw match CSV rows.
+2. **Model training** — XGBoost (GPU → CPU fallback) or RandomForest for
+   score / result / goal-line prediction.  Models cached as ``.pkl`` bundles
+   containing the regressor / classifier / scaler / goal-prob models.
+3. **Prediction** — ``predict_match()`` returns predicted home / away goals,
+   result (H/D/A), win probability, and goal-line probabilities.
+4. **Score sampling** — ``sample_score_from_probs()`` generates diverse score
+   lines that preserve overall win-probability distribution.
+5. **Goal probability** — 10 independent LogisticRegression classifiers
+   trained on binary targets (``home_goals ≥ k``, ``away_goals ≥ k`` for k=0..4).
+"""
 import json
 import math
 import os

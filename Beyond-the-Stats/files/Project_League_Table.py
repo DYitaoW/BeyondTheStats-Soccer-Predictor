@@ -1,3 +1,15 @@
+"""
+Monte Carlo league table projections using the trained match model.
+
+Sub-pipeline step after ``Predict_Upcoming_Matchweek``.  For each competition:
+1. Loads the processed match history (past results) + upcoming fixture list
+2. Uses the model cache to simulate remaining fixtures (1000+ iterations)
+3. Aggregates simulation results into projected final tables (mean pts / GD / etc.)
+4. Outputs ``{competition}_projected_league_table.json``
+
+The same tiebreaker logic from ``Process_Data`` is applied within simulations
+so projected standings correctly break ties per-league rules.
+"""
 import argparse
 import os
 import json
