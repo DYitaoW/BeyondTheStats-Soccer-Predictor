@@ -59,6 +59,10 @@ LIVE_SCORE_COMPETITIONS = {
 
 _live_scores: dict[str, dict] = {}
 _live_scores_lock = threading.RLock()
+# Separate store for summary data (lineups, h2h, last5, key_events, boxscore)
+# keyed by match_id so scoreboard merges can never overwrite it.
+_live_summary_cache: dict[str, dict] = {}
+_live_summary_cache_lock = threading.Lock()
 
 # ── Standings Cache ───────────────────────────────────────────
 _real_tables: dict[str, dict] = {}
@@ -1948,6 +1952,8 @@ def _live_score_poller_loop():
                 if getattr(_live_score_poller_loop, "_poller_date", None) != _today_for_poller:
                     _merge_completed_to_history()
                     _live_scores.clear()
+                    with _live_summary_cache_lock:
+                        _live_summary_cache.clear()
                     _live_score_poller_loop._poller_date = _today_for_poller
                 # Merge new results into existing so finished games persist.
                 for comp_name, comp_data in results.items():
@@ -1965,6 +1971,13 @@ def _live_score_poller_loop():
                         "games": list(games_by_id.values()),
                         "last_polled_utc": comp_data["last_polled_utc"],
                     }
+                # Re-apply summary cache to all games so summary data always survives.
+                with _live_summary_cache_lock:
+                    for comp_data in _live_scores.values():
+                        for g in comp_data.get("games", []):
+                            mid = g.get("match_id")
+                            if mid and mid in _live_summary_cache:
+                                g.update(_live_summary_cache[mid])
             # Persist any newly completed games to history file.
             _merge_completed_to_history()
 
@@ -1984,9 +1997,16 @@ def _live_score_poller_loop():
                         if not mid:
                             continue
                         status = g.get("status", "")
+                        # Fetch summary for in-play games every cycle; for pre
+                        # games once (static); for post games once only if the
+                        # cache is empty (data was lost during in→post transition
+                        # under older code, or summary_static_done from the pre
+                        # phase blocked the needed re-fetch).
                         if status == "in":
                             games_needing_summary.append((comp_name, espn_id, mid, "live"))
                         elif status == "pre" and mid not in summary_static_done:
+                            games_needing_summary.append((comp_name, espn_id, mid, "static"))
+                        elif status == "post" and mid not in _live_summary_cache:
                             games_needing_summary.append((comp_name, espn_id, mid, "static"))
                 if games_needing_summary:
                     def _fetch_summary(args):
@@ -2021,24 +2041,19 @@ def _live_score_poller_loop():
                                     continue
                                 mid = sresult["match_id"]
                                 comp_name = sresult["comp_name"]
-                                with _live_scores_lock:
-                                    comp = _live_scores.get(comp_name)
-                                    if not comp:
-                                        continue
-                                    for g in comp.get("games", []):
-                                        if g.get("match_id") != mid:
-                                            continue
-                                        if "lineups" in sresult:
-                                            g["lineups"] = sresult["lineups"]
-                                        if "head_to_head" in sresult and "head_to_head" not in g:
-                                            g["head_to_head"] = sresult["head_to_head"]
-                                        if "last_five" in sresult and "last_five" not in g:
-                                            g["last_five"] = sresult["last_five"]
-                                        if "key_events" in sresult:
-                                            g["key_events"] = sresult["key_events"]
-                                        if "boxscore_stats" in sresult:
-                                            g["boxscore_stats"] = sresult["boxscore_stats"]
-                                        break
+                                with _live_summary_cache_lock:
+                                    cache_entry = _live_summary_cache.get(mid, {})
+                                    if "lineups" in sresult:
+                                        cache_entry["lineups"] = sresult["lineups"]
+                                    if "head_to_head" in sresult:
+                                        cache_entry["head_to_head"] = sresult["head_to_head"]
+                                    if "last_five" in sresult:
+                                        cache_entry["last_five"] = sresult["last_five"]
+                                    if "key_events" in sresult:
+                                        cache_entry["key_events"] = sresult["key_events"]
+                                    if "boxscore_stats" in sresult:
+                                        cache_entry["boxscore_stats"] = sresult["boxscore_stats"]
+                                    _live_summary_cache[mid] = cache_entry
                                 if sresult.get("fetch_type") == "static":
                                     summary_static_done.add(mid)
                             except Exception:
@@ -2046,6 +2061,15 @@ def _live_score_poller_loop():
             except Exception:
                 import traceback
                 traceback.print_exc()
+
+            # Re-apply summary cache to live games so data is available
+            # immediately (not delayed one cycle).
+            with _live_scores_lock, _live_summary_cache_lock:
+                for comp_data in _live_scores.values():
+                    for g in comp_data.get("games", []):
+                        mid = g.get("match_id")
+                        if mid and mid in _live_summary_cache:
+                            g.update(_live_summary_cache[mid])
 
             # Compute live in-play predictions for active games.
             try:
