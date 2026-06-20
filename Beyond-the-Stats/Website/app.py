@@ -839,6 +839,19 @@ def _latest_season_for_competition(season_teams, competition, fallback, parse_st
     return best_key or fallback
 
 
+def _utc_to_et(utc_str):
+    """Convert a UTC datetime string to ET; return empty string on failure."""
+    try:
+        if not utc_str:
+            return ""
+        dt = pd.to_datetime(str(utc_str), utc=True)
+        if pd.isna(dt):
+            return ""
+        return dt.tz_convert(ZoneInfo("America/New_York")).strftime("%Y-%m-%dT%H:%M:%S%z")
+    except Exception:
+        return ""
+
+
 # ── Live Score Poller ───────────────────────────────────────────
 
 LIVE_SCORE_FETCH_TIMEOUT = 15
@@ -915,7 +928,7 @@ def _parse_espn_live_event(event):
             "status": state,
             "period": detail,
             "clock": display_clock.strip(),
-            "kickoff_utc": event.get("date", ""),
+            "kickoff_utc": _utc_to_et(event.get("date", "")),
             "goalscorers": goalscorers,
             "red_cards": red_cards,
         }
@@ -1061,7 +1074,7 @@ def _load_predictions_for_competition(comp_name):
         rows.append({
             "home_team": str(row.get("home_team", "") or "").strip(),
             "away_team": str(row.get("away_team", "") or "").strip(),
-            "match_datetime_utc": str(row.get("match_datetime_utc", "") or "").strip(),
+            "match_datetime_utc": _utc_to_et(str(row.get("match_datetime_utc", "") or "").strip()),
             "predicted_result": str(row.get("predicted_result", "") or "").strip(),
             "prob_home": str(row.get("prob_home", "") or "").strip(),
             "prob_draw": str(row.get("prob_draw", "") or "").strip(),
@@ -1161,7 +1174,7 @@ def _track_prediction_results(completed_games):
                 "prob_away": matched.get("prob_away", ""),
                 "actual_result": actual,
                 "correct": correct,
-                "kickoff_utc": g.get("kickoff_utc", ""),
+                "kickoff_utc": _utc_to_et(g.get("kickoff_utc", "")),
             }
             pt = tracking.setdefault("per_team", {})
             tdata = pt.setdefault(team_name, {"predictions": []})
@@ -2686,8 +2699,10 @@ def _load_upcoming_rows(csv_path, mode=None):
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
     
-    today = pd.Timestamp(datetime.now().date())
-    frame = frame[frame["parsed_date"] >= today].reset_index(drop=True)
+    today = datetime.now().date()
+    prev_monday = today - timedelta(days=today.weekday() + 7)
+    cutoff = pd.Timestamp(prev_monday)
+    frame = frame[frame["parsed_date"] >= cutoff].reset_index(drop=True)
     
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
@@ -2708,14 +2723,16 @@ def _load_upcoming_rows(csv_path, mode=None):
         time_label = ""
         mls_dt_raw = str(row.get("match_datetime_et", "")).strip() if "match_datetime_et" in frame.columns else ""
         utc_dt_raw = str(row.get("match_datetime_utc", "")).strip() if "match_datetime_utc" in frame.columns else ""
-        
-        # Convert match_datetime_utc to Eastern time for display
+        match_dt_et = ""
+
+        # Convert match_datetime_utc to Eastern time for display and as match_dt_et
         if utc_dt_raw:
             date_val = pd.to_datetime(utc_dt_raw, utc=True, errors="coerce")
             if pd.notna(date_val):
                 try:
                     date_val = date_val.tz_convert("America/New_York")
                     time_label = date_val.strftime("%I:%M %p ET").lstrip("0")
+                    match_dt_et = date_val.strftime("%Y-%m-%dT%H:%M:%S%z")
                 except Exception:
                     pass
         elif is_mls_file and mls_dt_raw:
@@ -2724,6 +2741,7 @@ def _load_upcoming_rows(csv_path, mode=None):
                 try:
                     date_val = date_val.tz_convert("America/New_York")
                     time_label = date_val.strftime("%I:%M %p ET").lstrip("0")
+                    match_dt_et = date_val.strftime("%Y-%m-%dT%H:%M:%S%z")
                 except Exception:
                     pass
         elif is_mls_file and len(raw_date) == 10 and raw_date.count("-") == 2:
@@ -2733,6 +2751,7 @@ def _load_upcoming_rows(csv_path, mode=None):
             if pd.notna(date_val):
                 try:
                     date_val = date_val.tz_convert("America/New_York")
+                    match_dt_et = date_val.strftime("%Y-%m-%dT%H:%M:%S%z")
                 except Exception:
                     pass
         if pd.isna(date_val):
@@ -2754,7 +2773,7 @@ def _load_upcoming_rows(csv_path, mode=None):
         rows.append(
             {
                 "match_date": date_label if is_mls_file else str(row["match_date"]),
-                "match_datetime_et": mls_dt_raw if is_mls_file else "",
+                "match_datetime_et": match_dt_et,
                 "weekday": weekday,
                 "date_label": date_label,
                 "time_label": time_label,
@@ -3493,7 +3512,7 @@ def api_mobile_widget():
             rows.append({
                 "competition": comp,
                 "match_date": str(row.get("match_date", "") or "").strip(),
-                "match_datetime_utc": str(row.get("match_datetime_utc", "") or "").strip(),
+                "match_datetime_utc": _utc_to_et(str(row.get("match_datetime_utc", "") or "").strip()),
                 "home_team": home,
                 "away_team": away,
                 "predicted_result": str(row.get("predicted_result", "") or "").strip(),
@@ -3863,7 +3882,7 @@ def api_cup_bracket():
                             "home_score": None,
                             "away_score": None,
                             "status": "pre",
-                            "kickoff_utc": str(entry.get("match_datetime_utc", "") or ""),
+                            "kickoff_utc": _utc_to_et(str(entry.get("match_datetime_utc", "") or "")),
                             "round": round_name,
                             "competition": comp,
                             "match_id": str(entry.get("match_id", "") or ""),
@@ -3900,7 +3919,7 @@ def api_cup_bracket():
             "away_score": g.get("away_score"),
             "status": g.get("status", "pre"),
             "winner": winner,
-            "kickoff_utc": g.get("kickoff_utc", ""),
+            "kickoff_utc": _utc_to_et(g.get("kickoff_utc", "")),
             "match_id": g.get("match_id", ""),
         })
 
@@ -4080,7 +4099,7 @@ def api_team():
                 upcoming.append({
                     "competition": str(row.get("competition", "") or "").strip(),
                     "match_date": str(row.get("match_date", "") or "").strip(),
-                    "match_datetime_utc": str(row.get("match_datetime_utc", "") or "").strip(),
+                    "match_datetime_utc": _utc_to_et(str(row.get("match_datetime_utc", "") or "").strip()),
                     "home_team": home,
                     "away_team": away,
                     "predicted_result": str(row.get("predicted_result", "") or "").strip(),
@@ -4265,7 +4284,7 @@ def api_upcoming_world_cup():
 
         rows.append({
             "match_date": match_date_str,
-            "match_datetime_et": "",
+            "match_datetime_et": _utc_to_et(utc_dt_raw),
             "weekday": weekday,
             "date_label": date_label,
             "time_label": time_label,
@@ -4442,7 +4461,7 @@ def api_top_picks():
                             time_label = ""
                 wc_row = {
                     "match_date": str(fixture.get("match_date", "")),
-                    "match_datetime_et": "",
+                    "match_datetime_et": _utc_to_et(utc_raw),
                     "weekday": weekday,
                     "date_label": date_label,
                     "time_label": time_label,
