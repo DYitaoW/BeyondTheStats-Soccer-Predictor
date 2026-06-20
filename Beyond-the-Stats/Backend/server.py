@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 import os
-import signal
 import subprocess
 import sys
 import threading
@@ -102,7 +101,6 @@ class BackendServer:
         self._pipeline_proc: Optional[subprocess.Popen] = None
         self._last_run: Optional[datetime] = None
         self._last_status: Optional[bool] = None
-        self._flask_thread: Optional[threading.Thread] = None
         self._scheduler_thread: Optional[threading.Thread] = None
         self._watcher: Optional[FutureGamesWatcher] = None
         self._memory_monitor: Optional[MemoryMonitor] = None
@@ -111,32 +109,19 @@ class BackendServer:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def install_signal_handlers(self) -> None:
-        """Install SIGINT/SIGTERM handlers that call :py:meth:`stop`."""
-        def _handler(signum, frame):
-            LOG.info("[backend] received signal %d -- shutting down", signum)
-            self.stop()
-
-        for sig in (getattr(signal, "SIGINT", None), getattr(signal, "SIGTERM", None)):
-            if sig is not None:
-                try:
-                    signal.signal(sig, _handler)
-                except (ValueError, OSError):
-                    # Not on the main thread, or restricted environment.
-                    pass
-
     def run_forever(self) -> None:
-        """Boot every component and block until :py:meth:`stop` is called."""
-        self.install_signal_handlers()
+        """Boot every component and block until :py:meth:`stop` is called.
+
+        Gunicorn's Arbiter **must** run on the main thread (it registers
+        signal handlers internally).  The scheduler loop, watcher, and
+        memory monitor all run in daemon background threads instead.
+        """
         self._log_banner()
 
-        if self.config.serve_website:
-            self._start_flask()
-
+        # All non-Flask services run in background daemon threads.
         self._start_memory_monitor()
         if self.config.enable_watcher:
             self._start_watcher()
-
         if self.config.run_on_start:
             self._run_pipeline_in_background(trigger="startup")
 
@@ -145,13 +130,24 @@ class BackendServer:
         )
         self._scheduler_thread.start()
 
-        try:
-            while not self._stop.is_set():
-                self._stop.wait(timeout=1.0)
-        except KeyboardInterrupt:
-            LOG.info("[backend] keyboard interrupt")
-        finally:
-            self._shutdown()
+        if self.config.serve_website:
+            if self._use_gunicorn():
+                # Gunicorn runs here on the main thread (blocking).
+                self._run_gunicorn()
+                self._shutdown()
+            else:
+                # Flask dev server also runs on the main thread (blocking).
+                self._run_flask_dev()
+                self._shutdown()
+        else:
+            # No website — just wait for the shutdown signal.
+            try:
+                while not self._stop.is_set():
+                    self._stop.wait(timeout=1.0)
+            except KeyboardInterrupt:
+                LOG.info("[backend] keyboard interrupt")
+            finally:
+                self._shutdown()
 
     def stop(self) -> None:
         self._stop.set()
@@ -160,29 +156,11 @@ class BackendServer:
     # Flask
     # ------------------------------------------------------------------
 
-    def _start_flask(self) -> None:
-        """Start the Flask web server in a background thread or process."""
-        if self._flask_thread is not None and self._flask_thread.is_alive():
-            return
-        # Prefer gunicorn on POSIX; fall back to Flask's dev server on Windows.
-        use_gunicorn = self.config.use_gunicorn and (
+    def _use_gunicorn(self) -> bool:
+        """Whether gunicorn should be used on this platform."""
+        return self.config.use_gunicorn and (
             sys.platform.startswith("linux") or sys.platform == "darwin"
-        )
-        if use_gunicorn and self._gunicorn_available():
-            self._flask_thread = threading.Thread(
-                target=self._run_gunicorn, name="flask-gunicorn", daemon=True
-            )
-        else:
-            self._flask_thread = threading.Thread(
-                target=self._run_flask_dev, name="flask-dev", daemon=True
-            )
-        self._flask_thread.start()
-        LOG.info(
-            "[flask] server thread started: %s:%d (gunicorn=%s)",
-            self.config.host,
-            self.config.port,
-            use_gunicorn,
-        )
+        ) and self._gunicorn_available()
 
     def _gunicorn_available(self) -> bool:
         try:
@@ -591,9 +569,6 @@ class BackendServer:
         if self._memory_monitor is not None:
             self._memory_monitor.stop()
         self._kill_pipeline_blocking()
-        # Give the Flask thread up to 5 seconds to exit cleanly.
-        if self._flask_thread is not None and self._flask_thread.is_alive():
-            self._flask_thread.join(timeout=5.0)
         if self._scheduler_thread is not None and self._scheduler_thread.is_alive():
             self._scheduler_thread.join(timeout=5.0)
         LOG.info("[backend] shutdown complete")
