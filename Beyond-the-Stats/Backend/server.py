@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -296,7 +297,6 @@ class BackendServer:
                         f"over memory budget ({reading.rss_mb:.1f} MB / "
                         f"{reading.limit_mb:.1f} MB)"
                     )
-                    return
             cmd = self._build_pipeline_cmd(full_retrain=full_retrain)
             LOG.info("[pipeline] starting (trigger=%s, full_retrain=%s) -> journald", trigger, full_retrain)
             subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
