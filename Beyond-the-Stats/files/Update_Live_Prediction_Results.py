@@ -718,7 +718,8 @@ def main():
             global_df, global_updates = update_frame_with_results(global_df, global_results)
         global_totals_added = update_accuracy_totals_from_frame(totals, global_df)
         today_et = datetime.now(EASTERN_TZ).date()
-        global_df, global_removed_completed = drop_completed_rows(global_df, today=today_et)
+        prev_monday = today_et - timedelta(days=today_et.weekday() + 7)
+        global_df, global_removed_completed = drop_completed_rows(global_df, today=prev_monday)
         global_df.to_csv(GLOBAL_PREDICTIONS_FILE, index=False)
     else:
         global_totals_added = 0
@@ -737,7 +738,7 @@ def main():
         if needs_resettle:
             mls_df, mls_updates = update_frame_with_results(mls_df, mls_results)
         mls_totals_added = update_accuracy_totals_from_frame(totals, mls_df)
-        mls_df, mls_removed_completed = drop_completed_rows(mls_df, today=today_et)
+        mls_df, mls_removed_completed = drop_completed_rows(mls_df, today=prev_monday)
         mls_df.to_csv(MLS_PREDICTIONS_FILE, index=False)
     else:
         mls_totals_added = 0

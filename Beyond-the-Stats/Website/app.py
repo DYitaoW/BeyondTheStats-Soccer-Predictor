@@ -919,6 +919,15 @@ def _parse_espn_live_event(event):
             if s.get("name") not in EXCLUDED_STATS:
                 away_stats[s["name"]] = s.get("displayValue", "")
 
+        raw_date = event.get("date", "")
+        parsed_dt = pd.to_datetime(raw_date, utc=True, errors="coerce")
+        match_date_str = ""
+        if pd.notna(parsed_dt):
+            try:
+                match_date_str = parsed_dt.tz_convert(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+            except Exception:
+                match_date_str = raw_date[:10] if len(raw_date) >= 10 else ""
+
         result = {
             "match_id": str(event.get("id", "")),
             "home_team": home_team_name,
@@ -928,7 +937,8 @@ def _parse_espn_live_event(event):
             "status": state,
             "period": detail,
             "clock": display_clock.strip(),
-            "kickoff_utc": _utc_to_et(event.get("date", "")),
+            "kickoff_utc": _utc_to_et(raw_date),
+            "match_date": match_date_str,
             "goalscorers": goalscorers,
             "red_cards": red_cards,
         }
@@ -961,7 +971,11 @@ def _save_live_score_history(games):
 
 
 def _merge_completed_to_history():
-    """Move finished games from _live_scores into persistent history file."""
+    """Move finished games from _live_scores into persistent history file.
+
+    Stores all game data including summary fields (lineups, h2h, key events,
+    boxscore stats) that were merged onto game objects from ``_live_summary_cache``.
+    """
     history = _load_live_score_history()
     historic_ids = {g["match_id"] for g in history if g.get("match_id")}
     new_games = []
@@ -971,6 +985,7 @@ def _merge_completed_to_history():
             for g in comp_data.get("games", []):
                 if g.get("status") == "post" and g.get("match_id") not in historic_ids:
                     entry = dict(g)
+                    entry.setdefault("competition", comp_name)
                     entry.setdefault("completed_at", datetime.now(timezone.utc).isoformat())
                     new_games.append(entry)
                     historic_ids.add(entry["match_id"])
@@ -2095,6 +2110,7 @@ def _live_score_poller_loop():
                     games_by_id = {g["match_id"]: g for g in existing["games"] if g.get("match_id")}
                     for g in comp_data.get("games", []):
                         if g.get("match_id"):
+                            g["competition"] = comp_name
                             mid = g["match_id"]
                             if mid in games_by_id:
                                 games_by_id[mid].update(g)
@@ -3825,6 +3841,63 @@ def api_live_score_history():
     })
 
 
+@app.get("/api/past-games")
+def api_past_games():
+    """Return completed games from the previous full week + current week's past days.
+
+    Includes lineups, game stats, key events, boxscore, and other data that
+    ``/api/live-scores`` provides for in-progress games — sourced from the
+    persistent ``live_score_history.json`` file.
+
+    Query params:
+        league   -- filter by competition name (substring match, case-insensitive)
+        page     -- page number (default 1)
+        per_page -- results per page (default 50, max 200)
+    """
+    league = request.args.get("league", "").strip()
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        per_page = min(200, max(1, int(request.args.get("per_page", "50"))))
+    except (ValueError, TypeError):
+        per_page = 50
+
+    today_local = datetime.now(ZoneInfo("America/New_York")).date()
+    prev_monday = today_local - timedelta(days=today_local.weekday() + 7)
+    cutoff = prev_monday.isoformat()
+
+    games = _load_live_score_history()
+    # Only include finished games (status == "post"), within the date window.
+    games = [g for g in games
+             if g.get("status") == "post"
+             and g.get("match_date", "") >= cutoff]
+
+    if league:
+        league_lower = league.lower()
+        games = [g for g in games if league_lower in g.get("competition", "").lower()]
+
+    games.sort(key=lambda g: g.get("kickoff_utc", ""), reverse=True)
+
+    total = len(games)
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_games = games[start:end]
+
+    return jsonify({
+        "ok": True,
+        "games": page_games,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "date_window": {
+            "from": cutoff,
+            "to": today_local.isoformat(),
+        },
+    })
+
+
 @app.get("/api/cup-bracket")
 def api_cup_bracket():
     """Return real bracket for a cup competition, built from completed, in-progress,
@@ -4155,6 +4228,7 @@ def api_help():
             {"method": "GET", "path": "/api/team?team=&mode=", "desc": "Form, upcoming games, H2H, and per-team prediction accuracy"},
             {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores (polled from ESPN, includes lineups, goalscorers, red cards & live predictions)"},
             {"method": "GET", "path": "/api/live-score-history?league=&from=&to=&page=&per_page=", "desc": "Historical completed games, filterable by league and date"},
+            {"method": "GET", "path": "/api/past-games?league=&page=&per_page=", "desc": "Completed games from previous full week + current week's past days (includes lineups, stats, key events, boxscore)"},
             {"method": "GET", "path": "/api/debug/live-score-sources", "desc": "Debug: what data sources the live score poller sees"},
             {"method": "GET", "path": "/api/debug/manual-poll", "desc": "Debug: manually run one ESPN poll cycle"},
             {"method": "GET", "path": "/api/debug/poller-state", "desc": "Debug: show live score poller internal state"},
