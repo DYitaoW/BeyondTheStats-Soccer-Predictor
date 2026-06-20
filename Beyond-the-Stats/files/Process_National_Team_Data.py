@@ -1,3 +1,16 @@
+"""
+National-team data pipeline — download, process, train, and predict.
+
+Independent sub-pipeline for all international football.  Sources:
+- ESPN scoreboards for historical results
+- FIFA rankings (from a seed file / cached)
+- Transfermarkt for squad market values (weekly only)
+
+Produces:
+- ``national_team_predictions.csv`` (upcoming fixtures)
+- ``national_team_model_cache.pkl`` (trained model)
+- World Cup group / knockout projections (shared with ``Project_World_Cup``)
+"""
 import argparse
 import hashlib
 import json

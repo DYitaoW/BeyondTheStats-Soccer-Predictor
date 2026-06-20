@@ -1,3 +1,17 @@
+"""
+Settle predictions by matching CSV predictions against real ESPN results.
+
+Called as a post-pipeline step by ``Run_All_Pipeline._run_shared_post_steps``.
+Reads the ``upcoming_matchweek_predictions.csv`` files (global + MLS), fetches
+completed match results from ESPN scoreboards, then:
+- Updates ``actual_home_goals`` / ``actual_away_goals`` / ``actual_result``
+- Marks ``is_correct`` (1/0)
+- Tracks accuracy totals in ``accuracy_totals.json``
+- Drops settled rows from the upcoming CSVs (they are done)
+
+Team-name mapping is stored in ``team_name_mapping_master.json`` and auto-learned
+from ESPN display names on each run.
+"""
 import argparse
 import difflib
 import json
@@ -422,14 +436,28 @@ def cleanup_all_settled_rows(frame):
     return frame, cleaned
 
 
-def drop_completed_rows(frame):
+def drop_completed_rows(frame, today=None):
+    """Drop completed (settled) rows, but only for dates *before* today.
+
+    Games from today are kept even if settled so they still appear in
+    ``/api/upcoming/global`` — the frontend can show the actual result
+    alongside the prediction.  Pass ``today=None`` (default) to drop all
+    settled rows regardless of date (legacy / cleanup mode).
+    """
     if frame is None or frame.empty or "actual_result" not in frame.columns:
         return frame, 0
     settled_mask = frame["actual_result"].astype(str).str.strip().str.upper().isin({"H", "D", "A"})
-    removed = int(settled_mask.sum())
+    if today is not None and "match_date" in frame.columns:
+        parsed_dates = pd.to_datetime(frame["match_date"], errors="coerce").dt.normalize()
+        today_ts = pd.Timestamp(today)
+        # Only drop settled rows whose match date is strictly before today
+        drop_mask = settled_mask & (parsed_dates < today_ts)
+    else:
+        drop_mask = settled_mask
+    removed = int(drop_mask.sum())
     if removed == 0:
         return frame, 0
-    return frame[~settled_mask].copy(), removed
+    return frame[~drop_mask].copy(), removed
 
 
 def resolve_espn_team_name(raw_name, competition, mapping_by_competition, predicted_team_names):
@@ -689,7 +717,8 @@ def main():
         if needs_resettle:
             global_df, global_updates = update_frame_with_results(global_df, global_results)
         global_totals_added = update_accuracy_totals_from_frame(totals, global_df)
-        global_df, global_removed_completed = drop_completed_rows(global_df)
+        today_et = datetime.now(EASTERN_TZ).date()
+        global_df, global_removed_completed = drop_completed_rows(global_df, today=today_et)
         global_df.to_csv(GLOBAL_PREDICTIONS_FILE, index=False)
     else:
         global_totals_added = 0
@@ -708,7 +737,7 @@ def main():
         if needs_resettle:
             mls_df, mls_updates = update_frame_with_results(mls_df, mls_results)
         mls_totals_added = update_accuracy_totals_from_frame(totals, mls_df)
-        mls_df, mls_removed_completed = drop_completed_rows(mls_df)
+        mls_df, mls_removed_completed = drop_completed_rows(mls_df, today=today_et)
         mls_df.to_csv(MLS_PREDICTIONS_FILE, index=False)
     else:
         mls_totals_added = 0

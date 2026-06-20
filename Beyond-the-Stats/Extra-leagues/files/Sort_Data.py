@@ -1,3 +1,4 @@
+"""Sort Extra Leagues team data — builds head-to-head + form files from processed CSVs."""
 import pandas as pd
 import os
 import json

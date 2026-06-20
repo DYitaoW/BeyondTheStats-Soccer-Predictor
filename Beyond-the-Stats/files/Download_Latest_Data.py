@@ -1,3 +1,13 @@
+"""
+Download raw fixture data from football-data.co.uk for European club leagues.
+
+Part of the global sub-pipeline (global).  Fetches CSVs for each configured
+competition + past / current season, saved under ``Data/Raw_Data/``.
+
+Season completeness: once past June 1 of a season's end year, that season is
+marked complete and never re-downloaded.  The 2025-26 / 2026-27 seasons use
+unique filenames so they coexist in the same directory.
+"""
 import os
 import urllib.request
 from datetime import datetime

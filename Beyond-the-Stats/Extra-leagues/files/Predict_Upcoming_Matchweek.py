@@ -1,3 +1,10 @@
+"""
+Predict upcoming Extra Leagues fixtures — same workflow as global / MLS.
+
+For smaller European competitions that don't have enough data for a standalone
+model; reuses the extra-leagues model cache and outputs predictions to
+``Data/Predictions/``.
+"""
 import argparse
 import os
 import sys

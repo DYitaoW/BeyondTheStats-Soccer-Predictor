@@ -1,3 +1,10 @@
+"""
+ML model training + prediction for MLS matches.
+
+Near-identical copy of ``files/Predict_Match.py`` but tuned for MLS data.
+Uses ExtraTreesClassifier as fallback instead of XGBoost.  Otherwise same
+architecture: feature engineering → XGBoost/RF → model cache → prediction.
+"""
 import json
 import os
 import re

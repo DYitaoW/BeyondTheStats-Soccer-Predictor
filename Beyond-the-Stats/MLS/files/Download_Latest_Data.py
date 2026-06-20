@@ -1,3 +1,10 @@
+"""
+Download MLS fixture data from football-data.co.uk.
+
+Mirrors ``files/Download_Latest_Data.py`` but configured for MLS-only
+competitions.  Fetches CSVs, then immediately processes and sorts them
+(imports sibling ``Process_Data`` and ``Sort_Data``).
+"""
 import argparse
 import os
 import sys

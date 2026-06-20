@@ -1,3 +1,10 @@
+"""
+ML model training + prediction for Extra Leagues (lower-tier European).
+
+Near-identical copy of ``files/Predict_Match.py`` but for smaller/less
+data-rich competitions (e.g. Belgian Pro League, Scottish Premiership).
+Same architecture, uses ExtraTreesClassifier fallback.
+"""
 import json
 import os
 import re

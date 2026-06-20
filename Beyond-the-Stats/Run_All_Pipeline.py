@@ -1,3 +1,25 @@
+"""
+Full pipeline orchestrator — runs all data, model, and prediction steps.
+
+Invoked by ``Daily_Pipeline.py`` (scheduled) or directly from the command
+line.  Also triggered by the ``/api/refresh`` endpoint on the Flask server.
+
+Execution order
+---------------
+1. **Sub-pipelines** (global / MLS / extra) — run in parallel if ``--workers > 1``
+   Each sub-pipeline runs sequentially: Download → Process → Sort → Model Cache
+   → Predict Upcoming → Project League Table → (cups / national team / WC)
+2. **Post-pipeline steps** (sequential, after all sub-pipelines finish):
+   Settle predictions (update CSVs with real results from ESPN)
+   Track cup results
+   Update website accuracy history
+
+Flags
+-----
+``--skip-global / --skip-mls / --skip-extra`` — skip entire sub-pipelines
+``--skip-model-train`` — skip model cache building; also implies ``--skip-squad-values``
+``--continue-on-error`` — keep going even if individual steps fail (default: true)
+"""
 import argparse
 import json
 import os

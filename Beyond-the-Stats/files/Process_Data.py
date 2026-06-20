@@ -1,3 +1,16 @@
+"""
+Data processing — transform raw football-data.co.uk CSVs into training features.
+
+Sub-pipeline step after ``Download_Latest_Data``.  For each competition CSV:
+- Validates required columns (Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR, …)
+- Adds rolling form features (last N matches home / away / overall)
+- Converts date strings to datetime
+- Saves to ``Data/Processed_Data/``
+
+Two tiebreaker regimes are configured here via ``H2H_TIEBREAKER_PREFIXES``:
+the H2H leagues (La Liga, Serie A, etc.) use points → GD → GF → team-name
+within head-to-head groups; all others use overall GD → GF → team-name.
+"""
 import pandas as pd
 import os
 import re
