@@ -723,8 +723,8 @@ def main():
         totals["updated_at_utc"] = datetime.now(UTC).replace(microsecond=0).isoformat()
         save_json(ACCURACY_TOTALS_FILE, totals)
         today_local = datetime.now().date()
-        prev_monday = today_local - timedelta(days=today_local.weekday() + 7)
-        cup_df, removed_completed = _drop_completed_rows(cup_df, today=prev_monday)
+        prev_thursday = today_local - timedelta(days=(today_local.weekday() - 3) % 7 + 7)
+        cup_df, removed_completed = _drop_completed_rows(cup_df, today=prev_thursday)
 
     _write_csv(COMPLETED_CUP_PREDICTIONS_FILE, completed_df, CUP_HISTORY_COLUMNS)
     _write_csv(CUP_PREDICTIONS_FILE, cup_df, CUP_HISTORY_COLUMNS)

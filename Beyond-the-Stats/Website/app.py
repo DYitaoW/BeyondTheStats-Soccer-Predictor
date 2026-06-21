@@ -188,6 +188,12 @@ CUP_COMPETITIONS = {
 }
 STATIC_PREDICTIONS = os.environ.get("STATIC_PREDICTIONS", "1").strip().lower() in {"1", "true", "yes"}
 
+H2H_LEAGUES = {
+    "Spain/La Liga", "Spain/La Liga 2",
+    "Italy/Serie A", "Italy/Serie B",
+    "Portugal/Liga Portugal",
+}
+
 # ── Pipeline Timestamp Helpers ─────────────────────────────────────
 # last_refresh tracks the most recent pipeline completion (any exit code)
 # so the UI can show "last updated" timestamps. Written by both the
@@ -1494,11 +1500,201 @@ def _fetch_standings(comp_name, espn_id):
     }
 
 
-def _get_or_fetch_standings(comp_name):
-    """Return cached standings for *comp_name*, or fetch+store if stale/missing."""
+# ── Computed standings from live-score history ────────────────
+
+def _compute_standings_from_history(comp_name):
+    """Compute league / group standings purely from completed live-score results.
+
+    Handles both single-table (league) and group-stage (World Cup, UCL) formats.
+    Applies correct tiebreakers per league (GD-first vs H2H-first).
+    Returns ``None`` if no completed games are available.
+    """
+    history = _load_live_score_history()
+    # Also include any post games still in _live_scores (not yet merged)
+    with _live_scores_lock:
+        for comp_data in _live_scores.values():
+            for g in comp_data.get("games", []):
+                if g.get("status") == "post":
+                    entry = dict(g)
+                    entry.setdefault("competition", next(
+                        (k for k, v in _live_scores.items() if v is comp_data), comp_name,
+                    ))
+                    history.append(entry)
+
+    comp_games = [g for g in history
+                  if g.get("competition") == comp_name and g.get("status") == "post"
+                  and g.get("home_score") is not None and g.get("away_score") is not None]
+    if not comp_games:
+        return None
+
+    # Detect group format: any game with "group" in round name
+    has_groups = any("group" in str(g.get("round", "")).lower() for g in comp_games)
+
+    def _extract_group(round_name):
+        """Extract group label from ESPN round name e.g. 'Group Stage - Group A' → 'A'."""
+        # Try "Group X" pattern
+        m = re.search(r'Group\s+([A-Z0-9]+)', round_name)
+        if m:
+            return m.group(1)
+        # Fallback: first 1-2 non-whitespace chars after "Group"
+        parts = round_name.replace("Group Stage", "").replace("-", "").split()
+        for p in parts:
+            if p.strip():
+                return p.strip()[:3]
+        return ""
+
+    def _h2h_scores(tied_teams, all_matches):
+        """Head-to-head points, GD, GF among a set of tied teams."""
+        scores = {t: {"pts": 0, "gd": 0, "gf": 0} for t in tied_teams}
+        ts = set(tied_teams)
+        for home, away, hg, ag in all_matches:
+            if home in ts and away in ts:
+                if hg > ag:
+                    scores[home]["pts"] += 3
+                elif ag > hg:
+                    scores[away]["pts"] += 3
+                else:
+                    scores[home]["pts"] += 1
+                    scores[away]["pts"] += 1
+                scores[home]["gd"] += hg - ag
+                scores[home]["gf"] += hg
+                scores[away]["gd"] += ag - hg
+                scores[away]["gf"] += ag
+        return scores
+
+    def _init_table(teams):
+        table = {}
+        for t in sorted(teams):
+            table[t] = {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0}
+        return table
+
+    def _apply_result(table, home, away, hg, ag):
+        hs = table.setdefault(home, {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0})
+        at = table.setdefault(away, {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0})
+        hs["P"] += 1; at["P"] += 1
+        hs["GF"] += int(hg); hs["GA"] += int(ag)
+        at["GF"] += int(ag); at["GA"] += int(hg)
+        hs["GD"] = hs["GF"] - hs["GA"]
+        at["GD"] = at["GF"] - at["GA"]
+        if hg > ag:
+            hs["W"] += 1; at["L"] += 1; hs["Pts"] += 3
+        elif ag > hg:
+            at["W"] += 1; hs["L"] += 1; at["Pts"] += 3
+        else:
+            hs["D"] += 1; at["D"] += 1; hs["Pts"] += 1; at["Pts"] += 1
+
+    def _rank_table(table, all_matches=None):
+        use_h2h = comp_name in H2H_LEAGUES and all_matches is not None
+        if not use_h2h:
+            return sorted(table.items(), key=lambda kv: (-kv[1]["Pts"], -kv[1]["GD"], -kv[1]["GF"], kv[0]))
+        from collections import defaultdict
+        pts_groups = defaultdict(list)
+        for team in table:
+            pts_groups[table[team]["Pts"]].append(team)
+        result = []
+        for pts in sorted(pts_groups, reverse=True):
+            tied = pts_groups[pts]
+            if len(tied) == 1:
+                result.append((tied[0], table[tied[0]]))
+            else:
+                h2h = _h2h_scores(tied, all_matches)
+                sorted_tied = sorted(
+                    tied,
+                    key=lambda t: (
+                        -h2h[t]["pts"], -h2h[t]["gd"], -h2h[t]["gf"],
+                        -table[t]["GD"], -table[t]["GF"], t,
+                    ),
+                )
+                for team in sorted_tied:
+                    result.append((team, table[team]))
+        return result
+
+    if has_groups:
+        groups_data = {}
+        group_games_map = {}
+        for g in comp_games:
+            group = _extract_group(str(g.get("round", "")))
+            if not group:
+                continue
+            group_games_map.setdefault(group, []).append(g)
+
+        for group_name in sorted(group_games_map):
+            games = group_games_map[group_name]
+            teams = set()
+            for g in games:
+                teams.add(str(g.get("home_team", "")))
+                teams.add(str(g.get("away_team", "")))
+            teams.discard("")
+            if not teams:
+                continue
+            table = _init_table(teams)
+            match_records = []
+            for g in games:
+                ht = str(g.get("home_team", ""))
+                at = str(g.get("away_team", ""))
+                hs = int(g.get("home_score", 0))
+                as_ = int(g.get("away_score", 0))
+                if ht and at:
+                    _apply_result(table, ht, at, hs, as_)
+                    match_records.append((ht, at, hs, as_))
+            ranked = _rank_table(table, match_records if comp_name in H2H_LEAGUES else None)
+            entries = []
+            for pos, (team, stats) in enumerate(ranked, 1):
+                entries.append({"team": team, "rank": pos, **stats})
+            groups_data[group_name] = {"name": group_name, "entries": entries}
+
+        if not groups_data:
+            return None
+        groups = [{"name": gn, "entries": gd["entries"]} for gn, gd in sorted(groups_data.items())]
+    else:
+        teams = set()
+        match_records = []
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            if ht and at:
+                teams.add(ht)
+                teams.add(at)
+        if not teams:
+            return None
+        table = _init_table(teams)
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht and at:
+                _apply_result(table, ht, at, hs, as_)
+                match_records.append((ht, at, hs, as_))
+        ranked = _rank_table(table, match_records if comp_name in H2H_LEAGUES else None)
+        entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+        groups = [{"name": "Overall", "entries": entries}]
+
+    # Clear standings cache for this comp so next ESPN fetch is fresh
+    _clear_standings_cache(comp_name)
+    _clear_leaders_cache(comp_name)
+
+    return {
+        "competition": comp_name,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "groups": groups,
+        "source": "computed",
+    }
+
+
+def _get_or_fetch_standings(comp_name, computed=False):
+    """Return cached standings for *comp_name*, or fetch+store if stale/missing.
+
+    If *computed* is ``True``, standings are computed from
+    ``live_score_history.json`` instead of fetched from ESPN.
+    """
     espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
     if not espn_id:
         return None
+
+    if computed:
+        return _compute_standings_from_history(comp_name)
+
     now = datetime.now()
     with _real_tables_lock:
         cached = _real_tables.get(comp_name)
@@ -1812,10 +2008,12 @@ def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
 def _compute_poll_interval(now, results, active_comps, todays_comps):
     """Return the sleep interval in seconds before the next poll cycle.
 
-    - 60 seconds  if any game is in-progress or just kicked off (past 90 min)
+    - 60 seconds  if any game is in-progress or just kicked off (past 90 min),
+                  or within 3 minutes of a scheduled kickoff (catches pre→in
+                  transition within seconds).
     - 900 seconds (15 min) when a game kicks off within the next 60 minutes
-    - wakes up at the nearest milestone (1hr/45min/30min/15min/game-start)
-      for games between 1-2 hours away
+    - wakes up at nearest_future − 1h when games are 1-2h away (drops to
+      15-min pre-match polling mode at the 1h mark)
     - 1800 seconds otherwise (no games or all finished)
     """
     # Check live results for in-progress games
@@ -1835,8 +2033,11 @@ def _compute_poll_interval(now, results, active_comps, todays_comps):
                     # Game started within last 90 min -> poll at 60s
                     if -5400 <= diff <= 0:
                         return 60
+                    # Within 3 minutes of kickoff -> poll every 60s so we catch
+                    # the pre→in transition within seconds.
+                    if 0 < diff <= 180:
+                        return 60
                     # Future kickoff within 60 min -> poll every 15 min
-                    # Hits milestones: 1hr, 45min, 30min, 15min before, then game start
                     if 0 < diff <= 3600:
                         return 900
                     # Future kickoff — track the nearest one
@@ -1845,9 +2046,9 @@ def _compute_poll_interval(now, results, active_comps, todays_comps):
             except Exception:
                 continue
 
-    # Wake up at nearest future kickoff time minus 60 min so pre-match polling starts
+    # Wake up at nearest future − 1h so pre-match 15-min polling starts on time.
+    # If the nearest kickoff is within 3 min, we'd already have returned 60 above.
     if nearest_future is not None and nearest_future < 7200:
-        # Wake at nearest_future - 3600 so we start 15-min polling 1hr before kickoff
         wake_at = nearest_future - 3600
         return max(10, wake_at)
 
@@ -2591,7 +2792,7 @@ def start_live_score_poller() -> None:
     if not getattr(start_live_score_poller, "_started", False):
         start_live_score_poller._started = True
         threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
-        print("[startup] Live score poller started (60s live / 15min pre-match / 30min idle).")
+        print("[startup] Live score poller started (60s live / 60s 3min pre-kickoff / 15min pre-match / 30min idle).")
 
 
 # ── End Live Score Poller ───────────────────────────────────────
@@ -2994,8 +3195,15 @@ def _build_persistent_accuracy_stats(mode, rows):
     return stats, league_stats
 
 
-def _load_upcoming_rows(csv_path, mode=None):
-    """Load upcoming prediction rows and attach persistent accuracy stats."""
+def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
+    """Load prediction rows from CSV filtered by date range.
+    
+    Args:
+        csv_path: Path to the prediction CSV.
+        mode: Source mode ("global", "mls", "extra", "cups", "national").
+        date_range: ``"upcoming"`` — today to 21 days out (default).
+                    ``"completed"`` — previous full prediction week to yesterday.
+    """
     if not os.path.exists(csv_path):
         empty = pd.DataFrame()
         target_mode = mode or "global"
@@ -3075,10 +3283,18 @@ def _load_upcoming_rows(csv_path, mode=None):
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
     
-    today = datetime.now().date()
-    prev_monday = today - timedelta(days=today.weekday() + 7)
-    cutoff = pd.Timestamp(prev_monday)
-    frame = frame[frame["parsed_date"] >= cutoff].reset_index(drop=True)
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    if date_range == "completed":
+        # Previous full prediction week → yesterday
+        prev_thursday = today_et - timedelta(days=(today_et.weekday() - 3) % 7 + 7)
+        lo = pd.Timestamp(prev_thursday)
+        hi = pd.Timestamp(today_et)
+        frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] < hi)].reset_index(drop=True)
+    else:
+        # Upcoming: today → 21 days out (today + rest of current week + 2 full weeks)
+        lo = pd.Timestamp(today_et)
+        hi = pd.Timestamp(today_et + timedelta(days=21))
+        frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] <= hi)].reset_index(drop=True)
     
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
@@ -4239,8 +4455,8 @@ def api_past_games():
         per_page = 50
 
     today_local = datetime.now(ZoneInfo("America/New_York")).date()
-    prev_monday = today_local - timedelta(days=today_local.weekday() + 7)
-    cutoff = prev_monday.isoformat()
+    prev_thursday = today_local - timedelta(days=(today_local.weekday() - 3) % 7 + 7)
+    cutoff = prev_thursday.isoformat()
 
     games = _load_live_score_history()
     # Only include finished games (status == "post"), within the date window.
@@ -4385,30 +4601,34 @@ def api_cup_bracket():
 
 @app.get("/api/real-tables")
 def api_real_tables():
-    """Return real league tables from ESPN for one or all competitions.
+    """Return real league tables from ESPN or computed from live-score history.
 
     Query params:
         competition  -- optional, fetch a specific competition only
                         (e.g. "England/Premier League", "FIFA/World Cup")
                         If omitted, returns tables for all known competitions.
         refresh      -- if "1" or "true", bypasses cache and fetches fresh data
+        computed     -- if "1" or "true", compute standings from completed
+                        live-score results instead of fetching from ESPN.
+                        Supports group-stage competitions (World Cup, UCL).
     """
     comp_filter = request.args.get("competition", "").strip()
     force_refresh = request.args.get("refresh", "").strip().lower() in ("1", "true")
+    use_computed = request.args.get("computed", "").strip().lower() in ("1", "true")
 
     if comp_filter:
         if comp_filter not in LIVE_SCORE_COMPETITIONS:
             return jsonify({"ok": False, "error": f"Unknown competition: {comp_filter}"}), 400
         if force_refresh:
             _clear_standings_cache(comp_filter)
-        table = _get_or_fetch_standings(comp_filter)
+        table = _get_or_fetch_standings(comp_filter, computed=use_computed)
         return jsonify({"ok": True, "table": table})
 
     results = {}
     for comp_name in LIVE_SCORE_COMPETITIONS:
         if force_refresh:
             _clear_standings_cache(comp_name)
-        table = _get_or_fetch_standings(comp_name)
+        table = _get_or_fetch_standings(comp_name, computed=use_computed)
         if table:
             results[comp_name] = table
     return jsonify({"ok": True, "tables": results, "total": len(results)})
@@ -4620,6 +4840,7 @@ def api_help():
             {"method": "GET", "path": "/api/real-tables/leaders?competition=&refresh=", "desc": "Individual stat leaders from ESPN (goals, assists, cards, etc.)"},
             {"method": "GET", "path": "/api/cup-bracket?competition=", "desc": "Real cup bracket from ESPN + history data"},
             {"method": "GET", "path": "/api/prediction-stats", "desc": "Prediction tracking: all-time and current-week correct/incorrect counts"},
+            {"method": "GET", "path": "/api/recent-completed?league=", "desc": "Completed predictions from prev full week + current week's past days"},
         ],
     })
 
@@ -4774,6 +4995,33 @@ def api_upcoming_world_cup():
         "stats": _compute_accuracy_stats(empty_frame),
         "league_stats": _compute_league_accuracy_stats(empty_frame),
     })
+
+
+@app.get("/api/recent-completed")
+def api_recent_completed():
+    """Return completed predictions from the previous full week + current week's past days.
+
+    Sources from all five prediction CSVs (global, mls, extra, cups, national),
+    filtered to games with ``actual_result`` set.  Games still showing in
+    ``/api/upcoming/*`` (today + next 3 weeks) are excluded.
+    """
+    league = request.args.get("league", "").strip().lower()
+    all_rows = []
+    for source, csv_path in (
+        ("global", GLOBAL_UPCOMING_FILE),
+        ("mls", MLS_UPCOMING_FILE),
+        ("extra", EXTRA_UPCOMING_FILE),
+        ("cups", CUP_UPCOMING_FILE),
+        ("national", NATIONAL_UPCOMING_FILE),
+    ):
+        rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source, date_range="completed")
+        for r in rows:
+            if r.get("actual_result") and r["actual_result"].upper() in {"H", "D", "A"}:
+                if not league or league in r.get("competition", "").lower():
+                    all_rows.append(r)
+
+    all_rows.sort(key=lambda r: (r.get("match_date", ""), r.get("competition", ""), r.get("home_team", "")), reverse=True)
+    return jsonify({"ok": True, "rows": all_rows, "total": len(all_rows)})
 
 
 def _row_confidence(row):
