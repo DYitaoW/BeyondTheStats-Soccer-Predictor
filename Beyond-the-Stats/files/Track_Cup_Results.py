@@ -7,6 +7,7 @@ import pandas as pd
 from Update_Live_Prediction_Results import (
     ACCURACY_TOTALS_FILE,
     ESPN_BASE,
+    PAST_GAMES_FILE,
     SHARED_MAPPING_FILE,
     apply_mapping_updates,
     fetch_json,
@@ -16,6 +17,7 @@ from Update_Live_Prediction_Results import (
     load_shared_mapping,
     normalize_team_key,
     resolve_espn_team_name,
+    save_completed_rows_to_past_games,
     save_json,
     save_mapping,
     update_accuracy_totals_from_frame,
@@ -724,6 +726,7 @@ def main():
         save_json(ACCURACY_TOTALS_FILE, totals)
         today_local = datetime.now().date()
         prev_thursday = today_local - timedelta(days=(today_local.weekday() - 3) % 7 + 7)
+        save_completed_rows_to_past_games(cup_df, today=prev_thursday)
         cup_df, removed_completed = _drop_completed_rows(cup_df, today=prev_thursday)
 
     _write_csv(COMPLETED_CUP_PREDICTIONS_FILE, completed_df, CUP_HISTORY_COLUMNS)

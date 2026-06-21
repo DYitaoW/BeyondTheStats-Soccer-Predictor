@@ -33,6 +33,7 @@ LEGACY_GLOBAL_MAPPING_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "upco
 LEGACY_MLS_MAPPING_FILE = os.path.join(BASE_DIR, "MLS", "Data", "Predictions", "upcoming_fixture_team_mapping.json")
 ESPN_NAMES_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "espn_team_names_seen.json")
 ACCURACY_TOTALS_FILE = os.path.join(BASE_DIR, "Website", "files", "accuracy_totals.json")
+PAST_GAMES_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "past_games.json")
 
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 ESPN_COMPETITION_KEYS = {
@@ -436,6 +437,65 @@ def cleanup_all_settled_rows(frame):
     return frame, cleaned
 
 
+def save_completed_rows_to_past_games(frame, today=None):
+    """Extract rows about to be dropped and append them to past_games.json.
+
+    Called right before ``drop_completed_rows()`` so the data persists
+    and can be served by ``/api/past-games``.
+    """
+    if frame is None or frame.empty or "actual_result" not in frame.columns:
+        return 0
+    settled_mask = frame["actual_result"].astype(str).str.strip().str.upper().isin({"H", "D", "A"})
+    if today is not None and "match_date" in frame.columns:
+        parsed_dates = pd.to_datetime(frame["match_date"], errors="coerce").dt.normalize()
+        today_ts = pd.Timestamp(today)
+        drop_mask = settled_mask & (parsed_dates < today_ts)
+    else:
+        drop_mask = settled_mask
+    to_save = frame[drop_mask].copy()
+    if to_save.empty:
+        return 0
+    existing = []
+    if os.path.exists(PAST_GAMES_FILE):
+        try:
+            with open(PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
+                existing = json.load(fh)
+        except Exception:
+            existing = []
+    existing_keys = set()
+    for row in existing:
+        pk = row.get("prediction_key", "")
+        if pk:
+            existing_keys.add(pk)
+    new_rows = []
+    for _, row in to_save.iterrows():
+        row_dict = {}
+        for k in row.index:
+            v = row[k]
+            if isinstance(v, pd.Timestamp):
+                row_dict[k] = None if pd.isna(v) else str(v)
+            else:
+                try:
+                    if pd.isna(v):
+                        row_dict[k] = None
+                    else:
+                        row_dict[k] = v
+                except Exception:
+                    row_dict[k] = v if v is not None else None
+        pk = str(row_dict.get("prediction_key", "")).strip()
+        if pk and pk not in existing_keys:
+            existing_keys.add(pk)
+            new_rows.append(row_dict)
+        elif not pk:
+            new_rows.append(row_dict)
+    if new_rows:
+        existing.extend(new_rows)
+        os.makedirs(os.path.dirname(PAST_GAMES_FILE), exist_ok=True)
+        with open(PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
+            json.dump(existing, fh, indent=2, ensure_ascii=False)
+    return len(new_rows)
+
+
 def drop_completed_rows(frame, today=None):
     """Drop completed (settled) rows, but only for dates *before* today.
 
@@ -719,6 +779,7 @@ def main():
         global_totals_added = update_accuracy_totals_from_frame(totals, global_df)
         today_et = datetime.now(EASTERN_TZ).date()
         prev_thursday = today_et - timedelta(days=(today_et.weekday() - 3) % 7 + 7)
+        save_completed_rows_to_past_games(global_df, today=prev_thursday)
         global_df, global_removed_completed = drop_completed_rows(global_df, today=prev_thursday)
         global_df.to_csv(GLOBAL_PREDICTIONS_FILE, index=False)
     else:
@@ -738,6 +799,7 @@ def main():
         if needs_resettle:
             mls_df, mls_updates = update_frame_with_results(mls_df, mls_results)
         mls_totals_added = update_accuracy_totals_from_frame(totals, mls_df)
+        save_completed_rows_to_past_games(mls_df, today=prev_thursday)
         mls_df, mls_removed_completed = drop_completed_rows(mls_df, today=prev_thursday)
         mls_df.to_csv(MLS_PREDICTIONS_FILE, index=False)
     else:

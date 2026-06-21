@@ -164,6 +164,7 @@ NATIONAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcom
 GLOBAL_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_league_tables.csv")
 CUP_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_tables.csv")
 CUP_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_brackets.json")
+PAST_GAMES_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "past_games.json")
 MLS_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "projected_league_tables.csv")
 EXTRA_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Extra-leagues", "Data", "Predictions", "projected_league_tables.csv")
 MLS_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "projected_mls_playoff_bracket.json")
@@ -4436,10 +4437,10 @@ def api_past_games():
     ``double_chance``, ``asian_handicap``, ``actual_result``, ``is_correct``,
     etc.).
 
-    Data is sourced from the same prediction CSVs as ``/api/upcoming/global``,
-    filtered to games with ``actual_result`` set.  For full live-score
-    details (lineups, stats, key events, game info), use
-    ``/api/live-score-history``.
+    Data is sourced from the persistent ``past_games.json`` file (populated
+    automatically when the prediction pipeline drops completed rows).
+    For full live-score details (lineups, stats, key events, game info),
+    use ``/api/live-score-history``.
 
     Query params:
         league   -- filter by competition name (substring match, case-insensitive)
@@ -4461,18 +4462,19 @@ def api_past_games():
     cutoff = prev_thursday.isoformat()
 
     all_rows = []
-    for source, csv_path in (
-        ("global", GLOBAL_UPCOMING_FILE),
-        ("mls", MLS_UPCOMING_FILE),
-        ("extra", EXTRA_UPCOMING_FILE),
-        ("cups", CUP_UPCOMING_FILE),
-        ("national", NATIONAL_UPCOMING_FILE),
-    ):
-        rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source, date_range="completed")
-        for r in rows:
-            if r.get("actual_result") and r["actual_result"].upper() in {"H", "D", "A"}:
-                if not league or league in r.get("competition", "").lower():
-                    all_rows.append(r)
+    if os.path.exists(PAST_GAMES_FILE):
+        try:
+            with open(PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
+                all_rows = json.load(fh)
+        except Exception:
+            all_rows = []
+        if league:
+            league_lower = league.lower()
+            all_rows = [r for r in all_rows if league_lower in r.get("competition", "").lower()]
+        # Filter to date window: rows whose match_date is >= prev_thursday and < today
+        all_rows = [r for r in all_rows
+                    if str(r.get("match_date", "")).strip() >= cutoff
+                    and str(r.get("match_date", "")).strip() < today_local.isoformat()]
 
     all_rows.sort(key=lambda r: r.get("match_date", ""), reverse=True)
 
@@ -4828,7 +4830,7 @@ def api_help():
             {"method": "GET", "path": "/api/team?team=&mode=", "desc": "Form, upcoming games, H2H, and per-team prediction accuracy"},
             {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores (polled from ESPN, includes lineups, goalscorers, red cards & live predictions)"},
             {"method": "GET", "path": "/api/live-score-history?league=&from=&to=&page=&per_page=", "desc": "Historical completed games, filterable by league and date"},
-            {"method": "GET", "path": "/api/past-games?league=&page=&per_page=", "desc": "Completed games from previous full week + current week's past days (includes lineups, stats, key events, boxscore)"},
+            {"method": "GET", "path": "/api/past-games?league=&page=&per_page=", "desc": "Completed predictions from previous full week + current week's past days (upcoming-format rows)"},
             {"method": "GET", "path": "/api/debug/live-score-sources", "desc": "Debug: what data sources the live score poller sees"},
             {"method": "GET", "path": "/api/debug/manual-poll", "desc": "Debug: manually run one ESPN poll cycle"},
             {"method": "GET", "path": "/api/debug/poller-state", "desc": "Debug: show live score poller internal state"},
