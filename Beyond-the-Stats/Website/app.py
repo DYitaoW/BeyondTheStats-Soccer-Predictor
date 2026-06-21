@@ -4384,26 +4384,17 @@ def api_debug_poller_state():
 
 @app.get("/api/live-score-history")
 def api_live_score_history():
-    """Return historical completed games, filterable by league and date range.
+    """Return historical completed games, grouped by competition
+    (matching ``/api/live-scores`` response structure).
 
     Query params:
         league   -- filter by competition name (substring match, case-insensitive)
         from     -- start date (ISO, e.g. 2026-06-01), filters by kickoff_utc >=
         to       -- end date (ISO, e.g. 2026-06-18), filters by kickoff_utc <=
-        page     -- page number (default 1)
-        per_page -- results per page (default 50, max 200)
     """
     league = request.args.get("league", "").strip()
     from_date = request.args.get("from", "").strip()
     to_date = request.args.get("to", "").strip()
-    try:
-        page = max(1, int(request.args.get("page", "1")))
-    except (ValueError, TypeError):
-        page = 1
-    try:
-        per_page = min(200, max(1, int(request.args.get("per_page", "50"))))
-    except (ValueError, TypeError):
-        per_page = 50
 
     games = _load_live_score_history()
 
@@ -4417,17 +4408,20 @@ def api_live_score_history():
 
     games.sort(key=lambda g: g.get("kickoff_utc", ""), reverse=True)
 
-    total = len(games)
-    start = (page - 1) * per_page
-    end = start + per_page
-    page_games = games[start:end]
+    competitions = {}
+    for g in games:
+        comp = g.get("competition", "Unknown")
+        if comp not in competitions:
+            competitions[comp] = {
+                "competition": comp,
+                "games": [],
+                "last_polled_utc": datetime.now(timezone.utc).isoformat(),
+            }
+        competitions[comp]["games"].append(g)
 
     return jsonify({
         "ok": True,
-        "games": page_games,
-        "total": total,
-        "page": page,
-        "per_page": per_page,
+        "competitions": competitions,
     })
 
 
@@ -4435,9 +4429,17 @@ def api_live_score_history():
 def api_past_games():
     """Return completed games from the previous full week + current week's past days.
 
-    Includes lineups, game stats, key events, boxscore, and other data that
-    ``/api/live-scores`` provides for in-progress games — sourced from the
-    persistent ``live_score_history.json`` file.
+    Response structure matches ``/api/upcoming/global`` per-row format
+    (``match_datetime_et``, ``weekday``, ``date_label``, ``time_label``,
+    ``prob_home``, ``prob_draw``, ``prob_away``, ``pred_home_goals``,
+    ``pred_away_goals``, goal probabilities, ``correct_score_dist``,
+    ``double_chance``, ``asian_handicap``, ``actual_result``, ``is_correct``,
+    etc.).
+
+    Data is sourced from the same prediction CSVs as ``/api/upcoming/global``,
+    filtered to games with ``actual_result`` set.  For full live-score
+    details (lineups, stats, key events, game info), use
+    ``/api/live-score-history``.
 
     Query params:
         league   -- filter by competition name (substring match, case-insensitive)
@@ -4458,26 +4460,30 @@ def api_past_games():
     prev_thursday = today_local - timedelta(days=(today_local.weekday() - 3) % 7 + 7)
     cutoff = prev_thursday.isoformat()
 
-    games = _load_live_score_history()
-    # Only include finished games (status == "post"), within the date window.
-    games = [g for g in games
-             if g.get("status") == "post"
-             and g.get("match_date", "") >= cutoff]
+    all_rows = []
+    for source, csv_path in (
+        ("global", GLOBAL_UPCOMING_FILE),
+        ("mls", MLS_UPCOMING_FILE),
+        ("extra", EXTRA_UPCOMING_FILE),
+        ("cups", CUP_UPCOMING_FILE),
+        ("national", NATIONAL_UPCOMING_FILE),
+    ):
+        rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source, date_range="completed")
+        for r in rows:
+            if r.get("actual_result") and r["actual_result"].upper() in {"H", "D", "A"}:
+                if not league or league in r.get("competition", "").lower():
+                    all_rows.append(r)
 
-    if league:
-        league_lower = league.lower()
-        games = [g for g in games if league_lower in g.get("competition", "").lower()]
+    all_rows.sort(key=lambda r: r.get("match_date", ""), reverse=True)
 
-    games.sort(key=lambda g: g.get("kickoff_utc", ""), reverse=True)
-
-    total = len(games)
+    total = len(all_rows)
     start = (page - 1) * per_page
     end = start + per_page
-    page_games = games[start:end]
+    page_rows = all_rows[start:end]
 
     return jsonify({
         "ok": True,
-        "games": page_games,
+        "rows": page_rows,
         "total": total,
         "page": page,
         "per_page": per_page,
