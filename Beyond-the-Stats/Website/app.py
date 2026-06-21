@@ -1812,10 +1812,12 @@ def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
 def _compute_poll_interval(now, results, active_comps, todays_comps):
     """Return the sleep interval in seconds before the next poll cycle.
 
-    - 60 seconds  if any game is in-progress or just kicked off (past 90 min)
+    - 60 seconds  if any game is in-progress or just kicked off (past 90 min),
+                  or within 3 minutes of a scheduled kickoff (catches pre→in
+                  transition within seconds).
     - 900 seconds (15 min) when a game kicks off within the next 60 minutes
-    - wakes up at the nearest milestone (1hr/45min/30min/15min/game-start)
-      for games between 1-2 hours away
+    - wakes up at nearest_future − 1h when games are 1-2h away (drops to
+      15-min pre-match polling mode at the 1h mark)
     - 1800 seconds otherwise (no games or all finished)
     """
     # Check live results for in-progress games
@@ -1835,8 +1837,11 @@ def _compute_poll_interval(now, results, active_comps, todays_comps):
                     # Game started within last 90 min -> poll at 60s
                     if -5400 <= diff <= 0:
                         return 60
+                    # Within 3 minutes of kickoff -> poll every 60s so we catch
+                    # the pre→in transition within seconds.
+                    if 0 < diff <= 180:
+                        return 60
                     # Future kickoff within 60 min -> poll every 15 min
-                    # Hits milestones: 1hr, 45min, 30min, 15min before, then game start
                     if 0 < diff <= 3600:
                         return 900
                     # Future kickoff — track the nearest one
@@ -1845,9 +1850,9 @@ def _compute_poll_interval(now, results, active_comps, todays_comps):
             except Exception:
                 continue
 
-    # Wake up at nearest future kickoff time minus 60 min so pre-match polling starts
+    # Wake up at nearest future − 1h so pre-match 15-min polling starts on time.
+    # If the nearest kickoff is within 3 min, we'd already have returned 60 above.
     if nearest_future is not None and nearest_future < 7200:
-        # Wake at nearest_future - 3600 so we start 15-min polling 1hr before kickoff
         wake_at = nearest_future - 3600
         return max(10, wake_at)
 
@@ -2591,7 +2596,7 @@ def start_live_score_poller() -> None:
     if not getattr(start_live_score_poller, "_started", False):
         start_live_score_poller._started = True
         threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
-        print("[startup] Live score poller started (60s live / 15min pre-match / 30min idle).")
+        print("[startup] Live score poller started (60s live / 60s 3min pre-kickoff / 15min pre-match / 30min idle).")
 
 
 # ── End Live Score Poller ───────────────────────────────────────
@@ -2994,8 +2999,15 @@ def _build_persistent_accuracy_stats(mode, rows):
     return stats, league_stats
 
 
-def _load_upcoming_rows(csv_path, mode=None):
-    """Load upcoming prediction rows and attach persistent accuracy stats."""
+def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
+    """Load prediction rows from CSV filtered by date range.
+    
+    Args:
+        csv_path: Path to the prediction CSV.
+        mode: Source mode ("global", "mls", "extra", "cups", "national").
+        date_range: ``"upcoming"`` — today to 21 days out (default).
+                    ``"completed"`` — previous full prediction week to yesterday.
+    """
     if not os.path.exists(csv_path):
         empty = pd.DataFrame()
         target_mode = mode or "global"
@@ -3075,10 +3087,18 @@ def _load_upcoming_rows(csv_path, mode=None):
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
     
-    today = datetime.now().date()
-    prev_monday = today - timedelta(days=today.weekday() + 7)
-    cutoff = pd.Timestamp(prev_monday)
-    frame = frame[frame["parsed_date"] >= cutoff].reset_index(drop=True)
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    if date_range == "completed":
+        # Previous full prediction week → yesterday
+        prev_thursday = today_et - timedelta(days=(today_et.weekday() - 3) % 7 + 7)
+        lo = pd.Timestamp(prev_thursday)
+        hi = pd.Timestamp(today_et)
+        frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] < hi)].reset_index(drop=True)
+    else:
+        # Upcoming: today → 21 days out (today + rest of current week + 2 full weeks)
+        lo = pd.Timestamp(today_et)
+        hi = pd.Timestamp(today_et + timedelta(days=21))
+        frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] <= hi)].reset_index(drop=True)
     
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
@@ -4239,8 +4259,8 @@ def api_past_games():
         per_page = 50
 
     today_local = datetime.now(ZoneInfo("America/New_York")).date()
-    prev_monday = today_local - timedelta(days=today_local.weekday() + 7)
-    cutoff = prev_monday.isoformat()
+    prev_thursday = today_local - timedelta(days=(today_local.weekday() - 3) % 7 + 7)
+    cutoff = prev_thursday.isoformat()
 
     games = _load_live_score_history()
     # Only include finished games (status == "post"), within the date window.
@@ -4620,6 +4640,7 @@ def api_help():
             {"method": "GET", "path": "/api/real-tables/leaders?competition=&refresh=", "desc": "Individual stat leaders from ESPN (goals, assists, cards, etc.)"},
             {"method": "GET", "path": "/api/cup-bracket?competition=", "desc": "Real cup bracket from ESPN + history data"},
             {"method": "GET", "path": "/api/prediction-stats", "desc": "Prediction tracking: all-time and current-week correct/incorrect counts"},
+            {"method": "GET", "path": "/api/recent-completed?league=", "desc": "Completed predictions from prev full week + current week's past days"},
         ],
     })
 
@@ -4774,6 +4795,33 @@ def api_upcoming_world_cup():
         "stats": _compute_accuracy_stats(empty_frame),
         "league_stats": _compute_league_accuracy_stats(empty_frame),
     })
+
+
+@app.get("/api/recent-completed")
+def api_recent_completed():
+    """Return completed predictions from the previous full week + current week's past days.
+
+    Sources from all five prediction CSVs (global, mls, extra, cups, national),
+    filtered to games with ``actual_result`` set.  Games still showing in
+    ``/api/upcoming/*`` (today + next 3 weeks) are excluded.
+    """
+    league = request.args.get("league", "").strip().lower()
+    all_rows = []
+    for source, csv_path in (
+        ("global", GLOBAL_UPCOMING_FILE),
+        ("mls", MLS_UPCOMING_FILE),
+        ("extra", EXTRA_UPCOMING_FILE),
+        ("cups", CUP_UPCOMING_FILE),
+        ("national", NATIONAL_UPCOMING_FILE),
+    ):
+        rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source, date_range="completed")
+        for r in rows:
+            if r.get("actual_result") and r["actual_result"].upper() in {"H", "D", "A"}:
+                if not league or league in r.get("competition", "").lower():
+                    all_rows.append(r)
+
+    all_rows.sort(key=lambda r: (r.get("match_date", ""), r.get("competition", ""), r.get("home_team", "")), reverse=True)
+    return jsonify({"ok": True, "rows": all_rows, "total": len(all_rows)})
 
 
 def _row_confidence(row):
