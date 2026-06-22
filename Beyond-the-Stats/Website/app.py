@@ -2457,19 +2457,19 @@ def _compute_live_momentum(game, elapsed):
 def _compute_live_prediction(game, prematch):
     """Compute in-play prediction from live game state and pre-match data.
 
-    Uses a **logit scoreline model** with pre-match strength pull:
+    **Logit scoreline model with pre-match blend**:
 
-    1. **Effective goal difference** — actual goals + stat adjustment (shots,
-       shots-on-target, corners) + red-card penalty + *pre-match pull* that
-       shifts the GD toward the model's expected goal difference (heavy early,
-       decays with time).
-    2. **Logit confidence** — convert :math:`|GD|` to a base log-odds via
-       :math:`\\text{logit}(0.5 + 0.12 \\cdot |GD|)`, then add a time boost
-       :math:`|GD| \\cdot 2.0 \\cdot (1 - time\\_frac)`.  The logistic inverse
-       keeps the result in (0, 1) without ever exceeding 1.0.
-    3. **No probability blend** — pre-match probability blend would double-count
-       the strength information that is already baked into the effective GD via
-       the pull.  The pull is the single channel for pre-match influence.
+    1. A small pre-match nudge (``0.2 × time_frac × prem_xg_diff``) is
+       added to the model's goal-difference estimate so 0-0 games still
+       reflect pre-match strength and avoid the crude tied formula.
+    2. **Pre-match blend** mixes the model's output with the full pre-match
+       probabilities.  The blend decays with both elapsed time and goals
+       scored: ``blend = 1 - (elapsed + 15 × |goal_diff|) / 90``.  Goals
+       accelerate the transition to pure scoreline; a scoreless game lets
+       pre-match weight persist longer.
+    3. A stronger pre-match pull (``0.3 × time_frac × prem_xg_diff``) is
+       added to ``effective_gd`` for ancillary metrics only (``next_to_score``,
+       ``comeback_prob``, ``momentum``).
     """
     if game.get("status") != "in":
         return None
@@ -2477,17 +2477,20 @@ def _compute_live_prediction(game, prematch):
     away_score = game.get("away_score") or 0
     goal_diff = home_score - away_score
     elapsed = _parse_elapsed_minutes(game.get("clock", "0'"), game.get("period", ""))
-    time_frac = max(0.05, (95 - elapsed) / 90.0)
+    time_frac = max(0.05, min(1.0, (95 - elapsed) / 90.0))
 
-    # ── Pre-match strength pull (decays with time) ─────────────
-    # Positive prem_xg_diff = home favoured.  The pull shifts the effective
-    # GD toward the pre-match expectation, so a favourite that is leading gets
-    # a boost while a favourite that is trailing gets the deficit reduced.
+    # ── Pre-match data ─────────────────────────────────────────
     if prematch:
+        prem_home = prematch.get("prob_home", 0.34)
+        prem_draw = prematch.get("prob_draw", 0.33)
+        prem_away = prematch.get("prob_away", 0.33)
         prem_xg_diff = prematch.get("pred_home_goals", 1.4) - prematch.get("pred_away_goals", 1.2)
     else:
+        prem_home = prem_draw = prem_away = 1.0 / 3.0
         prem_xg_diff = 0.0
-    prem_pull = prem_xg_diff * time_frac * 0.3  # max ~30 % of pre-match edge early
+
+    # ── Pre-match pull (affects effective_gd only, not probs) ──
+    prem_pull = prem_xg_diff * time_frac * 0.3
 
     # ── In-game statistics adjustment ──────────────────────────
     home_stats = game.get("home_stats", {}) or {}
@@ -2508,7 +2511,6 @@ def _compute_live_prediction(game, prematch):
     sot_diff = (sot_h - sot_a) / total_sot
     corner_diff = (corners_h - corners_a) / total_corners
 
-    # Stats contribute up to ~0.50 to effective goal difference
     stat_adjustment = 0.15 * shot_diff + 0.25 * sot_diff + 0.10 * corner_diff
 
     # Red cards: each red card against the opponent is worth 0.5 goals
@@ -2516,33 +2518,42 @@ def _compute_live_prediction(game, prematch):
     reds_a = sum(1 for rc in game.get("red_cards", []) if rc.get("team") == "away")
     red_adjustment = (reds_a - reds_h) * 0.5
 
-    effective_gd = goal_diff + stat_adjustment + red_adjustment + prem_pull
+    # ── Model probabilities ────────────────────────────────────
+    # Small pre-match nudge keeps 0-0 games out of the tied formula
+    # so the model still knows which team is better:
+    prem_nudge = prem_xg_diff * time_frac * 0.2
+    model_gd = goal_diff + stat_adjustment + red_adjustment + prem_nudge
+    abs_model_gd = abs(model_gd)
+    DRAW_RATIO = 0.75
 
-    # ── Scoreline-confidence model (logit space) ───────────────
-    abs_gd = abs(effective_gd)
-    DRAW_RATIO = 0.75  # among non-leading outcomes, 75% draws, 25% losses
-
-    if abs_gd < 0.01:
-        # Effectively tied — draw probability grows sharply as time runs out.
-        # Last ~7 minutes (88+ min) → ~86 % draw, ~7 % each side.
+    if abs_model_gd < 0.01:
+        # Effectively tied
         w = 1.0 - time_frac
-        p_home = max(0.001, 0.33 - 0.28 * w)
-        p_draw = max(0.001, 0.34 + 0.56 * w)
-        p_away = max(0.001, 0.33 - 0.28 * w)
+        m_home = max(0.001, 0.33 - 0.28 * w)
+        m_draw = max(0.001, 0.34 + 0.56 * w)
+        m_away = max(0.001, 0.33 - 0.28 * w)
     else:
-        # Time-independent base win prob from goal difference
-        base_p = min(0.99, 0.50 + abs_gd * 0.12)
+        base_p = min(0.99, 0.50 + abs_model_gd * 0.12)
         base_logit = math.log(base_p / (1.0 - base_p))
-        # Time boost in log-odds space; late-game pushes confidence higher
-        logit_boost = abs_gd * 2.0 * (1.0 - time_frac)
+        logit_boost = abs_model_gd * 2.0 * (1.0 - time_frac)
         final_logit = base_logit + logit_boost
         p_lead = 1.0 / (1.0 + math.exp(-final_logit))
-        p_draw = max(0.001, (1.0 - p_lead) * DRAW_RATIO)
-        p_lose = (1.0 - p_lead) - p_draw
-        if effective_gd > 0:
-            p_home, p_away = p_lead, p_lose
+        m_draw = max(0.001, (1.0 - p_lead) * DRAW_RATIO)
+        p_lose = (1.0 - p_lead) - m_draw
+        if model_gd > 0:
+            m_home, m_away = p_lead, p_lose
         else:
-            p_home, p_away = p_lose, p_lead
+            m_home, m_away = p_lose, p_lead
+
+    # ── Pre-match blend ────────────────────────────────────────
+    # Blend decays with time AND with goals scored.  Goals are strong
+    # evidence so they accelerate the transition toward the pure model.
+    # At 0-0 the blend decays slowly so pre-match weight persists longer.
+    blend = max(0.0, min(1.0, 1.0 - (elapsed + 15 * abs(goal_diff)) / 90.0))
+
+    p_home = blend * prem_home + (1.0 - blend) * m_home
+    p_draw = blend * prem_draw + (1.0 - blend) * m_draw
+    p_away = blend * prem_away + (1.0 - blend) * m_away
 
     # Clamp & normalise
     p_home = max(0.001, min(0.999, p_home))
@@ -2559,6 +2570,9 @@ def _compute_live_prediction(game, prematch):
     live_probs["away_score"] = away_score
     live_probs["elapsed"] = elapsed
     live_probs["time_remaining_frac"] = round(time_frac, 3)
+
+    # ── Effective GD (with pre-match pull) for ancillary metrics ─
+    effective_gd = model_gd + prem_pull
 
     # ── Next team to score ─────────────────────────────────────
     live_probs["next_to_score"] = _compute_live_next_to_score(
@@ -2634,7 +2648,6 @@ def _live_score_poller_loop():
                     with _live_summary_cache_lock:
                         _live_summary_cache.clear()
                     _live_score_poller_loop._poller_date = _today_for_poller
-                    _live_score_poller_loop._summary_lineups_done = set()
                 # Merge new results into existing so finished games persist.
                 for comp_name, comp_data in results.items():
                     new_games = comp_data.get("games", [])
@@ -2669,12 +2682,9 @@ def _live_score_poller_loop():
             _merge_completed_to_history()
 
             # ── Fetch summary data for active games ──────────────────
-            # - pre:   fetch until lineups are captured (once available), then stop
+            # - pre:   fetch every cycle so lineup/formation changes are picked up
             # - in:    fetch every cycle (key_events & boxscore change in real time)
             # - post:  fetch once if cache empty (final data capture)
-            if not hasattr(_live_score_poller_loop, "_summary_lineups_done"):
-                _live_score_poller_loop._summary_lineups_done = set()
-            summary_lineups_done = _live_score_poller_loop._summary_lineups_done
             try:
                 games_needing_summary = []
                 for comp_name, comp_data in list(_live_scores.items()):
@@ -2686,9 +2696,7 @@ def _live_score_poller_loop():
                         if not mid:
                             continue
                         status = g.get("status", "")
-                        if status == "in":
-                            games_needing_summary.append((comp_name, espn_id, mid))
-                        elif status == "pre" and mid not in summary_lineups_done:
+                        if status in ("pre", "in"):
                             games_needing_summary.append((comp_name, espn_id, mid))
                         elif status == "post" and mid not in _live_summary_cache:
                             games_needing_summary.append((comp_name, espn_id, mid))
@@ -2742,8 +2750,7 @@ def _live_score_poller_loop():
                                     if "game_info" in sresult:
                                         cache_entry["game_info"] = sresult["game_info"]
                                     _live_summary_cache[mid] = cache_entry
-                                if "lineups" in sresult:
-                                    summary_lineups_done.add(mid)
+                                # lineups always re-fetched for pre games on the next cycle
                             except Exception:
                                 pass
             except Exception:
