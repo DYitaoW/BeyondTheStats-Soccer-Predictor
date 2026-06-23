@@ -261,15 +261,16 @@ def _run_mls_subpipeline(args, api_token):
     sub = {}
     comp_workers = int(getattr(args, "competition_workers", 0) or 0)
 
-    mls_dl_cmd = [py, str(MLS_FILES_DIR / "Download_Latest_Data.py")]
-    if args.skip_model_train:
-        mls_dl_cmd.append("--skip-squad-values")
-    sub["mls_download_process_sort"] = run_step(
-        "[mls] Download/process/sort latest data",
-        mls_dl_cmd,
-        continue_on_error=args.continue_on_error,
-        timeout=1200,
-    )
+    # MLS download commented out — ESPN returns 403 (no active games Jun 2026).
+    # mls_dl_cmd = [py, str(MLS_FILES_DIR / "Download_Latest_Data.py")]
+    # if args.skip_model_train:
+    #     mls_dl_cmd.append("--skip-squad-values")
+    # sub["mls_download_process_sort"] = run_step(
+    #     "[mls] Download/process/sort latest data",
+    #     mls_dl_cmd,
+    #     continue_on_error=args.continue_on_error,
+    #     timeout=1200,
+    # )
     if not args.skip_model_train:
         sub["mls_build_model_cache"] = run_step(
             "[mls] Build model cache (non-interactive)",
