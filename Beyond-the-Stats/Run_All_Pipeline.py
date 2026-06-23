@@ -429,12 +429,11 @@ def run_full_pipeline(args, api_token, results=None):
             print(f"\n>>> Running {name} sub-pipeline (sequential)")
             sub_result = fn(args, api_token)
             results.update(sub_result)
-            print(f"  [TIMING] {name} sub-pipeline: {time.monotonic() - sub_start:.1f}s")
-            if not args.continue_on_error and sub_result and not all(sub_result.values()):
+            elapsed = time.monotonic() - sub_start
+            if sub_result and not all(sub_result.values()):
                 failed_steps = [k for k, v in sub_result.items() if not v]
-                print(f"[ERROR] {name} sub-pipeline had {len(failed_steps)} failed step(s): {failed_steps}")
-                print("  → Aborting (continue_on_error=False)")
-                break
+                print(f"  [WARN] {name} sub-pipeline had {len(failed_steps)} failed step(s): {failed_steps}")
+            print(f"  [TIMING] {name} sub-pipeline: {elapsed:.1f}s")
     else:
         max_workers = min(workers, len(sub_tasks))
         print(f"\n>>> Running {len(sub_tasks)} sub-pipelines in parallel (max_workers={max_workers})")
@@ -447,10 +446,10 @@ def run_full_pipeline(args, api_token, results=None):
                 name = futures[fut]
                 try:
                     sub_result = fut.result()
+                except (KeyboardInterrupt, SystemExit):
+                    raise
                 except BaseException as exc:
                     print(f"[ERROR] Sub-pipeline '{name}' failed: {exc}")
-                    if not args.continue_on_error:
-                        raise
                     sub_result = {f"{name}_failed": False}
                 results.update(sub_result)
                 print(f"  [OK] {name} sub-pipeline finished")

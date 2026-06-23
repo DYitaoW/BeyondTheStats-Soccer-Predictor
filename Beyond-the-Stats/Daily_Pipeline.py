@@ -777,11 +777,12 @@ def main():
         try:
             run_full_pipeline(args, api_token, step_results)
             pipeline_ok = bool(step_results) and all(step_results.values())
-        except BaseException as exc:
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
             print(f"[ERROR] Pipeline failed: {exc}")
-            if not isinstance(exc, (SystemExit, KeyboardInterrupt)):
-                import traceback
-                traceback.print_exc()
+            import traceback
+            traceback.print_exc()
         finally:
             _write_pipeline_status(step_results)
 
