@@ -684,6 +684,211 @@ def _compute_asian_handicap(pred_home_goals, pred_away_goals, prob_home=None, pr
     return lines
 
 
+# ── Pre-match advanced market helpers ──────────────────────────
+
+# Cache: mode -> [(team, [{opponent, date, result, home_score, away_score, is_home}])]
+_LAST_5_FORM_CACHE: dict = {}
+_LAST_5_FORM_CACHE_TIME: float = 0.0
+_STRENGTH_CACHE: dict = {}
+_STRENGTH_CACHE_TIME: float = 0.0
+
+
+def _compute_total_goals_dist(pred_home_goals, pred_away_goals, max_total=6):
+    """Exact total goals distribution: probability per total goal count 0..max_total.
+    
+    Returns dict like {"0": 0.05, "1": 0.12, ..., "6plus": 0.01}.
+    The "6plus" key covers 6+ goals.
+    """
+    hg = max(0.01, _safe_float(pred_home_goals, 0.0))
+    ag = max(0.01, _safe_float(pred_away_goals, 0.0))
+    lam = hg + ag
+    dist = {}
+    total_p = 0.0
+    for k in range(max_total):
+        p = _poisson_pmf(k, lam)
+        dist[str(k)] = round(p, 6)
+        total_p += p
+    dist["6plus"] = round(max(0.0, 1.0 - total_p), 6)
+    return dist
+
+
+def _compute_first_to_score(pred_home_goals, pred_away_goals):
+    """First team to score probabilities.
+    
+    Returns dict with "home", "away", "none" probabilities (0-1 scale).
+    Based on relative attack rates from Poisson expected goals.
+    """
+    hg = max(0.01, _safe_float(pred_home_goals, 0.0))
+    ag = max(0.01, _safe_float(pred_away_goals, 0.0))
+    lam = hg + ag
+    p_no_goal = math.exp(-lam)
+    if lam <= 0:
+        return {"home": 0.0, "away": 0.0, "none": 1.0}
+    return {
+        "home": round((1.0 - p_no_goal) * hg / lam, 6),
+        "away": round((1.0 - p_no_goal) * ag / lam, 6),
+        "none": round(p_no_goal, 6),
+    }
+
+
+def _compute_clean_sheet(pred_home_goals, pred_away_goals):
+    """Clean sheet probabilities (0-1 scale).
+    
+    Returns dict with "home" (home team keeps a clean sheet), "away".
+    """
+    hg = max(0.01, _safe_float(pred_home_goals, 0.0))
+    ag = max(0.01, _safe_float(pred_away_goals, 0.0))
+    return {
+        "home": round(math.exp(-ag), 6),
+        "away": round(math.exp(-hg), 6),
+    }
+
+
+def _build_last5_form_index(mode):
+    """Build a cached index of last-5 matches per team for a given mode.
+    
+    Returns dict mapping team name (str) -> list of last-5 match dicts:
+        {"opponent": str, "date": str, "result": str, "home_score": int,
+         "away_score": int, "is_home": bool}
+    """
+    now = time.time()
+    cache_key = mode
+    cached = _LAST_5_FORM_CACHE.get(cache_key)
+    if cached and (now - _LAST_5_FORM_CACHE_TIME) < 300:
+        return cached
+
+    # Map mode to processed data directory
+    mode_dirs = {
+        "global": os.path.join(FILES_DIR, "Processed_Data"),
+        "mls": os.path.join(MLS_FILES_DIR, "Processed_Data"),
+        "extra": os.path.join(EXTRA_FILES_DIR, "Processed_Data"),
+    }
+    processed_dir = mode_dirs.get(mode)
+    if not processed_dir or not os.path.exists(processed_dir):
+        _LAST_5_FORM_CACHE[cache_key] = {}
+        _LAST_5_FORM_CACHE_TIME = now
+        return {}
+
+    # Walk all CSVs and build team -> matches
+    team_matches = defaultdict(list)
+    for root, _, files in os.walk(processed_dir):
+        for name in sorted(files):
+            if not name.endswith(".csv"):
+                continue
+            path = os.path.join(root, name)
+            try:
+                df = pd.read_csv(path, usecols=lambda c: c in {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"})
+            except Exception:
+                continue
+            if "HomeTeam" not in df.columns or "AwayTeam" not in df.columns:
+                continue
+            comp = os.path.basename(os.path.dirname(path)) or "Unknown"
+            for _, r in df.iterrows():
+                home = str(r["HomeTeam"]).strip()
+                away = str(r["AwayTeam"]).strip()
+                try:
+                    hg = int(r["FTHG"]) if pd.notna(r.get("FTHG")) else 0
+                    ag = int(r["FTAG"]) if pd.notna(r.get("FTAG")) else 0
+                except (ValueError, TypeError):
+                    continue
+                date_str = str(r.get("Date", ""))
+                result = str(r.get("FTR", ""))
+                team_matches[home].append({
+                    "opponent": away,
+                    "date": date_str,
+                    "result": result,
+                    "home_score": hg,
+                    "away_score": ag,
+                    "is_home": True,
+                    "venue": "home",
+                    "competition": comp,
+                })
+                team_matches[away].append({
+                    "opponent": home,
+                    "date": date_str,
+                    "result": "H" if result == "A" else ("A" if result == "H" else result),
+                    "home_score": hg,
+                    "away_score": ag,
+                    "is_home": False,
+                    "venue": "away",
+                    "competition": comp,
+                })
+
+    # Keep only last-5 per team, sorted by date descending
+    result_index = {}
+    for team, matches in team_matches.items():
+        matches.sort(key=lambda x: x["date"], reverse=True)
+        result_index[team] = matches[:5]
+
+    _LAST_5_FORM_CACHE[cache_key] = result_index
+    _LAST_5_FORM_CACHE_TIME = now
+    return result_index
+
+
+def _build_strength_index(mode):
+    """Build cached attack/defence strength ratings per team for a mode.
+    
+    Returns dict mapping team name -> {"attack_rating": float, "defence_rating": float}.
+    Ratings are relative to league average (1.0 = average).
+    Computed from current_form.json when available.
+    """
+    now = time.time()
+    cache_key = f"strength_{mode}"
+    cached = _STRENGTH_CACHE.get(cache_key)
+    if cached and (now - _STRENGTH_CACHE_TIME) < 300:
+        return cached
+
+    # Map mode to Predict_Match module and TEAM_DATA_DIR
+    mode_info = {
+        "global": (pm_global, "global"),
+        "mls": (pm_mls, "mls"),
+        "extra": (pm_extra, "extra"),
+    }
+    entry = mode_info.get(mode)
+    if not entry:
+        _STRENGTH_CACHE[cache_key] = {}
+        _STRENGTH_CACHE_TIME = now
+        return {}
+
+    pm_mod, _ = entry
+    form_path = os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json")
+    try:
+        current_form = pm_mod.load_json_if_exists(form_path) or {}
+    except Exception:
+        current_form = {}
+
+    teams_data = current_form.get("teams", {}) if isinstance(current_form, dict) else {}
+    if not teams_data:
+        _STRENGTH_CACHE[cache_key] = {}
+        _STRENGTH_CACHE_TIME = now
+        return {}
+
+    # Compute league averages for goals for and against
+    gf_vals = [t.get("avg_goals_for_last_10", 0) or 0 for t in teams_data.values() if isinstance(t, dict)]
+    ga_vals = [t.get("avg_goals_against_last_10", 0) or 0 for t in teams_data.values() if isinstance(t, dict)]
+    avg_gf = (sum(gf_vals) / len(gf_vals)) if gf_vals else 1.0
+    avg_ga = (sum(ga_vals) / len(ga_vals)) if ga_vals else 1.0
+    if avg_gf <= 0:
+        avg_gf = 1.0
+    if avg_ga <= 0:
+        avg_ga = 1.0
+
+    result = {}
+    for team, stats in teams_data.items():
+        if not isinstance(stats, dict):
+            continue
+        gf = stats.get("avg_goals_for_last_10", 0) or 0
+        ga = stats.get("avg_goals_against_last_10", 0) or 0
+        result[team] = {
+            "attack_rating": round(float(gf) / avg_gf, 4),
+            "defence_rating": round(float(ga) / avg_ga, 4),
+        }
+
+    _STRENGTH_CACHE[cache_key] = result
+    _STRENGTH_CACHE_TIME = now
+    return result
+
+
 # ── ESPN summary data parsers (venue, officials, broadcasts) ──
 
 def _parse_espn_game_info(summary_data):
@@ -2544,6 +2749,17 @@ def _compute_live_prediction(game, prematch):
             m_home, m_away = p_lead, p_lose
         else:
             m_home, m_away = p_lose, p_lead
+        # Late-game: cap losing team's win probability at 3 %,
+        # redistribute excess to draw (realistic ceiling for a comeback)
+        if time_frac < 0.15:  # last ~13 min
+            if model_gd > 0:
+                if m_away > 0.03:
+                    m_draw += m_away - 0.03
+                    m_away = 0.03
+            else:
+                if m_home > 0.03:
+                    m_draw += m_home - 0.03
+                    m_home = 0.03
 
     # ── Pre-match blend ────────────────────────────────────────
     # Blend decays with time AND with goals scored.  Goals are strong
@@ -2639,6 +2855,15 @@ def _live_score_poller_loop():
                             import traceback
                             traceback.print_exc()
 
+            # Snapshot previous game statuses before merging (for detecting new completions).
+            prev_statuses = {}
+            with _live_scores_lock:
+                for comp_name, comp_data in _live_scores.items():
+                    for g in comp_data.get("games", []):
+                        mid = g.get("match_id")
+                        if mid:
+                            prev_statuses[mid] = (comp_name, g.get("status", ""))
+
             with _live_scores_lock:
                 # Day boundary: save finished games then clear.
                 _today_for_poller = date.today().isoformat()
@@ -2680,6 +2905,32 @@ def _live_score_poller_loop():
                                 g.update(_live_summary_cache[mid])
             # Persist any newly completed games to history file.
             _merge_completed_to_history()
+
+            # ── Standings refresh on game completion ────────────────
+            # Detect games that just finished this cycle and fetch fresh
+            # standings for their competition, updating the cache.
+            try:
+                comps_to_refresh = set()
+                with _live_scores_lock:
+                    for comp_name, comp_data in _live_scores.items():
+                        for g in comp_data.get("games", []):
+                            mid = g.get("match_id")
+                            if not mid:
+                                continue
+                            cur_status = g.get("status", "")
+                            prev = prev_statuses.get(mid)
+                            if prev and prev[1] != "post" and cur_status == "post":
+                                comps_to_refresh.add(comp_name)
+                for comp_name in comps_to_refresh:
+                    espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
+                    if espn_id:
+                        table = _fetch_standings(comp_name, espn_id)
+                        if table:
+                            with _real_tables_lock:
+                                _real_tables[comp_name] = table
+            except Exception:
+                import traceback
+                traceback.print_exc()
 
             # ── Fetch summary data for active games ──────────────────
             # - pre:   fetch every cycle so lineup/formation changes are picked up
@@ -3314,6 +3565,11 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
     frame = frame.sort_values(["match_date", "competition", "home_team", "away_team"])
     target_mode = mode or ("mls" if os.path.normpath(csv_path) == os.path.normpath(MLS_UPCOMING_FILE) else "global")
     is_mls_file = target_mode == "mls"
+
+    # Pre-build form & strength indices (only for modes that have processed data)
+    form_index = _build_last5_form_index(target_mode) if target_mode in ("global", "mls", "extra") else {}
+    strength_index = _build_strength_index(target_mode) if target_mode in ("global", "mls", "extra") else {}
+
     rows = []
     for _, row in frame.iterrows():
         # Prefer display labels so provisional cup teams can be marked without affecting tracking keys.
@@ -3412,6 +3668,24 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                     prob_home=ph_raw / 100.0 if ph_raw else None,
                     prob_draw=pdv_raw / 100.0 if pdv_raw else None,
                     prob_away=pa_raw / 100.0 if pa_raw else None,
+                ),
+                # Last-5 form with opponent details
+                "last_5_home": form_index.get(home, []),
+                "last_5_away": form_index.get(away, []),
+                # Attack / defence strength ratings (relative to league avg)
+                "home_attack_rating": strength_index.get(home, {}).get("attack_rating"),
+                "home_defence_rating": strength_index.get(home, {}).get("defence_rating"),
+                "away_attack_rating": strength_index.get(away, {}).get("attack_rating"),
+                "away_defence_rating": strength_index.get(away, {}).get("defence_rating"),
+                # Additional Poisson-derived markets
+                "total_goals_dist": _compute_total_goals_dist(
+                    row.get("pred_home_goals"), row.get("pred_away_goals"),
+                ),
+                "first_to_score": _compute_first_to_score(
+                    row.get("pred_home_goals"), row.get("pred_away_goals"),
+                ),
+                "clean_sheet": _compute_clean_sheet(
+                    row.get("pred_home_goals"), row.get("pred_away_goals"),
                 ),
                 "reasoning": str(row.get("probability_reasoning", "")).strip(),
                 "actual_result": str(row.get("actual_result", "")).strip(),
@@ -4433,6 +4707,176 @@ def api_live_score_history():
     })
 
 
+def _enrich_past_game_row(r):
+    """Add computed fields to a raw past-game row so it matches upcoming format."""
+    pred_hg = r.get("pred_home_goals")
+    pred_ag = r.get("pred_away_goals")
+    ph = r.get("prob_home", 0.0) or 0.0
+    pdv = r.get("prob_draw", 0.0) or 0.0
+    pa = r.get("prob_away", 0.0) or 0.0
+    ph_float = float(ph) if ph else 0.0
+    pdv_float = float(pdv) if pdv else 0.0
+    pa_float = float(pa) if pa else 0.0
+    ph_pct = ph_float * 100.0
+    pdv_pct = pdv_float * 100.0
+    pa_pct = pa_float * 100.0
+
+    # Textual percentage fields
+    if "prob_home_text" not in r:
+        r["prob_home_text"] = _format_percent_value(ph_pct)
+    if "prob_draw_text" not in r:
+        r["prob_draw_text"] = _format_percent_value(pdv_pct)
+    if "prob_away_text" not in r:
+        r["prob_away_text"] = _format_percent_value(pa_pct)
+
+    # Goal probability fallbacks (missing from old rows)
+    for col, key in [
+        ("prob_home_goals_0", "home_0"),
+        ("prob_home_goals_1plus", "home_1plus"),
+        ("prob_home_goals_2plus", "home_2plus"),
+        ("prob_away_goals_0", "away_0"),
+        ("prob_away_goals_1plus", "away_1plus"),
+        ("prob_away_goals_2plus", "away_2plus"),
+        ("prob_both_score", "both"),
+        ("prob_over_1_5", "o1.5"),
+        ("prob_over_2_5", "o2.5"),
+        ("prob_over_3_5", "o3.5"),
+    ]:
+        if col not in r or r[col] is None:
+            if key == "both":
+                val = _compute_both_score(pred_hg, pred_ag)
+            elif key.startswith("home_"):
+                n = int(key.split("_")[0]) if key.split("_")[0].isdigit() else 0
+                if key.endswith("plus"):
+                    n = int(key.split("_")[0])
+                    val = _compute_goal_ge(pred_hg, n)
+                else:
+                    val = _compute_goal_eq(pred_hg, n)
+            elif key.startswith("away_"):
+                if key.endswith("plus"):
+                    n = int(key.split("_")[0])
+                    val = _compute_goal_ge(pred_ag, n)
+                else:
+                    val = _compute_goal_eq(pred_ag, n)
+            elif key.startswith("o"):
+                n = float(key.split("o")[1].replace("_", "."))
+                val = _compute_total_ge(pred_hg, pred_ag, n)
+            else:
+                val = None
+            r[col] = round(val, 4) if val else None
+
+    # Pre-match prediction helpers
+    if "correct_score_dist" not in r:
+        r["correct_score_dist"] = _compute_correct_score_dist(pred_hg, pred_ag)
+    if "double_chance" not in r:
+        r["double_chance"] = _compute_double_chance(ph_float, pdv_float, pa_float)
+    if "asian_handicap" not in r:
+        r["asian_handicap"] = _compute_asian_handicap(
+            pred_hg, pred_ag,
+            prob_home=ph_float, prob_draw=pdv_float, prob_away=pa_float,
+        )
+
+    # New Poisson-derived markets
+    if "total_goals_dist" not in r:
+        r["total_goals_dist"] = _compute_total_goals_dist(pred_hg, pred_ag)
+    if "first_to_score" not in r:
+        r["first_to_score"] = _compute_first_to_score(pred_hg, pred_ag)
+    if "clean_sheet" not in r:
+        r["clean_sheet"] = _compute_clean_sheet(pred_hg, pred_ag)
+
+    # Last-5 form with opponent details
+    home = str(r.get("home_team", "")).strip()
+    away = str(r.get("away_team", "")).strip()
+    comp = str(r.get("competition", ""))
+    mode_hint = "mls" if "mls" in comp.lower() else ("extra" if any(x in comp.lower() for x in ("spl", "eredivisie", "liga portugal", "süper lig", "süperlig", "jupiler", "belgian", "championship", "league one", "league two", "scottish")) else "global")
+    form_index = _build_last5_form_index(mode_hint)
+    strength_index = _build_strength_index(mode_hint)
+    if "last_5_home" not in r:
+        r["last_5_home"] = form_index.get(home, [])
+    if "last_5_away" not in r:
+        r["last_5_away"] = form_index.get(away, [])
+    if "home_attack_rating" not in r:
+        r["home_attack_rating"] = strength_index.get(home, {}).get("attack_rating")
+    if "home_defence_rating" not in r:
+        r["home_defence_rating"] = strength_index.get(home, {}).get("defence_rating")
+    if "away_attack_rating" not in r:
+        r["away_attack_rating"] = strength_index.get(away, {}).get("attack_rating")
+    if "away_defence_rating" not in r:
+        r["away_defence_rating"] = strength_index.get(away, {}).get("defence_rating")
+
+    # Weekday / date label / time label
+    if "weekday" not in r or not r.get("weekday"):
+        md = r.get("match_date", "")
+        try:
+            dt = pd.to_datetime(md, errors="coerce")
+            if pd.notna(dt):
+                r["weekday"] = dt.strftime("%A")
+                r["date_label"] = dt.strftime("%B %d, %Y")
+        except Exception:
+            pass
+
+    # is_correct
+    if "is_correct" not in r:
+        actual = str(r.get("actual_result", "")).strip().upper()
+        predicted = str(r.get("predicted_result", "")).strip().upper()
+        if actual in {"H", "D", "A"}:
+            r["is_correct"] = "1" if predicted == actual else "0"
+        else:
+            r["is_correct"] = ""
+
+    # winner_label
+    if "winner_label" not in r:
+        predicted = str(r.get("predicted_result", "")).strip().upper()
+        if predicted == "H":
+            r["winner_label"] = f"Pred: {home}"
+        elif predicted == "A":
+            r["winner_label"] = f"Pred: {away}"
+        elif predicted == "D":
+            r["winner_label"] = "Pred: Draw"
+        else:
+            r["winner_label"] = ""
+
+    # match_datetime_et / time_label
+    if "match_datetime_et" not in r or not r.get("match_datetime_et"):
+        utc_dt = r.get("match_datetime_utc", "")
+        if utc_dt:
+            try:
+                dt = pd.to_datetime(utc_dt, utc=True, errors="coerce")
+                if pd.notna(dt):
+                    dt = dt.tz_convert("America/New_York")
+                    r["match_datetime_et"] = dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    r["time_label"] = dt.strftime("%I:%M %p ET").lstrip("0")
+            except Exception:
+                pass
+
+
+def _compute_goal_eq(lam, k):
+    """P(home goals == k) via Poisson."""
+    lam = max(0.01, _safe_float(lam, 0.0))
+    return _poisson_pmf(k, lam)
+
+
+def _compute_goal_ge(lam, k):
+    """P(home goals >= k) via Poisson."""
+    lam = max(0.01, _safe_float(lam, 0.0))
+    return 1.0 - sum(_poisson_pmf(i, lam) for i in range(k)) if k > 0 else 1.0
+
+
+def _compute_both_score(lam_h, lam_a):
+    """P(both teams score) via independent Poisson."""
+    hg = max(0.01, _safe_float(lam_h, 0.0))
+    ag = max(0.01, _safe_float(lam_a, 0.0))
+    return (1.0 - math.exp(-hg)) * (1.0 - math.exp(-ag))
+
+
+def _compute_total_ge(lam_h, lam_a, threshold):
+    """P(total goals >= threshold) via Poisson of sum."""
+    hg = max(0.01, _safe_float(lam_h, 0.0))
+    ag = max(0.01, _safe_float(lam_a, 0.0))
+    lam = hg + ag
+    return 1.0 - sum(_poisson_pmf(i, lam) for i in range(int(threshold)))
+
+
 @app.get("/api/past-games")
 def api_past_games():
     """Return completed games from the previous full week + current week's past days.
@@ -4475,13 +4919,37 @@ def api_past_games():
                 all_rows = json.load(fh)
         except Exception:
             all_rows = []
-        if league:
-            league_lower = league.lower()
-            all_rows = [r for r in all_rows if league_lower in r.get("competition", "").lower()]
-        # Filter to date window: rows whose match_date is >= prev_thursday and < today
-        all_rows = [r for r in all_rows
-                    if str(r.get("match_date", "")).strip() >= cutoff
-                    and str(r.get("match_date", "")).strip() < today_local.isoformat()]
+    else:
+        # File doesn't exist yet (pipeline hasn't run since deploy).
+        # Seed it from the prediction CSVs so the endpoint works immediately.
+        try:
+            seed_rows = []
+            for source, csv_path in (
+                ("global", GLOBAL_UPCOMING_FILE),
+                ("mls", MLS_UPCOMING_FILE),
+                ("extra", EXTRA_UPCOMING_FILE),
+                ("cups", CUP_UPCOMING_FILE),
+                ("national", NATIONAL_UPCOMING_FILE),
+            ):
+                rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
+                for r in rows:
+                    if r.get("actual_result") and r["actual_result"].upper() in {"H", "D", "A"}:
+                        seed_rows.append(r)
+            if seed_rows:
+                os.makedirs(os.path.dirname(PAST_GAMES_FILE), exist_ok=True)
+                with open(PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
+                    json.dump(seed_rows, fh, indent=2, ensure_ascii=False)
+                all_rows = seed_rows
+        except Exception:
+            all_rows = []
+
+    if league:
+        league_lower = league.lower()
+        all_rows = [r for r in all_rows if league_lower in r.get("competition", "").lower()]
+    # Filter to date window: rows whose match_date is >= prev_thursday and < today
+    all_rows = [r for r in all_rows
+                if str(r.get("match_date", "")).strip() >= cutoff
+                and str(r.get("match_date", "")).strip() < today_local.isoformat()]
 
     all_rows.sort(key=lambda r: r.get("match_date", ""), reverse=True)
 
@@ -4489,6 +4957,13 @@ def api_past_games():
     start = (page - 1) * per_page
     end = start + per_page
     page_rows = all_rows[start:end]
+
+    # Enrich each row with computed fields that match the upcoming format.
+    # Raw rows stored by the pipeline lack these; the seed path (via
+    # _load_upcoming_rows) already has them but this idempotent pass
+    # guarantees all rows are identical regardless of provenance.
+    for r in page_rows:
+        _enrich_past_game_row(r)
 
     return jsonify({
         "ok": True,
@@ -4813,6 +5288,16 @@ def api_team():
     })
 
 
+@app.get("/api/competitions")
+def api_competitions():
+    """Return all competition names used by the live score system."""
+    return jsonify({
+        "ok": True,
+        "competitions": sorted(LIVE_SCORE_COMPETITIONS.keys()),
+        "total": len(LIVE_SCORE_COMPETITIONS),
+    })
+
+
 @app.get("/api/help")
 def api_help():
     """List all available API endpoints with brief descriptions."""
@@ -4820,6 +5305,7 @@ def api_help():
         "ok": True,
         "endpoints": [
             {"method": "GET", "path": "/api/help", "desc": "List all available API endpoints"},
+            {"method": "GET", "path": "/api/competitions", "desc": "List all competition names used by the live score system"},
             {"method": "GET", "path": "/api/teams?mode=global|mls|extra", "desc": "List teams for a given mode"},
             {"method": "GET", "path": "/api/world-cup", "desc": "World Cup projection data"},
             {"method": "POST", "path": "/api/refresh", "desc": "Trigger a full pipeline refresh"},
