@@ -62,7 +62,7 @@ def season_label(start_year):
 
 
 def download_bytes(url):
-    with urllib.request.urlopen(url, timeout=30) as response:
+    with urllib.request.urlopen(url, timeout=15) as response:
         return response.read()
 
 
