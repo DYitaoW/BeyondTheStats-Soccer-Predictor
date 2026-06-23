@@ -42,6 +42,7 @@ DEFAULT_SUBPIPELINE_WORKERS = 3
 MAX_SUBPIPELINE_WORKERS = 3
 
 LAST_REFRESH_FILE = SP_DIR / "Data" / "last_refresh.json"
+PIPELINE_STATUS_FILE = SP_DIR / "Data" / "pipeline_status.json"
 
 
 def parse_args():
@@ -123,7 +124,7 @@ def load_api_token():
     return ""
 
 
-def run_step(name, cmd, continue_on_error=False, input_text=None):
+def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
     print(f"\n=== {name} ===")
     print(" ".join(str(c) for c in cmd))
     started = time.monotonic()
@@ -134,7 +135,14 @@ def run_step(name, cmd, continue_on_error=False, input_text=None):
             text=True,
             input=input_text,
             check=False,
+            timeout=timeout,
         )
+    except subprocess.TimeoutExpired as exc:
+        elapsed = time.monotonic() - started
+        print(f"[TIMEOUT] {name} exceeded {timeout}s timeout (after {elapsed:.1f}s)")
+        if continue_on_error:
+            return False
+        raise
     except Exception as exc:
         elapsed = time.monotonic() - started
         print(f"[ERROR] {name}: {exc} (after {elapsed:.1f}s)")
@@ -171,22 +179,26 @@ def _run_global_subpipeline(args, api_token):
         "[global] Download latest data",
         [py, str(FILES_DIR / "Download_Latest_Data.py")],
         continue_on_error=args.continue_on_error,
+        timeout=1200,
     )
     sub["global_process_data"] = run_step(
         "[global] Process data",
         [py, str(FILES_DIR / "Process_Data.py")],
         continue_on_error=args.continue_on_error,
+        timeout=1800,
     )
     sub["global_sort_data"] = run_step(
         "[global] Sort data",
         [py, str(FILES_DIR / "Sort_Data.py")],
         continue_on_error=args.continue_on_error,
+        timeout=600,
     )
     if not args.skip_model_train:
         sub["global_build_model_cache"] = run_step(
             "[global] Build model cache (non-interactive)",
             [py, str(FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
             continue_on_error=args.continue_on_error,
+            timeout=3600,
         )
     upcoming_cmd = [py, str(FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)]
     if api_token:
@@ -252,6 +264,7 @@ def _run_mls_subpipeline(args, api_token):
         "[mls] Download/process/sort latest data",
         mls_dl_cmd,
         continue_on_error=args.continue_on_error,
+        timeout=1200,
     )
     if not args.skip_model_train:
         sub["mls_build_model_cache"] = run_step(
@@ -259,6 +272,7 @@ def _run_mls_subpipeline(args, api_token):
             [py, str(MLS_FILES_DIR / "Predict_Match.py")],
             continue_on_error=args.continue_on_error,
             input_text="n\nq\n",
+            timeout=3600,
         )
     mls_upcoming_cmd = [py, str(MLS_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)]
     if api_token:
@@ -286,6 +300,7 @@ def _run_extra_subpipeline(args, api_token):
         "[extra] Download/process/sort latest data",
         [py, str(EXTRA_FILES_DIR / "Download_Latest_Data.py")],
         continue_on_error=args.continue_on_error,
+        timeout=1200,
     )
     if not args.skip_model_train:
         sub["extra_build_model_cache"] = run_step(
@@ -293,6 +308,7 @@ def _run_extra_subpipeline(args, api_token):
             [py, str(EXTRA_FILES_DIR / "Predict_Match.py")],
             continue_on_error=args.continue_on_error,
             input_text="n\nq\n",
+            timeout=3600,
         )
     sub["extra_upcoming_matchweek"] = run_step(
         "[extra] Upcoming matchweek predictions",
@@ -449,6 +465,7 @@ def run_full_pipeline(args, api_token, results=None):
           + (f" ({skipped} skipped)" if skipped else ""))
     print("--- End Summary ---\n")
 
+    _write_pipeline_status(results)
     return results
 
 
@@ -463,6 +480,27 @@ def _write_pipeline_timestamp() -> None:
         )
     except Exception as exc:
         print(f"[WARN] Could not write {LAST_REFRESH_FILE}: {exc}")
+
+
+def _write_pipeline_status(results: dict) -> None:
+    """Write pipeline step results to Data/pipeline_status.json for the API."""
+    try:
+        now = datetime.now(UTC).replace(microsecond=0)
+        passed = sum(1 for v in results.values() if v)
+        failed = sum(1 for v in results.values() if not v)
+        PIPELINE_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PIPELINE_STATUS_FILE.write_text(
+            json.dumps({
+                "finished_utc": now.isoformat(),
+                "total_steps": len(results),
+                "passed": passed,
+                "failed": failed,
+                "steps": {k: bool(v) for k, v in sorted(results.items())},
+            }, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        print(f"[WARN] Could not write {PIPELINE_STATUS_FILE}: {exc}")
 
 
 def main():

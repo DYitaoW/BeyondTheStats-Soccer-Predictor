@@ -203,6 +203,7 @@ MLS_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictio
 LIVE_RESULTS_UPDATER = os.path.join(FILES_DIR, "Update_Live_Prediction_Results.py")
 RUN_ALL_PIPELINE = os.path.join(PROJECT_DIR, "Run_All_Pipeline.py")
 LAST_DATA_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_data_refresh.json")
+PIPELINE_STATUS_FILE = os.path.join(PROJECT_DIR, "Data", "pipeline_status.json")
 TEAM_NAME_DISPLAY_MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "team_name_mapping_master.json")
 TOP_SCORERS_FILE = os.path.join(PROJECT_DIR, "Data", "Team_Data", "current_season_top_scorers.json")
 LIVE_SCORE_HISTORY_FILE = os.path.join(PROJECT_DIR, "Data", "live_score_history.json")
@@ -4505,6 +4506,23 @@ def api_last_data_refresh():
     })
 
 
+@app.get("/api/pipeline/status")
+def api_pipeline_status():
+    """Return step-by-step results from the last pipeline run.
+
+    Shows which steps passed/failed, count totals, and the timestamp
+    of the run. Useful for debugging failed downloads or model steps.
+    """
+    if not os.path.exists(PIPELINE_STATUS_FILE):
+        return jsonify({"ok": True, "status": None, "note": "No pipeline has run yet."})
+    try:
+        with open(PIPELINE_STATUS_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return jsonify({"ok": True, "status": data})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Could not read pipeline status: {exc}"}), 500
+
+
 MOBILE_FEED_FILE = os.path.join(PROJECT_DIR, "Output", "mobile_app_feed.json")
 _UPCOMING_CSV_FILES = {
     "global": os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv"),
@@ -5721,6 +5739,7 @@ def api_help():
             {"method": "GET", "path": "/api/real-tables/competitions", "desc": "List competitions with cached standings data"},
             {"method": "GET", "path": "/api/real-tables/leaders?competition=&refresh=", "desc": "Individual stat leaders from ESPN (goals, assists, cards, etc.)"},
             {"method": "GET", "path": "/api/cup-bracket?competition=", "desc": "Real cup bracket from ESPN + history data"},
+            {"method": "GET", "path": "/api/pipeline/status", "desc": "Step-by-step results from the last pipeline run (pass/fail per step)"},
             {"method": "GET", "path": "/api/prediction-stats", "desc": "Prediction tracking: all-time and current-week correct/incorrect counts"},
             {"method": "GET", "path": "/api/recent-completed?league=", "desc": "Completed predictions from prev full week + current week's past days"},
         ],

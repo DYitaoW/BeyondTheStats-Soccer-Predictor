@@ -698,7 +698,7 @@ def _import_pipeline_runner():
     """Import `run_full_pipeline` from the sibling Run_All_Pipeline module."""
     if str(SP_DIR) not in sys.path:
         sys.path.insert(0, str(SP_DIR))
-    from Run_All_Pipeline import run_full_pipeline  # type: ignore
+    from Run_All_Pipeline import run_full_pipeline, _write_pipeline_status  # type: ignore
     return run_full_pipeline
 
 
@@ -781,6 +781,8 @@ def main():
             print(f"[ERROR] Pipeline exited with code {exc.code}")
         except Exception as exc:
             print(f"[ERROR] Pipeline failed: {exc}")
+        finally:
+            _write_pipeline_status(step_results)
 
         _write_pipeline_timestamp()
 
