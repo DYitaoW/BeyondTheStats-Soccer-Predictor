@@ -112,6 +112,7 @@ _live_summary_cache_lock = threading.Lock()
 _real_tables: dict[str, dict] = {}
 _real_tables_lock = threading.Lock()
 REAL_TABLES_CACHE_TTL = 300  # 5 minutes
+REAL_TABLES_PERSIST_FILE = os.path.join(PROJECT_DIR, "Data", "standings_cache.json")
 
 
 def _load_persisted_standings():
@@ -208,7 +209,6 @@ TEAM_NAME_DISPLAY_MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions"
 TOP_SCORERS_FILE = os.path.join(PROJECT_DIR, "Data", "Team_Data", "current_season_top_scorers.json")
 LIVE_SCORE_HISTORY_FILE = os.path.join(PROJECT_DIR, "Data", "live_score_history.json")
 PREDICTION_TRACKING_FILE = os.path.join(PROJECT_DIR, "Data", "prediction_tracking.json")
-REAL_TABLES_PERSIST_FILE = os.path.join(PROJECT_DIR, "Data", "standings_cache.json")
 USE_DISPLAY_NAME_MAPPING = False
 MLS_COMPETITION = "United States/MLS"
 CUP_COMPETITIONS = {

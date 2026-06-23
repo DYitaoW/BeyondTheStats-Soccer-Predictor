@@ -44,6 +44,9 @@ MAX_SUBPIPELINE_WORKERS = 3
 LAST_REFRESH_FILE = SP_DIR / "Data" / "last_refresh.json"
 PIPELINE_STATUS_FILE = SP_DIR / "Data" / "pipeline_status.json"
 
+# Monotonic timestamp set by run_full_pipeline so run_step can log elapsed time.
+_pipeline_start_global: float = 0.0
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -128,6 +131,8 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
     print(f"\n=== {name} ===")
     print(" ".join(str(c) for c in cmd))
     started = time.monotonic()
+    print(f"[DEBUG] run_step starting '{name}' at T+{started - _pipeline_start_global:.0f}s "
+          f"timeout={timeout}s")
     try:
         proc = subprocess.run(
             cmd,
@@ -155,6 +160,8 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
         return False
 
     elapsed = time.monotonic() - started
+    print(f"[DEBUG] run_step finished '{name}' rc={proc.returncode} elapsed={elapsed:.1f}s "
+          f"at T+{time.monotonic() - _pipeline_start_global:.0f}s")
     if proc.returncode != 0:
         print(f"[ERROR] {name} failed with exit code {proc.returncode} (after {elapsed:.1f}s)")
         print(f"  → Skipping (continue_on_error={continue_on_error})")
@@ -408,6 +415,8 @@ def run_full_pipeline(args, api_token, results=None):
     """
     if results is None:
         results = {}
+    global _pipeline_start_global
+    _pipeline_start_global = time.monotonic()
     py = sys.executable  # noqa: F841  (kept for backwards-compat with external callers)
 
     _check_dependencies()
@@ -461,6 +470,7 @@ def run_full_pipeline(args, api_token, results=None):
     results.update(_run_shared_post_steps(args, api_token))
     print(f"  [TIMING] post-pipeline steps: {time.monotonic() - post_start:.1f}s")
     print(f"\n[TIMING] full pipeline: {time.monotonic() - pipeline_start:.1f}s")
+    print(f"[DEBUG] pipeline wall clock done at T+{time.monotonic() - _pipeline_start_global:.0f}s")
 
     # Print step summary
     print("\n--- Pipeline Step Summary ---")
