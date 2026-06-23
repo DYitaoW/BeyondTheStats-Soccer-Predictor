@@ -153,7 +153,7 @@ REAL_LEADERS_CACHE_TTL = 300  # 5 minutes
 
 import joblib
 import pandas as pd
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
 
 
 class AveragedProbaClassifier:
@@ -5492,87 +5492,53 @@ def api_competitions():
 
 @app.get("/api/competitions/<path:comp>/teams")
 def api_competition_teams(comp):
-    """Return teams (with ESPN IDs) in a competition.
-
-    Query params:
-        refresh  -- if "1" or "true", bypasses cache
-    """
+    """Redirect to ESPN's teams endpoint (no server-side fetch)."""
     if comp not in LIVE_SCORE_COMPETITIONS:
         return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
     espn_id = LIVE_SCORE_COMPETITIONS[comp]
-    if request.args.get("refresh", "").strip().lower() in ("1", "true"):
-        _TEAMS_CACHE.pop(f"teams_{comp}", None)
-    teams = _fetch_competition_teams(comp, espn_id)
-    if teams is None:
-        return jsonify({"ok": False, "error": f"Could not fetch teams for {comp}"}), 502
-    return jsonify({
-        "ok": True,
-        "competition": comp,
-        "teams": teams,
-        "total": len(teams),
-    })
+    return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/teams")
 
 
 @app.get("/api/competitions/<path:comp>/schedule")
 def api_competition_schedule(comp):
-    """Return full schedule for a competition (today → ~90 days out).
+    """Redirect to ESPN's scoreboard endpoint (no server-side fetch).
 
     Query params:
-        days   -- number of days forward to fetch (default 90, max 365)
-        refresh  -- if "1" or "true", bypasses cache
+        dates  -- ESPN date range, e.g. ``20260601`` or ``20260601-20260630``
+                 (defaults to today onward if omitted)
     """
     if comp not in LIVE_SCORE_COMPETITIONS:
         return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
     espn_id = LIVE_SCORE_COMPETITIONS[comp]
-    try:
-        days = min(365, max(1, int(request.args.get("days", "90"))))
-    except (ValueError, TypeError):
-        days = 90
-    if request.args.get("refresh", "").strip().lower() in ("1", "true"):
-        _SCHEDULE_CACHE.pop(f"sched_{comp}", None)
-    games = _fetch_competition_schedule(comp, espn_id, days)
-    if games is None:
-        return jsonify({"ok": False, "error": f"Could not fetch schedule for {comp}"}), 502
-    return jsonify({
-        "ok": True,
-        "competition": comp,
-        "days_forward": days,
-        "games": games,
-        "total": len(games),
-    })
+    dates = request.args.get("dates", "")
+    if dates:
+        return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard?dates={dates}")
+    return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard")
 
 
 @app.get("/api/competitions/<path:comp>/leaders")
 def api_competition_leaders(comp):
-    """Return stat leaders for a competition (goals, assists, cards, etc.).
+    """Redirect to ESPN's statistics/leaders endpoint (no server-side fetch).
 
     Query params:
-        refresh  -- if "1" or "true", bypasses cache
+        season  -- optional season year (defaults to current)
     """
     if comp not in LIVE_SCORE_COMPETITIONS:
         return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
     espn_id = LIVE_SCORE_COMPETITIONS[comp]
-    if request.args.get("refresh", "").strip().lower() in ("1", "true"):
-        _clear_leaders_cache(comp)
-    data = _get_or_fetch_leaders(comp)
-    if data is None:
-        return jsonify({
-            "ok": True,
-            "competition": comp,
-            "leaders": None,
-            "note": "No leaders data available for this competition.",
-        })
-    return jsonify({"ok": True, "competition": comp, "leaders": data})
+    season = request.args.get("season", "")
+    if season:
+        return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/statistics/leaders?season={season}")
+    return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/statistics/leaders")
 
 
 @app.get("/api/teams/<team_id>/roster")
 def api_team_roster(team_id):
-    """Return full roster and season stats for a team by ESPN team ID.
+    """Redirect to ESPN's team-info endpoint (no server-side fetch).
 
     Query params:
         competition  -- required, the competition name the team belongs to
                         (e.g. "England/Premier League")
-        refresh      -- if "1" or "true", bypasses cache
     """
     comp = request.args.get("competition", "").strip()
     if not comp:
@@ -5580,12 +5546,7 @@ def api_team_roster(team_id):
     if comp not in LIVE_SCORE_COMPETITIONS:
         return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
     espn_id = LIVE_SCORE_COMPETITIONS[comp]
-    if request.args.get("refresh", "").strip().lower() in ("1", "true"):
-        _ROSTER_CACHE.pop(f"roster_{comp}_{team_id}", None)
-    info = _fetch_team_info(comp, espn_id, team_id)
-    if info is None:
-        return jsonify({"ok": False, "error": f"Could not fetch roster for team {team_id}"}), 502
-    return jsonify({"ok": True, "team": info})
+    return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/teams/{team_id}")
 
 
 @app.get("/api/live/widget")
@@ -5699,46 +5660,10 @@ def api_help():
         "endpoints": [
             {"method": "GET", "path": "/api/help", "desc": "List all available API endpoints"},
             {"method": "GET", "path": "/api/competitions", "desc": "List all competition names used by the live score system"},
-            {"method": "GET", "path": "/api/competitions/{competition}/teams", "desc": "List teams with ESPN IDs in a competition"},
-            {"method": "GET", "path": "/api/competitions/{competition}/schedule", "desc": "Full season schedule (today to ~90 days out) from ESPN"},
-            {"method": "GET", "path": "/api/competitions/{competition}/leaders", "desc": "Stat leaders (goals, assists, cards, etc.) from ESPN"},
-            {"method": "GET", "path": "/api/teams/{team_id}/roster?competition=", "desc": "Full roster and season stats for a team by ESPN team ID"},
-            {"method": "GET", "path": "/api/live/widget", "desc": "Lightweight widget feed — only currently active games with minimal data"},
-            {"method": "GET", "path": "/api/live/events?since=&competition=", "desc": "Recent goal/red-card events from in-progress games for notifications"},
-            {"method": "GET", "path": "/api/teams?mode=global|mls|extra", "desc": "List teams for a given mode"},
-            {"method": "GET", "path": "/api/world-cup", "desc": "World Cup projection data"},
-            {"method": "POST", "path": "/api/refresh", "desc": "Trigger a full pipeline refresh"},
-            {"method": "GET", "path": "/api/last-refresh", "desc": "Timestamp of last successful pipeline run"},
-            {"method": "GET", "path": "/api/last-data-refresh", "desc": "Timestamp of last data refresh (any pipeline run)"},
-            {"method": "GET", "path": "/api/mobile/feed", "desc": "Full mobile-app feed JSON"},
-            {"method": "GET", "path": "/api/mobile/widget?league=&team=&limit=&mode=", "desc": "Lightweight widget feed with filters"},
-            {"method": "POST", "path": "/api/predict", "desc": "Predict outcome for a specific match"},
-            {"method": "POST", "path": "/api/predict/mls", "desc": "Predict outcome for an MLS match"},
-            {"method": "POST", "path": "/api/predict/extra", "desc": "Predict outcome for an extra-league match"},
-            {"method": "POST", "path": "/api/notifications", "desc": "Send a push notification"},
-            {"method": "GET", "path": "/api/notifications", "desc": "Retrieve recent notifications"},
-            {"method": "POST", "path": "/api/notifications/register", "desc": "Register a device for push notifications"},
-            {"method": "GET", "path": "/api/h2h?team1=&team2=&mode=", "desc": "Head-to-head and form data for two teams"},
-            {"method": "GET", "path": "/api/team?team=&mode=", "desc": "Form, upcoming games, H2H, and per-team prediction accuracy"},
-            {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores (polled from ESPN, includes lineups, goalscorers, red cards & live predictions)"},
-            {"method": "GET", "path": "/api/live-score-history?league=&from=&to=&page=&per_page=", "desc": "Historical completed games, filterable by league and date"},
-            {"method": "GET", "path": "/api/past-games?league=&page=&per_page=", "desc": "Completed predictions from previous full week + current week's past days (upcoming-format rows)"},
-            {"method": "GET", "path": "/api/debug/live-score-sources", "desc": "Debug: what data sources the live score poller sees"},
-            {"method": "GET", "path": "/api/debug/manual-poll", "desc": "Debug: manually run one ESPN poll cycle"},
-            {"method": "GET", "path": "/api/debug/poller-state", "desc": "Debug: show live score poller internal state"},
-            {"method": "GET", "path": "/api/upcoming/global", "desc": "Upcoming global fixtures (club + national team)"},
-            {"method": "GET", "path": "/api/upcoming/extra", "desc": "Upcoming extra-league fixtures"},
-            {"method": "GET", "path": "/api/upcoming/cups", "desc": "Upcoming cup fixtures"},
-            {"method": "GET", "path": "/api/upcoming/world-cup", "desc": "Upcoming World Cup group-stage fixtures"},
-            {"method": "GET", "path": "/api/top-picks", "desc": "Top picks for the upcoming matchweek"},
-            {"method": "GET", "path": "/api/league-tables?mode=global|mls|extra|cups", "desc": "Projected league tables"},
-            {"method": "GET", "path": "/api/stats", "desc": "Overall site statistics (accuracy, league count)"},
-            {"method": "POST", "path": "/api/feedback", "desc": "Submit user feedback"},
-            {"method": "GET", "path": "/api/scorers", "desc": "Top scorers by competition"},
-            {"method": "GET", "path": "/api/real-tables?competition=&refresh=&computed=", "desc": "Real league tables from ESPN (or computed from live-score history with &computed=true)"},
-            {"method": "GET", "path": "/api/real-tables/competitions", "desc": "List competitions with cached standings data"},
-            {"method": "GET", "path": "/api/real-tables/leaders?competition=&refresh=", "desc": "Individual stat leaders from ESPN (goals, assists, cards, etc.)"},
-            {"method": "GET", "path": "/api/cup-bracket?competition=", "desc": "Real cup bracket from ESPN + history data"},
+            {"method": "GET", "path": "/api/competitions/{competition}/teams", "desc": "Redirect to ESPN teams endpoint"},
+            {"method": "GET", "path": "/api/competitions/{competition}/schedule?dates=", "desc": "Redirect to ESPN scoreboard (dates=YYYYMMDD or YYYYMMDD-YYYYMMDD)"},
+            {"method": "GET", "path": "/api/competitions/{competition}/leaders?season=", "desc": "Redirect to ESPN statistics/leaders endpoint"},
+            {"method": "GET", "path": "/api/teams/{team_id}/roster?competition=", "desc": "Redirect to ESPN team-info endpoint"},
             {"method": "GET", "path": "/api/pipeline/status", "desc": "Step-by-step results from the last pipeline run (pass/fail per step)"},
             {"method": "GET", "path": "/api/prediction-stats", "desc": "Prediction tracking: all-time and current-week correct/incorrect counts"},
             {"method": "GET", "path": "/api/recent-completed?league=", "desc": "Completed predictions from prev full week + current week's past days"},
