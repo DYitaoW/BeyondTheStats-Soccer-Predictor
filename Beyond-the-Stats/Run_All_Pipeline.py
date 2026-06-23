@@ -140,22 +140,19 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
     except subprocess.TimeoutExpired as exc:
         elapsed = time.monotonic() - started
         print(f"[TIMEOUT] {name} exceeded {timeout}s timeout (after {elapsed:.1f}s)")
-        if continue_on_error:
-            return False
-        raise
+        print(f"  → Skipping (continue_on_error={continue_on_error})")
+        return False
     except Exception as exc:
         elapsed = time.monotonic() - started
         print(f"[ERROR] {name}: {exc} (after {elapsed:.1f}s)")
-        if continue_on_error:
-            return False
-        raise
+        print(f"  → Skipping (continue_on_error={continue_on_error})")
+        return False
 
     elapsed = time.monotonic() - started
     if proc.returncode != 0:
         print(f"[ERROR] {name} failed with exit code {proc.returncode} (after {elapsed:.1f}s)")
-        if continue_on_error:
-            return False
-        raise SystemExit(proc.returncode)
+        print(f"  → Skipping (continue_on_error={continue_on_error})")
+        return False
 
     print(f"[OK] {name} ({elapsed:.1f}s)")
     return True
@@ -175,49 +172,50 @@ def _run_global_subpipeline(args, api_token):
     sub = {}
     comp_workers = int(getattr(args, "competition_workers", 0) or 0)
 
-    sub["global_download_latest_data"] = run_step(
-        "[global] Download latest data",
-        [py, str(FILES_DIR / "Download_Latest_Data.py")],
-        continue_on_error=args.continue_on_error,
-        timeout=1200,
-    )
-    sub["global_process_data"] = run_step(
-        "[global] Process data",
-        [py, str(FILES_DIR / "Process_Data.py")],
-        continue_on_error=args.continue_on_error,
-        timeout=1800,
-    )
-    sub["global_sort_data"] = run_step(
-        "[global] Sort data",
-        [py, str(FILES_DIR / "Sort_Data.py")],
-        continue_on_error=args.continue_on_error,
-        timeout=600,
-    )
-    if not args.skip_model_train:
-        sub["global_build_model_cache"] = run_step(
-            "[global] Build model cache (non-interactive)",
-            [py, str(FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
-            continue_on_error=args.continue_on_error,
-            timeout=3600,
-        )
-    upcoming_cmd = [py, str(FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)]
-    if api_token:
-        upcoming_cmd += ["--api-token", api_token]
-    sub["global_upcoming_matchweek"] = run_step(
-        "[global] Upcoming matchweek predictions",
-        upcoming_cmd,
-        continue_on_error=args.continue_on_error,
-    )
-    sub["global_projected_league_tables"] = run_step(
-        "[global] Projected league tables",
-        _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
-        continue_on_error=args.continue_on_error,
-    )
-    sub["global_upcoming_cups"] = run_step(
-        "[global] Upcoming cup predictions",
-        [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.window_days)],
-        continue_on_error=args.continue_on_error,
-    )
+    # Global league steps commented out — no active league games (Jun 2026).
+    # sub["global_download_latest_data"] = run_step(
+    #     "[global] Download latest data",
+    #     [py, str(FILES_DIR / "Download_Latest_Data.py")],
+    #     continue_on_error=args.continue_on_error,
+    #     timeout=1200,
+    # )
+    # sub["global_process_data"] = run_step(
+    #     "[global] Process data",
+    #     [py, str(FILES_DIR / "Process_Data.py")],
+    #     continue_on_error=args.continue_on_error,
+    #     timeout=1800,
+    # )
+    # sub["global_sort_data"] = run_step(
+    #     "[global] Sort data",
+    #     [py, str(FILES_DIR / "Sort_Data.py")],
+    #     continue_on_error=args.continue_on_error,
+    #     timeout=600,
+    # )
+    # if not args.skip_model_train:
+    #     sub["global_build_model_cache"] = run_step(
+    #         "[global] Build model cache (non-interactive)",
+    #         [py, str(FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
+    #         continue_on_error=args.continue_on_error,
+    #         timeout=3600,
+    #     )
+    # upcoming_cmd = [py, str(FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)]
+    # if api_token:
+    #     upcoming_cmd += ["--api-token", api_token]
+    # sub["global_upcoming_matchweek"] = run_step(
+    #     "[global] Upcoming matchweek predictions",
+    #     upcoming_cmd,
+    #     continue_on_error=args.continue_on_error,
+    # )
+    # sub["global_projected_league_tables"] = run_step(
+    #     "[global] Projected league tables",
+    #     _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
+    #     continue_on_error=args.continue_on_error,
+    # )
+    # sub["global_upcoming_cups"] = run_step(
+    #     "[global] Upcoming cup predictions",
+    #     [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.window_days)],
+    #     continue_on_error=args.continue_on_error,
+    # )
     national_process_cmd = [py, str(FILES_DIR / "Process_National_Team_Data.py"), "--world-cup-only"]
     if args.skip_model_train:
         national_process_cmd.append("--skip-squad-values")
@@ -291,36 +289,36 @@ def _run_mls_subpipeline(args, api_token):
 
 
 def _run_extra_subpipeline(args, api_token):
-    """Run the Extra-leagues sub-pipeline. Returns dict of results."""
-    py = sys.executable
-    sub = {}
-    comp_workers = int(getattr(args, "competition_workers", 0) or 0)
-
-    sub["extra_download_process_sort"] = run_step(
-        "[extra] Download/process/sort latest data",
-        [py, str(EXTRA_FILES_DIR / "Download_Latest_Data.py")],
-        continue_on_error=args.continue_on_error,
-        timeout=1200,
-    )
-    if not args.skip_model_train:
-        sub["extra_build_model_cache"] = run_step(
-            "[extra] Build model cache (non-interactive)",
-            [py, str(EXTRA_FILES_DIR / "Predict_Match.py")],
-            continue_on_error=args.continue_on_error,
-            input_text="n\nq\n",
-            timeout=3600,
-        )
-    sub["extra_upcoming_matchweek"] = run_step(
-        "[extra] Upcoming matchweek predictions",
-        [py, str(EXTRA_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)],
-        continue_on_error=args.continue_on_error,
-    )
-    sub["extra_projected_league_tables"] = run_step(
-        "[extra] Projected league tables",
-        _project_table_cmd(EXTRA_FILES_DIR, comp_workers, "Project_League_Table.py"),
-        continue_on_error=args.continue_on_error,
-    )
-    return sub
+    """Extra-leagues steps commented out — no active league games (Jun 2026)."""
+    # py = sys.executable
+    # sub = {}
+    # comp_workers = int(getattr(args, "competition_workers", 0) or 0)
+    # sub["extra_download_process_sort"] = run_step(
+    #     "[extra] Download/process/sort latest data",
+    #     [py, str(EXTRA_FILES_DIR / "Download_Latest_Data.py")],
+    #     continue_on_error=args.continue_on_error,
+    #     timeout=1200,
+    # )
+    # if not args.skip_model_train:
+    #     sub["extra_build_model_cache"] = run_step(
+    #         "[extra] Build model cache (non-interactive)",
+    #         [py, str(EXTRA_FILES_DIR / "Predict_Match.py")],
+    #         continue_on_error=args.continue_on_error,
+    #         input_text="n\nq\n",
+    #         timeout=3600,
+    #     )
+    # sub["extra_upcoming_matchweek"] = run_step(
+    #     "[extra] Upcoming matchweek predictions",
+    #     [py, str(EXTRA_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)],
+    #     continue_on_error=args.continue_on_error,
+    # )
+    # sub["extra_projected_league_tables"] = run_step(
+    #     "[extra] Projected league tables",
+    #     _project_table_cmd(EXTRA_FILES_DIR, comp_workers, "Project_League_Table.py"),
+    #     continue_on_error=args.continue_on_error,
+    # )
+    # return sub
+    return {}
 
 
 def _run_shared_post_steps(args, api_token):
@@ -426,6 +424,11 @@ def run_full_pipeline(args, api_token, results=None):
             sub_result = fn(args, api_token)
             results.update(sub_result)
             print(f"  [TIMING] {name} sub-pipeline: {time.monotonic() - sub_start:.1f}s")
+            if not args.continue_on_error and sub_result and not all(sub_result.values()):
+                failed_steps = [k for k, v in sub_result.items() if not v]
+                print(f"[ERROR] {name} sub-pipeline had {len(failed_steps)} failed step(s): {failed_steps}")
+                print("  → Aborting (continue_on_error=False)")
+                break
     else:
         max_workers = min(workers, len(sub_tasks))
         print(f"\n>>> Running {len(sub_tasks)} sub-pipelines in parallel (max_workers={max_workers})")
@@ -438,7 +441,7 @@ def run_full_pipeline(args, api_token, results=None):
                 name = futures[fut]
                 try:
                     sub_result = fut.result()
-                except Exception as exc:
+                except BaseException as exc:
                     print(f"[ERROR] Sub-pipeline '{name}' failed: {exc}")
                     if not args.continue_on_error:
                         raise
