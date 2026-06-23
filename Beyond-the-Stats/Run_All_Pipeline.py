@@ -140,6 +140,12 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
     except subprocess.TimeoutExpired as exc:
         elapsed = time.monotonic() - started
         print(f"[TIMEOUT] {name} exceeded {timeout}s timeout (after {elapsed:.1f}s)")
+        # Kill the hung subprocess — subprocess.run does NOT do this automatically.
+        try:
+            exc.process.kill()
+            exc.process.wait(timeout=5)
+        except Exception:
+            pass
         print(f"  → Skipping (continue_on_error={continue_on_error})")
         return False
     except Exception as exc:
