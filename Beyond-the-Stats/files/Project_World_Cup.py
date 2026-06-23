@@ -556,29 +556,28 @@ def head_to_head_stats(teams, fixture_predictions):
 
 
 def rank_group_rows(rows, fixture_predictions):
+    # Group by points only — head-to-head is the first tiebreaker.
     base_groups = defaultdict(list)
     for row in rows:
-        base_groups[(row["Pts"], row["GD"], row["GF"])].append(row)
+        base_groups[row["Pts"]].append(row)
 
     ranked = []
-    for key in sorted(base_groups.keys(), key=lambda item: (-item[0], -item[1], -item[2])):
-        tied_rows = base_groups[key]
+    for pts in sorted(base_groups.keys(), reverse=True):
+        tied_rows = base_groups[pts]
         if len(tied_rows) == 1:
             ranked.extend(tied_rows)
             continue
         teams = [row["team"] for row in tied_rows]
         h2h = head_to_head_stats(teams, fixture_predictions)
-        ranked.extend(
-            sorted(
-                tied_rows,
-                key=lambda row: (
-                    -h2h[row["team"]]["Pts"],
-                    -h2h[row["team"]]["GD"],
-                    -h2h[row["team"]]["GF"],
-                    row["team"],
-                ),
-            )
-        )
+        tied_rows.sort(key=lambda row: (
+            -h2h[row["team"]]["Pts"],
+            -h2h[row["team"]]["GD"],
+            -h2h[row["team"]]["GF"],
+            -row["GD"],
+            -row["GF"],
+            row["team"],
+        ))
+        ranked.extend(tied_rows)
     for idx, row in enumerate(ranked, start=1):
         row["position"] = idx
     return ranked
@@ -1002,7 +1001,7 @@ def project_knockout(bundle, knockout_fixtures, group_tables, third_place_table)
                 winners,
             )
             label = f"{round_name} {idx}"
-            if not home or not away:
+            if not home or not away or home == away:
                 row = {
                     "label": label,
                     "stage": stage,
@@ -1232,7 +1231,7 @@ def simulate_knockout_stage(knockout_fixtures, group_tables, third_place_table, 
                 away_slot, match_idx_zero, "away_team", group_lookup, third_assignments, third_place_table, winners
             )
             label = f"{STAGE_DISPLAY[stage]} {idx}"
-            if not home or not away:
+            if not home or not away or home == away:
                 round_rows.append({
                     "label": label,
                     "stage": stage,
@@ -1538,7 +1537,7 @@ def build_projection(args):
     # averages. Live WC results (if any) are applied deterministically inside
     # each sim's group stage.
     print("Generating tournament simulations...")
-    simulation_stats = run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group, num_simulations=5000)
+    simulation_stats = run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_group, num_simulations=2500)
 
     real_fixture_counts = _count_real_fixtures_per_team(group_fixtures)
     aggregated_group_tables = aggregate_sim_group_tables(
