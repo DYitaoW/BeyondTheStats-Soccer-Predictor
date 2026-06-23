@@ -106,50 +106,6 @@ _live_scores_lock = threading.RLock()
 _live_summary_cache: dict[str, dict] = {}
 _live_summary_cache_lock = threading.Lock()
 
-# ── Standings Cache ───────────────────────────────────────────
-# In-memory cache for ESPN league tables / stat leaders.
-# Warmed by the poller for today's competitions, TTL = 5 min.
-_real_tables: dict[str, dict] = {}
-_real_tables_lock = threading.Lock()
-REAL_TABLES_CACHE_TTL = 300  # 5 minutes
-REAL_TABLES_PERSIST_FILE = os.path.join(PROJECT_DIR, "Data", "standings_cache.json")
-
-
-def _load_persisted_standings():
-    """Load persisted standings from disk into ``_real_tables`` on startup."""
-    if not os.path.exists(REAL_TABLES_PERSIST_FILE):
-        return
-    try:
-        with open(REAL_TABLES_PERSIST_FILE, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        if isinstance(data, dict):
-            with _real_tables_lock:
-                for comp_name, table in data.items():
-                    if table is not None:
-                        _real_tables[comp_name] = table
-    except Exception:
-        pass
-
-
-# Warm the standings cache from disk on import so the API never starts cold.
-_load_persisted_standings()
-
-
-def _persist_real_tables():
-    """Write the entire ``_real_tables`` cache to disk so it survives restarts."""
-    try:
-        with _real_tables_lock:
-            data = dict(_real_tables)
-        os.makedirs(os.path.dirname(REAL_TABLES_PERSIST_FILE), exist_ok=True)
-        with open(REAL_TABLES_PERSIST_FILE, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
-
-_real_leaders: dict[str, dict] = {}
-_real_leaders_lock = threading.Lock()
-REAL_LEADERS_CACHE_TTL = 300  # 5 minutes
-
 # ── End Live Score Polling ──────────────────────────────────────
 
 import joblib
@@ -209,6 +165,50 @@ TEAM_NAME_DISPLAY_MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions"
 TOP_SCORERS_FILE = os.path.join(PROJECT_DIR, "Data", "Team_Data", "current_season_top_scorers.json")
 LIVE_SCORE_HISTORY_FILE = os.path.join(PROJECT_DIR, "Data", "live_score_history.json")
 PREDICTION_TRACKING_FILE = os.path.join(PROJECT_DIR, "Data", "prediction_tracking.json")
+REAL_TABLES_PERSIST_FILE = os.path.join(PROJECT_DIR, "Data", "standings_cache.json")
+
+# ── Standings Cache ───────────────────────────────────────────
+_real_tables: dict[str, dict] = {}
+_real_tables_lock = threading.Lock()
+REAL_TABLES_CACHE_TTL = 300  # 5 minutes
+
+
+def _load_persisted_standings():
+    """Load persisted standings from disk into ``_real_tables`` on startup."""
+    if not os.path.exists(REAL_TABLES_PERSIST_FILE):
+        return
+    try:
+        with open(REAL_TABLES_PERSIST_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            with _real_tables_lock:
+                for comp_name, table in data.items():
+                    if table is not None:
+                        _real_tables[comp_name] = table
+    except Exception:
+        pass
+
+
+# Warm the standings cache from disk on import so the API never starts cold.
+_load_persisted_standings()
+
+
+def _persist_real_tables():
+    """Write the entire ``_real_tables`` cache to disk so it survives restarts."""
+    try:
+        with _real_tables_lock:
+            data = dict(_real_tables)
+        os.makedirs(os.path.dirname(REAL_TABLES_PERSIST_FILE), exist_ok=True)
+        with open(REAL_TABLES_PERSIST_FILE, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+_real_leaders: dict[str, dict] = {}
+_real_leaders_lock = threading.Lock()
+REAL_LEADERS_CACHE_TTL = 300  # 5 minutes
+
 USE_DISPLAY_NAME_MAPPING = False
 MLS_COMPETITION = "United States/MLS"
 CUP_COMPETITIONS = {
