@@ -17,6 +17,8 @@ import math
 import os
 import random
 import re
+import signal
+import sys
 from collections import Counter, defaultdict, deque
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
@@ -1369,6 +1371,16 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
     group_tables and third_place_table lists so `build_projection` can
     produce sim-aggregated group standings.
     """
+    sim_start_time = datetime.now()
+
+    def _sigterm_handler(signum, frame):
+        elapsed = datetime.now() - sim_start_time
+        print(f"[DEBUG] SIGTERM received at sim {successful_sims}/{num_simulations} "
+              f"(elapsed: {elapsed.total_seconds():.0f}s)")
+        sys.exit(1)
+
+    signal.signal(signal.SIGTERM, _sigterm_handler)
+
     print(f"Running {num_simulations} tournament simulations...")
 
     group_fixture_cache = precompute_group_fixture_cache(bundle, group_fixtures)
@@ -1402,7 +1414,11 @@ def run_simulations(bundle, group_fixtures, knockout_fixtures, groups, team_to_g
 
     for sim_num in range(num_simulations):
         if (sim_num + 1) % 100 == 0:
-            print(f"  Progress: {sim_num + 1}/{num_simulations} simulations...")
+            elapsed = datetime.now() - sim_start_time
+            eta = (elapsed / (sim_num + 1)) * (num_simulations - sim_num - 1)
+            print(f"  Progress: {sim_num + 1}/{num_simulations}  "
+                  f"elapsed={elapsed.total_seconds():.0f}s  "
+                  f"eta={eta.total_seconds():.0f}s")
 
         sim_seed = base_seed + sim_num
         sim_rng = np.random.default_rng(sim_seed)

@@ -698,8 +698,30 @@ def _import_pipeline_runner():
     """Import `run_full_pipeline` from the sibling Run_All_Pipeline module."""
     if str(SP_DIR) not in sys.path:
         sys.path.insert(0, str(SP_DIR))
-    from Run_All_Pipeline import run_full_pipeline, _write_pipeline_status  # type: ignore
+    from Run_All_Pipeline import run_full_pipeline  # type: ignore
     return run_full_pipeline
+
+
+def _write_pipeline_status(results: dict) -> None:
+    """Write pipeline step results to Data/pipeline_status.json (local copy)."""
+    try:
+        now = datetime.now(UTC).replace(microsecond=0)
+        passed = sum(1 for v in results.values() if v)
+        failed = sum(1 for v in results.values() if not v)
+        pfile = SP_DIR / "Data" / "pipeline_status.json"
+        pfile.parent.mkdir(parents=True, exist_ok=True)
+        pfile.write_text(
+            json.dumps({
+                "finished_utc": now.isoformat(),
+                "total_steps": len(results),
+                "passed": passed,
+                "failed": failed,
+                "steps": {k: bool(v) for k, v in sorted(results.items())},
+            }, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        print(f"[WARN] Could not write pipeline_status.json: {exc}")
 
 
 def _sleep_with_shutdown(seconds):
@@ -772,6 +794,7 @@ def main():
         print(f"  PIPELINE RUN #{iteration}  -  {datetime.now(UTC).replace(microsecond=0).isoformat()}")
         print("#" * 80)
 
+        _iter_start = time.monotonic()
         step_results = {}
         pipeline_ok = False
         try:
@@ -787,6 +810,8 @@ def main():
             _write_pipeline_status(step_results)
 
         _write_pipeline_timestamp()
+        _iter_elapsed = time.monotonic() - _iter_start
+        print(f"[DEBUG] Daily_Pipeline iteration #{iteration} took {_iter_elapsed:.0f}s total")
 
         try:
             build_mobile_app_feed(pipeline_ok, step_results, output_path)
