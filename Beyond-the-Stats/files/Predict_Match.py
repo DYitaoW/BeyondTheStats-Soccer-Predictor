@@ -1543,5 +1543,31 @@ def main():
             )
 
 
+def build_reasoning_string(home_team, away_team, competition, probabilities, pred_home_goals, pred_away_goals,
+                           is_neutral_site=False, season_coeff=1.0, randomizer_delta=0.0, is_cup=False):
+    p_home = probabilities.get("H", 0) * 100
+    p_draw = probabilities.get("D", 0) * 100
+    p_away = probabilities.get("A", 0) * 100
+    max_p = max(p_home, p_draw, p_away)
+    if max_p >= 55:
+        conf = "High"
+    elif max_p >= 40:
+        conf = "Medium"
+    else:
+        conf = "Low"
+    result = max(probabilities, key=probabilities.get)
+    result_label = {"H": "Home win", "D": "Draw", "A": "Away win"}.get(result, result)
+    venue = "Neutral site" if is_neutral_site else "Home advantage"
+    match_type = "Cup tie" if is_cup else "League fixture"
+    return (
+        f"Predicted: {result_label} ({p_home:.0f}%/{p_draw:.0f}%/{p_away:.0f}%) | "
+        f"xG: {pred_home_goals:.1f}-{pred_away_goals:.1f} | "
+        f"{venue} | {match_type} | "
+        f"Confidence: {conf} | "
+        f"Data recency: {season_coeff:.2f} | "
+        f"Randomizer: {randomizer_delta:.3f}"
+    )
+
+
 if __name__ == "__main__":
     main()

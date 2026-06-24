@@ -946,11 +946,6 @@ def predict_fixture(row, context):
     pred_away_sot = max(0.0, float(context["away_sot_reg"].predict(X_match)[0]))
 
     key = make_prediction_key(match_date, competition, home_team, away_team)
-    reasoning = (
-        "Base ensemble probability from trained MLS model, then adjusted by top-player market-value edge "
-        f"(league shift {league_direction_shift:+.3f}; home shift {home_adv_shift:+.3f}; "
-        f"market shift {market_shift:+.3f}, attacker-weighted and capped)."
-    )
     return {
         "prediction_key": key,
         "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
@@ -961,7 +956,13 @@ def predict_fixture(row, context):
         "home_team": home_team,
         "away_team": away_team,
         "predicted_result": prediction,
-        "probability_reasoning": reasoning,
+        "probability_reasoning": pm.build_reasoning_string(
+            home_team, away_team, competition, probabilities,
+            float(aligned_home), float(aligned_away),
+            season_coeff=season_coeff,
+            randomizer_delta=pm.MLS_RANDOMIZER_MAX_DELTA,
+            is_cup=False,
+        ),
         "prob_home": round(probabilities["H"], 6),
         "prob_draw": round(probabilities["D"], 6),
         "prob_away": round(probabilities["A"], 6),

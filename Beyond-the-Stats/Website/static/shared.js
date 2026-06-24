@@ -96,7 +96,7 @@ const EUROPEAN_LEAGUES = [
     "France/Ligue 2",
     "Belgium/First Division A",
     "Netherlands/Eredivisie",
-    "Portugal/Primeira Liga",
+    "Portugal/Liga Portugal",
     "Scotland/Premiership",
     "Turkey/Super Lig",
 ];

@@ -25,6 +25,7 @@ import pandas as pd
 
 import Download_Latest_Data as download_latest
 import Predict_Match as pm
+import UEFA_Data_Manager as uefa
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,6 +50,23 @@ API_COMPETITIONS = {
     "BL2": "Germany/Bundesliga 2",
     "FL1": "France/Ligue 1",
     "PPL": "Portugal/Liga Portugal",
+    # Additional leagues with UCL-participating teams
+    "DED": "Netherlands/Eredivisie",
+    "ABL": "Austria/Bundesliga",
+    "SSL": "Switzerland/Super League",
+    "GSL": "Greece/Super League",
+    "DSU": "Denmark/Superliga",
+    "UPL": "Ukraine/Premier League",
+    "TIP": "Norway/Eliteserien",
+    "PRVA": "Croatia/HNL",
+    "RL1": "Romania/Liga I",
+    "ALL": "Sweden/Allsvenskan",
+    "HNB": "Hungary/NB I",
+    "ILH": "Israel/Premier League",
+    # Extra leagues (already tracked via Extra-leagues pipeline)
+    "BJL": "Belgium/First Division A",
+    "TSL": "Turkey/Super Lig",
+    "SPL": "Scotland/Premiership",
 }
 
 # Cup fixtures come from football-data.org only and share the global upcoming feed.
@@ -120,6 +138,7 @@ RESULT_COLUMNS = [
     "pred_away_shots",
     "pred_home_sot",
     "pred_away_sot",
+    "probability_reasoning",
     "prob_home_goals_0",
     "prob_home_goals_1plus",
     "prob_home_goals_2plus",
@@ -589,61 +608,175 @@ def inject_fallback_team(team_name, competition, season_key, context):
             season_teams.setdefault(season_key, {})[team_name] = {"games": 0, "points": 0}
         return
 
-    comp_teams = [t for t, comp in team_competition_map.items() if comp == competition]
-    comp_overall_rows = [overall_teams[t] for t in comp_teams if t in overall_teams]
-    season_rows = list(season_teams.get(season_key, {}).values()) if season_key in season_teams else []
+    # ── Try UEFA data first ──────────────────────────────────────
+    uefa_data = None
+    if "uefa_coefficients" in context:
+        uefa_data = uefa.lookup_team_data_for_fallback(
+            team_name,
+            context.get("uefa_coefficients"),
+            context.get("uefa_team_registry"),
+            context.get("uefa_squad_values"),
+            context.get("uefa_domestic_tables"),
+        )
+    has_uefa = uefa_data and uefa_data["league"] is not None
 
-    overall_teams[team_name] = {
-        "games": max(1, int(round(mean_from_dicts(comp_overall_rows, "games", 30)))),
-        "goals_scored": mean_from_dicts(comp_overall_rows, "goals_scored", 40.0),
-        "goals_conceded": mean_from_dicts(comp_overall_rows, "goals_conceded", 40.0),
-        "home_games": max(1, int(round(mean_from_dicts(comp_overall_rows, "home_games", 15)))),
-        "away_games": max(1, int(round(mean_from_dicts(comp_overall_rows, "away_games", 15)))),
-        "home_goals_scored": mean_from_dicts(comp_overall_rows, "home_goals_scored", 20.0),
-        "away_goals_scored": mean_from_dicts(comp_overall_rows, "away_goals_scored", 20.0),
-        "avg_goals_scored": mean_from_dicts(comp_overall_rows, "avg_goals_scored", 1.35),
-        "avg_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_goals_conceded", 1.35),
-        "avg_home_goals_scored": mean_from_dicts(comp_overall_rows, "avg_home_goals_scored", 1.45),
-        "avg_home_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_home_goals_conceded", 1.20),
-        "avg_away_goals_scored": mean_from_dicts(comp_overall_rows, "avg_away_goals_scored", 1.20),
-        "avg_away_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_away_goals_conceded", 1.45),
-        "avg_home_shots_for": mean_from_dicts(comp_overall_rows, "avg_home_shots_for", 12.0),
-        "avg_home_shots_against": mean_from_dicts(comp_overall_rows, "avg_home_shots_against", 12.0),
-        "avg_away_shots_for": mean_from_dicts(comp_overall_rows, "avg_away_shots_for", 10.5),
-        "avg_away_shots_against": mean_from_dicts(comp_overall_rows, "avg_away_shots_against", 12.5),
-        "weighted_avg_goals_scored": mean_from_dicts(comp_overall_rows, "weighted_avg_goals_scored", 1.35),
-    }
+    if has_uefa:
+        # Inject the team's real league strength
+        real_league = uefa_data["league"]
+        context.setdefault("league_strength", {})[real_league] = uefa_data["league_strength"]
+        # Store league override so predict_fixture can use it
+        context.setdefault("_uefa_team_league", {})[team_name] = real_league
+        if uefa_data["squad_value_eur_m"] is not None:
+            context.setdefault("uefa_squad_values", {})[team_name] = uefa_data["squad_value_eur_m"]
+        domestic = uefa_data.get("domestic")
+        dom_ppg = uefa_data["domestic_ppg"]
 
-    season_teams.setdefault(season_key, {})
-    season_teams[season_key][team_name] = {
-        "games": max(1, int(round(mean_from_dicts(season_rows, "games", 20)))),
-        "points": mean_from_dicts(season_rows, "points", 28.0),
-        "avg_goals_scored": mean_from_dicts(season_rows, "avg_goals_scored", 1.30),
-        "avg_goals_conceded": mean_from_dicts(season_rows, "avg_goals_conceded", 1.30),
-        "avg_home_goals_scored": mean_from_dicts(season_rows, "avg_home_goals_scored", 1.45),
-        "avg_home_goals_conceded": mean_from_dicts(season_rows, "avg_home_goals_conceded", 1.20),
-        "avg_away_goals_scored": mean_from_dicts(season_rows, "avg_away_goals_scored", 1.15),
-        "avg_away_goals_conceded": mean_from_dicts(season_rows, "avg_away_goals_conceded", 1.50),
-        "avg_home_shots_for": mean_from_dicts(season_rows, "avg_home_shots_for", 12.0),
-        "avg_home_shots_against": mean_from_dicts(season_rows, "avg_home_shots_against", 12.0),
-        "avg_away_shots_for": mean_from_dicts(season_rows, "avg_away_shots_for", 10.5),
-        "avg_away_shots_against": mean_from_dicts(season_rows, "avg_away_shots_against", 12.5),
-    }
+        # Build stats using league strength and domestic table data
+        ls = uefa_data["league_strength"]
+        scale = max(0.6, min(1.2, ls / 0.85))  # scale relative to 0.85 baseline
+        base_gf = 1.35 * scale
+        base_ga = 1.35 * scale
+        home_gf = 1.45 * scale
+        home_ga = 1.20 * scale
+        away_gf = 1.20 * scale
+        away_ga = 1.45 * scale
+        base_shots = 11.0 * scale
+        base_sot = 4.5 * scale
+        pts_last_10 = 12.0 * scale
+        wins_last_10 = max(1, min(10, int(round(3.0 * scale))))
+        form_gf = 1.2 * scale
+        form_ga = 1.2 * scale
 
-    current_form.setdefault("teams", {})
-    current_form["teams"].setdefault(
-        team_name,
-        {
-            "points_last_10": 12.0,
-            "wins_last_10": 3.0,
-            "losses_last_10": 3.0,
-            "avg_goals_for_last_10": 1.2,
-            "avg_goals_against_last_10": 1.2,
-            "previous_match_win_odds": 2.8,
-            "previous_match_draw_odds": 3.3,
-            "previous_match_lose_odds": 2.8,
-        },
-    )
+        if domestic:
+            # Override with actual domestic stats where available
+            played = max(1, domestic.get("played", 20))
+            pts = domestic.get("points", 28.0)
+            gf = domestic.get("goals_for", 27)
+            ga = domestic.get("goals_against", 27)
+            domestic_gf_pg = gf / played
+            domestic_ga_pg = ga / played
+            # Blend domestic rate with scaled average (weight: 70% domestic, 30% scaled)
+            avg_gf = 0.7 * domestic_gf_pg + 0.3 * base_gf
+            avg_ga = 0.7 * domestic_ga_pg + 0.3 * base_ga
+            ppg = pts / played
+            pts_last_10 = min(30, ppg * 10)
+            wins_last_10 = max(1, min(10, int(round((domestic.get("wins", 10) / played) * 10))))
+            base_gf = avg_gf
+            base_ga = avg_ga
+            home_gf = avg_gf * 1.1
+            home_ga = avg_ga * 0.9
+            away_gf = avg_gf * 0.9
+            away_ga = avg_ga * 1.1
+            form_gf = avg_gf
+            form_ga = avg_ga
+
+        overall_teams[team_name] = {
+            "games": max(1, int(round(played if domestic else 30))),
+            "goals_scored": base_gf * 30,
+            "goals_conceded": base_ga * 30,
+            "home_games": max(1, int(round((played if domestic else 30) / 2))),
+            "away_games": max(1, int(round((played if domestic else 30) / 2))),
+            "home_goals_scored": home_gf * 15,
+            "away_goals_scored": away_gf * 15,
+            "avg_goals_scored": base_gf,
+            "avg_goals_conceded": base_ga,
+            "avg_home_goals_scored": home_gf,
+            "avg_home_goals_conceded": home_ga,
+            "avg_away_goals_scored": away_gf,
+            "avg_away_goals_conceded": away_ga,
+            "avg_home_shots_for": base_shots,
+            "avg_home_shots_against": base_shots * 0.95,
+            "avg_away_shots_for": base_shots * 0.85,
+            "avg_away_shots_against": base_shots * 1.05,
+            "weighted_avg_goals_scored": base_gf,
+        }
+
+        season_teams.setdefault(season_key, {})
+        season_teams[season_key][team_name] = {
+            "games": max(1, int(round(played if domestic else 20))),
+            "points": (pts if domestic else 28.0),
+            "avg_goals_scored": base_gf,
+            "avg_goals_conceded": base_ga,
+            "avg_home_goals_scored": home_gf,
+            "avg_home_goals_conceded": home_ga,
+            "avg_away_goals_scored": away_gf,
+            "avg_away_goals_conceded": away_ga,
+            "avg_home_shots_for": base_shots,
+            "avg_home_shots_against": base_shots * 0.95,
+            "avg_away_shots_for": base_shots * 0.85,
+            "avg_away_shots_against": base_shots * 1.05,
+        }
+
+        current_form.setdefault("teams", {})
+        current_form["teams"].setdefault(
+            team_name,
+            {
+                "points_last_10": pts_last_10,
+                "wins_last_10": wins_last_10,
+                "losses_last_10": max(1, min(10, 10 - wins_last_10 - 3)),
+                "avg_goals_for_last_10": form_gf,
+                "avg_goals_against_last_10": form_ga,
+                "previous_match_win_odds": 2.8 / scale,
+                "previous_match_draw_odds": 3.3,
+                "previous_match_lose_odds": 2.8 / scale,
+            },
+        )
+    else:
+        comp_teams = [t for t, comp in team_competition_map.items() if comp == competition]
+        comp_overall_rows = [overall_teams[t] for t in comp_teams if t in overall_teams]
+        season_rows = list(season_teams.get(season_key, {}).values()) if season_key in season_teams else []
+
+        overall_teams[team_name] = {
+            "games": max(1, int(round(mean_from_dicts(comp_overall_rows, "games", 30)))),
+            "goals_scored": mean_from_dicts(comp_overall_rows, "goals_scored", 40.0),
+            "goals_conceded": mean_from_dicts(comp_overall_rows, "goals_conceded", 40.0),
+            "home_games": max(1, int(round(mean_from_dicts(comp_overall_rows, "home_games", 15)))),
+            "away_games": max(1, int(round(mean_from_dicts(comp_overall_rows, "away_games", 15)))),
+            "home_goals_scored": mean_from_dicts(comp_overall_rows, "home_goals_scored", 20.0),
+            "away_goals_scored": mean_from_dicts(comp_overall_rows, "away_goals_scored", 20.0),
+            "avg_goals_scored": mean_from_dicts(comp_overall_rows, "avg_goals_scored", 1.35),
+            "avg_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_goals_conceded", 1.35),
+            "avg_home_goals_scored": mean_from_dicts(comp_overall_rows, "avg_home_goals_scored", 1.45),
+            "avg_home_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_home_goals_conceded", 1.20),
+            "avg_away_goals_scored": mean_from_dicts(comp_overall_rows, "avg_away_goals_scored", 1.20),
+            "avg_away_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_away_goals_conceded", 1.45),
+            "avg_home_shots_for": mean_from_dicts(comp_overall_rows, "avg_home_shots_for", 12.0),
+            "avg_home_shots_against": mean_from_dicts(comp_overall_rows, "avg_home_shots_against", 12.0),
+            "avg_away_shots_for": mean_from_dicts(comp_overall_rows, "avg_away_shots_for", 10.5),
+            "avg_away_shots_against": mean_from_dicts(comp_overall_rows, "avg_away_shots_against", 12.5),
+            "weighted_avg_goals_scored": mean_from_dicts(comp_overall_rows, "weighted_avg_goals_scored", 1.35),
+        }
+
+        season_teams.setdefault(season_key, {})
+        season_teams[season_key][team_name] = {
+            "games": max(1, int(round(mean_from_dicts(season_rows, "games", 20)))),
+            "points": mean_from_dicts(season_rows, "points", 28.0),
+            "avg_goals_scored": mean_from_dicts(season_rows, "avg_goals_scored", 1.30),
+            "avg_goals_conceded": mean_from_dicts(season_rows, "avg_goals_conceded", 1.30),
+            "avg_home_goals_scored": mean_from_dicts(season_rows, "avg_home_goals_scored", 1.45),
+            "avg_home_goals_conceded": mean_from_dicts(season_rows, "avg_home_goals_conceded", 1.20),
+            "avg_away_goals_scored": mean_from_dicts(season_rows, "avg_away_goals_scored", 1.15),
+            "avg_away_goals_conceded": mean_from_dicts(season_rows, "avg_away_goals_conceded", 1.50),
+            "avg_home_shots_for": mean_from_dicts(season_rows, "avg_home_shots_for", 12.0),
+            "avg_home_shots_against": mean_from_dicts(season_rows, "avg_home_shots_against", 12.0),
+            "avg_away_shots_for": mean_from_dicts(season_rows, "avg_away_shots_for", 10.5),
+            "avg_away_shots_against": mean_from_dicts(season_rows, "avg_away_shots_against", 12.5),
+        }
+
+        current_form.setdefault("teams", {})
+        current_form["teams"].setdefault(
+            team_name,
+            {
+                "points_last_10": 12.0,
+                "wins_last_10": 3.0,
+                "losses_last_10": 3.0,
+                "avg_goals_for_last_10": 1.2,
+                "avg_goals_against_last_10": 1.2,
+                "previous_match_win_odds": 2.8,
+                "previous_match_draw_odds": 3.3,
+                "previous_match_lose_odds": 2.8,
+            },
+        )
 
     team_competition_map[team_name] = competition
     if team_name not in available_teams:
@@ -1124,7 +1257,9 @@ def build_prediction_context():
     latest_season = season_files[-1].replace(".csv", "")
     latest_start_year = max(pm.parse_start_year_from_key(key) for key in season_teams.keys())
 
-    return {
+    # Inject UEFA country coefficients, team registry, European H2H, and
+    # domestic-table data so cup provisional teams get realistic stats.
+    ctx = {
         "clf": clf,
         "result_label_encoder": result_label_encoder,
         "home_goal_reg": home_goal_reg,
@@ -1145,6 +1280,9 @@ def build_prediction_context():
         "latest_season": latest_season,
         "latest_start_year": latest_start_year,
     }
+
+    uefa.build_uefa_context(ctx)
+    return ctx
 
 
 
@@ -1169,14 +1307,34 @@ def predict_fixture(row, context):
     prediction_season = pm.choose_season_for_teams(home_team, away_team, season_teams, competition_season)
     inject_fallback_team(home_team, competition, prediction_season, context)
     inject_fallback_team(away_team, competition, prediction_season, context)
+    _uefa_leagues = context.get("_uefa_team_league", {})
     prediction_start_year = pm.parse_start_year_from_key(prediction_season)
     season_coeff = pm.season_recency_coefficient(context["latest_start_year"], prediction_start_year)
     if home_is_provisional or away_is_provisional:
-        # Provisional cup teams should lean on a softer, lower-confidence prior.
-        season_coeff = min(season_coeff, PROVISIONAL_STRENGTH_COEFF)
+        home_real_league = _uefa_leagues.get(home_team) if home_is_provisional else None
+        away_real_league = _uefa_leagues.get(away_team) if away_is_provisional else None
+
+        if home_real_league or away_real_league:
+            ls = context.get("league_strength", {})
+            home_ls = ls.get(home_real_league, 0.50) if home_real_league else 0.50
+            away_ls = ls.get(away_real_league, 0.50) if away_real_league else 0.50
+            effective_ls = max(home_ls, away_ls)
+            season_coeff = min(season_coeff, max(effective_ls, PROVISIONAL_STRENGTH_COEFF))
+        else:
+            season_coeff = min(season_coeff, PROVISIONAL_STRENGTH_COEFF)
 
     home_comp = str(row.get("home_competition_override", "")).strip() or context["team_competition_map"].get(home_team, competition)
     away_comp = str(row.get("away_competition_override", "")).strip() or context["team_competition_map"].get(away_team, competition)
+
+    # Override competition with real league when UEFA data is available
+    if home_comp in (PROVISIONAL_LEAGUE_KEY, "__provisional__"):
+        home_real = _uefa_leagues.get(home_team)
+        if home_real:
+            home_comp = home_real
+    if away_comp in (PROVISIONAL_LEAGUE_KEY, "__provisional__"):
+        away_real = _uefa_leagues.get(away_team)
+        if away_real:
+            away_comp = away_real
 
     randomizer_delta = pm.EU_RANDOMIZER_MAX_DELTA
     if is_cup_competition(competition):
@@ -1315,6 +1473,14 @@ def predict_fixture(row, context):
         "pred_away_shots": round(pred_away_shots, 3),
         "pred_home_sot": round(pred_home_sot, 3),
         "pred_away_sot": round(pred_away_sot, 3),
+        "probability_reasoning": pm.build_reasoning_string(
+            home_team, away_team, competition, probabilities,
+            float(aligned_home), float(aligned_away),
+            is_neutral_site=is_neutral_site,
+            season_coeff=season_coeff,
+            randomizer_delta=randomizer_delta,
+            is_cup=is_cup_competition(competition),
+        ),
         **goal_probs,
         "actual_home_goals": None,
         "actual_away_goals": None,

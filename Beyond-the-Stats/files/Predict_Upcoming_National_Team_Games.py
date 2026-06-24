@@ -34,6 +34,7 @@ RESULT_COLUMNS = [
     "prob_home",
     "prob_draw",
     "prob_away",
+    "probability_reasoning",
     "pred_home_goals",
     "pred_away_goals",
     "actual_home_goals",
@@ -345,6 +346,15 @@ def predict_fixture(row, bundle):
     probs_list = [probabilities[r] for r in results]
     predicted_result = random.choices(results, weights=probs_list, k=1)[0]
 
+    p_home = probabilities["H"] * 100
+    p_draw = probabilities["D"] * 100
+    p_away = probabilities["A"] * 100
+    max_p = max(p_home, p_draw, p_away)
+    conf = "High" if max_p >= 55 else ("Medium" if max_p >= 40 else "Low")
+    result_label = {"H": "Home win", "D": "Draw", "A": "Away win"}.get(predicted_result, predicted_result)
+    venue_str = "Neutral site" if is_neutral_site else "Standard venue"
+    knockout_str = "Knockout" if "knockout" in stage else stage.replace("_", " ").title()
+
     parsed_dt = pd.to_datetime(row.get("match_datetime_utc"), utc=True, errors="coerce")
     match_date_text = (
         parsed_dt.strftime("%Y-%m-%d")
@@ -370,6 +380,12 @@ def predict_fixture(row, bundle):
         "prob_home": round(probabilities["H"], 6),
         "prob_draw": round(probabilities["D"], 6),
         "prob_away": round(probabilities["A"], 6),
+        "probability_reasoning": (
+            f"Predicted: {result_label} ({p_home:.0f}%/{p_draw:.0f}%/{p_away:.0f}%) | "
+            f"xG: {pred_home_goals:.1f}-{pred_away_goals:.1f} | "
+            f"{venue_str} | {knockout_str} | "
+            f"Confidence: {conf} | Jitter: {jitter_delta:.3f}"
+        ),
         "pred_home_goals": round(pred_home_goals, 3),
         "pred_away_goals": round(pred_away_goals, 3),
         "actual_home_goals": None,

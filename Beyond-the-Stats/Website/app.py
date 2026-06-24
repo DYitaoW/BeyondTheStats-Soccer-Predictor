@@ -82,17 +82,57 @@ LIVE_SCORE_COMPETITIONS = {
     "UEFA/Champions League": "uefa.champions",
     "UEFA/Europa League": "uefa.europa",
     "UEFA/Conference League": "uefa.europa.conf",
+    # Europe/ prefix aliases (used by Predict_Upcoming_Matchweek short codes)
+    "Europe/Champions League": "uefa.champions",
+    "Europe/Europa League": "uefa.europa",
+    "Europe/Conference League": "uefa.europa.conf",
+    # Domestic cups (predictions pipeline produces these)
+    "Italy/Coppa Italia": "ita.coppa",
+    "Spain/Copa del Rey": "esp.copa_del_rey",
+    "Germany/DFB-Pokal": "ger.dfb_pokal",
+    "France/Coupe de France": "fra.coupe_de_france",
+    "United States/US Open Cup": "usa.open_cup",
     # National team & World Cup
     "FIFA/World Cup": "fifa.world",
     "FIFA/World Cup Qualifying - UEFA": "fifa.worldq.uefa",
     "FIFA/World Cup Qualifying - CONMEBOL": "fifa.worldq.conmebol",
     "FIFA/World Cup Qualifying - CONCACAF": "fifa.worldq.concacaf",
+    "FIFA/World Cup Qualifying - AFC": "fifa.worldq.afc",
     "FIFA/Friendly": "fifa.friendly",
     "UEFA/European Championship": "uefa.euro",
     "UEFA/Nations League": "uefa.nations",
     "CONMEBOL/Copa America": "conmebol.america",
     "CONCACAF/Gold Cup": "concacaf.gold",
     "CAF/Africa Cup of Nations": "caf.nations",
+    "AFC/Asian Cup": "afc.cup",
+    # Belgian, Scottish & Turkish (for live table tracking)
+    "Belgium/First Division A": "bel.1",
+    "Scotland/Premiership": "sco.1",
+    "Turkey/Super Lig": "tur.1",
+    # Additional UCL-relevant leagues
+    "Austria/Bundesliga": "aut.1",
+    "Switzerland/Super League": "sui.1",
+    "Greece/Super League": "gre.1",
+    "Denmark/Superliga": "den.1",
+    "Ukraine/Premier League": "ukr.1",
+    "Norway/Eliteserien": "nor.1",
+    "Croatia/HNL": "cro.1",
+    "Romania/Liga I": "rou.1",
+    "Sweden/Allsvenskan": "swe.1",
+    "Hungary/NB I": "hun.1",
+    "Israel/Premier League": "isr.1",
+    # Secondary leagues (UEFA qualifying-round participants)
+    "Czech Republic/First League": "czech.1",
+    "Poland/Ekstraklasa": "pol.1",
+    "Serbia/SuperLiga": "srb.1",
+    "Cyprus/First Division": "cyp.1",
+    "Slovakia/Super Liga": "svk.1",
+    "Slovenia/PrvaLiga": "svn.1",
+    "Bulgaria/First League": "bul.1",
+    "Azerbaijan/Premier League": "aze.1",
+    "Kazakhstan/Premier League": "kaz.1",
+    "Belarus/Premier League": "blr.1",
+    "Moldova/Super Liga": "mol.1",
 }
 
 # In-memory store for active (today's) live scores.
@@ -220,6 +260,11 @@ CUP_COMPETITIONS = {
     "Europe/Champions League",
     "Europe/Europa League",
     "Europe/Conference League",
+    "Italy/Coppa Italia",
+    "Spain/Copa del Rey",
+    "Germany/DFB-Pokal",
+    "France/Coupe de France",
+    "United States/US Open Cup",
 }
 STATIC_PREDICTIONS = os.environ.get("STATIC_PREDICTIONS", "1").strip().lower() in {"1", "true", "yes"}
 
@@ -227,6 +272,8 @@ H2H_LEAGUES = {
     "Spain/La Liga", "Spain/La Liga 2",
     "Italy/Serie A", "Italy/Serie B",
     "Portugal/Liga Portugal",
+    "Belgium/First Division A",
+    "Turkey/Super Lig",
 }
 
 # ── Pipeline Timestamp Helpers ─────────────────────────────────────
@@ -325,6 +372,7 @@ def _load_module(module_name, file_path):
 pm_global = _load_module("predict_match_global", os.path.join(FILES_DIR, "Predict_Match.py"))
 pm_mls = _load_module("predict_match_mls", os.path.join(MLS_FILES_DIR, "Predict_Match.py"))
 pm_extra = _load_module("predict_match_extra", os.path.join(EXTRA_FILES_DIR, "Predict_Match.py"))
+uefa = _load_module("uefa_data_manager", os.path.join(FILES_DIR, "UEFA_Data_Manager.py"))
 
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -926,10 +974,11 @@ def _build_strength_index(mode):
 # ── ESPN summary data parsers (venue, officials, broadcasts) ──
 
 def _parse_espn_game_info(summary_data):
-    """Extract venue, attendance, and officials from ESPN summary ``gameInfo``.
+    """Extract venue, attendance, officials, and weather from ESPN summary ``gameInfo``.
 
     Returns dict with keys:
-        ``venue`` (str), ``attendance`` (int/None), ``officials`` (list)
+        ``venue`` (str), ``attendance`` (int/None), ``officials`` (list),
+        ``weather`` (dict: temperature, windSpeed, conditions, humidity)
     or empty dict if unavailable.
     """
     game_info = summary_data.get("gameInfo") or {}
@@ -954,6 +1003,19 @@ def _parse_espn_game_info(summary_data):
                 refs.append({"name": name, "role": pos})
         if refs:
             result["officials"] = refs
+    # ── Weather ────────────────────────────────────────────────
+    weather = game_info.get("weather") or {}
+    if weather:
+        w = {}
+        for key in ("temperature", "windSpeed", "conditions", "humidity"):
+            val = weather.get(key)
+            if val is not None:
+                try:
+                    w[key] = int(val) if key in ("temperature", "humidity") else str(val)
+                except (ValueError, TypeError):
+                    w[key] = str(val)
+        if w:
+            result["weather"] = w
     if broadcasts:
         tv = []
         for b in broadcasts:
@@ -966,6 +1028,303 @@ def _parse_espn_game_info(summary_data):
             })
         if tv:
             result["broadcasts"] = tv
+    return result
+
+
+def _parse_espn_shot_mapping(summary_data):
+    """Extract shot-plot and goal-location data from ESPN summary.
+
+    Returns dict with:
+        ``shot_origins``  — list of {x, y, minute, player, team_id, is_goal, on_target}
+        ``goal_locations`` — list of {x, y, minute, player, team_id}  (goal-frame coords)
+    or empty dict if unavailable.
+    """
+    shot_origins = []
+    goal_locations = []
+
+    # Helper to normalise 2-element coordinate values.
+    def _coord(entry, key, default=None):
+        raw = (entry.get(key) or {}) if isinstance(entry, dict) else {}
+        x = raw.get("x")
+        y = raw.get("y")
+        if x is not None and y is not None:
+            try:
+                return (round(float(x), 1), round(float(y), 1))
+            except (ValueError, TypeError):
+                pass
+        return default
+
+    # ── 1. shotChart (common in ESPN v2) ──────────────────────
+    sc = summary_data.get("shotChart")
+    if isinstance(sc, dict):
+        for side_key, team_shots in sc.items():
+            if not isinstance(team_shots, list):
+                continue
+            team_id = {"home": "home", "away": "away"}.get(side_key, "")
+            for shot in team_shots:
+                if not isinstance(shot, dict):
+                    continue
+                xy = _coord(shot, "coordinates")
+                gl = _coord(shot, "goalLocation")
+                ath = shot.get("athlete") or {}
+                player = str(ath.get("displayName", ""))
+                scoring = bool(shot.get("scoringPlay"))
+                t_id = str(team_id)
+                minute = str(shot.get("clock", {}).get("displayValue", ""))
+                if xy:
+                    shot_origins.append({
+                        "x": xy[0], "y": xy[1],
+                        "minute": minute,
+                        "player": player,
+                        "team_id": t_id,
+                        "is_goal": scoring,
+                        "on_target": bool(shot.get("onTarget", scoring)),
+                    })
+                if gl and scoring:
+                    goal_locations.append({
+                        "x": gl[0], "y": gl[1],
+                        "minute": minute,
+                        "player": player,
+                        "team_id": t_id,
+                    })
+
+    # ── 2. situations (alternative ESPN path) ─────────────────
+    situations = summary_data.get("situations")
+    if isinstance(situations, list):
+        for ev in situations:
+            if not isinstance(ev, dict):
+                continue
+            action = ev.get("lastAction") or ev
+            if not isinstance(action, dict):
+                continue
+            ev_type = str(ev.get("type", {}).get("text", action.get("type", {}).get("text", "")))
+            if "shot" not in ev_type.lower() and "goal" not in ev_type.lower() and "save" not in ev_type.lower():
+                continue
+            xy = _coord(action, "coordinates")
+            gl = _coord(action, "goalLocation")
+            ath = action.get("athlete") or {}
+            player = str(ath.get("displayName", ""))
+            team = action.get("team") or ev.get("team") or {}
+            t_id = str(team.get("id", ""))
+            scoring = bool(action.get("scoringPlay", ev.get("scoringPlay")))
+            minute = str(action.get("clock", {}).get("displayValue", ev.get("clock", {}).get("displayValue", "")))
+            on_target = "save" in ev_type.lower() or "goal" in ev_type.lower() or "on target" in ev_type.lower()
+            if xy:
+                shot_origins.append({
+                    "x": xy[0], "y": xy[1],
+                    "minute": minute,
+                    "player": player,
+                    "team_id": t_id,
+                    "is_goal": scoring,
+                    "on_target": on_target or scoring,
+                })
+            if gl and scoring:
+                goal_locations.append({
+                    "x": gl[0], "y": gl[1],
+                    "minute": minute,
+                    "player": player,
+                    "team_id": t_id,
+                })
+
+    result = {}
+    if shot_origins:
+        result["shot_origins"] = shot_origins
+    if goal_locations:
+        result["goal_locations"] = goal_locations
+    return result
+
+
+# ── Possession zones / game situation ─────────────────────────
+
+
+def _parse_espn_situation(summary_data):
+    """Extract possession-zone splits and game-control data from ESPN summary.
+
+    The ``situation`` (singular) block contains territory splits,
+    possession percentages, and zone-by-zone breakdowns.
+
+    Returns dict with:
+        ``possession`` — overall possession {home: %, away: %}
+        ``possession_zones`` — possession by third … {home: {attacking, midfield, defensive}, away: …}
+        ``territory`` — territory split by third {home: {attacking, midfield, defensive}, away: …}
+    or empty dict if unavailable.
+    """
+    sit = summary_data.get("situation") or {}
+    if not sit:
+        return {}
+
+    result = {}
+
+    def _safe_number(v):
+        try:
+            return round(float(v), 1)
+        except (TypeError, ValueError):
+            return v
+
+    def _parse_third_dict(raw):
+        """Normalise a possessive-third dict e.g. {attacking: 30, midfield: 45, defensive: 25}."""
+        if not isinstance(raw, dict):
+            return None
+        out = {}
+        for zone in ("attacking", "midfield", "defensive"):
+            val = raw.get(zone)
+            if val is not None:
+                out[zone] = _safe_number(val)
+        return out if out else None
+
+    # ── Overall possession ─────────────────────────────────────
+    poss = sit.get("possession")
+    if isinstance(poss, dict):
+        h = _safe_number(poss.get("home"))
+        a = _safe_number(poss.get("away"))
+        if h is not None and a is not None:
+            result["possession"] = {"home": h, "away": a}
+
+    # ── Possession by zone ─────────────────────────────────────
+    zones = sit.get("possessionZones") or sit.get("possessionByArea") or {}
+    if isinstance(zones, dict):
+        hz = _parse_third_dict(zones.get("home"))
+        az = _parse_third_dict(zones.get("away"))
+        if hz or az:
+            result["possession_zones"] = {}
+            if hz:
+                result["possession_zones"]["home"] = hz
+            if az:
+                result["possession_zones"]["away"] = az
+
+    # ── Territory split (alternative path) ─────────────────────
+    terr = sit.get("territory") or sit.get("territorySplit") or {}
+    if isinstance(terr, dict):
+        hz = _parse_third_dict(terr.get("home"))
+        az = _parse_third_dict(terr.get("away"))
+        if hz or az:
+            result["territory"] = {}
+            if hz:
+                result["territory"]["home"] = hz
+            if az:
+                result["territory"]["away"] = az
+
+    # ── Most-possession indicator ──────────────────────────────
+    most = sit.get("mostPossession")
+    if isinstance(most, str) and most in ("home", "away"):
+        result["most_possession"] = most
+
+    return result
+
+
+# ── Injuries / availability ──────────────────────────────────
+
+
+def _parse_espn_injuries_availability(summary_data):
+    """Extract player injury and availability data from ESPN summary.
+
+    ESPN soccer summaries **do not** always include a structured injuries
+    block, but when available it lives under ``gameInfo.injuries`` or
+    ``playerStatus`` / ``availability`` at the summary root.
+
+    Returns dict with:
+        ``injuries`` — list of {player, team_id, status, detail}
+        ``availability`` — list of {player, team_id, status}
+    or empty dict if unavailable.
+    """
+    result = {}
+
+    # ── gameInfo.injuries ─────────────────────────────────────
+    game_info = summary_data.get("gameInfo") or {}
+    injuries_raw = game_info.get("injuries") or summary_data.get("injuries") or []
+    if isinstance(injuries_raw, list) and injuries_raw:
+        parsed = []
+        for entry in injuries_raw:
+            if not isinstance(entry, dict):
+                continue
+            ath = entry.get("athlete") or {}
+            team = entry.get("team") or {}
+            status = entry.get("status", {}).get("text", "") or entry.get("status", "")
+            parsed.append({
+                "player": str(ath.get("displayName", ath.get("fullName", ""))),
+                "team_id": str(team.get("id", "")),
+                "status": str(status),
+                "detail": str(entry.get("text", entry.get("comment", ""))),
+            })
+        if parsed:
+            result["injuries"] = parsed
+
+    # ── availability / playerStatus (root-level) ──────────────
+    avail = summary_data.get("availability") or summary_data.get("playerStatus") or []
+    if isinstance(avail, list) and avail:
+        parsed = []
+        for entry in avail:
+            if not isinstance(entry, dict):
+                continue
+            ath = entry.get("athlete") or {}
+            team = entry.get("team") or {}
+            parsed.append({
+                "player": str(ath.get("displayName", ath.get("fullName", ""))),
+                "team_id": str(team.get("id", "")),
+                "status": str(entry.get("status", {}).get("text", entry.get("status", ""))),
+            })
+        if parsed:
+            result["availability"] = parsed
+
+    return result
+
+
+# ── Advanced team stats (teamStats block) ────────────────────
+
+
+def _parse_espn_team_stats(summary_data):
+    """Extract granular per-team stats from the ``teamStats`` block.
+
+    ESPN's ``teamStats`` block provides stats grouped by category
+    (e.g. ``offensive``, ``defensive``, ``passing``, ``possession``)
+    with richer detail than the flat ``boxscore`` list.
+
+    Returns dict mapping ``"home"`` / ``"away"`` to a dict of
+    category → list-of-stats, or empty dict if unavailable.
+
+    Fields commonly found inside each category:
+      offensive  → expectedGoals, shotsTotal, shotsOnGoal, shotsOffGoal,
+                    blockedShots, shotsInsideBox, shotsOutsideBox
+      defensive  → tackles, clearances, interceptions, blocks, aerialsWon,
+                    duelsWon, recoveries
+      passing    → passesTotal, passesAccurate, passAccuracy, longPasses,
+                    crosses, keyPasses, throughBalls
+      possession → possessionPct, possession90, dominantThird
+      cards      → yellowCards, redCards, fouls
+    """
+    team_stats = summary_data.get("teamStats")
+    if not isinstance(team_stats, dict):
+        return {}
+
+    result = {}
+    for side_key in ("home", "away"):
+        side = team_stats.get(side_key)
+        if not isinstance(side, dict):
+            continue
+        categories = side.get("statistics") or side.get("categories") or []
+        if isinstance(categories, list):
+            side_out = {}
+            for cat in categories:
+                if not isinstance(cat, dict):
+                    continue
+                cat_name = str(cat.get("name", cat.get("displayName", "")))
+                stats_list = cat.get("stats") or cat.get("statistics") or []
+                if not isinstance(stats_list, list):
+                    continue
+                parsed_stats = []
+                for s in stats_list:
+                    if not isinstance(s, dict):
+                        continue
+                    parsed_stats.append({
+                        "name": s.get("name", ""),
+                        "display_name": s.get("displayName", s.get("label", "")),
+                        "value": s.get("displayValue", s.get("value", "")),
+                    })
+                if parsed_stats:
+                    side_out[cat_name] = parsed_stats
+            if side_out:
+                result[side_key] = side_out
+
     return result
 
 
@@ -1418,11 +1777,15 @@ def _merge_completed_to_history():
     # Track predictions for newly completed games against our CSV predictions.
     if new_games:
         _track_prediction_results(new_games)
+        _append_to_past_games(new_games)
 
 
 # ── Prediction Tracking ──────────────────────────────────────
 
-_UEFA_COMPETITIONS = {"UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League"}
+_UEFA_COMPETITIONS = {
+    "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+    "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
+}
 
 _UPCOMING_CSV_MODE_MAP = {
     "England/Premier League": "global",
@@ -1442,18 +1805,52 @@ _UPCOMING_CSV_MODE_MAP = {
     "UEFA/Champions League": "cups",
     "UEFA/Europa League": "cups",
     "UEFA/Conference League": "cups",
+    "Europe/Champions League": "cups",
+    "Europe/Europa League": "cups",
+    "Europe/Conference League": "cups",
+    "Italy/Coppa Italia": "cups",
+    "Spain/Copa del Rey": "cups",
     "Germany/DFB-Pokal": "cups",
+    "France/Coupe de France": "cups",
+    "United States/US Open Cup": "cups",
     "FIFA/World Cup": "national",
     "FIFA/World Cup Qualifying - UEFA": "national",
     "FIFA/World Cup Qualifying - CONMEBOL": "national",
     "FIFA/World Cup Qualifying - CONCACAF": "national",
+    "FIFA/World Cup Qualifying - AFC": "national",
     "FIFA/Friendly": "national",
     "UEFA/European Championship": "national",
     "UEFA/Nations League": "national",
     "CONMEBOL/Copa America": "national",
     "CONCACAF/Gold Cup": "national",
     "CAF/Africa Cup of Nations": "national",
+    "AFC/Asian Cup": "national",
     "United States/MLS": "mls",
+    "Belgium/First Division A": "extra",
+    "Scotland/Premiership": "extra",
+    "Turkey/Super Lig": "extra",
+    "Austria/Bundesliga": "extra",
+    "Switzerland/Super League": "extra",
+    "Greece/Super League": "extra",
+    "Denmark/Superliga": "extra",
+    "Ukraine/Premier League": "extra",
+    "Norway/Eliteserien": "extra",
+    "Croatia/HNL": "extra",
+    "Romania/Liga I": "extra",
+    "Sweden/Allsvenskan": "extra",
+    "Hungary/NB I": "extra",
+    "Israel/Premier League": "extra",
+    "Czech Republic/First League": "extra",
+    "Poland/Ekstraklasa": "extra",
+    "Serbia/SuperLiga": "extra",
+    "Cyprus/First Division": "extra",
+    "Slovakia/Super Liga": "extra",
+    "Slovenia/PrvaLiga": "extra",
+    "Bulgaria/First League": "extra",
+    "Azerbaijan/Premier League": "extra",
+    "Kazakhstan/Premier League": "extra",
+    "Belarus/Premier League": "extra",
+    "Moldova/Super Liga": "extra",
 }
 
 
@@ -1618,6 +2015,49 @@ def _track_prediction_results(completed_games):
             tdata["accuracy"] = round(sum(1 for x in tdata["predictions"] if x["correct"]) / total, 3) if total else 0
 
     _save_prediction_tracking(tracking)
+
+
+def _espn_game_to_past_row(entry):
+    """Convert an ESPN live-score game entry to a past_games.json prediction row."""
+    hs = entry.get("home_score") or 0
+    aws = entry.get("away_score") or 0
+    return {
+        "source": "live_score",
+        "match_id": entry.get("match_id", ""),
+        "competition": entry.get("competition", ""),
+        "home_team": entry.get("home_team", ""),
+        "away_team": entry.get("away_team", ""),
+        "home_score": hs,
+        "away_score": aws,
+        "actual_result": _compute_actual_result(hs, aws) or "",
+        "match_date": entry.get("match_date", ""),
+        "kickoff_utc": entry.get("kickoff_utc", ""),
+        "completed_at": entry.get("completed_at", ""),
+    }
+
+
+def _append_to_past_games(new_espn_games):
+    """Append newly completed live-score games to ``past_games.json``."""
+    rows = []
+    existing_ids = set()
+    if os.path.exists(PAST_GAMES_FILE):
+        try:
+            with open(PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
+                rows = json.load(fh)
+            existing_ids = {r.get("match_id") for r in rows if r.get("match_id")}
+        except Exception:
+            rows = []
+    added = 0
+    for g in new_espn_games:
+        mid = g.get("match_id")
+        if mid and mid not in existing_ids:
+            rows.append(_espn_game_to_past_row(g))
+            existing_ids.add(mid)
+            added += 1
+    if added:
+        os.makedirs(os.path.dirname(PAST_GAMES_FILE), exist_ok=True)
+        with open(PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
+            json.dump(rows, fh, indent=2, ensure_ascii=False)
 
 
 def _fetch_competition_scores(comp_name, espn_id, today_str):
@@ -1881,10 +2321,45 @@ def _fetch_standings(comp_name, espn_id):
 
 # ── Computed standings from live-score history ────────────────
 
+# ── MLS conference helpers ───────────────────────────────────
+MLS_EASTERN_CONFERENCE_TEAMS = frozenset({
+    "Atlanta Utd", "CF Montreal", "Charlotte", "Chicago Fire", "Columbus Crew",
+    "DC United", "FC Cincinnati", "Inter Miami", "Nashville SC", "New England Revolution",
+    "New York City", "New York Red Bulls", "Orlando City", "Philadelphia Union", "Toronto FC",
+})
+
+MLS_WESTERN_CONFERENCE_TEAMS = frozenset({
+    "Austin FC", "Colorado Rapids", "FC Dallas", "Houston Dynamo", "Los Angeles Galaxy",
+    "Los Angeles FC", "Minnesota United", "Portland Timbers", "Real Salt Lake", "San Diego FC",
+    "San Jose Earthquakes", "Seattle Sounders", "Sporting Kansas City", "St. Louis City",
+    "Vancouver Whitecaps",
+})
+
+def _mls_conference(team_name):
+    n = str(team_name).replace(" FC", "").replace("United", "United").strip().lower()
+    for t in MLS_EASTERN_CONFERENCE_TEAMS:
+        if t.lower() in n or n in t.lower():
+            return "east"
+    for t in MLS_WESTERN_CONFERENCE_TEAMS:
+        if t.lower() in n or n in t.lower():
+            return "west"
+    return None
+
+
+# ── Belgian 2-phase constants ────────────────────────────────
+BELGIAN_REGULAR_LIMIT = 30  # 16 teams × 2 rounds
+
+
 def _compute_standings_from_history(comp_name):
     """Compute league / group standings purely from completed live-score results.
 
-    Handles both single-table (league) and group-stage (World Cup, UCL) formats.
+    Handles:
+      - single-table (standard league)
+      - group-stage (World Cup, UCL groups)
+      - MLS conferences (east / west split)
+      - Belgian Pro League 2-phase detection (regular table until phase 2 starts)
+      - Scottish Premiership split (top 6 / bottom 6 after 33 games)
+      - UEFA league-phase format (single table, then knockout)
     Applies correct tiebreakers per league (GD-first vs H2H-first).
     Returns ``None`` if no completed games are available.
     """
@@ -1911,11 +2386,9 @@ def _compute_standings_from_history(comp_name):
 
     def _extract_group(round_name):
         """Extract group label from ESPN round name e.g. 'Group Stage - Group A' → 'A'."""
-        # Try "Group X" pattern
         m = re.search(r'Group\s+([A-Z0-9]+)', round_name)
         if m:
             return m.group(1)
-        # Fallback: first 1-2 non-whitespace chars after "Group"
         parts = round_name.replace("Group Stage", "").replace("-", "").split()
         for p in parts:
             if p.strip():
@@ -1988,6 +2461,51 @@ def _compute_standings_from_history(comp_name):
                     result.append((team, table[team]))
         return result
 
+    # ── League-phase format (UCL/UEL/UECL) ──────────────────────
+    is_league_phase = comp_name in _UEFA_COMPETITIONS and not has_groups
+    is_mls = comp_name == "United States/MLS"
+    is_belgian = "belgium" in comp_name.lower() or "belgian" in comp_name.lower()
+    is_scottish = "scotland" in comp_name.lower() or "scottish" in comp_name.lower()
+
+    if is_league_phase:
+        # UCL/UEL/UECL league phase: single table with all teams
+        teams = set()
+        match_records = []
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            if ht and at:
+                teams.add(ht)
+                teams.add(at)
+        if not teams:
+            return None
+        table = _init_table(teams)
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht and at:
+                _apply_result(table, ht, at, hs, as_)
+                match_records.append((ht, at, hs, as_))
+        ranked = _rank_table(table, match_records)
+        entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+        knockout_rounds = _build_uefa_knockout_framework(comp_name)
+        groups = [{"name": "League Phase", "entries": entries}]
+        response = {
+            "competition": comp_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "groups": groups,
+            "source": "computed",
+        }
+        if knockout_rounds:
+            response["knockout_rounds"] = knockout_rounds
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
     if has_groups:
         groups_data = {}
         group_games_map = {}
@@ -2025,7 +2543,88 @@ def _compute_standings_from_history(comp_name):
         if not groups_data:
             return None
         groups = [{"name": gn, "entries": gd["entries"]} for gn, gd in sorted(groups_data.items())]
-    else:
+
+        # Add knockout framework for UEFA group-stage competitions
+        response = {
+            "competition": comp_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "groups": groups,
+            "source": "computed",
+        }
+        if comp_name in _UEFA_COMPETITIONS:
+            ko = _build_uefa_knockout_framework(comp_name)
+            if ko:
+                response["knockout_rounds"] = ko
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+    # ── MLS conference split ─────────────────────────────────
+    if is_mls:
+        teams = set()
+        match_records = []
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            if ht and at:
+                teams.add(ht)
+                teams.add(at)
+        if not teams:
+            return None
+        # Build full MLS table
+        full_table = _init_table(teams)
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht and at:
+                full_table[ht] = full_table.get(ht, _init_table([ht])[ht])
+                full_table[at] = full_table.get(at, _init_table([at])[at])
+                _apply_result(full_table, ht, at, hs, as_)
+                match_records.append((ht, at, hs, as_))
+        ranked = _rank_table(full_table, match_records)
+        all_entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+
+        # Split into conferences
+        east_teams = [t for t in teams if _mls_conference(t) == "east"]
+        west_teams = [t for t in teams if _mls_conference(t) == "west"]
+        east_table = _init_table(east_teams)
+        west_table = _init_table(west_teams)
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht in east_teams and at in east_teams:
+                _apply_result(east_table, ht, at, hs, as_)
+            if ht in west_teams and at in west_teams:
+                _apply_result(west_table, ht, at, hs, as_)
+
+        east_ranked = _rank_table(east_table)
+        west_ranked = _rank_table(west_table)
+
+        groups = [
+            {"name": "Supporters Shield", "entries": all_entries},
+            {"name": "Eastern Conference", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(east_ranked)]},
+            {"name": "Western Conference", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(west_ranked)]},
+        ]
+        response = {
+            "competition": comp_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "groups": groups,
+            "source": "computed",
+        }
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+    # ── Scottish Premiership split ───────────────────────────
+    if is_scottish:
         teams = set()
         match_records = []
         for g in comp_games:
@@ -2046,51 +2645,180 @@ def _compute_standings_from_history(comp_name):
                 _apply_result(table, ht, at, hs, as_)
                 match_records.append((ht, at, hs, as_))
         ranked = _rank_table(table, match_records if comp_name in H2H_LEAGUES else None)
+        total_games = sum(1 for t, s in ranked if s["P"] > 0) and max(s["P"] for _, s in ranked) if ranked else 0
+        # Split into top 6 / bottom 6 after 33 games
+        if total_games >= 33:
+            top6 = [t for t, s in ranked[:6]]
+            bottom6 = [t for t, s in ranked[6:]]
+            top_table = {t: table[t] for t in top6 if t in table}
+            bottom_table = {t: table[t] for t in bottom6 if t in table}
+            top_ranked = _rank_table(top_table)
+            bottom_ranked = _rank_table(bottom_table)
+            groups = [
+                {"name": "Championship Group", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(top_ranked)]},
+                {"name": "Relegation Group", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(bottom_ranked)]},
+            ]
+        else:
+            entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+            groups = [{"name": "Overall", "entries": entries}]
+
+        response = {
+            "competition": comp_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "groups": groups,
+            "source": "computed",
+        }
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+    # ── Belgian Pro League (2-phase detection) ───────────────
+    if is_belgian:
+        teams = set()
+        match_records = []
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            if ht and at:
+                teams.add(ht)
+                teams.add(at)
+        if not teams:
+            return None
+        table = _init_table(teams)
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht and at:
+                _apply_result(table, ht, at, hs, as_)
+                match_records.append((ht, at, hs, as_))
+        ranked = _rank_table(table, match_records if comp_name in H2H_LEAGUES else None)
+        max_gp = max(s["P"] for _, s in ranked) if ranked else 0
         entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
-        groups = [{"name": "Overall", "entries": entries}]
 
-    # Clear standings cache for this comp so next ESPN fetch is fresh
-    _clear_standings_cache(comp_name)
-    _clear_leaders_cache(comp_name)
+        if max_gp >= BELGIAN_REGULAR_LIMIT:
+            # Phase 2: split into championship / europe / relegation groups
+            championship = entries[:6]
+            europe = entries[6:12]
+            relegation = entries[12:]
+            groups = [
+                {"name": "Championship Play-off", "entries": championship},
+                {"name": "Europe Play-off", "entries": europe},
+                {"name": "Relegation Play-off", "entries": relegation},
+            ]
+        else:
+            groups = [{"name": "Regular Season", "entries": entries}]
 
-    return {
+        response = {
+            "competition": comp_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "groups": groups,
+            "source": "computed",
+        }
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+    # ── Standard single table ────────────────────────────────
+    teams = set()
+    match_records = []
+    for g in comp_games:
+        ht = str(g.get("home_team", ""))
+        at = str(g.get("away_team", ""))
+        if ht and at:
+            teams.add(ht)
+            teams.add(at)
+    if not teams:
+        return None
+    table = _init_table(teams)
+    for g in comp_games:
+        ht = str(g.get("home_team", ""))
+        at = str(g.get("away_team", ""))
+        hs = int(g.get("home_score", 0))
+        as_ = int(g.get("away_score", 0))
+        if ht and at:
+            _apply_result(table, ht, at, hs, as_)
+            match_records.append((ht, at, hs, as_))
+    ranked = _rank_table(table, match_records if comp_name in H2H_LEAGUES else None)
+    entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+    groups = [{"name": "Overall", "entries": entries}]
+
+    response = {
         "competition": comp_name,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "groups": groups,
         "source": "computed",
     }
-
-
-def _get_or_fetch_standings(comp_name, computed=False):
-    """Return cached standings for *comp_name*, or fetch+store if stale/missing.
-
-    If *computed* is ``True``, standings are computed from
-    ``live_score_history.json`` instead of fetched from ESPN.
-    """
-    espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
-    if not espn_id:
-        return None
-
-    if computed:
-        return _compute_standings_from_history(comp_name)
-
-    now = datetime.now()
     with _real_tables_lock:
-        cached = _real_tables.get(comp_name)
-        if cached:
-            updated = cached.get("updated_at", "")
-            try:
-                age = (now - datetime.fromisoformat(updated)).total_seconds()
-            except Exception:
-                age = REAL_TABLES_CACHE_TTL + 1
-            if age < REAL_TABLES_CACHE_TTL:
-                return cached
-    data = _fetch_standings(comp_name, espn_id)
-    if data:
-        with _real_tables_lock:
-            _real_tables[comp_name] = data
-        _persist_real_tables()
-    return data
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+def _build_uefa_knockout_framework(comp_name):
+    """Return round structure for UEFA knockout phase, or empty list.
+
+    Returns a list of round dicts with name and order so the frontend
+    can render a bracket once games are played.
+    """
+    uefa_rounds = {
+        "UEFA/Champions League": [
+            {"name": "Knockout Round Play-offs", "order": 1},
+            {"name": "Round of 16", "order": 2},
+            {"name": "Quarter-finals", "order": 3},
+            {"name": "Semi-finals", "order": 4},
+            {"name": "Final", "order": 5},
+        ],
+        "UEFA/Europa League": [
+            {"name": "Knockout Round Play-offs", "order": 1},
+            {"name": "Round of 16", "order": 2},
+            {"name": "Quarter-finals", "order": 3},
+            {"name": "Semi-finals", "order": 4},
+            {"name": "Final", "order": 5},
+        ],
+        "UEFA/Conference League": [
+            {"name": "Knockout Round Play-offs", "order": 1},
+            {"name": "Round of 16", "order": 2},
+            {"name": "Quarter-finals", "order": 3},
+            {"name": "Semi-finals", "order": 4},
+            {"name": "Final", "order": 5},
+        ],
+    }
+    return uefa_rounds.get(comp_name, [])
+
+
+def _get_or_fetch_standings(comp_name, computed=True):
+    """Return cached standings for *comp_name*.
+
+    Defaults to *computed* (from ``live_score_history.json``).
+    Set *computed* = ``False`` to fetch from ESPN instead (legacy).
+    """
+    if not computed:
+        espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
+        if espn_id:
+            now = datetime.now()
+            with _real_tables_lock:
+                cached = _real_tables.get(comp_name)
+                if cached:
+                    updated = cached.get("updated_at", "")
+                    try:
+                        age = (now - datetime.fromisoformat(updated)).total_seconds()
+                    except Exception:
+                        age = REAL_TABLES_CACHE_TTL + 1
+                    if age < REAL_TABLES_CACHE_TTL:
+                        return cached
+            data = _fetch_standings(comp_name, espn_id)
+            if data:
+                with _real_tables_lock:
+                    _real_tables[comp_name] = data
+                _persist_real_tables()
+            return data
+    return _compute_standings_from_history(comp_name)
 
 
 def _clear_standings_cache(comp_name):
@@ -2833,6 +3561,156 @@ def _compute_live_momentum(game, elapsed):
     return {"trend": round(trend, 3), "label": label, "events_recent": len(recent)}
 
 
+# ── Passive extraction & cumulative momentum ──────────────────
+
+
+def _extract_passes_to_stats(game):
+    """Promote passes data from ``boxscore_stats`` into ``home_stats`` / ``away_stats``.
+
+    ESPN often provides detailed passes at the boxscore level but not in the
+    scoreboard competitor-statistics block.  This copies them up so they are
+    available at the top-level ``home_stats``/``away_stats`` dict.
+    """
+    boxscore = game.get("boxscore_stats")
+    if not boxscore or not isinstance(boxscore, dict):
+        return
+    for side in ("home", "away"):
+        team_box = boxscore.get(side)
+        if not team_box or not isinstance(team_box, list):
+            continue
+        stats_dict = game.get(f"{side}_stats")
+        if stats_dict is None:
+            stats_dict = {}
+            game[f"{side}_stats"] = stats_dict
+        for stat in team_box:
+            name = stat.get("name", "")
+            if name in ("passes", "totalPasses", "accuratePasses", "passAccuracy", "longPasses", "crosses"):
+                if name not in stats_dict or not stats_dict[name]:
+                    stats_dict[name] = str(stat.get("value", ""))
+
+
+def _update_cumulative_momentum(game):
+    """Update the per-match cumulative momentum (-100 … +100).
+
+    Scale:
+        -100  = home team has had all momentum
+           0  = perfectly balanced
+        +100  = away team has had all momentum
+
+    The delta is computed from the game's live state and key events.
+    The cumulative value is stored on the game dict as
+    ``momentum_accumulated`` and persists across poll cycles.
+    """
+    # ── Weightings for a single poll cycle ────────────────────
+    GOAL_WEIGHT = 12.0
+    RED_CARD_WEIGHT = 8.0
+    SHOT_DIFF_WEIGHT = 4.0
+    SOT_DIFF_WEIGHT = 6.0
+    CORNER_DIFF_WEIGHT = 2.0
+    YELLOW_DIFF_WEIGHT = 1.0
+
+    home_score = game.get("home_score") or 0
+    away_score = game.get("away_score") or 0
+    goal_diff = home_score - away_score
+
+    home_stats = game.get("home_stats") or {}
+    away_stats = game.get("away_stats") or {}
+
+    def _stat(side, key):
+        v = (home_stats if side == "home" else away_stats).get(key)
+        if v is None and game.get("boxscore_stats"):
+            for s in game["boxscore_stats"].get(side, []):
+                if s.get("name") == key:
+                    return s.get("value")
+        return v
+
+    def _f(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    # ── Scoreline delta ───────────────────────────────────────
+    # Leading by more gives momentum to the leading team (negative=home, positive=away)
+    score_delta = -goal_diff * 3.0
+
+    # ── Shot-based deltas ─────────────────────────────────────
+    shots_h = _f(_stat("home", "totalShots"))
+    shots_a = _f(_stat("away", "totalShots"))
+    sot_h = _f(_stat("home", "shotsOnTarget"))
+    sot_a = _f(_stat("away", "shotsOnTarget"))
+    corners_h = _f(_stat("home", "corners"))
+    corners_a = _f(_stat("away", "corners"))
+    yellows_h = _f(_stat("home", "yellowCards"))
+    yellows_a = _f(_stat("away", "yellowCards"))
+    reds_h = _f(_stat("home", "redCards"))
+    reds_a = _f(_stat("away", "redCards"))
+
+    total_shots = max(shots_h + shots_a, 1)
+    total_sot = max(sot_h + sot_a, 1)
+    total_corners = max(corners_h + corners_a, 1)
+
+    shot_delta = ((shots_h - shots_a) / total_shots) * -SHOT_DIFF_WEIGHT
+    sot_delta = ((sot_h - sot_a) / total_sot) * -SOT_DIFF_WEIGHT
+    corner_delta = ((corners_h - corners_a) / total_corners) * -CORNER_DIFF_WEIGHT
+    yellow_delta = (yellows_h - yellows_a) * YELLOW_DIFF_WEIGHT
+    red_delta = (reds_h - reds_a) * RED_CARD_WEIGHT
+
+    # ── Recent-key-event delta ────────────────────────────────
+    key_events = game.get("key_events") or []
+    prev_count = game.get("_momentum_ev_count", 0)
+    new_events = len(key_events) - prev_count
+    game["_momentum_ev_count"] = len(key_events)
+
+    event_delta = 0.0
+    if new_events > 0:
+        for ev in key_events[-new_events:]:
+            t_id = str(ev.get("team_id", ""))
+            if not t_id:
+                continue
+            ev_type = str(ev.get("type", "")).lower()
+            is_home = t_id == str(game.get("home_team_id", ""))
+            direction = -1.0 if is_home else 1.0
+            if "goal" in ev_type:
+                event_delta += direction * GOAL_WEIGHT
+            elif "red card" in ev_type:
+                event_delta += direction * RED_CARD_WEIGHT
+            elif "yellow card" in ev_type:
+                event_delta += direction * YELLOW_DIFF_WEIGHT
+            elif "own goal" in ev_type:
+                event_delta += direction * (GOAL_WEIGHT * 1.5)
+            elif "missed penalty" in ev_type or "penalty" in ev_type:
+                event_delta += direction * 3.0
+            elif "substitution" in ev_type:
+                event_delta += direction * 0.5
+
+    # ── Composite delta for this cycle ────────────────────────
+    cycle_delta = (
+        score_delta
+        + shot_delta
+        + sot_delta
+        + corner_delta
+        + yellow_delta
+        + red_delta
+        + event_delta
+    )
+
+    # Clamp per-cycle contribution so one event cannot swing the needle fully
+    cycle_delta = max(-25.0, min(25.0, cycle_delta))
+
+    # ── Accumulate ────────────────────────────────────────────
+    prev = game.get("momentum_accumulated")
+    if prev is None:
+        # Initialise from current game state (not zero)
+        raw = cycle_delta
+    else:
+        # Exponential-decay smoothing so the momentum is not jittery
+        alpha = 0.45  # new weight
+        raw = (1.0 - alpha) * float(prev) + alpha * cycle_delta
+
+    game["momentum_accumulated"] = round(max(-100.0, min(100.0, raw)), 2)
+
+
 def _compute_live_prediction(game, prematch):
     """Compute in-play prediction from live game state and pre-match data.
 
@@ -3096,13 +3974,10 @@ def _live_score_poller_loop():
                             if prev and prev[1] != "post" and cur_status == "post":
                                 comps_to_refresh.add(comp_name)
                 for comp_name in comps_to_refresh:
-                    espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
-                    if espn_id:
-                        table = _fetch_standings(comp_name, espn_id)
-                        if table:
-                            with _real_tables_lock:
-                                _real_tables[comp_name] = table
-                            _persist_real_tables()
+                    table = _compute_standings_from_history(comp_name)
+                    if table:
+                        with _real_tables_lock:
+                            _real_tables[comp_name] = table
             except Exception:
                 import traceback
                 traceback.print_exc()
@@ -3151,6 +4026,18 @@ def _live_score_poller_loop():
                         game_info = _parse_espn_game_info(data)
                         if game_info:
                             result["game_info"] = game_info
+                        shot_mapping = _parse_espn_shot_mapping(data)
+                        if shot_mapping:
+                            result["shot_mapping"] = shot_mapping
+                        situation = _parse_espn_situation(data)
+                        if situation:
+                            result["situation"] = situation
+                        injuries = _parse_espn_injuries_availability(data)
+                        if injuries:
+                            result["injuries_availability"] = injuries
+                        team_stats = _parse_espn_team_stats(data)
+                        if team_stats:
+                            result["team_stats"] = team_stats
                         return result
                     with ThreadPoolExecutor(max_workers=min(6, len(games_needing_summary))) as pool:
                         summary_futures = [pool.submit(_fetch_summary, args) for args in games_needing_summary]
@@ -3175,6 +4062,14 @@ def _live_score_poller_loop():
                                         cache_entry["boxscore_stats"] = sresult["boxscore_stats"]
                                     if "game_info" in sresult:
                                         cache_entry["game_info"] = sresult["game_info"]
+                                    if "shot_mapping" in sresult:
+                                        cache_entry["shot_mapping"] = sresult["shot_mapping"]
+                                    if "situation" in sresult:
+                                        cache_entry["situation"] = sresult["situation"]
+                                    if "injuries_availability" in sresult:
+                                        cache_entry["injuries_availability"] = sresult["injuries_availability"]
+                                    if "team_stats" in sresult:
+                                        cache_entry["team_stats"] = sresult["team_stats"]
                                     _live_summary_cache[mid] = cache_entry
                                 # lineups always re-fetched for pre games on the next cycle
                             except Exception:
@@ -3191,6 +4086,8 @@ def _live_score_poller_loop():
                         mid = g.get("match_id")
                         if mid and mid in _live_summary_cache:
                             g.update(_live_summary_cache[mid])
+                        # Promote passes from boxscore_stats to home_stats/away_stats
+                        _extract_passes_to_stats(g)
 
             # Compute live in-play predictions for active games.
             try:
@@ -3205,6 +4102,9 @@ def _live_score_poller_loop():
                             lp = _compute_live_prediction(g, prematch)
                             if lp is not None:
                                 g["live_prediction"] = lp
+                        # Update cumulative momentum for in-progress games
+                        if g.get("status") in ("in", "pre"):
+                            _update_cumulative_momentum(g)
             except Exception:
                 pass
         except Exception:
@@ -5274,43 +6174,55 @@ def api_cup_bracket():
     for rnd in sorted_rounds:
         rnd["matches"].sort(key=lambda m: m.get("kickoff_utc", ""))
 
-    return jsonify({
+    # Include knockout-round framework for UEFA competitions even when empty
+    result = {
         "ok": True,
         "competition": comp,
         "rounds": sorted_rounds,
-    })
+    }
+    if comp in _UEFA_COMPETITIONS:
+        ko_framework = _build_uefa_knockout_framework(comp)
+        if ko_framework:
+            result["knockout_rounds"] = ko_framework
+        # Attach league phase table if available
+        league_table = _compute_standings_from_history(comp)
+        if league_table:
+            result["league_phase"] = league_table
+
+    return jsonify(result)
 
 
 @app.get("/api/real-tables")
 def api_real_tables():
-    """Return real league tables from ESPN or computed from live-score history.
+    """Return real league tables computed from live-score history.
+
+    Supports standard leagues, group-stage (World Cup, UCL),
+    MLS conferences, Belgian 2-phase, Scottish Premiership split,
+    and UEFA league-phase competitions.
 
     Query params:
         competition  -- optional, fetch a specific competition only
                         (e.g. "England/Premier League", "FIFA/World Cup")
                         If omitted, returns tables for all known competitions.
-        refresh      -- if "1" or "true", bypasses cache and fetches fresh data
-        computed     -- if "1" or "true", compute standings from completed
-                        live-score results instead of fetching from ESPN.
-                        Supports group-stage competitions (World Cup, UCL).
     """
     comp_filter = request.args.get("competition", "").strip()
     force_refresh = request.args.get("refresh", "").strip().lower() in ("1", "true")
-    use_computed = request.args.get("computed", "").strip().lower() in ("1", "true")
 
     if comp_filter:
         if comp_filter not in LIVE_SCORE_COMPETITIONS:
             return jsonify({"ok": False, "error": f"Unknown competition: {comp_filter}"}), 400
         if force_refresh:
             _clear_standings_cache(comp_filter)
-        table = _get_or_fetch_standings(comp_filter, computed=use_computed)
+            _clear_leaders_cache(comp_filter)
+        table = _compute_standings_from_history(comp_filter)
         return jsonify({"ok": True, "table": table})
 
     results = {}
     for comp_name in LIVE_SCORE_COMPETITIONS:
         if force_refresh:
             _clear_standings_cache(comp_name)
-        table = _get_or_fetch_standings(comp_name, computed=use_computed)
+            _clear_leaders_cache(comp_name)
+        table = _compute_standings_from_history(comp_name)
         if table:
             results[comp_name] = table
     return jsonify({"ok": True, "tables": results, "total": len(results)})

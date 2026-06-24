@@ -40,6 +40,7 @@ RESULT_COLUMNS = [
     "pred_away_shots",
     "pred_home_sot",
     "pred_away_sot",
+    "probability_reasoning",
     "prob_home_goals_0",
     "prob_home_goals_1plus",
     "prob_home_goals_2plus",
@@ -314,10 +315,11 @@ def predict_fixture(ctx, home_raw, away_raw, competition_hint):
     home_sot = max(0.0, float(ctx["home_sot_reg"].predict(X_match)[0]))
     away_sot = max(0.0, float(ctx["away_sot_reg"].predict(X_match)[0]))
 
+    competition_display = home_comp if home_comp == away_comp else f"{home_comp} vs {away_comp}"
     return {
         "home_team": home_team,
         "away_team": away_team,
-        "competition": home_comp if home_comp == away_comp else f"{home_comp} vs {away_comp}",
+        "competition": competition_display,
         "predicted_result": prediction,
         "prob_home": round(probabilities["H"], 6),
         "prob_draw": round(probabilities["D"], 6),
@@ -328,6 +330,12 @@ def predict_fixture(ctx, home_raw, away_raw, competition_hint):
         "pred_away_shots": round(away_shots, 3),
         "pred_home_sot": round(home_sot, 3),
         "pred_away_sot": round(away_sot, 3),
+        "probability_reasoning": pm.build_reasoning_string(
+            home_team, away_team, competition_display, probabilities,
+            float(aligned_home), float(aligned_away),
+            season_coeff=season_coeff,
+            randomizer_delta=max_delta,
+        ),
         **goal_probs,
     }
 
