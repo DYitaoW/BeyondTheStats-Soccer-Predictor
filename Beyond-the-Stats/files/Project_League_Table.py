@@ -226,6 +226,8 @@ H2H_LEAGUES = {
     "Spain/La Liga", "Spain/La Liga 2",
     "Italy/Serie A", "Italy/Serie B",
     "Portugal/Liga Portugal",
+    "Belgium/First Division A",
+    "Turkey/Super Lig",
 }
 
 

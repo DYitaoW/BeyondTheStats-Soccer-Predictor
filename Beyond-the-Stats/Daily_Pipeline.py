@@ -135,13 +135,6 @@ def parse_args():
         default=0,
         help="Stop after this many runs (0 = unlimited). Useful for testing.",
     )
-    parser.add_argument(
-        "--output-file",
-        type=str,
-        default=str(DEFAULT_FEED_FILE),
-        help=f"Path to the condensed mobile-app feed JSON (default: {DEFAULT_FEED_FILE}).",
-    )
-
     # Pipeline toggles (passed through to Run_All_Pipeline).
     parser.add_argument("--skip-mls", action="store_true", help="Skip MLS pipeline steps.")
     parser.add_argument("--skip-extra", action="store_true", help="Skip extra-leagues pipeline steps.")
@@ -768,7 +761,6 @@ def main():
     args = parse_args()
     api_token = load_api_token()
     run_full_pipeline = _import_pipeline_runner()
-    output_path = Path(args.output_file)
     if hasattr(args, "workers"):
         setattr(args, "workers", max(1, int(getattr(args, "workers", 1) or 1)))
     if hasattr(args, "competition_workers"):
@@ -812,19 +804,6 @@ def main():
         _write_pipeline_timestamp()
         _iter_elapsed = time.monotonic() - _iter_start
         print(f"[DEBUG] Daily_Pipeline iteration #{iteration} took {_iter_elapsed:.0f}s total")
-
-        try:
-            build_mobile_app_feed(pipeline_ok, step_results, output_path)
-        except Exception as exc:
-            print(f"[ERROR] Failed to build mobile feed: {exc}")
-
-        try:
-            publish_summary = publish_to_output()
-            for region, info in publish_summary.items():
-                file_count = len(info.get("files", []))
-                print(f"[OK] Output/{region}: {file_count} file(s) published")
-        except Exception as exc:
-            print(f"[ERROR] Failed to publish Output/ folder structure: {exc}")
 
         if args.once:
             break
