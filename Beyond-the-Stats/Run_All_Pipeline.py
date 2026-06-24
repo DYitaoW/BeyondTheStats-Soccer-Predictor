@@ -27,8 +27,10 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pandas as pd
 
 
 SP_DIR = Path(__file__).resolve().parent
@@ -43,6 +45,14 @@ MAX_SUBPIPELINE_WORKERS = 3
 
 LAST_REFRESH_FILE = SP_DIR / "Data" / "last_refresh.json"
 PIPELINE_STATUS_FILE = SP_DIR / "Data" / "pipeline_status.json"
+
+# Upcoming CSV paths for archival to past_games.json
+GLOBAL_UPCOMING_FILE = SP_DIR / "Data" / "Predictions" / "upcoming_matchweek_predictions.csv"
+MLS_UPCOMING_FILE = SP_DIR / "MLS" / "Data" / "Predictions" / "upcoming_matchweek_predictions.csv"
+EXTRA_UPCOMING_FILE = SP_DIR / "Extra-leagues" / "Data" / "Predictions" / "upcoming_matchweek_predictions.csv"
+CUP_UPCOMING_FILE = SP_DIR / "Data" / "Predictions" / "upcoming_cup_predictions.csv"
+NATIONAL_UPCOMING_FILE = SP_DIR / "Data" / "Predictions" / "upcoming_national_team_predictions.csv"
+PAST_GAMES_FILE = SP_DIR / "Data" / "Predictions" / "past_games.json"
 
 # Monotonic timestamp set by run_full_pipeline so run_step can log elapsed time.
 _pipeline_start_global: float = 0.0
@@ -396,6 +406,121 @@ def _check_dependencies():
     print("--- End pre-flight check ---\n")
 
 
+def _archive_upcoming_to_past():
+    """Archive completed/expired rows from all upcoming CSVs into past_games.json.
+
+    Called as the first step of run_full_pipeline() before any sub-pipeline
+    clears/updates the upcoming CSVs.  Also prunes past_games.json entries
+    older than the rolling window (previous Thursday in Eastern Time).
+    """
+    today_et = (datetime.now(UTC) - timedelta(hours=4)).date()
+    prev_thursday = today_et - timedelta(days=(today_et.weekday() - 3) % 7 + 7)
+    cutoff_str = prev_thursday.isoformat()
+    today_ts = pd.Timestamp(today_et)
+
+    upcoming_files = [
+        (GLOBAL_UPCOMING_FILE, "global"),
+        (MLS_UPCOMING_FILE, "mls"),
+        (EXTRA_UPCOMING_FILE, "extra"),
+        (CUP_UPCOMING_FILE, "cups"),
+        (NATIONAL_UPCOMING_FILE, "national"),
+    ]
+
+    new_rows = []
+    seen_in_batch = set()
+
+    for csv_path, mode in upcoming_files:
+        if not csv_path.exists():
+            continue
+        try:
+            df = pd.read_csv(csv_path, dtype=str)
+        except Exception as exc:
+            print(f"  [WARN] Could not read {csv_path}: {exc}")
+            continue
+        if df.empty or "match_date" not in df.columns:
+            continue
+
+        df["_parsed_date"] = pd.to_datetime(df["match_date"], errors="coerce")
+        has_result = df.get("actual_result", pd.Series([""] * len(df))).isin(["H", "D", "A"])
+        is_past = df["_parsed_date"].notna() & (df["_parsed_date"] < today_ts)
+        qualified = df[is_past | has_result]
+
+        for _, row in qualified.iterrows():
+            entry = row.dropna().to_dict()
+            entry.pop("_parsed_date", None)
+            # Composite key for dedup: date|competition|home|away
+            ck = "|".join(
+                str(entry.get(k, "")).strip()
+                for k in ("match_date", "competition", "home_team", "away_team")
+            ).lower()
+            if not ck or ck in seen_in_batch:
+                continue
+            seen_in_batch.add(ck)
+
+            entry["source"] = f"pipeline_{mode}"
+            # Map CSV actual_home_goals/actual_away_goals → home_score/away_score
+            if "actual_home_goals" in entry and "home_score" not in entry:
+                try:
+                    entry["home_score"] = int(float(entry["actual_home_goals"]))
+                except (ValueError, TypeError):
+                    entry["home_score"] = None
+            if "actual_away_goals" in entry and "away_score" not in entry:
+                try:
+                    entry["away_score"] = int(float(entry["actual_away_goals"]))
+                except (ValueError, TypeError):
+                    entry["away_score"] = None
+            new_rows.append(entry)
+
+    if not new_rows:
+        print("  [archive] No completed/expired rows found in upcoming CSVs.")
+        return
+
+    # Load existing past_games.json
+    if PAST_GAMES_FILE.exists():
+        try:
+            existing = json.loads(PAST_GAMES_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            existing = []
+    else:
+        existing = []
+
+    existing_keys = set()
+    for r in existing:
+        ck = "|".join(
+            str(r.get(k, "")).strip()
+            for k in ("match_date", "competition", "home_team", "away_team")
+        ).lower()
+        if ck:
+            existing_keys.add(ck)
+
+    merged = list(existing)
+    added = 0
+    for r in new_rows:
+        ck = "|".join(
+            str(r.get(k, "")).strip()
+            for k in ("match_date", "competition", "home_team", "away_team")
+        ).lower()
+        if ck not in existing_keys:
+            existing_keys.add(ck)
+            merged.append(r)
+            added += 1
+
+    # Prune rows older than the rolling window
+    before = len(merged)
+    merged = [r for r in merged if str(r.get("match_date", "")).strip() >= cutoff_str]
+    pruned = before - len(merged)
+
+    if added or pruned:
+        PAST_GAMES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PAST_GAMES_FILE.write_text(
+            json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        print(f"  [archive] Added {added} rows, pruned {pruned} old rows "
+              f"\u2192 past_games.json ({len(merged)} total)")
+    else:
+        print("  [archive] No changes to past_games.json")
+
+
 def run_full_pipeline(args, api_token, results=None):
     """Run every pipeline step and record success/failure in `results`.
 
@@ -418,6 +543,11 @@ def run_full_pipeline(args, api_token, results=None):
     global _pipeline_start_global
     _pipeline_start_global = time.monotonic()
     py = sys.executable  # noqa: F841  (kept for backwards-compat with external callers)
+
+    # Step 0: Archive completed/expired rows from upcoming CSVs before any
+    # sub-pipeline clears them out.
+    print("\n=== [archive] Archive completed/expired rows to past_games.json ===")
+    _archive_upcoming_to_past()
 
     _check_dependencies()
 
