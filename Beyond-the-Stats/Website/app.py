@@ -833,6 +833,7 @@ def _build_last5_form_index(mode):
         {"opponent": str, "date": str, "result": str, "home_score": int,
          "away_score": int, "is_home": bool}
     """
+    global _LAST_5_FORM_CACHE_TIME
     now = time.time()
     cache_key = mode
     cached = _LAST_5_FORM_CACHE.get(cache_key)
@@ -914,6 +915,7 @@ def _build_strength_index(mode):
     Ratings are relative to league average (1.0 = average).
     Computed from current_form.json when available.
     """
+    global _STRENGTH_CACHE_TIME
     now = time.time()
     cache_key = f"strength_{mode}"
     cached = _STRENGTH_CACHE.get(cache_key)
