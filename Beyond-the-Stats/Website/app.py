@@ -1159,7 +1159,7 @@ def _parse_espn_situation(summary_data):
 
     def _safe_number(v):
         try:
-            return round(float(v), 1)
+            return round(float(v), 2)
         except (TypeError, ValueError):
             return v
 
@@ -3547,6 +3547,35 @@ def _extract_passes_to_stats(game):
                     stats_dict[name] = str(stat.get("value", ""))
 
 
+def _promote_team_stats_to_home_away(game):
+    """Promote granular stats from ``team_stats`` into ``home_stats``/``away_stats``.
+
+    The ``teamStats`` block contains richer categories (offensive, defensive,
+    passing) than the scoreboard-level ``statistics``.  This flattens them
+    so fields like shotsInsideBox, interceptions, aerialsWon, etc. are
+    accessible at the top level.
+    """
+    ts = game.get("team_stats")
+    if not ts or not isinstance(ts, dict):
+        return
+    for side in ("home", "away"):
+        side_data = ts.get(side)
+        if not isinstance(side_data, dict):
+            continue
+        stats_dict = game.get(f"{side}_stats")
+        if stats_dict is None:
+            stats_dict = {}
+            game[f"{side}_stats"] = stats_dict
+        for cat_name, cat_stats in side_data.items():
+            if not isinstance(cat_stats, list):
+                continue
+            for s in cat_stats:
+                name = s.get("name", "")
+                if not name:
+                    continue
+                value = s.get("value", "")
+                if name not in stats_dict or not stats_dict.get(name):
+                    stats_dict[name] = value
 def _update_cumulative_momentum(game):
     """Update per-match momentum history (-100 … +100).
 
@@ -4073,6 +4102,9 @@ def _live_score_poller_loop():
                             g.update(_live_summary_cache[mid])
                         # Promote passes from boxscore_stats to home_stats/away_stats
                         _extract_passes_to_stats(g)
+                        # Promote granular team_stats (shotsInsideBox, interceptions,
+                        # aerialsWon, etc.) into home_stats/away_stats.
+                        _promote_team_stats_to_home_away(g)
                         # Append new shots to persistent arrays so the frontend
                         # gets an accumulating shot map / goal locations list.
                         sm = g.get("shot_mapping") or {}
