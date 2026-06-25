@@ -406,12 +406,12 @@ def _check_dependencies():
     print("--- End pre-flight check ---\n")
 
 
-def _archive_upcoming_to_past():
-    """Archive completed/expired rows from all upcoming CSVs into past_games.json.
+def _copy_today_games_to_past():
+    """Copy today's games from all upcoming CSVs into past_games.json.
 
-    Called as the first step of run_full_pipeline() before any sub-pipeline
-    clears/updates the upcoming CSVs.  Also prunes past_games.json entries
-    older than the rolling window (previous Thursday in Eastern Time).
+    Called after all sub-pipelines finish so the freshly-generated prediction
+    data is captured before games are played.  Past-games are NOT updated
+    when games end live — only this one snapshot at pipeline time.
     """
     today_et = (datetime.now(UTC) - timedelta(hours=4)).date()
     prev_thursday = today_et - timedelta(days=(today_et.weekday() - 3) % 7 + 7)
@@ -441,9 +441,9 @@ def _archive_upcoming_to_past():
             continue
 
         df["_parsed_date"] = pd.to_datetime(df["match_date"], errors="coerce")
-        has_result = df.get("actual_result", pd.Series([""] * len(df))).isin(["H", "D", "A"])
-        is_past = df["_parsed_date"].notna() & (df["_parsed_date"] < today_ts)
-        qualified = df[is_past | has_result]
+        # Only today's games
+        is_today = df["_parsed_date"].notna() & (df["_parsed_date"] == today_ts)
+        qualified = df[is_today]
 
         for _, row in qualified.iterrows():
             entry = row.dropna().to_dict()
@@ -472,7 +472,7 @@ def _archive_upcoming_to_past():
             new_rows.append(entry)
 
     if not new_rows:
-        print("  [archive] No completed/expired rows found in upcoming CSVs.")
+        print("  [past-games] No today's games found in upcoming CSVs.")
         return
 
     # Load existing past_games.json
@@ -515,10 +515,10 @@ def _archive_upcoming_to_past():
         PAST_GAMES_FILE.write_text(
             json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-        print(f"  [archive] Added {added} rows, pruned {pruned} old rows "
-              f"\u2192 past_games.json ({len(merged)} total)")
+        print(f"  [past-games] Added {added} today's rows, pruned {pruned} old "
+              f"→ past_games.json ({len(merged)} total)")
     else:
-        print("  [archive] No changes to past_games.json")
+        print("  [past-games] No changes to past_games.json")
 
 
 def run_full_pipeline(args, api_token, results=None):
@@ -543,11 +543,6 @@ def run_full_pipeline(args, api_token, results=None):
     global _pipeline_start_global
     _pipeline_start_global = time.monotonic()
     py = sys.executable  # noqa: F841  (kept for backwards-compat with external callers)
-
-    # Step 0: Archive completed/expired rows from upcoming CSVs before any
-    # sub-pipeline clears them out.
-    print("\n=== [archive] Archive completed/expired rows to past_games.json ===")
-    _archive_upcoming_to_past()
 
     _check_dependencies()
 
@@ -593,6 +588,11 @@ def run_full_pipeline(args, api_token, results=None):
                     sub_result = {f"{name}_failed": False}
                 results.update(sub_result)
                 print(f"  [OK] {name} sub-pipeline finished")
+
+    # Copy today's games from freshly-generated upcoming CSVs into past_games.json
+    # before they are played (past-games are NOT updated live).
+    print("\n=== [past-games] Copy today's games to past_games.json ===")
+    _copy_today_games_to_past()
 
     # Post-pipeline steps (depend on all sub-pipelines' outputs being on disk).
     post_start = time.monotonic()

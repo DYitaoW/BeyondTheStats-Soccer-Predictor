@@ -1777,7 +1777,6 @@ def _merge_completed_to_history():
     # Track predictions for newly completed games against our CSV predictions.
     if new_games:
         _track_prediction_results(new_games)
-        _append_to_past_games(new_games)
 
 
 # ── Prediction Tracking ──────────────────────────────────────
@@ -2015,49 +2014,6 @@ def _track_prediction_results(completed_games):
             tdata["accuracy"] = round(sum(1 for x in tdata["predictions"] if x["correct"]) / total, 3) if total else 0
 
     _save_prediction_tracking(tracking)
-
-
-def _espn_game_to_past_row(entry):
-    """Convert an ESPN live-score game entry to a past_games.json prediction row."""
-    hs = entry.get("home_score") or 0
-    aws = entry.get("away_score") or 0
-    return {
-        "source": "live_score",
-        "match_id": entry.get("match_id", ""),
-        "competition": entry.get("competition", ""),
-        "home_team": entry.get("home_team", ""),
-        "away_team": entry.get("away_team", ""),
-        "home_score": hs,
-        "away_score": aws,
-        "actual_result": _compute_actual_result(hs, aws) or "",
-        "match_date": entry.get("match_date", ""),
-        "kickoff_utc": entry.get("kickoff_utc", ""),
-        "completed_at": entry.get("completed_at", ""),
-    }
-
-
-def _append_to_past_games(new_espn_games):
-    """Append newly completed live-score games to ``past_games.json``."""
-    rows = []
-    existing_ids = set()
-    if os.path.exists(PAST_GAMES_FILE):
-        try:
-            with open(PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
-                rows = json.load(fh)
-            existing_ids = {r.get("match_id") for r in rows if r.get("match_id")}
-        except Exception:
-            rows = []
-    added = 0
-    for g in new_espn_games:
-        mid = g.get("match_id")
-        if mid and mid not in existing_ids:
-            rows.append(_espn_game_to_past_row(g))
-            existing_ids.add(mid)
-            added += 1
-    if added:
-        os.makedirs(os.path.dirname(PAST_GAMES_FILE), exist_ok=True)
-        with open(PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
-            json.dump(rows, fh, indent=2, ensure_ascii=False)
 
 
 def _fetch_competition_scores(comp_name, espn_id, today_str):
@@ -3590,24 +3546,29 @@ def _extract_passes_to_stats(game):
 
 
 def _update_cumulative_momentum(game):
-    """Update the per-match cumulative momentum (-100 … +100).
+    """Update per-match momentum history (-100 … +100).
 
     Scale:
         -100  = home team has had all momentum
            0  = perfectly balanced
         +100  = away team has had all momentum
 
-    The delta is computed from the game's live state and key events.
-    The cumulative value is stored on the game dict as
-    ``momentum_accumulated`` and persists across poll cycles.
+    Uses **per-cycle** deltas (new shots/SOT/corners since the last poll)
+    so a few minutes of sustained pressure — even after being dominated —
+    swings the bar heavily.  Possession from the ``situation`` block is
+    also factored in.
+    Stores ``momentum_history`` (growing array of per-cycle values) on the
+    game dict for a frontend chart.
     """
-    # ── Weightings for a single poll cycle ────────────────────
-    GOAL_WEIGHT = 12.0
-    RED_CARD_WEIGHT = 8.0
-    SHOT_DIFF_WEIGHT = 4.0
-    SOT_DIFF_WEIGHT = 6.0
-    CORNER_DIFF_WEIGHT = 2.0
-    YELLOW_DIFF_WEIGHT = 1.0
+    # ── Weightings (per-cycle deltas, not cumulative) ─────────
+    GOAL_WEIGHT = 30.0
+    OWN_GOAL_WEIGHT = 35.0
+    RED_CARD_WEIGHT = 20.0
+    SHOT_WEIGHT = 6.0       # per new shot this cycle
+    SOT_WEIGHT = 9.0        # per new SOT this cycle
+    CORNER_WEIGHT = 4.0     # per new corner this cycle
+    YELLOW_WEIGHT = 2.0     # per new yellow this cycle
+    POSSESSION_WEIGHT = 25.0  # scales with possession% difference
 
     home_score = game.get("home_score") or 0
     away_score = game.get("away_score") or 0
@@ -3631,30 +3592,50 @@ def _update_cumulative_momentum(game):
             return 0.0
 
     # ── Scoreline delta ───────────────────────────────────────
-    # Leading by more gives momentum to the leading team (negative=home, positive=away)
-    score_delta = -goal_diff * 3.0
+    # Worse when trailing than leading is good
+    score_delta = -goal_diff * 6.0
 
-    # ── Shot-based deltas ─────────────────────────────────────
-    shots_h = _f(_stat("home", "totalShots"))
-    shots_a = _f(_stat("away", "totalShots"))
-    sot_h = _f(_stat("home", "shotsOnTarget"))
-    sot_a = _f(_stat("away", "shotsOnTarget"))
-    corners_h = _f(_stat("home", "corners"))
-    corners_a = _f(_stat("away", "corners"))
-    yellows_h = _f(_stat("home", "yellowCards"))
-    yellows_a = _f(_stat("away", "yellowCards"))
-    reds_h = _f(_stat("home", "redCards"))
-    reds_a = _f(_stat("away", "redCards"))
+    # ── Per-cycle stat deltas ─────────────────────────────────
+    def _delta(key_h, key_a, prev_key):
+        """New occurrences of a stat since the last poll cycle."""
+        cur_h = _f(_stat("home", key_h))
+        cur_a = _f(_stat("away", key_a))
+        prev_h, prev_a = game.get(f"_prev_{prev_key}", (0.0, 0.0))
+        game[f"_prev_{prev_key}"] = (cur_h, cur_a)
+        return (cur_h - prev_h, cur_a - prev_a)
 
-    total_shots = max(shots_h + shots_a, 1)
-    total_sot = max(sot_h + sot_a, 1)
-    total_corners = max(corners_h + corners_a, 1)
+    dh_shots, da_shots = _delta("totalShots", "totalShots", "shots")
+    dh_sot, da_sot = _delta("shotsOnTarget", "shotsOnTarget", "sot")
+    dh_corners, da_corners = _delta("corners", "corners", "corners")
+    dh_yellows, da_yellows = _delta("yellowCards", "yellowCards", "yellows")
+    dh_reds, da_reds = _delta("redCards", "redCards", "reds")
 
-    shot_delta = ((shots_h - shots_a) / total_shots) * -SHOT_DIFF_WEIGHT
-    sot_delta = ((sot_h - sot_a) / total_sot) * -SOT_DIFF_WEIGHT
-    corner_delta = ((corners_h - corners_a) / total_corners) * -CORNER_DIFF_WEIGHT
-    yellow_delta = (yellows_h - yellows_a) * YELLOW_DIFF_WEIGHT
-    red_delta = (reds_h - reds_a) * RED_CARD_WEIGHT
+    shot_delta = (da_shots - dh_shots) * SHOT_WEIGHT      # positive = away
+    sot_delta = (da_sot - dh_sot) * SOT_WEIGHT
+    corner_delta = (da_corners - dh_corners) * CORNER_WEIGHT
+    yellow_delta = (da_yellows - dh_yellows) * YELLOW_WEIGHT
+    red_delta = (da_reds - dh_reds) * RED_CARD_WEIGHT
+
+    # ── Possession delta ──────────────────────────────────────
+    # Pull from the game's situation dict (parsed by _parse_espn_situation).
+    sit = game.get("situation") or {}
+    # possession_zones entry "1-15" has home_possession / away_possession
+    poss_zones = sit.get("possession_zones") or {}
+    # Use the most recent possession zone (last key chronologically)
+    if poss_zones:
+        last_zone_key = sorted(poss_zones.keys())[-1]
+        zp = poss_zones[last_zone_key]
+        home_poss = _f(zp.get("home_possession") or zp.get("home", 0))
+        away_poss = _f(zp.get("away_possession") or zp.get("away", 0))
+    else:
+        # Fallback: overall possession from team_stats
+        ht = game.get("team_stats") or {}
+        home_poss = _f(ht.get("home", {}).get("possession", sit.get("possession", 50)))
+        away_poss = _f(ht.get("away", {}).get("possession", 100.0 - home_poss)) if home_poss else 50.0
+
+    total_poss = max(home_poss + away_poss, 1.0)
+    poss_ratio = (home_poss - away_poss) / total_poss  # negative = home ahead
+    poss_delta = -poss_ratio * POSSESSION_WEIGHT
 
     # ── Recent-key-event delta ────────────────────────────────
     key_events = game.get("key_events") or []
@@ -3671,18 +3652,16 @@ def _update_cumulative_momentum(game):
             ev_type = str(ev.get("type", "")).lower()
             is_home = t_id == str(game.get("home_team_id", ""))
             direction = -1.0 if is_home else 1.0
-            if "goal" in ev_type:
+            if "goal" in ev_type and "own" not in ev_type:
                 event_delta += direction * GOAL_WEIGHT
+            elif "own goal" in ev_type:
+                event_delta += direction * OWN_GOAL_WEIGHT
             elif "red card" in ev_type:
                 event_delta += direction * RED_CARD_WEIGHT
-            elif "yellow card" in ev_type:
-                event_delta += direction * YELLOW_DIFF_WEIGHT
-            elif "own goal" in ev_type:
-                event_delta += direction * (GOAL_WEIGHT * 1.5)
-            elif "missed penalty" in ev_type or "penalty" in ev_type:
-                event_delta += direction * 3.0
-            elif "substitution" in ev_type:
-                event_delta += direction * 0.5
+            elif "missed penalty" in ev_type:
+                event_delta += direction * 8.0
+            elif "penalty" in ev_type and "missed" not in ev_type:
+                event_delta += direction * 4.0
 
     # ── Composite delta for this cycle ────────────────────────
     cycle_delta = (
@@ -3692,23 +3671,27 @@ def _update_cumulative_momentum(game):
         + corner_delta
         + yellow_delta
         + red_delta
+        + poss_delta
         + event_delta
     )
 
-    # Clamp per-cycle contribution so one event cannot swing the needle fully
-    cycle_delta = max(-25.0, min(25.0, cycle_delta))
+    # Allow large single-cycle swings (a goal + a red + a few SOT = massive)
+    cycle_delta = max(-60.0, min(60.0, cycle_delta))
 
     # ── Accumulate ────────────────────────────────────────────
-    prev = game.get("momentum_accumulated")
+    prev = game.get("_momentum_value")
     if prev is None:
-        # Initialise from current game state (not zero)
         raw = cycle_delta
     else:
-        # Exponential-decay smoothing so the momentum is not jittery
-        alpha = 0.45  # new weight
+        alpha = 0.55  # reactive but still some smoothing
         raw = (1.0 - alpha) * float(prev) + alpha * cycle_delta
 
-    game["momentum_accumulated"] = round(max(-100.0, min(100.0, raw)), 2)
+    val = round(max(-100.0, min(100.0, raw)), 2)
+    game["_momentum_value"] = val
+
+    # Maintain growing array for the frontend chart
+    history = game.setdefault("momentum_history", [])
+    history.append(val)
 
 
 def _compute_live_prediction(game, prematch):
@@ -4088,6 +4071,17 @@ def _live_score_poller_loop():
                             g.update(_live_summary_cache[mid])
                         # Promote passes from boxscore_stats to home_stats/away_stats
                         _extract_passes_to_stats(g)
+                        # Append new shots to persistent arrays so the frontend
+                        # gets an accumulating shot map / goal locations list.
+                        sm = g.get("shot_mapping") or {}
+                        for arr_key in ("shot_origins", "goal_locations"):
+                            batch = sm.get(arr_key) or []
+                            seen = g.get(f"_{arr_key}_len", 0)
+                            if len(batch) > seen:
+                                new_items = batch[seen:]
+                                persistent = g.setdefault(arr_key, [])
+                                persistent.extend(new_items)
+                                g[f"_{arr_key}_len"] = len(batch)
 
             # Compute live in-play predictions for active games.
             try:
@@ -5838,17 +5832,20 @@ def _enrich_past_game_row(r):
             if key == "both":
                 val = _compute_both_score(pred_hg, pred_ag)
             elif key.startswith("home_"):
-                n = int(key.split("_")[0]) if key.split("_")[0].isdigit() else 0
-                if key.endswith("plus"):
-                    n = int(key.split("_")[0])
+                suffix = key[5:]
+                if suffix.endswith("plus"):
+                    n = int(suffix[:-4])
                     val = _compute_goal_ge(pred_hg, n)
                 else:
+                    n = int(suffix)
                     val = _compute_goal_eq(pred_hg, n)
             elif key.startswith("away_"):
-                if key.endswith("plus"):
-                    n = int(key.split("_")[0])
+                suffix = key[5:]
+                if suffix.endswith("plus"):
+                    n = int(suffix[:-4])
                     val = _compute_goal_ge(pred_ag, n)
                 else:
+                    n = int(suffix)
                     val = _compute_goal_eq(pred_ag, n)
             elif key.startswith("o"):
                 n = float(key.split("o")[1].replace("_", "."))
