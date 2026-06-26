@@ -313,36 +313,35 @@ def _run_mls_subpipeline(args, api_token):
 
 
 def _run_extra_subpipeline(args, api_token):
-    """Extra-leagues steps commented out — no active league games (Jun 2026)."""
-    # py = sys.executable
-    # sub = {}
-    # comp_workers = int(getattr(args, "competition_workers", 0) or 0)
-    # sub["extra_download_process_sort"] = run_step(
-    #     "[extra] Download/process/sort latest data",
-    #     [py, str(EXTRA_FILES_DIR / "Download_Latest_Data.py")],
-    #     continue_on_error=args.continue_on_error,
-    #     timeout=1200,
-    # )
-    # if not args.skip_model_train:
-    #     sub["extra_build_model_cache"] = run_step(
-    #         "[extra] Build model cache (non-interactive)",
-    #         [py, str(EXTRA_FILES_DIR / "Predict_Match.py")],
-    #         continue_on_error=args.continue_on_error,
-    #         input_text="n\nq\n",
-    #         timeout=3600,
-    #     )
-    # sub["extra_upcoming_matchweek"] = run_step(
-    #     "[extra] Upcoming matchweek predictions",
-    #     [py, str(EXTRA_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)],
-    #     continue_on_error=args.continue_on_error,
-    # )
-    # sub["extra_projected_league_tables"] = run_step(
-    #     "[extra] Projected league tables",
-    #     _project_table_cmd(EXTRA_FILES_DIR, comp_workers, "Project_League_Table.py"),
-    #     continue_on_error=args.continue_on_error,
-    # )
-    # return sub
-    return {}
+    """Run the extra-leagues sub-pipeline (smaller European / S. American / Asian leagues)."""
+    py = sys.executable
+    sub = {}
+    comp_workers = int(getattr(args, "competition_workers", 0) or 0)
+    sub["extra_download_process_sort"] = run_step(
+        "[extra] Download/process/sort latest data",
+        [py, str(EXTRA_FILES_DIR / "Download_Latest_Data.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=1200,
+    )
+    if not args.skip_model_train:
+        sub["extra_build_model_cache"] = run_step(
+            "[extra] Build model cache (non-interactive)",
+            [py, str(EXTRA_FILES_DIR / "Predict_Match.py")],
+            continue_on_error=args.continue_on_error,
+            input_text="n\nq\n",
+            timeout=3600,
+        )
+    sub["extra_upcoming_matchweek"] = run_step(
+        "[extra] Upcoming matchweek predictions",
+        [py, str(EXTRA_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)],
+        continue_on_error=args.continue_on_error,
+    )
+    sub["extra_projected_league_tables"] = run_step(
+        "[extra] Projected league tables",
+        _project_table_cmd(EXTRA_FILES_DIR, comp_workers, "Project_League_Table.py"),
+        continue_on_error=args.continue_on_error,
+    )
+    return sub
 
 
 def _run_shared_post_steps(args, api_token):
@@ -414,8 +413,8 @@ def _copy_today_games_to_past():
     when games end live — only this one snapshot at pipeline time.
     """
     today_et = (datetime.now(UTC) - timedelta(hours=4)).date()
-    prev_thursday = today_et - timedelta(days=(today_et.weekday() - 3) % 7 + 7)
-    cutoff_str = prev_thursday.isoformat()
+    cutoff_14 = today_et - timedelta(days=14)
+    cutoff_str = cutoff_14.isoformat()
     today_ts = pd.Timestamp(today_et)
 
     upcoming_files = [

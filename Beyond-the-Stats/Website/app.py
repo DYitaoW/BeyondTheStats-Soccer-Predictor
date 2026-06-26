@@ -109,30 +109,6 @@ LIVE_SCORE_COMPETITIONS = {
     "Belgium/First Division A": "bel.1",
     "Scotland/Premiership": "sco.1",
     "Turkey/Super Lig": "tur.1",
-    # Additional UCL-relevant leagues
-    "Austria/Bundesliga": "aut.1",
-    "Switzerland/Super League": "sui.1",
-    "Greece/Super League": "gre.1",
-    "Denmark/Superliga": "den.1",
-    "Ukraine/Premier League": "ukr.1",
-    "Norway/Eliteserien": "nor.1",
-    "Croatia/HNL": "cro.1",
-    "Romania/Liga I": "rou.1",
-    "Sweden/Allsvenskan": "swe.1",
-    "Hungary/NB I": "hun.1",
-    "Israel/Premier League": "isr.1",
-    # Secondary leagues (UEFA qualifying-round participants)
-    "Czech Republic/First League": "czech.1",
-    "Poland/Ekstraklasa": "pol.1",
-    "Serbia/SuperLiga": "srb.1",
-    "Cyprus/First Division": "cyp.1",
-    "Slovakia/Super Liga": "svk.1",
-    "Slovenia/PrvaLiga": "svn.1",
-    "Bulgaria/First League": "bul.1",
-    "Azerbaijan/Premier League": "aze.1",
-    "Kazakhstan/Premier League": "kaz.1",
-    "Belarus/Premier League": "blr.1",
-    "Moldova/Super Liga": "mol.1",
 }
 
 # In-memory store for active (today's) live scores.
@@ -3588,18 +3564,33 @@ def _update_cumulative_momentum(game):
     so a few minutes of sustained pressure — even after being dominated —
     swings the bar heavily.  Possession from the ``situation`` block is
     also factored in.
-    Stores ``momentum_history`` (growing array of per-cycle values) on the
-    game dict for a frontend chart.
+
+    At halftime a sentinel value of ``888`` is appended to signal the
+    break on the chart.  The initial momentum value is computed from the
+    first poll's cumulative stats so momentum is present from kick-off.
+    Stores ``momentum_history`` (growing array of per-cycle values) on
+    the game dict for a frontend chart.
     """
+    # ── Halftime sentinel (888) ──────────────────────────────────
+    period = str(game.get("period", "")).lower().strip()
+    prev_period = game.get("_prev_period", "")
+    # Trigger when transitioning from "1st half" → "halftime"
+    if prev_period and "1st" in prev_period and "halftime" in period:
+        game["_prev_period"] = period
+        history = game.setdefault("momentum_history", [])
+        history.append(888)
+        return
+    game["_prev_period"] = period
+
     # ── Weightings (per-cycle deltas, not cumulative) ─────────
-    GOAL_WEIGHT = 30.0
-    OWN_GOAL_WEIGHT = 35.0
-    RED_CARD_WEIGHT = 20.0
-    SHOT_WEIGHT = 6.0       # per new shot this cycle
-    SOT_WEIGHT = 9.0        # per new SOT this cycle
-    CORNER_WEIGHT = 4.0     # per new corner this cycle
-    YELLOW_WEIGHT = 2.0     # per new yellow this cycle
-    POSSESSION_WEIGHT = 25.0  # scales with possession% difference
+    GOAL_WEIGHT = 50.0
+    OWN_GOAL_WEIGHT = 60.0
+    RED_CARD_WEIGHT = 35.0
+    SHOT_WEIGHT = 12.0       # per new shot this cycle
+    SOT_WEIGHT = 18.0        # per new SOT this cycle
+    CORNER_WEIGHT = 8.0      # per new corner this cycle
+    YELLOW_WEIGHT = 4.0      # per new yellow this cycle
+    POSSESSION_WEIGHT = 35.0  # scales with possession% difference
 
     home_score = game.get("home_score") or 0
     away_score = game.get("away_score") or 0
@@ -3624,7 +3615,7 @@ def _update_cumulative_momentum(game):
 
     # ── Scoreline delta ───────────────────────────────────────
     # Worse when trailing than leading is good
-    score_delta = -goal_diff * 6.0
+    score_delta = -goal_diff * 10.0
 
     # ── Per-cycle stat deltas ─────────────────────────────────
     def _delta(key_h, key_a, prev_key):
@@ -3648,18 +3639,14 @@ def _update_cumulative_momentum(game):
     red_delta = (da_reds - dh_reds) * RED_CARD_WEIGHT
 
     # ── Possession delta ──────────────────────────────────────
-    # Pull from the game's situation dict (parsed by _parse_espn_situation).
     sit = game.get("situation") or {}
-    # possession_zones entry "1-15" has home_possession / away_possession
     poss_zones = sit.get("possession_zones") or {}
-    # Use the most recent possession zone (last key chronologically)
     if poss_zones:
         last_zone_key = sorted(poss_zones.keys())[-1]
         zp = poss_zones[last_zone_key]
         home_poss = _f(zp.get("home_possession") or zp.get("home", 0))
         away_poss = _f(zp.get("away_possession") or zp.get("away", 0))
     else:
-        # Fallback: overall possession from team_stats
         ht = game.get("team_stats") or {}
         home_poss = _f(ht.get("home", {}).get("possession", sit.get("possession", 50)))
         away_poss = _f(ht.get("away", {}).get("possession", 100.0 - home_poss)) if home_poss else 50.0
@@ -3690,9 +3677,9 @@ def _update_cumulative_momentum(game):
             elif "red card" in ev_type:
                 event_delta += direction * RED_CARD_WEIGHT
             elif "missed penalty" in ev_type:
-                event_delta += direction * 8.0
+                event_delta += direction * 15.0
             elif "penalty" in ev_type and "missed" not in ev_type:
-                event_delta += direction * 4.0
+                event_delta += direction * 8.0
 
     # ── Composite delta for this cycle ────────────────────────
     cycle_delta = (
@@ -3707,14 +3694,14 @@ def _update_cumulative_momentum(game):
     )
 
     # Allow large single-cycle swings (a goal + a red + a few SOT = massive)
-    cycle_delta = max(-60.0, min(60.0, cycle_delta))
+    cycle_delta = max(-100.0, min(100.0, cycle_delta))
 
     # ── Accumulate ────────────────────────────────────────────
     prev = game.get("_momentum_value")
     if prev is None:
         raw = cycle_delta
     else:
-        alpha = 0.55  # reactive but still some smoothing
+        alpha = 0.70  # highly reactive — little smoothing
         raw = (1.0 - alpha) * float(prev) + alpha * cycle_delta
 
     val = round(max(-100.0, min(100.0, raw)), 2)
@@ -3890,14 +3877,11 @@ def _live_score_poller_loop():
         try:
             today_str = date.today().strftime("%Y%m%d")
             todays_comps = _get_todays_competitions()
-            if todays_comps:
-                active_comps = {}
-                for comp in todays_comps:
-                    eid = LIVE_SCORE_COMPETITIONS.get(comp)
-                    if eid:
-                        active_comps[comp] = eid
-            else:
-                active_comps = dict(LIVE_SCORE_COMPETITIONS)
+            active_comps = {}
+            for comp in todays_comps:
+                eid = LIVE_SCORE_COMPETITIONS.get(comp)
+                if eid:
+                    active_comps[comp] = eid
 
             results = {}
             if active_comps:
@@ -4131,7 +4115,7 @@ def _live_score_poller_loop():
                             if lp is not None:
                                 g["live_prediction"] = lp
                         # Update cumulative momentum for in-progress games
-                        if g.get("status") in ("in", "pre"):
+                        if g.get("status") == "in":
                             _update_cumulative_momentum(g)
             except Exception:
                 pass
@@ -6032,8 +6016,9 @@ def api_past_games():
         per_page = 50
 
     today_local = datetime.now(ZoneInfo("America/New_York")).date()
-    prev_thursday = today_local - timedelta(days=(today_local.weekday() - 3) % 7 + 7)
-    cutoff = prev_thursday.isoformat()
+    # Rolling 14-day window
+    cutoff_days_ago = today_local - timedelta(days=14)
+    cutoff = cutoff_days_ago.isoformat()
 
     all_rows = []
     if os.path.exists(PAST_GAMES_FILE):
@@ -6069,10 +6054,9 @@ def api_past_games():
     if league:
         league_lower = league.lower()
         all_rows = [r for r in all_rows if league_lower in r.get("competition", "").lower()]
-    # Filter to date window: rows whose match_date is >= prev_thursday and < today
+    # Filter to rolling 14-day window
     all_rows = [r for r in all_rows
-                if str(r.get("match_date", "")).strip() >= cutoff
-                and str(r.get("match_date", "")).strip() < today_local.isoformat()]
+                if str(r.get("match_date", "")).strip() >= cutoff]
 
     all_rows.sort(key=lambda r: r.get("match_date", ""), reverse=True)
 
@@ -6080,13 +6064,6 @@ def api_past_games():
     start = (page - 1) * per_page
     end = start + per_page
     page_rows = all_rows[start:end]
-
-    # Enrich each row with computed fields that match the upcoming format.
-    # Raw rows stored by the pipeline lack these; the seed path (via
-    # _load_upcoming_rows) already has them but this idempotent pass
-    # guarantees all rows are identical regardless of provenance.
-    for r in page_rows:
-        _enrich_past_game_row(r)
 
     return jsonify({
         "ok": True,
