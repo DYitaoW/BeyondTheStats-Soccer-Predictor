@@ -242,6 +242,112 @@ CUP_COMPETITIONS = {
     "France/Coupe de France",
     "United States/US Open Cup",
 }
+
+_CUP_FORMATS = {
+    "England/FA Cup": {
+        "format": "knockout",
+        "description": "Single-elimination knockout. Early rounds have replays if drawn. Semi-finals and Final at neutral venues.",
+        "stages": ["First Round", "Second Round", "Third Round", "Fourth Round", "Fifth Round", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": True,
+    },
+    "England/League Cup": {
+        "format": "knockout",
+        "description": "Single-elimination knockout. Semi-finals are two-legged. Final at neutral venue.",
+        "stages": ["First Round", "Second Round", "Third Round", "Fourth Round", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Semi-finals"],
+        "final_neutral": True,
+    },
+    "UEFA/Champions League": {
+        "format": "league_phase_then_knockout",
+        "description": "League phase (8 matches per team) followed by two-legged knockout play-offs, Round of 16, Quarter-finals, Semi-finals, and a single-match Final at a neutral venue.",
+        "league_phase_matches": 8,
+        "stages": ["League Phase", "Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "knockout_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals"],
+        "final_neutral": True,
+    },
+    "UEFA/Europa League": {
+        "format": "league_phase_then_knockout",
+        "description": "League phase (8 matches per team) followed by two-legged knockout play-offs, Round of 16, Quarter-finals, Semi-finals, and a single-match Final at a neutral venue.",
+        "league_phase_matches": 8,
+        "stages": ["League Phase", "Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "knockout_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals"],
+        "final_neutral": True,
+    },
+    "UEFA/Conference League": {
+        "format": "league_phase_then_knockout",
+        "description": "League phase (6 matches per team) followed by two-legged knockout play-offs, Round of 16, Quarter-finals, Semi-finals, and a single-match Final at a neutral venue.",
+        "league_phase_matches": 6,
+        "stages": ["League Phase", "Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "knockout_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals"],
+        "final_neutral": True,
+    },
+    "Europe/Champions League": {
+        "format": "league_phase_then_knockout",
+        "description": "League phase (8 matches per team) followed by two-legged knockout play-offs, Round of 16, Quarter-finals, Semi-finals, and a single-match Final at a neutral venue.",
+        "league_phase_matches": 8,
+        "stages": ["League Phase", "Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "knockout_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals"],
+        "final_neutral": True,
+    },
+    "Europe/Europa League": {
+        "format": "league_phase_then_knockout",
+        "description": "League phase (8 matches per team) followed by two-legged knockout play-offs, Round of 16, Quarter-finals, Semi-finals, and a single-match Final at a neutral venue.",
+        "league_phase_matches": 8,
+        "stages": ["League Phase", "Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "knockout_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals"],
+        "final_neutral": True,
+    },
+    "Europe/Conference League": {
+        "format": "league_phase_then_knockout",
+        "description": "League phase (6 matches per team) followed by two-legged knockout play-offs, Round of 16, Quarter-finals, Semi-finals, and a single-match Final at a neutral venue.",
+        "league_phase_matches": 6,
+        "stages": ["League Phase", "Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "knockout_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals"],
+        "final_neutral": True,
+    },
+    "Italy/Coppa Italia": {
+        "format": "knockout",
+        "description": "Single-elimination knockout. Semi-finals are two-legged. Final at neutral venue.",
+        "stages": ["First Round", "Second Round", "Third Round", "Fourth Round", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Semi-finals"],
+        "final_neutral": True,
+    },
+    "Spain/Copa del Rey": {
+        "format": "knockout",
+        "description": "Single-elimination knockout. Semi-finals are two-legged. Final at neutral venue.",
+        "stages": ["Preliminary Round", "First Round", "Second Round", "Third Round", "Round of 32", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Semi-finals"],
+        "final_neutral": True,
+    },
+    "Germany/DFB-Pokal": {
+        "format": "knockout",
+        "description": "Single-elimination knockout. All rounds are single match. Final at neutral venue.",
+        "stages": ["First Round", "Second Round", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": True,
+    },
+    "France/Coupe de France": {
+        "format": "knockout",
+        "description": "Single-elimination knockout. All rounds are single match. Final at neutral venue.",
+        "stages": ["First Round", "Second Round", "Third Round", "Fourth Round", "Fifth Round", "Sixth Round", "Seventh Round", "Eighth Round", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": True,
+    },
+    "United States/US Open Cup": {
+        "format": "knockout",
+        "description": "Single-elimination knockout. All rounds are single match.",
+        "stages": ["First Round", "Second Round", "Third Round", "Fourth Round", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": False,
+    },
+}
 STATIC_PREDICTIONS = os.environ.get("STATIC_PREDICTIONS", "1").strip().lower() in {"1", "true", "yes"}
 
 H2H_LEAGUES = {
@@ -3945,6 +4051,7 @@ def _live_score_poller_loop():
                         "competition": comp_name,
                         "games": list(games_by_id.values()),
                         "last_polled_utc": comp_data["last_polled_utc"],
+                        "cup_format": _CUP_FORMATS.get(comp_name),
                     }
                 # Re-apply summary cache to all games so summary data always survives.
                 with _live_summary_cache_lock:
@@ -6200,6 +6307,144 @@ def api_cup_bracket():
     return jsonify(result)
 
 
+@app.get("/api/real-cup-data")
+def api_real_cup_data():
+    """Return real cup data: format info, group/league phase tables, and
+    bracket matchups with actual results for a cup competition.
+
+    Query params:
+        competition  -- required, e.g. "UEFA/Champions League", "England/FA Cup"
+    """
+    comp = request.args.get("competition", "").strip()
+    if not comp:
+        return jsonify({"ok": False, "error": "Missing 'competition' parameter"}), 400
+    if comp not in LIVE_SCORE_COMPETITIONS:
+        return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
+
+    # 1. Format metadata
+    cup_format = _CUP_FORMATS.get(comp)
+    if comp in _UEFA_COMPETITIONS and cup_format is None:
+        # Alias lookup: if comp is "Europe/..." but _CUP_FORMATS only has the "UEFA/..." key
+        for key, fmt in _CUP_FORMATS.items():
+            if key in _UEFA_COMPETITIONS and LIVE_SCORE_COMPETITIONS.get(comp) == LIVE_SCORE_COMPETITIONS.get(key):
+                cup_format = fmt
+                break
+
+    # 2. Group / league phase tables from history
+    table = _compute_standings_from_history(comp)
+
+    # 3. Gather all matches for this competition
+    matches = []
+    history = _load_live_score_history()
+    seen_ids = set()
+    for g in history:
+        if g.get("competition") == comp:
+            mid = g.get("match_id", "")
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    with _live_scores_lock:
+        current = _live_scores.get(comp, {}).get("games", [])
+    for g in current:
+        mid = g.get("match_id", "")
+        if mid not in seen_ids:
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    # Upcoming matchups from projected cup bracket
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket_data, dict):
+        comp_entry = bracket_data.get(comp)
+        if isinstance(comp_entry, dict):
+            for round_name, round_matches in comp_entry.items():
+                if isinstance(round_matches, list):
+                    for entry in round_matches:
+                        if not isinstance(entry, dict):
+                            continue
+                        hm = str(entry.get("home_team", "") or "")
+                        aw = str(entry.get("away_team", "") or "")
+                        if not hm or not aw:
+                            continue
+                        matches.append({
+                            "home_team": hm,
+                            "away_team": aw,
+                            "home_score": None,
+                            "away_score": None,
+                            "status": "pre",
+                            "kickoff_utc": _utc_to_et(str(entry.get("match_datetime_utc", "") or "")),
+                            "round": round_name,
+                            "competition": comp,
+                            "match_id": str(entry.get("match_id", "") or ""),
+                        })
+
+    # 4. Group by round with stage type classification
+    is_uefa_league_phase = cup_format and cup_format.get("format") == "league_phase_then_knockout"
+    ko_round_names = set(cup_format.get("knockout_rounds", [])) if cup_format else set()
+
+    rounds = {}
+    for g in matches:
+        rnd = g.get("round", "")
+        if not rnd:
+            rnd = "Match"
+        order = g.get("round_order", 0)
+        if not isinstance(order, (int, float)):
+            try:
+                order = int(order)
+            except (ValueError, TypeError):
+                order = 0
+
+        # Classify stage
+        if is_uefa_league_phase and rnd == "League Phase":
+            stage_type = "league_phase"
+        elif is_uefa_league_phase and rnd in ko_round_names:
+            stage_type = "knockout"
+        else:
+            stage_type = "knockout"
+
+        if rnd not in rounds:
+            rounds[rnd] = {"name": rnd, "order": order, "stage": stage_type, "matches": []}
+
+        winner = None
+        if g.get("status") == "post":
+            hs = g.get("home_score")
+            aws = g.get("away_score")
+            if hs is not None and aws is not None:
+                if hs > aws:
+                    winner = g.get("home_team", "")
+                elif aws > hs:
+                    winner = g.get("away_team", "")
+
+        rounds[rnd]["matches"].append({
+            "home_team": g.get("home_team", ""),
+            "away_team": g.get("away_team", ""),
+            "home_score": g.get("home_score"),
+            "away_score": g.get("away_score"),
+            "status": g.get("status", "pre"),
+            "winner": winner,
+            "kickoff_utc": _utc_to_et(g.get("kickoff_utc", "")),
+            "match_id": g.get("match_id", ""),
+        })
+
+    sorted_rounds = sorted(rounds.values(), key=lambda r: (r["order"], r["name"]))
+    for rnd in sorted_rounds:
+        rnd["matches"].sort(key=lambda m: m.get("kickoff_utc", ""))
+
+    result = {
+        "ok": True,
+        "competition": comp,
+        "cup_format": cup_format,
+        "rounds": sorted_rounds,
+    }
+
+    # Attach league/group phase table when available
+    if table is not None:
+        result["table"] = table
+
+    return jsonify(result)
+
+
 @app.get("/api/real-tables")
 def api_real_tables():
     """Return real league tables computed from live-score history.
@@ -6955,11 +7200,78 @@ def api_top_picks():
     })
 
 
+def _load_all_fixtures_by_competition(csv_path):
+    """Read a prediction CSV and return all fixtures grouped by competition.
+
+    Returns a dict ``{competition_name: [fixture_dict, ...]}`` or empty dict.
+    Each fixture dict has the same fields as ``_load_upcoming_rows`` returns.
+    """
+    try:
+        frame = pd.read_csv(csv_path)
+    except Exception:
+        return {}
+    if frame.empty:
+        return {}
+    required = ["match_date", "competition", "home_team", "away_team",
+                "predicted_result", "prob_home", "prob_draw", "prob_away"]
+    for col in required:
+        if col not in frame.columns:
+            return {}
+
+    # Filter out rows with invalid dates
+    frame = frame.copy()
+    frame["parsed_date"] = pd.to_datetime(frame["match_date"], errors="coerce").dt.normalize()
+    frame = frame[frame["parsed_date"].notna()].reset_index(drop=True)
+    if frame.empty:
+        return {}
+
+    # Sort chronologically
+    frame = frame.sort_values(["parsed_date", "competition", "home_team", "away_team"])
+
+    result = {}
+    for _, row in frame.iterrows():
+        comp = str(row.get("competition", "")).strip()
+        if not comp:
+            continue
+        home = str(row.get("home_team", "")).strip()
+        away = str(row.get("away_team", "")).strip()
+        fixture = {
+            "match_date": row["parsed_date"].strftime("%Y-%m-%d"),
+            "home_team": home,
+            "away_team": away,
+            "predicted_result": str(row.get("predicted_result", "")),
+            "prob_home": _safe_float(row.get("prob_home"), None),
+            "prob_draw": _safe_float(row.get("prob_draw"), None),
+            "prob_away": _safe_float(row.get("prob_away"), None),
+            "pred_home_goals": _safe_int_c(row.get("pred_home_goals")),
+            "pred_away_goals": _safe_int_c(row.get("pred_away_goals")),
+        }
+        if "match_datetime_utc" in frame.columns:
+            fixture["match_datetime_utc"] = str(row.get("match_datetime_utc", ""))
+        if "actual_result" in frame.columns:
+            fixture["actual_result"] = str(row.get("actual_result", ""))
+        if "probability_reasoning" in frame.columns:
+            fixture["probability_reasoning"] = str(row.get("probability_reasoning", ""))
+        result.setdefault(comp, []).append(fixture)
+    return result
+
+
+def _safe_int_c(v):
+    """Convert to int, returning None on error."""
+    try:
+        return int(float(v))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 @app.get("/api/league-tables")
 def api_league_tables():
     """Return projected league tables (and MLS playoff bracket when requested).
 
     Includes a ``last_prediction_refresh`` field with the file mtime in UTC.
+    Also includes all scheduled fixtures (``fixtures``) for the requested mode,
+    grouped by competition, so the frontend can show the full season schedule
+    for each league alongside the projected standings.
     """
     mode = str(request.args.get("mode", "global")).strip().lower()
     if mode == "mls":
@@ -6967,23 +7279,43 @@ def api_league_tables():
         data = _load_projected_tables(csv_path)
         bracket = _load_json_payload(MLS_PROJECTED_BRACKET_FILE)
         data["last_prediction_refresh"] = _file_mtime_utc(csv_path)
-        return jsonify({"ok": True, **data, "bracket": bracket})
+        fixtures = _load_all_fixtures_by_competition(MLS_UPCOMING_FILE)
+        return jsonify({"ok": True, **data, "bracket": bracket, "fixtures": fixtures})
     if mode == "cups":
         csv_path = CUP_PROJECTED_TABLE_FILE
         data = _load_projected_tables(csv_path)
         brackets = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
         data["last_prediction_refresh"] = _file_mtime_utc(csv_path)
-        return jsonify({"ok": True, **data, "cup_brackets": brackets})
+        # Attach cup format descriptors so the frontend can label league/group
+        # phase vs knockout stages for every projected cup competition.
+        cup_formats = {}
+        if isinstance(brackets, dict):
+            comps = brackets.get("competitions", brackets)
+            if isinstance(comps, dict):
+                for comp_name in comps:
+                    fmt = _CUP_FORMATS.get(comp_name)
+                    if fmt:
+                        cup_formats[comp_name] = fmt
+        # Also add formats for any competition in the tables data not covered above
+        for comp_name in (data.get("leagues") or []):
+            if comp_name not in cup_formats:
+                fmt = _CUP_FORMATS.get(comp_name)
+                if fmt:
+                    cup_formats[comp_name] = fmt
+        fixtures = _load_all_fixtures_by_competition(CUP_UPCOMING_FILE)
+        return jsonify({"ok": True, **data, "cup_brackets": brackets, "cup_formats": cup_formats, "fixtures": fixtures})
     if mode == "extra":
         csv_path = EXTRA_PROJECTED_TABLE_FILE
         data = _load_projected_tables(csv_path)
         data["last_prediction_refresh"] = _file_mtime_utc(csv_path)
-        return jsonify({"ok": True, **data})
+        fixtures = _load_all_fixtures_by_competition(EXTRA_UPCOMING_FILE)
+        return jsonify({"ok": True, **data, "fixtures": fixtures})
     else:
         csv_path = GLOBAL_PROJECTED_TABLE_FILE
         data = _load_projected_tables(csv_path)
         data["last_prediction_refresh"] = _file_mtime_utc(csv_path)
-    return jsonify({"ok": True, **data})
+        fixtures = _load_all_fixtures_by_competition(GLOBAL_UPCOMING_FILE)
+    return jsonify({"ok": True, **data, "fixtures": fixtures})
 
 
 @app.get("/api/stats")
