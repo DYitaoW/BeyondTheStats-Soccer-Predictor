@@ -22,6 +22,13 @@ RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_matchweek_predictions.csv")
 
+# Allow import of global pipeline modules (UEFA_Data_Manager, etc.)
+_GLOBAL_FILES_DIR = os.path.join(os.path.dirname(BASE_DIR), "files")
+if _GLOBAL_FILES_DIR not in sys.path:
+    sys.path.insert(0, _GLOBAL_FILES_DIR)
+
+import UEFA_Data_Manager as uefa
+
 RESULT_COLUMNS = [
     "prediction_key",
     "created_at_utc",
@@ -211,7 +218,7 @@ def build_context():
     goal_prob_models = bundle["goal_prob_models"]
     available = sorted(set(matches["HomeTeam"].dropna()) | set(matches["AwayTeam"].dropna()))
 
-    return {
+    ctx = {
         "clf": bundle["clf"],
         "result_le": bundle["result_label_encoder"],
         "home_goal_reg": bundle["home_goal_reg"],
@@ -234,6 +241,9 @@ def build_context():
         "available_teams": available,
     }
 
+    uefa.build_uefa_context(ctx)
+    return ctx
+
 
 def latest_season_for_competition(season_teams, competition, fallback):
     competition = str(competition or "").strip()
@@ -252,24 +262,116 @@ def latest_season_for_competition(season_teams, competition, fallback):
     return best_key or fallback
 
 
+def inject_fallback_team(team_name, competition, season_key, context):
+    """Ensure *team_name* exists in all context structures; fallback to UEFA
+    data or minimal placeholders when it is not in the training data."""
+    overall = context["overall_teams"]
+    season_teams = context["season_teams"]
+    available = context["available_teams"]
+
+    if team_name in overall:
+        if team_name not in available:
+            available.append(team_name)
+        if team_name not in season_teams.get(season_key, {}):
+            season_teams.setdefault(season_key, {})[team_name] = {"games": 0, "points": 0}
+        return
+
+    # Try UEFA data
+    uefa_data = None
+    if "uefa_coefficients" in context:
+        uefa_data = uefa.lookup_team_data_for_fallback(
+            team_name,
+            context.get("uefa_coefficients"),
+            context.get("uefa_team_registry"),
+            context.get("uefa_squad_values"),
+            context.get("uefa_domestic_tables"),
+        )
+    if uefa_data and uefa_data["league"] is not None:
+        real_league = uefa_data["league"]
+        context.setdefault("league_strength", {})[real_league] = uefa_data["league_strength"]
+        context.setdefault("_uefa_team_league", {})[team_name] = real_league
+        if uefa_data["squad_value_eur_m"] is not None:
+            context.setdefault("uefa_squad_values", {})[team_name] = uefa_data["squad_value_eur_m"]
+
+        ls = uefa_data["league_strength"]
+        scale = max(0.6, min(1.2, ls / 0.85))
+
+        domestic = uefa_data.get("domestic")
+        if domestic:
+            played = max(1, domestic.get("played", 20))
+            pts = domestic.get("points", 28)
+            gf = domestic.get("goals_for", 27)
+            ga = domestic.get("goals_against", 27)
+            ppg = pts / played
+            avg_gf = gf / played
+            avg_ga = ga / played
+        else:
+            ppg = 1.2 * scale
+            avg_gf = 1.35 * scale
+            avg_ga = 1.35 * scale
+
+        overall[team_name] = {
+            "avg_gf": round(avg_gf, 4), "avg_ga": round(avg_ga, 4),
+            "avg_shots": round(11.0 * scale, 4), "avg_sot": round(4.5 * scale, 4),
+            "avg_home_gf": round(1.45 * scale, 4), "avg_home_ga": round(1.20 * scale, 4),
+            "avg_away_gf": round(1.20 * scale, 4), "avg_away_ga": round(1.45 * scale, 4),
+        }
+        context["team_comp_map"][team_name] = real_league
+    else:
+        # Minimal fallback
+        overall[team_name] = {
+            "avg_gf": 1.2, "avg_ga": 1.2,
+            "avg_shots": 10.0, "avg_sot": 4.0,
+            "avg_home_gf": 1.3, "avg_home_ga": 1.1,
+            "avg_away_gf": 1.1, "avg_away_ga": 1.3,
+        }
+
+    season_teams.setdefault(season_key, {})[team_name] = {"games": 0, "points": 0}
+    if team_name not in available:
+        available.append(team_name)
+
+
 def predict_fixture(ctx, home_raw, away_raw, competition_hint):
     home_team = pm.resolve_team_name(home_raw, ctx["available_teams"])
     away_team = pm.resolve_team_name(away_raw, ctx["available_teams"])
-    if not home_team or not away_team or home_team == away_team:
-        return None
 
     competition_fallback = latest_season_for_competition(
         ctx["season_teams"], competition_hint, ctx["latest_season"]
     )
     prediction_season = pm.choose_season_for_teams(
-        home_team, away_team, ctx["season_teams"], competition_fallback
+        home_team or home_raw, away_team or away_raw,
+        ctx["season_teams"], competition_fallback,
     )
+    season_key = prediction_season
+
+    # Resolve / inject fallback data for unknown teams
+    if not home_team:
+        home_team = home_raw.strip()
+        inject_fallback_team(home_team, competition_hint, season_key, ctx)
+    if not away_team:
+        away_team = away_raw.strip()
+        inject_fallback_team(away_team, competition_hint, season_key, ctx)
+    if home_team == away_team:
+        return None
+
     competition_key = os.path.dirname(prediction_season).replace("\\", "/") or "Unknown"
     feature_competition = competition_hint or competition_key
     prediction_start_year = pm.parse_start_year_from_key(prediction_season)
     season_coeff = pm.season_recency_coefficient(ctx["latest_start"], prediction_start_year)
-    home_comp = ctx["team_comp_map"].get(home_team, feature_competition)
-    away_comp = ctx["team_comp_map"].get(away_team, feature_competition)
+
+    # Use real league from UEFA data when available
+    _uefa_leagues = ctx.get("_uefa_team_league", {})
+    home_uefa_league = _uefa_leagues.get(home_team)
+    away_uefa_league = _uefa_leagues.get(away_team)
+    home_comp = home_uefa_league or ctx["team_comp_map"].get(home_team, feature_competition)
+    away_comp = away_uefa_league or ctx["team_comp_map"].get(away_team, feature_competition)
+
+    if home_uefa_league or away_uefa_league:
+        ls = ctx.get("league_strength", {})
+        home_ls = ls.get(home_uefa_league, 0.50) if home_uefa_league else 0.50
+        away_ls = ls.get(away_uefa_league, 0.50) if away_uefa_league else 0.50
+        effective_ls = max(home_ls, away_ls)
+        season_coeff = min(season_coeff, max(effective_ls, 0.50))
 
     X_match = pm.build_features(
         pm.build_match_input(home_team, away_team),
@@ -305,7 +407,7 @@ def predict_fixture(ctx, home_raw, away_raw, competition_hint):
     away_goals = max(0.0, float(ctx["away_goal_reg"].predict(X_match)[0]))
 
     # Compute Poisson-based goal probabilities from raw expected goals
-    goal_probs = pm.predict_goal_probabilities(X_match, context["goal_prob_models"])
+    goal_probs = pm.predict_goal_probabilities(X_match, ctx["goal_prob_models"])
 
     # Align predicted scores to match the most likely result
     aligned_home, aligned_away = pm.align_predicted_score(home_goals, away_goals, prediction)
