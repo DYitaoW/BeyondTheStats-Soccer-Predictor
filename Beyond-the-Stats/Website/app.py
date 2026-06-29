@@ -2530,7 +2530,7 @@ def _compute_standings_from_history(comp_name):
                 match_records.append((ht, at, hs, as_))
         ranked = _rank_table(table, match_records)
         entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
-        knockout_rounds = _build_uefa_knockout_framework(comp_name)
+        knockout_rounds = _build_knockout_framework(comp_name)
         groups = [{"name": "League Phase", "entries": entries}]
         response = {
             "competition": comp_name,
@@ -2592,7 +2592,7 @@ def _compute_standings_from_history(comp_name):
             "source": "computed",
         }
         if comp_name in _UEFA_COMPETITIONS:
-            ko = _build_uefa_knockout_framework(comp_name)
+            ko = _build_knockout_framework(comp_name)
             if ko:
                 response["knockout_rounds"] = ko
     with _real_tables_lock:
@@ -2800,36 +2800,84 @@ def _compute_standings_from_history(comp_name):
     return response
 
 
-def _build_uefa_knockout_framework(comp_name):
-    """Return round structure for UEFA knockout phase, or empty list.
+def _build_knockout_framework(comp_name):
+    """Return bracket topology for knockout competitions.
 
-    Returns a list of round dicts with name and order so the frontend
-    can render a bracket once games are played.
+    Returns a dict with ``knockout_rounds`` (round descriptors with match
+    slots and feeding information) and optionally ``bracket_map`` (how
+    round slots connect to subsequent rounds), or an empty dict for
+    unknown competitions.
+
+    The ``feeds_to`` field in round-level matchups tells the frontend
+    which round-name + slot the winners feed into, enabling bracket
+    rendering without hardcoded knowledge of the competition format.
     """
     uefa_rounds = {
         "UEFA/Champions League": [
-            {"name": "Knockout Round Play-offs", "order": 1},
-            {"name": "Round of 16", "order": 2},
-            {"name": "Quarter-finals", "order": 3},
-            {"name": "Semi-finals", "order": 4},
-            {"name": "Final", "order": 5},
+            {"name": "Knockout Round Play-offs", "order": 1, "matches_count": 8},
+            {"name": "Round of 16", "order": 2, "matches_count": 8},
+            {"name": "Quarter-finals", "order": 3, "matches_count": 4,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 3, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+                 {"slot": 4, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+             ]},
+            {"name": "Semi-finals", "order": 4, "matches_count": 2},
+            {"name": "Final", "order": 5, "matches_count": 1},
         ],
         "UEFA/Europa League": [
-            {"name": "Knockout Round Play-offs", "order": 1},
-            {"name": "Round of 16", "order": 2},
-            {"name": "Quarter-finals", "order": 3},
-            {"name": "Semi-finals", "order": 4},
-            {"name": "Final", "order": 5},
+            {"name": "Knockout Round Play-offs", "order": 1, "matches_count": 8},
+            {"name": "Round of 16", "order": 2, "matches_count": 8},
+            {"name": "Quarter-finals", "order": 3, "matches_count": 4,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 3, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+                 {"slot": 4, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+             ]},
+            {"name": "Semi-finals", "order": 4, "matches_count": 2},
+            {"name": "Final", "order": 5, "matches_count": 1},
         ],
         "UEFA/Conference League": [
-            {"name": "Knockout Round Play-offs", "order": 1},
-            {"name": "Round of 16", "order": 2},
-            {"name": "Quarter-finals", "order": 3},
-            {"name": "Semi-finals", "order": 4},
-            {"name": "Final", "order": 5},
+            {"name": "Knockout Round Play-offs", "order": 1, "matches_count": 8},
+            {"name": "Round of 16", "order": 2, "matches_count": 8},
+            {"name": "Quarter-finals", "order": 3, "matches_count": 4,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 3, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+                 {"slot": 4, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+             ]},
+            {"name": "Semi-finals", "order": 4, "matches_count": 2},
+            {"name": "Final", "order": 5, "matches_count": 1},
+        ],
+        "FIFA/World Cup": [
+            {"name": "Round of 32", "order": 1, "matches_count": 16},
+            {"name": "Round of 16", "order": 2, "matches_count": 8},
+            {"name": "Quarter-finals", "order": 3, "matches_count": 4,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 3, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+                 {"slot": 4, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+             ]},
+            {"name": "Semi-finals", "order": 4, "matches_count": 2},
+            {"name": "Third Place", "order": 5, "matches_count": 1},
+            {"name": "Final", "order": 6, "matches_count": 1},
         ],
     }
-    return uefa_rounds.get(comp_name, [])
+    frameworks = {}
+    for c in ("UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+              "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
+              "FIFA/World Cup"):
+        if c in uefa_rounds:
+            frameworks[c] = uefa_rounds[c]
+        elif c.startswith("Europe/"):
+            uefa_key = "UEFA/" + c.split("/", 1)[1]
+            if uefa_key in uefa_rounds:
+                frameworks[c] = uefa_rounds[uefa_key]
+    return frameworks.get(comp_name, [])
 
 
 def _get_or_fetch_standings(comp_name, computed=True):
@@ -3697,6 +3745,10 @@ def _update_cumulative_momentum(game):
     CORNER_WEIGHT = 8.0      # per new corner this cycle
     YELLOW_WEIGHT = 4.0      # per new yellow this cycle
     POSSESSION_WEIGHT = 35.0  # scales with possession% difference
+    PASS_WEIGHT = 0.4        # per completed pass this cycle
+    CROSS_WEIGHT = 6.0       # per cross this cycle
+    KEY_PASS_WEIGHT = 8.0    # per key pass this cycle
+    PASS_ACC_WEIGHT = 20.0   # scales with pass-accuracy % difference
 
     home_score = game.get("home_score") or 0
     away_score = game.get("away_score") or 0
@@ -3732,6 +3784,14 @@ def _update_cumulative_momentum(game):
         game[f"_prev_{prev_key}"] = (cur_h, cur_a)
         return (cur_h - prev_h, cur_a - prev_a)
 
+    def _delta_from_fn(fn_h, fn_a, prev_key):
+        """Same as _delta but uses callables to fetch values."""
+        cur_h = _f(fn_h())
+        cur_a = _f(fn_a())
+        prev_h, prev_a = game.get(f"_prev_{prev_key}", (0.0, 0.0))
+        game[f"_prev_{prev_key}"] = (cur_h, cur_a)
+        return (cur_h - prev_h, cur_a - prev_a)
+
     dh_shots, da_shots = _delta("totalShots", "totalShots", "shots")
     dh_sot, da_sot = _delta("shotsOnTarget", "shotsOnTarget", "sot")
     dh_corners, da_corners = _delta("corners", "corners", "corners")
@@ -3743,6 +3803,38 @@ def _update_cumulative_momentum(game):
     corner_delta = (da_corners - dh_corners) * CORNER_WEIGHT
     yellow_delta = (da_yellows - dh_yellows) * YELLOW_WEIGHT
     red_delta = (da_reds - dh_reds) * RED_CARD_WEIGHT
+
+    # ── Passing deltas ──────────────────────────────────────────
+    def _pass_stat(side):
+        """Try multiple ESPN keys for completed passes."""
+        v = _stat(side, "totalPasses")
+        if v is None:
+            v = _stat(side, "passes")
+        if v is None:
+            v = _stat(side, "passesTotal")
+        if v is None:
+            v = _stat(side, "accuratePasses")
+        if v is None:
+            v = _stat(side, "passesAccurate")
+        return v
+
+    dh_passes, da_passes = _delta_from_fn(_pass_stat, _pass_stat, "passes")
+    dh_crosses, da_crosses = _delta("crosses", "crosses", "crosses")
+    dh_keypass, da_keypass = _delta("keyPasses", "keyPasses", "keypasses")
+
+    passes_delta = (da_passes - dh_passes) * PASS_WEIGHT
+    crosses_delta = (da_crosses - dh_crosses) * CROSS_WEIGHT
+    keypass_delta = (da_keypass - dh_keypass) * KEY_PASS_WEIGHT
+
+    # Pass-accuracy ratio delta (current accuracy balance, not per-cycle)
+    ha_acc = _f(_stat("home", "passAccuracy"))
+    aw_acc = _f(_stat("away", "passAccuracy"))
+    if ha_acc > 0 or aw_acc > 0:
+        total_acc = max(ha_acc + aw_acc, 0.1)
+        acc_ratio = (ha_acc - aw_acc) / total_acc  # negative = home ahead
+        acc_delta = -acc_ratio * PASS_ACC_WEIGHT
+    else:
+        acc_delta = 0.0
 
     # ── Possession delta ──────────────────────────────────────
     sit = game.get("situation") or {}
@@ -3796,6 +3888,10 @@ def _update_cumulative_momentum(game):
         + yellow_delta
         + red_delta
         + poss_delta
+        + passes_delta
+        + crosses_delta
+        + keypass_delta
+        + acc_delta
         + event_delta
     )
 
@@ -6248,7 +6344,22 @@ def api_cup_bracket():
                             "match_id": str(entry.get("match_id", "") or ""),
                         })
 
-    # 4. Group by round
+    # 4. Group by round with slot numbering + odds lookup
+    # Pre-load odds from the cup predictions CSV
+    odds_index = {}
+    try:
+        odds_df = pd.read_csv(CUP_UPCOMING_FILE)
+        if not odds_df.empty and all(c in odds_df.columns for c in ("home_team", "away_team", "prob_home", "prob_draw", "prob_away")):
+            for _, row in odds_df.iterrows():
+                key = (str(row["home_team"]).strip().lower(), str(row["away_team"]).strip().lower())
+                odds_index[key] = {
+                    "prob_home": _safe_float(row["prob_home"], None),
+                    "prob_draw": _safe_float(row["prob_draw"], None),
+                    "prob_away": _safe_float(row["prob_away"], None),
+                }
+    except Exception:
+        pass
+
     rounds = {}
     for g in matches:
         rnd = g.get("round", "")
@@ -6262,7 +6373,6 @@ def api_cup_bracket():
                 order = 0
         if rnd not in rounds:
             rounds[rnd] = {"name": rnd, "order": order, "matches": []}
-        # Sort by round_order if available, or by order of appearance
         winner = None
         if g.get("status") == "post":
             hs = g.get("home_score")
@@ -6272,6 +6382,10 @@ def api_cup_bracket():
                     winner = g.get("home_team", "")
                 elif aws > hs:
                     winner = g.get("away_team", "")
+        # Look up odds from predictions CSV
+        hm_name = str(g.get("home_team", "")).strip().lower()
+        aw_name = str(g.get("away_team", "")).strip().lower()
+        odds = odds_index.get((hm_name, aw_name)) or odds_index.get((aw_name, hm_name), {})
         rounds[rnd]["matches"].append({
             "home_team": g.get("home_team", ""),
             "away_team": g.get("away_team", ""),
@@ -6281,25 +6395,29 @@ def api_cup_bracket():
             "winner": winner,
             "kickoff_utc": _utc_to_et(g.get("kickoff_utc", "")),
             "match_id": g.get("match_id", ""),
+            "prob_home": odds.get("prob_home"),
+            "prob_draw": odds.get("prob_draw"),
+            "prob_away": odds.get("prob_away"),
         })
 
-    # Sort rounds by order
-    sorted_rounds = sorted(rounds.values(), key=lambda r: (r["order"], r["name"]))
-    # Sort matches within each round by kickoff
-    for rnd in sorted_rounds:
-        rnd["matches"].sort(key=lambda m: m.get("kickoff_utc", ""))
+    # Assign slot numbers within each round (by kickoff order)
+    for rnd_data in rounds.values():
+        rnd_data["matches"].sort(key=lambda m: m.get("kickoff_utc", ""))
+        for idx, m in enumerate(rnd_data["matches"], start=1):
+            m["slot"] = idx
 
-    # Include knockout-round framework for UEFA competitions even when empty
+    sorted_rounds = sorted(rounds.values(), key=lambda r: (r["order"], r["name"]))
+
+    # Include knockout framework for any cup competition
     result = {
         "ok": True,
         "competition": comp,
         "rounds": sorted_rounds,
     }
+    ko_framework = _build_knockout_framework(comp)
+    if ko_framework:
+        result["knockout_rounds"] = ko_framework
     if comp in _UEFA_COMPETITIONS:
-        ko_framework = _build_uefa_knockout_framework(comp)
-        if ko_framework:
-            result["knockout_rounds"] = ko_framework
-        # Attach league phase table if available
         league_table = _compute_standings_from_history(comp)
         if league_table:
             result["league_phase"] = league_table
@@ -6379,9 +6497,24 @@ def api_real_cup_data():
                             "match_id": str(entry.get("match_id", "") or ""),
                         })
 
-    # 4. Group by round with stage type classification
+    # 4. Group by round with stage type classification + odds
     is_uefa_league_phase = cup_format and cup_format.get("format") == "league_phase_then_knockout"
     ko_round_names = set(cup_format.get("knockout_rounds", [])) if cup_format else set()
+
+    # Pre-load odds from the cup predictions CSV
+    odds_index = {}
+    try:
+        odds_df = pd.read_csv(CUP_UPCOMING_FILE)
+        if not odds_df.empty and all(c in odds_df.columns for c in ("home_team", "away_team", "prob_home", "prob_draw", "prob_away")):
+            for _, row in odds_df.iterrows():
+                key = (str(row["home_team"]).strip().lower(), str(row["away_team"]).strip().lower())
+                odds_index[key] = {
+                    "prob_home": _safe_float(row["prob_home"], None),
+                    "prob_draw": _safe_float(row["prob_draw"], None),
+                    "prob_away": _safe_float(row["prob_away"], None),
+                }
+    except Exception:
+        pass
 
     rounds = {}
     for g in matches:
@@ -6416,6 +6549,10 @@ def api_real_cup_data():
                 elif aws > hs:
                     winner = g.get("away_team", "")
 
+        hm_name = str(g.get("home_team", "")).strip().lower()
+        aw_name = str(g.get("away_team", "")).strip().lower()
+        odds = odds_index.get((hm_name, aw_name)) or odds_index.get((aw_name, hm_name), {})
+
         rounds[rnd]["matches"].append({
             "home_team": g.get("home_team", ""),
             "away_team": g.get("away_team", ""),
@@ -6425,11 +6562,18 @@ def api_real_cup_data():
             "winner": winner,
             "kickoff_utc": _utc_to_et(g.get("kickoff_utc", "")),
             "match_id": g.get("match_id", ""),
+            "prob_home": odds.get("prob_home"),
+            "prob_draw": odds.get("prob_draw"),
+            "prob_away": odds.get("prob_away"),
         })
 
+    # Assign slot numbers within each round
+    for rnd_data in rounds.values():
+        rnd_data["matches"].sort(key=lambda m: m.get("kickoff_utc", ""))
+        for idx, m in enumerate(rnd_data["matches"], start=1):
+            m["slot"] = idx
+
     sorted_rounds = sorted(rounds.values(), key=lambda r: (r["order"], r["name"]))
-    for rnd in sorted_rounds:
-        rnd["matches"].sort(key=lambda m: m.get("kickoff_utc", ""))
 
     result = {
         "ok": True,
@@ -6437,6 +6581,11 @@ def api_real_cup_data():
         "cup_format": cup_format,
         "rounds": sorted_rounds,
     }
+
+    # Attach knockout framework for bracket topology
+    ko_framework = _build_knockout_framework(comp)
+    if ko_framework:
+        result["knockout_rounds"] = ko_framework
 
     # Attach league/group phase table when available
     if table is not None:
@@ -6822,17 +6971,136 @@ def api_help():
     """List all available API endpoints with brief descriptions."""
     return jsonify({
         "ok": True,
+        "help": "See /api/help/comps for a full list of competition names",
         "endpoints": [
+            # ── General ──
             {"method": "GET", "path": "/api/help", "desc": "List all available API endpoints"},
+            {"method": "GET", "path": "/api/help/comps", "desc": "List all competition names used by the system, categorised by type"},
+            {"method": "GET", "path": "/api/stats", "desc": "Overall site stats: accuracy, league count, last refresh time"},
             {"method": "GET", "path": "/api/competitions", "desc": "List all competition names used by the live score system"},
             {"method": "GET", "path": "/api/competitions/{competition}/teams", "desc": "Redirect to ESPN teams endpoint"},
             {"method": "GET", "path": "/api/competitions/{competition}/schedule?dates=", "desc": "Redirect to ESPN scoreboard (dates=YYYYMMDD or YYYYMMDD-YYYYMMDD)"},
             {"method": "GET", "path": "/api/competitions/{competition}/leaders?season=", "desc": "Redirect to ESPN statistics/leaders endpoint"},
             {"method": "GET", "path": "/api/teams/{team_id}/roster?competition=", "desc": "Redirect to ESPN team-info endpoint"},
-            {"method": "GET", "path": "/api/pipeline/status", "desc": "Step-by-step results from the last pipeline run (pass/fail per step)"},
+            {"method": "GET", "path": "/api/teams", "desc": "All tracked teams (union of all team-index files)"},
+            {"method": "GET", "path": "/api/scorers", "desc": "Current season top scorers by competition"},
+            # ── Live Scores ──
+            {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores for active competitions (polled from ESPN). Filters by comma-separated comp names"},
+            {"method": "GET", "path": "/api/live-score-history", "desc": "Historical completed matches used for computed standings"},
+            {"method": "GET", "path": "/api/live/widget", "desc": "Live scoreboard widget data (upcoming + in-progress games)"},
+            {"method": "GET", "path": "/api/live/events?match_id=", "desc": "Live key events for a specific match"},
+            {"method": "GET", "path": "/api/past-games?competition=&team=", "desc": "Recently completed games from the past-games archive (rolling 14-day window)"},
+            # ── Standings / Tables ──
+            {"method": "GET", "path": "/api/real-tables?competition=&refresh=", "desc": "Real league tables computed from live-score history. Omits competition to return all"},
+            {"method": "GET", "path": "/api/real-tables/competitions", "desc": "List all competitions with cached standings"},
+            {"method": "GET", "path": "/api/real-tables/leaders?competition=&refresh=", "desc": "Statistical leaders (goals, assists, etc.) from ESPN for a given competition"},
+            {"method": "GET", "path": "/api/league-tables?mode=global|mls|cups|extra", "desc": "Projected league tables. mode=global (default), mls, cups, extra. Includes fixtures, bracket, cup_formats, odds_bracket"},
+            # ── Cup Brackets ──
+            {"method": "GET", "path": "/api/cup-bracket?competition=", "desc": "Real bracket for a cup competition: completed + in-progress + upcoming games, with odds and slot numbering"},
+            {"method": "GET", "path": "/api/real-cup-data?competition=", "desc": "Rich cup data: format info, league/group phase tables, bracket matchups with stage classification, odds, and knockout framework"},
+            # ── Upcoming Fixtures ──
+            {"method": "GET", "path": "/api/upcoming/global", "desc": "Upcoming global + national-team fixtures and persistent accuracy stats"},
+            {"method": "GET", "path": "/api/upcoming/extra", "desc": "Upcoming extra-league fixtures and persistent accuracy stats"},
+            {"method": "GET", "path": "/api/upcoming/cups", "desc": "Upcoming cup fixtures and persistent accuracy stats"},
+            {"method": "GET", "path": "/api/upcoming/world-cup", "desc": "Upcoming World Cup group-stage fixtures (not knockouts)"},
+            {"method": "GET", "path": "/api/top-picks?mode=", "desc": "Top predicted picks across all modes"},
+            # ── Predictions ──
+            {"method": "POST", "path": "/api/predict", "desc": "Predict a single match (global model)"},
+            {"method": "POST", "path": "/api/predict/mls", "desc": "Predict a single match (MLS model)"},
+            {"method": "POST", "path": "/api/predict/extra", "desc": "Predict a single match (extra-leagues model)"},
             {"method": "GET", "path": "/api/prediction-stats", "desc": "Prediction tracking: all-time and current-week correct/incorrect counts"},
-            {"method": "GET", "path": "/api/recent-completed?league=", "desc": "Completed predictions from prev full week + current week's past days"},
+            {"method": "GET", "path": "/api/recent-completed?league=", "desc": "Completed predictions from previous full week + current week's past days"},
+            {"method": "GET", "path": "/api/accuracy-history", "desc": "Historic accuracy snapshots over time"},
+            # ── Pipeline ──
+            {"method": "GET", "path": "/api/pipeline/status", "desc": "Step-by-step results from the last pipeline run (pass/fail per step)"},
+            {"method": "GET", "path": "/api/last-refresh", "desc": "Last pipeline refresh timestamp"},
+            {"method": "GET", "path": "/api/last-data-refresh", "desc": "Last data refresh timestamp"},
+            {"method": "POST", "path": "/api/refresh", "desc": "Trigger a fresh pipeline run"},
+            # ── Head-to-Head ──
+            {"method": "GET", "path": "/api/h2h?home=&away=&competition=", "desc": "Head-to-head record between two teams"},
+            # ── Notifications ──
+            {"method": "POST", "path": "/api/notifications", "desc": "Push a notification"},
+            {"method": "GET", "path": "/api/notifications?limit=", "desc": "Return recent notifications"},
+            {"method": "POST", "path": "/api/notifications/register", "desc": "Register a device token for push notifications"},
+            # ── Mobile ──
+            {"method": "GET", "path": "/api/mobile/feed", "desc": "Full mobile-app feed JSON"},
+            {"method": "GET", "path": "/api/mobile/widget?league=&team=&limit=&mode=", "desc": "Lightweight widget feed: upcoming games filtered by league/team/random"},
+            # ── Feedback ──
+            {"method": "POST", "path": "/api/feedback", "desc": "Persist user feedback"},
+            # ── World Cup ──
+            {"method": "GET", "path": "/api/world-cup", "desc": "World Cup projection data (groups, third-place, knockouts, champion, sim stats)"},
+            # ── Debug ──
+            {"method": "GET", "path": "/api/debug/live-score-sources", "desc": "Show which competitions have games today and their polling sources"},
+            {"method": "GET", "path": "/api/debug/manual-poll?competition=", "desc": "Manually poll a specific competition from ESPN and return raw results"},
+            {"method": "GET", "path": "/api/debug/poller-state", "desc": "Dump internal poller state (active comps, thread status, cycle count)"},
+            # ── Pages ──
+            {"method": "GET", "path": "/", "desc": "Home page"},
+            {"method": "GET", "path": "/upcoming-matches", "desc": "Upcoming matches page"},
+            {"method": "GET", "path": "/cups", "desc": "Cup competitions page"},
+            {"method": "GET", "path": "/head-to-head", "desc": "Head-to-head page"},
+            {"method": "GET", "path": "/league-tables", "desc": "League tables page"},
+            {"method": "GET", "path": "/world-cup", "desc": "World Cup page"},
+            {"method": "GET", "path": "/about", "desc": "About page"},
+            {"method": "GET", "path": "/tactics", "desc": "Tactics whiteboard page"},
+            {"method": "GET", "path": "/players", "desc": "Players / top scorers page"},
+            {"method": "GET", "path": "/graphics/{filename}", "desc": "Serve generated graphic images"},
         ],
+    })
+
+
+@app.get("/api/help/comps")
+def api_help_comps():
+    """Return all competition names used by the system, categorised by type."""
+    # Build mode-based grouping from _UPCOMING_CSV_MODE_MAP
+    mode_groups = {}
+    mode_labels = {
+        "global": "Global (Big-5 + Portugal + Netherlands)",
+        "mls": "MLS",
+        "extra": "Extra Leagues (Belgium, Scotland, Turkey, etc.)",
+        "cups": "Cups (domestic & UEFA)",
+        "national": "National Team & World Cup",
+    }
+    for comp, mode in _UPCOMING_CSV_MODE_MAP.items():
+        label = mode_labels.get(mode, mode)
+        mode_groups.setdefault(label, []).append(comp)
+
+    for group in mode_groups.values():
+        group.sort()
+
+    # UEFA-only competitions
+    uefa_list = sorted(_UEFA_COMPETITIONS)
+
+    # Cup-only competitions
+    cup_list = sorted(CUP_COMPETITIONS)
+
+    return jsonify({
+        "ok": True,
+        "counts": {
+            "total_live_score": len(LIVE_SCORE_COMPETITIONS),
+            "total_prediction_modes": sum(len(v) for v in mode_groups.values()),
+            "total_uefa": len(uefa_list),
+            "total_cups": len(cup_list),
+        },
+        "live_score_competitions": {
+            "count": len(LIVE_SCORE_COMPETITIONS),
+            "entries": sorted(LIVE_SCORE_COMPETITIONS.keys()),
+        },
+        "prediction_csv_modes": {
+            "description": "Which prediction CSV each competition routes to",
+            "modes": {label: {"count": len(v), "entries": v} for label, v in sorted(mode_groups.items())},
+        },
+        "uefa_competitions": {
+            "count": len(uefa_list),
+            "entries": uefa_list,
+        },
+        "cup_competitions": {
+            "count": len(cup_list),
+            "entries": cup_list,
+        },
+        "espn_ids": {
+            "description": "ESPN API league identifiers for each live-score competition",
+            "mappings": dict(sorted(LIVE_SCORE_COMPETITIONS.items())),
+        },
     })
 
 
@@ -7264,6 +7532,79 @@ def _safe_int_c(v):
         return None
 
 
+def _compute_odds_bracket():
+    """Build an odds-weighted projected cup bracket from prediction probabilities.
+
+    Takes the simulation-based projected cup bracket JSON and replaces each
+    match's winner with the team that has the higher win probability
+    (``prob_home`` vs ``prob_away`` from the cup predictions CSV).  The
+    original simulation bracket topology (which matches feed into which) is
+    preserved; only the winner selection method changes.
+
+    Returns a dict with the same structure as the projected cup brackets JSON:
+    ``{competition_name: bracket_entry, ...}``, or empty dict if data is
+    unavailable.
+    """
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    if not isinstance(bracket_data, dict):
+        return {}
+
+    # Build a lookup: (home_team_lower, away_team_lower) → {prob_home, prob_draw, prob_away}
+    odds_map = {}
+    try:
+        odds_df = pd.read_csv(CUP_UPCOMING_FILE)
+        if not odds_df.empty and all(c in odds_df.columns for c in ("home_team", "away_team", "prob_home", "prob_draw", "prob_away")):
+            for _, row in odds_df.iterrows():
+                key = (str(row["home_team"]).strip().lower(), str(row["away_team"]).strip().lower())
+                odds_map[key] = {
+                    "prob_home": _safe_float(row["prob_home"], 0),
+                    "prob_draw": _safe_float(row["prob_draw"], 0),
+                    "prob_away": _safe_float(row["prob_away"], 0),
+                }
+    except Exception:
+        pass
+
+    def _odds_winner(match):
+        """Return the team with higher win probability, or original winner as fallback."""
+        hm = str(match.get("home_team", "")).strip().lower()
+        aw = str(match.get("away_team", "")).strip().lower()
+        odds = odds_map.get((hm, aw)) or odds_map.get((aw, hm))
+        if odds:
+            ph = odds.get("prob_home", 0)
+            pa = odds.get("prob_away", 0)
+            if ph > pa and hm:
+                return str(match.get("home_team", ""))
+            elif pa > ph and aw:
+                return str(match.get("away_team", ""))
+        return match.get("winner") or match.get("home_team", "")
+
+    def _walk_rounds(rounds):
+        """Recursively replace winners in rounds based on odds."""
+        result = []
+        for rnd_data in rounds:
+            rd = dict(rnd_data)
+            matches = []
+            for m in rnd_data.get("matches", []):
+                entry = dict(m)
+                entry["winner"] = _odds_winner(m)
+                matches.append(entry)
+            rd["matches"] = matches
+            result.append(rd)
+        return result
+
+    output = {}
+    comps = bracket_data.get("competitions", bracket_data)
+    for comp_name, comp_entry in comps.items():
+        if not isinstance(comp_entry, dict):
+            continue
+        entry = dict(comp_entry)
+        if "rounds" in entry:
+            entry["rounds"] = _walk_rounds(entry["rounds"])
+        entry["odds_weighted"] = True
+        output[comp_name] = entry
+    return output
+
+
 @app.get("/api/league-tables")
 def api_league_tables():
     """Return projected league tables (and MLS playoff bracket when requested).
@@ -7302,8 +7643,22 @@ def api_league_tables():
                 fmt = _CUP_FORMATS.get(comp_name)
                 if fmt:
                     cup_formats[comp_name] = fmt
+        # Odds-weighted bracket (picks winners by higher win probability)
+        odds_bracket = _compute_odds_bracket()
+        # Knockout topology frameworks for each competition
+        knockout_frameworks = {}
+        for comp_name in list(cup_formats.keys()) + (data.get("leagues") or []):
+            kf = _build_knockout_framework(comp_name)
+            if kf:
+                knockout_frameworks[comp_name] = kf
         fixtures = _load_all_fixtures_by_competition(CUP_UPCOMING_FILE)
-        return jsonify({"ok": True, **data, "cup_brackets": brackets, "cup_formats": cup_formats, "fixtures": fixtures})
+        return jsonify({
+            "ok": True, **data,
+            "cup_brackets": brackets, "cup_formats": cup_formats,
+            "odds_bracket": odds_bracket,
+            "knockout_frameworks": knockout_frameworks,
+            "fixtures": fixtures,
+        })
     if mode == "extra":
         csv_path = EXTRA_PROJECTED_TABLE_FILE
         data = _load_projected_tables(csv_path)
