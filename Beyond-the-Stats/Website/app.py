@@ -2880,6 +2880,107 @@ def _build_knockout_framework(comp_name):
     return frameworks.get(comp_name, [])
 
 
+_RN_RE = re.compile(r"[^a-z0-9]+")
+def _round_to_stage_key(round_name):
+    """Convert 'Quarter-finals' -> 'quarter-finals', 'Round of 16' -> 'round-of-16'."""
+    return _RN_RE.sub("-", round_name.strip().lower()).strip("-")
+
+
+def _build_knockout_wc_format(matches):
+    """Convert a flat list of cup matches into WC-style knockout/odds_knockout/real_knockout.
+
+    Returns ``(knockout, odds_knockout, real_knockout)`` where each is a
+    ``{stage_key: [match_dict, ...]}`` object.
+    """
+    by_round = {}
+    round_orders = {}
+    for g in matches:
+        rnd = g.get("round", "") or "Match"
+        by_round.setdefault(rnd, []).append(g)
+        order = g.get("round_order", 999)
+        try:
+            order = int(order)
+        except (ValueError, TypeError):
+            order = 999
+        if rnd not in round_orders or order < round_orders[rnd]:
+            round_orders[rnd] = order
+
+    knockout = {}
+    odds_knockout = {}
+    real_knockout = {}
+
+    for rnd_name in sorted(by_round.keys(), key=lambda r: (round_orders.get(r, 999), r)):
+        stage_key = _round_to_stage_key(rnd_name)
+        round_matches = sorted(by_round[rnd_name], key=lambda m: m.get("kickoff_utc", "") or "")
+
+        ko_list, odds_list, real_list = [], [], []
+        for idx, g in enumerate(round_matches, start=1):
+            dt_utc = g.get("kickoff_utc", "") or ""
+            match_date = ""
+            try:
+                mdt = pd.to_datetime(dt_utc, utc=True)
+                match_date = mdt.strftime("%Y-%m-%d")
+            except Exception:
+                pass
+
+            winner = None
+            if g.get("status") == "post":
+                hs, aws = g.get("home_score"), g.get("away_score")
+                if hs is not None and aws is not None:
+                    winner = g.get("home_team", "") if hs > aws else (g.get("away_team", "") if aws > hs else None)
+
+            prob_home = g.get("prob_home")
+            prob_draw = g.get("prob_draw")
+            prob_away = g.get("prob_away")
+
+            base = {
+                "label": f"{rnd_name} {idx}",
+                "stage": stage_key,
+                "round": rnd_name,
+                "match_date": match_date,
+                "match_datetime_utc": dt_utc,
+                "home_team": g.get("home_team", ""),
+                "away_team": g.get("away_team", ""),
+                "home_score": g.get("home_score"),
+                "away_score": g.get("away_score"),
+                "status": g.get("status", "pre"),
+                "winner": winner,
+                "slot": idx,
+                "match_id": g.get("match_id", ""),
+                "prob_home": prob_home,
+                "prob_draw": prob_draw,
+                "prob_away": prob_away,
+                "pred_home_goals": g.get("pred_home_goals"),
+                "pred_away_goals": g.get("pred_away_goals"),
+                "venue": g.get("venue", ""),
+            }
+            ko_list.append(base)
+
+            odds_entry = dict(base)
+            ph = _safe_float(prob_home, 0)
+            pa = _safe_float(prob_away, 0)
+            hm = str(base["home_team"]).strip()
+            aw = str(base["away_team"]).strip()
+            if ph > pa and hm:
+                odds_entry["winner"] = hm
+            elif pa > ph and aw:
+                odds_entry["winner"] = aw
+            odds_entry["odds_weighted"] = True
+            odds_list.append(odds_entry)
+
+            real_entry = dict(base)
+            if g.get("status") != "post":
+                real_entry["winner"] = None
+            real_entry["from_live"] = g.get("status") in ("post", "in")
+            real_list.append(real_entry)
+
+        knockout[stage_key] = ko_list
+        odds_knockout[stage_key] = odds_list
+        real_knockout[stage_key] = real_list
+
+    return knockout, odds_knockout, real_knockout
+
+
 def _get_or_fetch_standings(comp_name, computed=True):
     """Return cached standings for *comp_name*.
 
@@ -5557,16 +5658,113 @@ def api_teams():
 
 @app.get("/api/world-cup")
 def api_world_cup():
-    """Return the World Cup projection data."""
+    """Return the World Cup projection data.
+
+    Includes three knockout brackets:
+
+    * ``knockout`` — simulation-based bracket from ``Project_World_Cup.py``
+      (the displayed bracket whose champion matches the highest-odds winner
+      from 2500 simulations).
+    * ``odds_knockout`` — same bracket topology but each match's winner is
+      the team with the higher predicted win probability (``prob_home`` vs
+      ``prob_away``), independent of the simulation.
+    * ``real_knockout`` — bracket built from actual live scores / history.
+      Only completed matches have a ``winner``; future matchups are shown
+      with both teams but no winner.
+    """
     world_cup_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
     if not os.path.exists(world_cup_file):
         return jsonify({"ok": False, "error": "World Cup projection not available"}), 404
     try:
         with open(world_cup_file, "r") as f:
             data = json.load(f)
-        return jsonify(data)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+    # ── 1. Odds-weighted knockout bracket ────────────────────────
+    # Walk the existing knockout and pick winners by higher prob.
+    raw_knockout = data.get("knockout") or {}
+    odds_knockout = {}
+    for stage_key, matches in raw_knockout.items():
+        round_rows = []
+        for m in matches:
+            entry = dict(m)
+            ph = _safe_float(entry.get("prob_home", 0), 0)
+            pa = _safe_float(entry.get("prob_away", 0), 0)
+            hm = str(entry.get("home_team", "")).strip()
+            aw = str(entry.get("away_team", "")).strip()
+            if ph > pa and hm:
+                entry["winner"] = hm
+            elif pa > ph and aw:
+                entry["winner"] = aw
+            # if equal, leave original winner
+            entry["odds_weighted"] = True
+            round_rows.append(entry)
+        odds_knockout[stage_key] = round_rows
+
+    # ── 2. Real knockout bracket from live scores / history ──────
+    real_knockout = {}
+    wc_stages = ["round-of-32", "round-of-16", "quarterfinals", "semifinals", "third-place", "final"]
+    # Build a lookup of all WC matches from live data
+    live_matches = {}
+    history = _load_live_score_history()
+    for g in history:
+        if g.get("competition") in ("FIFA/World Cup",):
+            mid = g.get("match_id", "")
+            if mid:
+                live_matches[mid] = g
+    with _live_scores_lock:
+        current = _live_scores.get("FIFA/World Cup", {}).get("games", [])
+    for g in current:
+        mid = g.get("match_id", "")
+        if mid:
+            if mid not in live_matches or g.get("status") != "pre":
+                live_matches[mid] = g
+
+    for stage_key in wc_stages:
+        projected_matches = raw_knockout.get(stage_key) or []
+        round_rows = []
+        for m in projected_matches:
+            mid = str(m.get("match_id", "") or m.get("event_id", "") or "").strip()
+            live = live_matches.get(mid) if mid else None
+            entry = {
+                "label": m.get("label", ""),
+                "stage": stage_key,
+                "match_date": m.get("match_date", ""),
+                "match_datetime_utc": m.get("match_datetime_utc", ""),
+                "home_team": m.get("home_team", ""),
+                "away_team": m.get("away_team", ""),
+                "home_slot": m.get("home_slot", ""),
+                "away_slot": m.get("away_slot", ""),
+                "venue": m.get("venue", ""),
+            }
+            if live and live.get("status") == "post":
+                hs = live.get("home_score")
+                aws = live.get("away_score")
+                entry["status"] = "post"
+                entry["home_score"] = hs
+                entry["away_score"] = aws
+                if hs is not None and aws is not None:
+                    if hs > aws:
+                        entry["winner"] = live.get("home_team", "")
+                    elif aws > hs:
+                        entry["winner"] = live.get("away_team", "")
+            elif live and live.get("status") == "in":
+                entry["status"] = "in"
+                entry["home_score"] = live.get("home_score")
+                entry["away_score"] = live.get("away_score")
+            else:
+                entry["status"] = "pre"
+                entry["home_score"] = None
+                entry["away_score"] = None
+            round_rows.append(entry)
+        real_knockout[stage_key] = round_rows
+
+    # Inject the computed brackets into the payload
+    data["odds_knockout"] = odds_knockout
+    data["real_knockout"] = real_knockout
+
+    return jsonify(data)
 
 
 @app.post("/api/refresh")
@@ -6198,8 +6396,10 @@ def api_past_games():
     ``double_chance``, ``asian_handicap``, ``actual_result``, ``is_correct``,
     etc.).
 
-    Data is sourced from the persistent ``past_games.json`` file (populated
-    automatically when the prediction pipeline drops completed rows).
+    Data is sourced from the prediction CSVs (completed rows) so all
+    prediction fields are present.  The pipeline archive (``past_games.json``)
+    is merged for any rows not covered by the CSVs.
+
     For full live-score details (lineups, stats, key events, game info),
     use ``/api/live-score-history``.
 
@@ -6219,48 +6419,49 @@ def api_past_games():
         per_page = 50
 
     today_local = datetime.now(ZoneInfo("America/New_York")).date()
-    # Rolling 14-day window
     cutoff_days_ago = today_local - timedelta(days=14)
     cutoff = cutoff_days_ago.isoformat()
 
-    all_rows = []
+    # Build enriched rows from all 5 CSVs (completed date range)
+    enriched_by_key = {}
+    for source, csv_path in (
+        ("global", GLOBAL_UPCOMING_FILE),
+        ("mls", MLS_UPCOMING_FILE),
+        ("extra", EXTRA_UPCOMING_FILE),
+        ("cups", CUP_UPCOMING_FILE),
+        ("national", NATIONAL_UPCOMING_FILE),
+    ):
+        rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
+        for r in rows:
+            if r.get("actual_result") and r["actual_result"].upper() in {"H", "D", "A"}:
+                ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
+                if ck:
+                    enriched_by_key[ck] = r
+
+    # Also pull from the pipeline archive for any rows the CSVs might miss
+    archive_rows = []
     if os.path.exists(PAST_GAMES_FILE):
         try:
             with open(PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
-                all_rows = json.load(fh)
+                archive_rows = json.load(fh)
         except Exception:
-            all_rows = []
-    else:
-        # File doesn't exist yet (pipeline hasn't run since deploy).
-        # Seed it from the prediction CSVs so the endpoint works immediately.
-        try:
-            seed_rows = []
-            for source, csv_path in (
-                ("global", GLOBAL_UPCOMING_FILE),
-                ("mls", MLS_UPCOMING_FILE),
-                ("extra", EXTRA_UPCOMING_FILE),
-                ("cups", CUP_UPCOMING_FILE),
-                ("national", NATIONAL_UPCOMING_FILE),
-            ):
-                rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
-                for r in rows:
-                    if r.get("actual_result") and r["actual_result"].upper() in {"H", "D", "A"}:
-                        seed_rows.append(r)
-            if seed_rows:
-                os.makedirs(os.path.dirname(PAST_GAMES_FILE), exist_ok=True)
-                with open(PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
-                    json.dump(seed_rows, fh, indent=2, ensure_ascii=False)
-                all_rows = seed_rows
-        except Exception:
-            all_rows = []
+            archive_rows = []
+    for r in archive_rows:
+        ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
+        if ck and ck not in enriched_by_key:
+            # Ensure consistent field naming
+            if "actual_home_goals" in r and "home_score" not in r:
+                r["home_score"] = r["actual_home_goals"]
+            if "actual_away_goals" in r and "away_score" not in r:
+                r["away_score"] = r["actual_away_goals"]
+            enriched_by_key[ck] = r
+
+    all_rows = list(enriched_by_key.values())
 
     if league:
         league_lower = league.lower()
         all_rows = [r for r in all_rows if league_lower in r.get("competition", "").lower()]
-    # Filter to rolling 14-day window
-    all_rows = [r for r in all_rows
-                if str(r.get("match_date", "")).strip() >= cutoff]
-
+    all_rows = [r for r in all_rows if str(r.get("match_date", "")).strip() >= cutoff]
     all_rows.sort(key=lambda r: r.get("match_date", ""), reverse=True)
 
     total = len(all_rows)
@@ -6283,8 +6484,21 @@ def api_past_games():
 
 @app.get("/api/cup-bracket")
 def api_cup_bracket():
-    """Return real bracket for a cup competition, built from completed, in-progress,
-    and upcoming games.
+    """Return real bracket for a cup competition in World Cup format.
+
+    Response mirrors ``/api/world-cup``:
+
+    * ``knockout`` — ``{stage_key: [matches]}}`` with actual winners
+      from live scores / projected bracket.
+    * ``odds_knockout`` — same topology, each match's ``winner`` is the
+      team with higher ``prob_home`` / ``prob_away``.
+    * ``real_knockout`` — winners only from completed (``post``) games;
+      unplayed matches show both teams but ``winner: null``.
+
+    Additional cup-specific fields:
+    ``knockout_rounds`` (bracket topology with feeds_to),
+    ``league_phase`` (UEFA league-phase table),
+    ``cup_format`` (format descriptor).
 
     Query params:
         competition  -- required, e.g. "England/FA Cup", "FIFA/World Cup",
@@ -6344,8 +6558,7 @@ def api_cup_bracket():
                             "match_id": str(entry.get("match_id", "") or ""),
                         })
 
-    # 4. Group by round with slot numbering + odds lookup
-    # Pre-load odds from the cup predictions CSV
+    # 4. Enrich with odds from cup predictions CSV
     odds_index = {}
     try:
         odds_df = pd.read_csv(CUP_UPCOMING_FILE)
@@ -6360,59 +6573,44 @@ def api_cup_bracket():
     except Exception:
         pass
 
-    rounds = {}
     for g in matches:
-        rnd = g.get("round", "")
-        if not rnd:
-            rnd = "Match"
+        rnd = g.get("round", "") or "Match"
         order = g.get("round_order", 0)
         if not isinstance(order, (int, float)):
             try:
                 order = int(order)
             except (ValueError, TypeError):
                 order = 0
-        if rnd not in rounds:
-            rounds[rnd] = {"name": rnd, "order": order, "matches": []}
-        winner = None
+        g["round_order"] = order
+        g["round"] = rnd
+
+        # Compute winner for completed games
         if g.get("status") == "post":
             hs = g.get("home_score")
             aws = g.get("away_score")
             if hs is not None and aws is not None:
                 if hs > aws:
-                    winner = g.get("home_team", "")
+                    g["winner"] = g.get("home_team", "")
                 elif aws > hs:
-                    winner = g.get("away_team", "")
-        # Look up odds from predictions CSV
+                    g["winner"] = g.get("away_team", "")
+
+        # Attach odds
         hm_name = str(g.get("home_team", "")).strip().lower()
         aw_name = str(g.get("away_team", "")).strip().lower()
         odds = odds_index.get((hm_name, aw_name)) or odds_index.get((aw_name, hm_name), {})
-        rounds[rnd]["matches"].append({
-            "home_team": g.get("home_team", ""),
-            "away_team": g.get("away_team", ""),
-            "home_score": g.get("home_score"),
-            "away_score": g.get("away_score"),
-            "status": g.get("status", "pre"),
-            "winner": winner,
-            "kickoff_utc": _utc_to_et(g.get("kickoff_utc", "")),
-            "match_id": g.get("match_id", ""),
-            "prob_home": odds.get("prob_home"),
-            "prob_draw": odds.get("prob_draw"),
-            "prob_away": odds.get("prob_away"),
-        })
+        g["prob_home"] = odds.get("prob_home")
+        g["prob_draw"] = odds.get("prob_draw")
+        g["prob_away"] = odds.get("prob_away")
 
-    # Assign slot numbers within each round (by kickoff order)
-    for rnd_data in rounds.values():
-        rnd_data["matches"].sort(key=lambda m: m.get("kickoff_utc", ""))
-        for idx, m in enumerate(rnd_data["matches"], start=1):
-            m["slot"] = idx
+    # 5. Build WC-style knockout structures
+    knockout, odds_knockout, real_knockout = _build_knockout_wc_format(matches)
 
-    sorted_rounds = sorted(rounds.values(), key=lambda r: (r["order"], r["name"]))
-
-    # Include knockout framework for any cup competition
     result = {
         "ok": True,
         "competition": comp,
-        "rounds": sorted_rounds,
+        "knockout": knockout,
+        "odds_knockout": odds_knockout,
+        "real_knockout": real_knockout,
     }
     ko_framework = _build_knockout_framework(comp)
     if ko_framework:
@@ -6421,14 +6619,26 @@ def api_cup_bracket():
         league_table = _compute_standings_from_history(comp)
         if league_table:
             result["league_phase"] = league_table
+    cup_format = _CUP_FORMATS.get(comp)
+    if cup_format:
+        result["cup_format"] = cup_format
 
     return jsonify(result)
 
 
 @app.get("/api/real-cup-data")
 def api_real_cup_data():
-    """Return real cup data: format info, group/league phase tables, and
-    bracket matchups with actual results for a cup competition.
+    """Return real cup data in World Cup format.
+
+    Response mirrors ``/api/world-cup``:
+
+    * ``knockout`` — ``{stage_key: [matches]}}`` with actual winners
+      from live scores / projected bracket.
+    * ``odds_knockout`` — same topology, each match's ``winner`` is the
+      team with higher ``prob_home`` / ``prob_away``.
+    * ``real_knockout`` — winners only from completed (``post``) games.
+
+    Additional fields: ``cup_format``, ``table``, ``knockout_rounds``.
 
     Query params:
         competition  -- required, e.g. "UEFA/Champions League", "England/FA Cup"
@@ -6442,7 +6652,6 @@ def api_real_cup_data():
     # 1. Format metadata
     cup_format = _CUP_FORMATS.get(comp)
     if comp in _UEFA_COMPETITIONS and cup_format is None:
-        # Alias lookup: if comp is "Europe/..." but _CUP_FORMATS only has the "UEFA/..." key
         for key, fmt in _CUP_FORMATS.items():
             if key in _UEFA_COMPETITIONS and LIVE_SCORE_COMPETITIONS.get(comp) == LIVE_SCORE_COMPETITIONS.get(key):
                 cup_format = fmt
@@ -6497,11 +6706,7 @@ def api_real_cup_data():
                             "match_id": str(entry.get("match_id", "") or ""),
                         })
 
-    # 4. Group by round with stage type classification + odds
-    is_uefa_league_phase = cup_format and cup_format.get("format") == "league_phase_then_knockout"
-    ko_round_names = set(cup_format.get("knockout_rounds", [])) if cup_format else set()
-
-    # Pre-load odds from the cup predictions CSV
+    # 4. Enrich with odds and round metadata
     odds_index = {}
     try:
         odds_df = pd.read_csv(CUP_UPCOMING_FILE)
@@ -6516,78 +6721,51 @@ def api_real_cup_data():
     except Exception:
         pass
 
-    rounds = {}
     for g in matches:
-        rnd = g.get("round", "")
-        if not rnd:
-            rnd = "Match"
+        rnd = g.get("round", "") or "Match"
         order = g.get("round_order", 0)
         if not isinstance(order, (int, float)):
             try:
                 order = int(order)
             except (ValueError, TypeError):
                 order = 0
+        g["round_order"] = order
+        g["round"] = rnd
 
-        # Classify stage
-        if is_uefa_league_phase and rnd == "League Phase":
-            stage_type = "league_phase"
-        elif is_uefa_league_phase and rnd in ko_round_names:
-            stage_type = "knockout"
-        else:
-            stage_type = "knockout"
-
-        if rnd not in rounds:
-            rounds[rnd] = {"name": rnd, "order": order, "stage": stage_type, "matches": []}
-
-        winner = None
+        # Compute winner for completed games
         if g.get("status") == "post":
             hs = g.get("home_score")
             aws = g.get("away_score")
             if hs is not None and aws is not None:
                 if hs > aws:
-                    winner = g.get("home_team", "")
+                    g["winner"] = g.get("home_team", "")
                 elif aws > hs:
-                    winner = g.get("away_team", "")
+                    g["winner"] = g.get("away_team", "")
 
+        # Attach odds
         hm_name = str(g.get("home_team", "")).strip().lower()
         aw_name = str(g.get("away_team", "")).strip().lower()
         odds = odds_index.get((hm_name, aw_name)) or odds_index.get((aw_name, hm_name), {})
+        g["prob_home"] = odds.get("prob_home")
+        g["prob_draw"] = odds.get("prob_draw")
+        g["prob_away"] = odds.get("prob_away")
 
-        rounds[rnd]["matches"].append({
-            "home_team": g.get("home_team", ""),
-            "away_team": g.get("away_team", ""),
-            "home_score": g.get("home_score"),
-            "away_score": g.get("away_score"),
-            "status": g.get("status", "pre"),
-            "winner": winner,
-            "kickoff_utc": _utc_to_et(g.get("kickoff_utc", "")),
-            "match_id": g.get("match_id", ""),
-            "prob_home": odds.get("prob_home"),
-            "prob_draw": odds.get("prob_draw"),
-            "prob_away": odds.get("prob_away"),
-        })
-
-    # Assign slot numbers within each round
-    for rnd_data in rounds.values():
-        rnd_data["matches"].sort(key=lambda m: m.get("kickoff_utc", ""))
-        for idx, m in enumerate(rnd_data["matches"], start=1):
-            m["slot"] = idx
-
-    sorted_rounds = sorted(rounds.values(), key=lambda r: (r["order"], r["name"]))
+    # 5. Build WC-style knockout structures
+    knockout, odds_knockout, real_knockout = _build_knockout_wc_format(matches)
 
     result = {
         "ok": True,
         "competition": comp,
         "cup_format": cup_format,
-        "rounds": sorted_rounds,
+        "knockout": knockout,
+        "odds_knockout": odds_knockout,
+        "real_knockout": real_knockout,
     }
 
-    # Attach knockout framework for bracket topology
     ko_framework = _build_knockout_framework(comp)
     if ko_framework:
         result["knockout_rounds"] = ko_framework
 
-    # Attach league/group phase table when available
     if table is not None:
         result["table"] = table
 
@@ -6630,982 +6808,176 @@ def api_real_tables():
     return jsonify({"ok": True, "tables": results, "total": len(results)})
 
 
-@app.get("/api/real-tables/competitions")
-def api_real_tables_competitions():
-    """Return list of competitions that have available standings data (cached or known)."""
-    available = []
-    for comp_name in LIVE_SCORE_COMPETITIONS:
-        cached = None
-        with _real_tables_lock:
-            cached = _real_tables.get(comp_name)
-        available.append({
-            "competition": comp_name,
-            "cached": cached is not None,
-        })
-    return jsonify({"ok": True, "competitions": available})
+@app.get("/api/competition-data")
+def api_competition_data():
+    """Return full competition data in World Cup format for any competition.
 
+    Works for *all* competitions tracked by the system (leagues, cups,
+    World Cup).  The response mirrors ``/api/world-cup``:
 
-@app.get("/api/real-tables/leaders")
-def api_real_tables_leaders():
-    """Return individual statistical leaders from ESPN for a competition.
+    * ``knockout`` — ``{stage_key: [matches]}}`` with predicted winners
+      from the projection / simulation.
+    * ``odds_knockout`` — same topology, each match's ``winner`` is the
+      team with higher ``prob_home`` / ``prob_away``.
+    * ``real_knockout`` — winners only from completed (``post``) games;
+      unplayed matches show both teams but ``winner: null``.
+    * ``group_tables`` / ``table`` — group / league phase standings when
+      applicable.
+    * ``champion`` — aggregate most-likely champion from simulation.
+    * ``simulations_run`` — how many tournament simulations were aggregated.
+    * ``winner_probabilities`` — per-team champion probability map.
+    * ``cup_format``, ``knockout_rounds`` — cup/stage metadata.
 
-    Query params:
-        competition  -- required, e.g. "England/Premier League", "FIFA/World Cup"
-        refresh      -- if "1" or "true", bypasses cache
-    """
-    comp_filter = request.args.get("competition", "").strip()
-    if not comp_filter:
-        return jsonify({"ok": False, "error": "Missing 'competition' parameter"}), 400
-    if comp_filter not in LIVE_SCORE_COMPETITIONS:
-        return jsonify({"ok": False, "error": f"Unknown competition: {comp_filter}"}), 400
-    force_refresh = request.args.get("refresh", "").strip().lower() in ("1", "true")
-    if force_refresh:
-        _clear_leaders_cache(comp_filter)
-    data = _get_or_fetch_leaders(comp_filter)
-    if data is None:
-        return jsonify({
-            "ok": True,
-            "leaders": None,
-            "note": "No leaders data available for this competition (knockout cup or no stats).",
-        })
-    return jsonify({"ok": True, "leaders": data})
-
-
-@app.get("/api/prediction-stats")
-def api_prediction_stats():
-    """Return overall prediction tracking statistics.
-
-    Returns all-time correct/incorrect counts (total and per-league),
-    current week results (as integer counts), and the current week's
-    start date.
-    """
-    tracking = _load_prediction_tracking()
-    now = datetime.now()
-
-    # Summarise all-time
-    all_time = tracking.get("all_time", {"total": {"correct": 0, "incorrect": 0}, "by_league": {}})
-
-    # Summarise current week per competition
-    week_summary = {}
-    weekly = tracking.get("weekly", {})
-    for week_key, week_data in weekly.items():
-        ws = week_data.get("week_start", "")
-        try:
-            ws_dt = datetime.fromisoformat(ws).date() if ws else None
-        except Exception:
-            ws_dt = None
-        if ws_dt is None:
-            continue
-        # Check if this week is the current week for each competition
-        for comp in week_data.get("by_league", {}):
-            comp_ws = _get_week_start(now, comp).date()
-            if ws_dt == comp_ws:
-                week_summary[comp] = week_data["by_league"][comp]
-
-    return jsonify({
-        "ok": True,
-        "all_time": all_time,
-        "current_week": {
-            "by_league": week_summary,
-        },
-    })
-
-
-@app.get("/api/team")
-def api_team():
-    """Return form, recent results, upcoming games, and head-to-head vs all opponents for one team.
+    For regular leagues (no knockout bracket) the ``knockout`` / odds /
+    real fields are omitted and only ``table`` is returned.
 
     Query params:
-        team  -- team name (required)
-        mode  -- global / mls / extra (default: global)
-    """
-    team_input = request.args.get("team", "").strip()
-    mode = request.args.get("mode", "global").strip().lower()
-
-    if STATIC_PREDICTIONS:
-        if mode == "mls":
-            pm_mod = pm_mls
-        elif mode == "extra":
-            pm_mod = pm_extra
-        else:
-            pm_mod = pm_global
-        head_to_head, current_form = _load_h2h_and_form(pm_mod)
-        ctx = type("StaticCtx", (), {"head_to_head": head_to_head, "current_form": current_form})
-    else:
-        pm_mod = pm_mls if mode == "mls" else (pm_extra if mode == "extra" else pm_global)
-        ctx = get_context(mode)
-
-    if not team_input:
-        return jsonify({"ok": False, "error": "Missing team"}), 400
-    team = _team_name_for_db(team_input)
-
-    team_form = _normalize_recent_form_payload(ctx.current_form.get("teams", {}).get(team, {}))
-
-    recent_matches = _load_team_recent_matches(team, pm_mod.PROCESSED_DIR, 10)
-
-    all_h2h = {}
-    h2h_opponents = ctx.head_to_head.get(team, {})
-    for opponent, payload in h2h_opponents.items():
-        all_h2h[opponent] = _normalize_h2h_payload(payload)
-
-    upcoming = []
-    csv_path = _UPCOMING_CSV_FILES.get(mode) or _UPCOMING_CSV_FILES.get("global")
-    if csv_path and os.path.exists(csv_path):
-        try:
-            frame = pd.read_csv(csv_path, dtype=str)
-            team_lower = team.lower()
-            for _, row in frame.iterrows():
-                home = str(row.get("home_team", "") or "").strip()
-                away = str(row.get("away_team", "") or "").strip()
-                if team_lower not in (home.lower(), away.lower()):
-                    continue
-                upcoming.append({
-                    "competition": str(row.get("competition", "") or "").strip(),
-                    "match_date": str(row.get("match_date", "") or "").strip(),
-                    "match_datetime_utc": _utc_to_et(str(row.get("match_datetime_utc", "") or "").strip()),
-                    "home_team": home,
-                    "away_team": away,
-                    "predicted_result": str(row.get("predicted_result", "") or "").strip(),
-                })
-        except Exception:
-            pass
-
-    # ── Per-team prediction accuracy ───────────────────────
-    team_pred_data = {}
-    tracking = _load_prediction_tracking()
-    pt = tracking.get("per_team", {})
-    team_key = team
-    if team_key in pt:
-        team_pred_data = pt[team_key]
-    # Also check the display-name variant
-    for tname, tdata in pt.items():
-        if tname.strip().lower() == team.lower() and team_key != tname:
-            team_pred_data = tdata
-            break
-
-    return jsonify({
-        "ok": True,
-        "team": team,
-        "form": team_form,
-        "recent_matches": recent_matches,
-        "upcoming_games": upcoming,
-        "head_to_head": all_h2h,
-        "prediction_accuracy": team_pred_data,
-    })
-
-
-@app.get("/api/competitions")
-def api_competitions():
-    """Return all competition names used by the live score system."""
-    return jsonify({
-        "ok": True,
-        "competitions": sorted(LIVE_SCORE_COMPETITIONS.keys()),
-        "total": len(LIVE_SCORE_COMPETITIONS),
-    })
-
-
-@app.get("/api/competitions/<path:comp>/teams")
-def api_competition_teams(comp):
-    """Redirect to ESPN's teams endpoint (no server-side fetch)."""
-    if comp not in LIVE_SCORE_COMPETITIONS:
-        return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
-    espn_id = LIVE_SCORE_COMPETITIONS[comp]
-    return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/teams")
-
-
-@app.get("/api/competitions/<path:comp>/schedule")
-def api_competition_schedule(comp):
-    """Redirect to ESPN's scoreboard endpoint (no server-side fetch).
-
-    Query params:
-        dates  -- ESPN date range, e.g. ``20260601`` or ``20260601-20260630``
-                 (defaults to today onward if omitted)
-    """
-    if comp not in LIVE_SCORE_COMPETITIONS:
-        return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
-    espn_id = LIVE_SCORE_COMPETITIONS[comp]
-    dates = request.args.get("dates", "")
-    if dates:
-        return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard?dates={dates}")
-    return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard")
-
-
-@app.get("/api/competitions/<path:comp>/leaders")
-def api_competition_leaders(comp):
-    """Redirect to ESPN's statistics/leaders endpoint (no server-side fetch).
-
-    Query params:
-        season  -- optional season year (defaults to current)
-    """
-    if comp not in LIVE_SCORE_COMPETITIONS:
-        return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
-    espn_id = LIVE_SCORE_COMPETITIONS[comp]
-    season = request.args.get("season", "")
-    if season:
-        return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/statistics/leaders?season={season}")
-    return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/statistics/leaders")
-
-
-@app.get("/api/teams/<team_id>/roster")
-def api_team_roster(team_id):
-    """Redirect to ESPN's team-info endpoint (no server-side fetch).
-
-    Query params:
-        competition  -- required, the competition name the team belongs to
-                        (e.g. "England/Premier League")
+        competition  -- required, e.g. "UEFA/Champions League",
+                        "England/Premier League", "FIFA/World Cup"
     """
     comp = request.args.get("competition", "").strip()
     if not comp:
-        return jsonify({"ok": False, "error": "Missing 'competition' query parameter"}), 400
+        return jsonify({"ok": False, "error": "Missing 'competition' parameter"}), 400
     if comp not in LIVE_SCORE_COMPETITIONS:
         return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
-    espn_id = LIVE_SCORE_COMPETITIONS[comp]
-    return redirect(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/teams/{team_id}")
 
+    # ── Special case: World Cup uses its dedicated projection file ──
+    if comp == "FIFA/World Cup":
+        return api_world_cup()
 
-@app.get("/api/live/widget")
-def api_live_widget():
-    """Lightweight widget feed for iOS widget — active games with minimal data.
+    # ── Gather basic building blocks ──────────────────────────────
+    table = _compute_standings_from_history(comp)
+    cup_format = _CUP_FORMATS.get(comp)
+    ko_framework = _build_knockout_framework(comp)
 
-    Returns only games with ``status="in"`` (currently playing) plus a
-    brief summary of how many are live. Designed to be polled at high
-    frequency (every 30-60s) by the widget.
-    """
-    live_games = []
-    with _live_scores_lock:
-        for comp_name, comp_data in _live_scores.items():
-            for g in comp_data.get("games", []):
-                if g.get("status") == "in":
-                    live_games.append({
-                        "match_id": g.get("match_id"),
-                        "competition": comp_name,
-                        "home_team": g.get("home_team"),
-                        "away_team": g.get("away_team"),
-                        "home_score": g.get("home_score"),
-                        "away_score": g.get("away_score"),
-                        "clock": g.get("clock"),
-                        "period": g.get("period"),
-                        "home_stats": g.get("home_stats"),
-                        "away_stats": g.get("away_stats"),
-                        "live_prediction": g.get("live_prediction"),
-                        "goalscorers": g.get("goalscorers"),
-                        "red_cards": g.get("red_cards"),
-                    })
-    return jsonify({
+    result = {
         "ok": True,
-        "live_count": len(live_games),
-        "games": live_games,
-    })
-
-
-@app.get("/api/live/events")
-def api_live_events():
-    """Return recent goal/red-card events from currently-in-progress games.
-
-    Designed to be polled by the iOS app for live notifications.
-    Returns all events with a ``since`` timestamp (ISO-8601 UTC) so the
-    client can pass the last received event timestamp and only get new ones.
-
-    Query params:
-        since  -- optional ISO-8601 UTC timestamp. If omitted, returns
-                  all live-game events from the last 15 minutes.
-        competition -- optional filter by competition name
-    """
-    since_str = request.args.get("since", "").strip()
-    comp_filter = request.args.get("competition", "").strip()
-    try:
-        if since_str:
-            since_dt = datetime.fromisoformat(since_str)
-        else:
-            since_dt = datetime.now(ZoneInfo("UTC")) - timedelta(minutes=15)
-    except Exception:
-        since_dt = datetime.now(ZoneInfo("UTC")) - timedelta(minutes=15)
-
-    events = []
-    with _live_scores_lock:
-        for comp_name, comp_data in _live_scores.items():
-            if comp_filter and comp_filter.lower() not in comp_name.lower():
-                continue
-            for g in comp_data.get("games", []):
-                if g.get("status") not in ("in", "post"):
-                    continue
-                gs = g.get("goalscorers") or []
-                rc = g.get("red_cards") or []
-                for scorer in gs:
-                    events.append({
-                        "type": "goal",
-                        "match_id": g.get("match_id"),
-                        "competition": comp_name,
-                        "home_team": g.get("home_team"),
-                        "away_team": g.get("away_team"),
-                        "home_score": g.get("home_score"),
-                        "away_score": g.get("away_score"),
-                        "scorer": scorer.get("scorer"),
-                        "team": "home" if scorer.get("team") == "home" else "away",
-                        "minute": scorer.get("minute"),
-                        "timestamp": datetime.now(ZoneInfo("UTC")).isoformat(),
-                    })
-                for card in rc:
-                    events.append({
-                        "type": "red_card",
-                        "match_id": g.get("match_id"),
-                        "competition": comp_name,
-                        "home_team": g.get("home_team"),
-                        "away_team": g.get("away_team"),
-                        "player": card.get("player"),
-                        "team": "home" if card.get("team") == "home" else "away",
-                        "minute": card.get("minute"),
-                        "timestamp": datetime.now(ZoneInfo("UTC")).isoformat(),
-                    })
-
-    events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
-    return jsonify({
-        "ok": True,
-        "events": events,
-        "total_events": len(events),
-    })
-
-
-@app.get("/api/help")
-def api_help():
-    """List all available API endpoints with brief descriptions."""
-    return jsonify({
-        "ok": True,
-        "help": "See /api/help/comps for a full list of competition names",
-        "endpoints": [
-            # ── General ──
-            {"method": "GET", "path": "/api/help", "desc": "List all available API endpoints"},
-            {"method": "GET", "path": "/api/help/comps", "desc": "List all competition names used by the system, categorised by type"},
-            {"method": "GET", "path": "/api/stats", "desc": "Overall site stats: accuracy, league count, last refresh time"},
-            {"method": "GET", "path": "/api/competitions", "desc": "List all competition names used by the live score system"},
-            {"method": "GET", "path": "/api/competitions/{competition}/teams", "desc": "Redirect to ESPN teams endpoint"},
-            {"method": "GET", "path": "/api/competitions/{competition}/schedule?dates=", "desc": "Redirect to ESPN scoreboard (dates=YYYYMMDD or YYYYMMDD-YYYYMMDD)"},
-            {"method": "GET", "path": "/api/competitions/{competition}/leaders?season=", "desc": "Redirect to ESPN statistics/leaders endpoint"},
-            {"method": "GET", "path": "/api/teams/{team_id}/roster?competition=", "desc": "Redirect to ESPN team-info endpoint"},
-            {"method": "GET", "path": "/api/teams", "desc": "All tracked teams (union of all team-index files)"},
-            {"method": "GET", "path": "/api/scorers", "desc": "Current season top scorers by competition"},
-            # ── Live Scores ──
-            {"method": "GET", "path": "/api/live-scores?competition=", "desc": "Live scores for active competitions (polled from ESPN). Filters by comma-separated comp names"},
-            {"method": "GET", "path": "/api/live-score-history", "desc": "Historical completed matches used for computed standings"},
-            {"method": "GET", "path": "/api/live/widget", "desc": "Live scoreboard widget data (upcoming + in-progress games)"},
-            {"method": "GET", "path": "/api/live/events?match_id=", "desc": "Live key events for a specific match"},
-            {"method": "GET", "path": "/api/past-games?competition=&team=", "desc": "Recently completed games from the past-games archive (rolling 14-day window)"},
-            # ── Standings / Tables ──
-            {"method": "GET", "path": "/api/real-tables?competition=&refresh=", "desc": "Real league tables computed from live-score history. Omits competition to return all"},
-            {"method": "GET", "path": "/api/real-tables/competitions", "desc": "List all competitions with cached standings"},
-            {"method": "GET", "path": "/api/real-tables/leaders?competition=&refresh=", "desc": "Statistical leaders (goals, assists, etc.) from ESPN for a given competition"},
-            {"method": "GET", "path": "/api/league-tables?mode=global|mls|cups|extra", "desc": "Projected league tables. mode=global (default), mls, cups, extra. Includes fixtures, bracket, cup_formats, odds_bracket"},
-            # ── Cup Brackets ──
-            {"method": "GET", "path": "/api/cup-bracket?competition=", "desc": "Real bracket for a cup competition: completed + in-progress + upcoming games, with odds and slot numbering"},
-            {"method": "GET", "path": "/api/real-cup-data?competition=", "desc": "Rich cup data: format info, league/group phase tables, bracket matchups with stage classification, odds, and knockout framework"},
-            # ── Upcoming Fixtures ──
-            {"method": "GET", "path": "/api/upcoming/global", "desc": "Upcoming global + national-team fixtures and persistent accuracy stats"},
-            {"method": "GET", "path": "/api/upcoming/extra", "desc": "Upcoming extra-league fixtures and persistent accuracy stats"},
-            {"method": "GET", "path": "/api/upcoming/cups", "desc": "Upcoming cup fixtures and persistent accuracy stats"},
-            {"method": "GET", "path": "/api/upcoming/world-cup", "desc": "Upcoming World Cup group-stage fixtures (not knockouts)"},
-            {"method": "GET", "path": "/api/top-picks?mode=", "desc": "Top predicted picks across all modes"},
-            # ── Predictions ──
-            {"method": "POST", "path": "/api/predict", "desc": "Predict a single match (global model)"},
-            {"method": "POST", "path": "/api/predict/mls", "desc": "Predict a single match (MLS model)"},
-            {"method": "POST", "path": "/api/predict/extra", "desc": "Predict a single match (extra-leagues model)"},
-            {"method": "GET", "path": "/api/prediction-stats", "desc": "Prediction tracking: all-time and current-week correct/incorrect counts"},
-            {"method": "GET", "path": "/api/recent-completed?league=", "desc": "Completed predictions from previous full week + current week's past days"},
-            {"method": "GET", "path": "/api/accuracy-history", "desc": "Historic accuracy snapshots over time"},
-            # ── Pipeline ──
-            {"method": "GET", "path": "/api/pipeline/status", "desc": "Step-by-step results from the last pipeline run (pass/fail per step)"},
-            {"method": "GET", "path": "/api/last-refresh", "desc": "Last pipeline refresh timestamp"},
-            {"method": "GET", "path": "/api/last-data-refresh", "desc": "Last data refresh timestamp"},
-            {"method": "POST", "path": "/api/refresh", "desc": "Trigger a fresh pipeline run"},
-            # ── Head-to-Head ──
-            {"method": "GET", "path": "/api/h2h?home=&away=&competition=", "desc": "Head-to-head record between two teams"},
-            # ── Notifications ──
-            {"method": "POST", "path": "/api/notifications", "desc": "Push a notification"},
-            {"method": "GET", "path": "/api/notifications?limit=", "desc": "Return recent notifications"},
-            {"method": "POST", "path": "/api/notifications/register", "desc": "Register a device token for push notifications"},
-            # ── Mobile ──
-            {"method": "GET", "path": "/api/mobile/feed", "desc": "Full mobile-app feed JSON"},
-            {"method": "GET", "path": "/api/mobile/widget?league=&team=&limit=&mode=", "desc": "Lightweight widget feed: upcoming games filtered by league/team/random"},
-            # ── Feedback ──
-            {"method": "POST", "path": "/api/feedback", "desc": "Persist user feedback"},
-            # ── World Cup ──
-            {"method": "GET", "path": "/api/world-cup", "desc": "World Cup projection data (groups, third-place, knockouts, champion, sim stats)"},
-            # ── Debug ──
-            {"method": "GET", "path": "/api/debug/live-score-sources", "desc": "Show which competitions have games today and their polling sources"},
-            {"method": "GET", "path": "/api/debug/manual-poll?competition=", "desc": "Manually poll a specific competition from ESPN and return raw results"},
-            {"method": "GET", "path": "/api/debug/poller-state", "desc": "Dump internal poller state (active comps, thread status, cycle count)"},
-            # ── Pages ──
-            {"method": "GET", "path": "/", "desc": "Home page"},
-            {"method": "GET", "path": "/upcoming-matches", "desc": "Upcoming matches page"},
-            {"method": "GET", "path": "/cups", "desc": "Cup competitions page"},
-            {"method": "GET", "path": "/head-to-head", "desc": "Head-to-head page"},
-            {"method": "GET", "path": "/league-tables", "desc": "League tables page"},
-            {"method": "GET", "path": "/world-cup", "desc": "World Cup page"},
-            {"method": "GET", "path": "/about", "desc": "About page"},
-            {"method": "GET", "path": "/tactics", "desc": "Tactics whiteboard page"},
-            {"method": "GET", "path": "/players", "desc": "Players / top scorers page"},
-            {"method": "GET", "path": "/graphics/{filename}", "desc": "Serve generated graphic images"},
-        ],
-    })
-
-
-@app.get("/api/help/comps")
-def api_help_comps():
-    """Return all competition names used by the system, categorised by type."""
-    # Build mode-based grouping from _UPCOMING_CSV_MODE_MAP
-    mode_groups = {}
-    mode_labels = {
-        "global": "Global (Big-5 + Portugal + Netherlands)",
-        "mls": "MLS",
-        "extra": "Extra Leagues (Belgium, Scotland, Turkey, etc.)",
-        "cups": "Cups (domestic & UEFA)",
-        "national": "National Team & World Cup",
+        "competition": comp,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
-    for comp, mode in _UPCOMING_CSV_MODE_MAP.items():
-        label = mode_labels.get(mode, mode)
-        mode_groups.setdefault(label, []).append(comp)
 
-    for group in mode_groups.values():
-        group.sort()
+    if table is not None and isinstance(table, list):
+        result["table"] = table
+    if cup_format:
+        result["cup_format"] = cup_format
+    if ko_framework:
+        result["knockout_rounds"] = ko_framework
 
-    # UEFA-only competitions
-    uefa_list = sorted(_UEFA_COMPETITIONS)
-
-    # Cup-only competitions
-    cup_list = sorted(CUP_COMPETITIONS)
-
-    return jsonify({
-        "ok": True,
-        "counts": {
-            "total_live_score": len(LIVE_SCORE_COMPETITIONS),
-            "total_prediction_modes": sum(len(v) for v in mode_groups.values()),
-            "total_uefa": len(uefa_list),
-            "total_cups": len(cup_list),
-        },
-        "live_score_competitions": {
-            "count": len(LIVE_SCORE_COMPETITIONS),
-            "entries": sorted(LIVE_SCORE_COMPETITIONS.keys()),
-        },
-        "prediction_csv_modes": {
-            "description": "Which prediction CSV each competition routes to",
-            "modes": {label: {"count": len(v), "entries": v} for label, v in sorted(mode_groups.items())},
-        },
-        "uefa_competitions": {
-            "count": len(uefa_list),
-            "entries": uefa_list,
-        },
-        "cup_competitions": {
-            "count": len(cup_list),
-            "entries": cup_list,
-        },
-        "espn_ids": {
-            "description": "ESPN API league identifiers for each live-score competition",
-            "mappings": dict(sorted(LIVE_SCORE_COMPETITIONS.items())),
-        },
-    })
-
-
-@app.get("/api/upcoming/global")
-def api_upcoming_global():
-    """Return upcoming global fixtures (club + national team) and persistent accuracy stats."""
-    global_rows, global_stats, global_league_stats = _load_upcoming_rows(GLOBAL_UPCOMING_FILE, "global")
-    national_rows, national_stats, national_league_stats = _load_upcoming_rows(NATIONAL_UPCOMING_FILE, "national")
-    rows = global_rows + national_rows
-    stats = global_stats.copy()
-    stats["pending_total"] = global_stats.get("pending_total", 0) + national_stats.get("pending_total", 0)
-    stats["total_predictions"] = stats.get("settled_total", 0) + stats.get("pending_total", 0)
-    league_stats = global_league_stats + national_league_stats
-    return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
-
-
-@app.get("/api/upcoming/extra")
-def api_upcoming_extra():
-    """Return upcoming extra-league fixtures and persistent accuracy stats."""
-    rows, stats, league_stats = _load_upcoming_rows(EXTRA_UPCOMING_FILE, "extra")
-    return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
-
-
-@app.get("/api/upcoming/cups")
-def api_upcoming_cups():
-    """Return upcoming cup fixtures and persistent accuracy stats."""
-    rows, stats, league_stats = _load_upcoming_rows(CUP_UPCOMING_FILE, "cups")
-    return jsonify({"ok": True, "rows": rows, "stats": stats, "league_stats": league_stats})
-
-
-@app.get("/api/upcoming/world-cup")
-def api_upcoming_world_cup():
-    """Return upcoming World Cup GROUP-STAGE fixtures (not knockouts).
-
-    Knockout fixtures are excluded until the actual knockout teams are decided
-    (i.e. once the group stage is complete and the Round of 32 bracket is set).
-    """
-    world_cup_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
-    if not os.path.exists(world_cup_file):
-        return jsonify({"ok": True, "rows": [], "stats": {}, "league_stats": []})
-    try:
-        with open(world_cup_file, "r", encoding="utf-8") as fh:
-            wc_data = json.load(fh)
-    except Exception as exc:
-        return jsonify({"ok": False, "error": f"Failed to load World Cup projection: {exc}"}), 500
-
-    # Only include group-stage fixtures for the upcoming list. Knockout matchups
-    # depend on group-stage outcomes that are not yet determined, so we leave
-    # the round-of-32 / round-of-16 / QF / SF / Final off the upcoming page
-    # until real match data confirms the teams.
-    raw_fixtures = wc_data.get("group_fixtures", [])
-    today = pd.Timestamp(datetime.now().date())
-    rows = []
-    for fixture in raw_fixtures:
-        match_date_str = str(fixture.get("match_date", "")).strip()
-        if not match_date_str:
-            continue
-        try:
-            match_date = pd.to_datetime(match_date_str, errors="coerce")
-        except Exception:
-            match_date = None
-        if match_date is None or pd.isna(match_date):
-            continue
-        if match_date < today:
-            continue
-
-        home = _team_name_for_display(str(fixture.get("display_home_team") or fixture.get("home_team") or "").strip())
-        away = _team_name_for_display(str(fixture.get("display_away_team") or fixture.get("away_team") or "").strip())
-        if not home or not away:
-            continue
-
-        try:
-            ph_raw = float(fixture.get("prob_home", 0.0)) * 100
-            pdv_raw = float(fixture.get("prob_draw", 0.0)) * 100
-            pa_raw = float(fixture.get("prob_away", 0.0)) * 100
-        except Exception:
-            ph_raw = pdv_raw = pa_raw = 0.0
-
-        utc_dt_raw = str(fixture.get("match_datetime_utc", "")).strip()
-        date_val = pd.to_datetime(utc_dt_raw, utc=True, errors="coerce") if utc_dt_raw else pd.NaT
-        if pd.isna(date_val):
-            weekday = ""
-            date_label = match_date_str
-            time_label = ""
-        else:
-            try:
-                date_val_et = date_val.tz_convert("America/New_York")
-            except Exception:
-                date_val_et = date_val
-            weekday = date_val_et.strftime("%A")
-            date_label = date_val_et.strftime("%B %d, %Y")
-            try:
-                time_label = date_val_et.strftime("%I:%M %p ET").lstrip("0")
-            except Exception:
-                time_label = ""
-
-        # Score prediction: prefer the deterministic `pred_home_goals`/`pred_away_goals`
-        # already on the projection. If those are missing, fall back to a 0-0 placeholder.
-        ph_goals = fixture.get("pred_home_goals")
-        pa_goals = fixture.get("pred_away_goals")
-        try:
-            ph_goals_int = int(ph_goals) if ph_goals is not None and not pd.isna(ph_goals) else None
-        except Exception:
-            ph_goals_int = None
-        try:
-            pa_goals_int = int(pa_goals) if pa_goals is not None and not pd.isna(pa_goals) else None
-        except Exception:
-            pa_goals_int = None
-
-        rows.append({
-            "match_date": match_date_str,
-            "match_datetime_et": _utc_to_et(utc_dt_raw),
-            "weekday": weekday,
-            "date_label": date_label,
-            "time_label": time_label,
-            "competition": str(fixture.get("competition", "FIFA/World Cup")),
-            "stage": str(fixture.get("stage", "group-stage")),
-            "group": str(fixture.get("group", "")),
-            "venue": str(fixture.get("venue", "")),
-            "home_team": home,
-            "away_team": away,
-            "winner_label": _winner_label(str(fixture.get("predicted_result", "")), home, away),
-            "prob_home": round(ph_raw, 3),
-            "prob_draw": round(pdv_raw, 3),
-            "prob_away": round(pa_raw, 3),
-            "prob_home_text": _format_percent_value(ph_raw),
-            "prob_draw_text": _format_percent_value(pdv_raw),
-            "prob_away_text": _format_percent_value(pa_raw),
-            "pred_home_goals": ph_goals_int,
-            "pred_away_goals": pa_goals_int,
-            "prob_home_goals_0": _get_goal_prob(fixture, "prob_home_goals_0"),
-            "prob_home_goals_1plus": _get_goal_prob(fixture, "prob_home_goals_1plus"),
-            "prob_home_goals_2plus": _get_goal_prob(fixture, "prob_home_goals_2plus"),
-            "prob_away_goals_0": _get_goal_prob(fixture, "prob_away_goals_0"),
-            "prob_away_goals_1plus": _get_goal_prob(fixture, "prob_away_goals_1plus"),
-            "prob_away_goals_2plus": _get_goal_prob(fixture, "prob_away_goals_2plus"),
-            "prob_both_score": _get_goal_prob(fixture, "prob_both_score"),
-            "prob_over_1_5": _get_goal_prob(fixture, "prob_over_1_5"),
-            "prob_over_2_5": _get_goal_prob(fixture, "prob_over_2_5"),
-            "prob_over_3_5": _get_goal_prob(fixture, "prob_over_3_5"),
-            "reasoning": "",
-            "actual_result": "",
-            "is_correct": "",
-        })
-
-    rows.sort(key=lambda r: (r["match_date"], r["competition"], r["home_team"]))
-    empty_frame = pd.DataFrame(rows)
-    return jsonify({
-        "ok": True,
-        "rows": rows,
-        "stats": _compute_accuracy_stats(empty_frame),
-        "league_stats": _compute_league_accuracy_stats(empty_frame),
-    })
-
-
-@app.get("/api/recent-completed")
-def api_recent_completed():
-    """Return completed predictions from the previous full week + current week's past days.
-
-    Sources from all five prediction CSVs (global, mls, extra, cups, national),
-    filtered to games with ``actual_result`` set.  Games still showing in
-    ``/api/upcoming/*`` (today + next 3 weeks) are excluded.
-    """
-    league = request.args.get("league", "").strip().lower()
-    all_rows = []
-    for source, csv_path in (
-        ("global", GLOBAL_UPCOMING_FILE),
-        ("mls", MLS_UPCOMING_FILE),
-        ("extra", EXTRA_UPCOMING_FILE),
-        ("cups", CUP_UPCOMING_FILE),
-        ("national", NATIONAL_UPCOMING_FILE),
-    ):
-        rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source, date_range="completed")
-        for r in rows:
-            if r.get("actual_result") and r["actual_result"].upper() in {"H", "D", "A"}:
-                if not league or league in r.get("competition", "").lower():
-                    all_rows.append(r)
-
-    all_rows.sort(key=lambda r: (r.get("match_date", ""), r.get("competition", ""), r.get("home_team", "")), reverse=True)
-    return jsonify({"ok": True, "rows": all_rows, "total": len(all_rows)})
-
-
-def _row_confidence(row):
-    """Confidence for a top-picks ranking: max of the three outcome probs.
-
-    Range 0-100. Higher means the model is more decisive about the result.
-    """
-    try:
-        ph = float(row.get("prob_home") or 0.0)
-        pdv = float(row.get("prob_draw") or 0.0)
-        pa = float(row.get("prob_away") or 0.0)
-    except (TypeError, ValueError):
-        return 0.0
-    return max(ph, pdv, pa)
-
-
-def _row_match_key(row):
-    """Stable key for de-duplicating the same matchup across data sources."""
-    return (
-        str(row.get("match_date") or "").strip(),
-        str(row.get("home_team") or "").strip().lower(),
-        str(row.get("away_team") or "").strip().lower(),
-    )
-
-
-def _is_valid_top_pick(row):
-    """Filter to rows with full team labels + non-negative numeric probs."""
-    if not row:
-        return False
-    if not row.get("home_team") or not row.get("away_team") or not row.get("winner_label"):
-        return False
-    try:
-        h = float(row.get("prob_home"))
-        d = float(row.get("prob_draw"))
-        a = float(row.get("prob_away"))
-    except (TypeError, ValueError):
-        return False
-    if not all(map(lambda v: v == v and v >= 0, (h, d, a))):  # filter NaN + negatives
-        return False
-    return True
-
-
-def _is_future_top_pick(row):
-    """Keep only fixtures dated today or later."""
-    raw = str(row.get("match_date") or "").strip()
-    if not raw:
-        return False
-    parsed = pd.to_datetime(raw, errors="coerce")
-    if pd.isna(parsed):
-        return False
-    return parsed.normalize() >= pd.Timestamp(datetime.now().date())
-
-
-@app.get("/api/top-picks")
-def api_top_picks():
-    """Return the top-N most confident upcoming predictions across all sources.
-
-    Aggregates rows from the five /api/upcoming/* sources (global, mls, extra,
-    cups, world-cup), de-duplicates identical matchups, filters to future
-    fixtures, sorts by max(prob_home, prob_draw, prob_away) descending, and
-    returns the top N rows. The home page calls this single endpoint for
-    its top-picks widget instead of fetching the five separate sources
-    (which together ship 100+ rows just to display 12 cards).
-    """
-    try:
-        limit = int(request.args.get("limit", "12"))
-    except (TypeError, ValueError):
-        limit = 12
-    limit = max(1, min(limit, 50))
-
-    seen = {}
-    for source, csv_path in (
-        ("global", GLOBAL_UPCOMING_FILE),
-        ("mls", MLS_UPCOMING_FILE),
-        ("extra", EXTRA_UPCOMING_FILE),
-        ("cups", CUP_UPCOMING_FILE),
-        ("national", NATIONAL_UPCOMING_FILE),
-    ):
-        rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source)
-        for row in rows:
-            if not _is_valid_top_pick(row):
-                continue
-            key = _row_match_key(row)
-            if not key[0] or not key[1] or not key[2]:
-                continue
-            # First source wins; later sources are skipped.
-            seen.setdefault(key, row)
-
-    # World Cup upcoming is a different shape (read from the projection JSON,
-    # not the CSV files). Append those rows so WC group-stage games show up
-    # alongside the league fixtures in the top-picks widget.
-    try:
-        world_cup_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
-        if os.path.exists(world_cup_file):
-            with open(world_cup_file, "r", encoding="utf-8") as fh:
-                wc_data = json.load(fh)
-            today = pd.Timestamp(datetime.now().date())
-            for fixture in wc_data.get("group_fixtures", []) or []:
-                match_date = pd.to_datetime(fixture.get("match_date", ""), errors="coerce")
-                if pd.isna(match_date) or match_date < today:
-                    continue
-                home = str(fixture.get("display_home_team") or fixture.get("home_team") or "").strip()
-                away = str(fixture.get("display_away_team") or fixture.get("away_team") or "").strip()
-                if not home or not away:
-                    continue
-                try:
-                    ph = round(float(fixture.get("prob_home", 0.0)) * 100, 3)
-                    pdv = round(float(fixture.get("prob_draw", 0.0)) * 100, 3)
-                    pa = round(float(fixture.get("prob_away", 0.0)) * 100, 3)
-                except (TypeError, ValueError):
-                    continue
-                try:
-                    phg = int(fixture["pred_home_goals"]) if fixture.get("pred_home_goals") is not None and not pd.isna(fixture["pred_home_goals"]) else None
-                    pag = int(fixture["pred_away_goals"]) if fixture.get("pred_away_goals") is not None and not pd.isna(fixture["pred_away_goals"]) else None
-                except (TypeError, ValueError):
-                    phg = pag = None
-                weekday = ""
-                date_label = str(fixture.get("match_date", ""))
-                time_label = ""
-                utc_raw = str(fixture.get("match_datetime_utc", "")).strip()
-                if utc_raw:
-                    dt_val = pd.to_datetime(utc_raw, utc=True, errors="coerce")
-                    if not pd.isna(dt_val):
-                        try:
-                            dt_val_et = dt_val.tz_convert("America/New_York")
-                        except Exception:
-                            dt_val_et = dt_val
-                        weekday = dt_val_et.strftime("%A")
-                        date_label = dt_val_et.strftime("%B %d, %Y")
-                        try:
-                            time_label = dt_val_et.strftime("%I:%M %p ET").lstrip("0")
-                        except Exception:
-                            time_label = ""
-                wc_row = {
-                    "match_date": str(fixture.get("match_date", "")),
-                    "match_datetime_et": _utc_to_et(utc_raw),
-                    "weekday": weekday,
-                    "date_label": date_label,
-                    "time_label": time_label,
-                    "competition": str(fixture.get("competition", "FIFA/World Cup")),
-                    "stage": str(fixture.get("stage", "group-stage")),
-                    "group": str(fixture.get("group", "")),
-                    "venue": str(fixture.get("venue", "")),
-                    "home_team": home,
-                    "away_team": away,
-                    "winner_label": _winner_label(str(fixture.get("predicted_result", "")), home, away),
-                    "prob_home": ph,
-                    "prob_draw": pdv,
-                    "prob_away": pa,
-                    "pred_home_goals": phg,
-                    "pred_away_goals": pag,
-                    "reasoning": "",
-                    "actual_result": "",
-                    "is_correct": "",
-                }
-                if not _is_valid_top_pick(wc_row):
-                    continue
-                key = _row_match_key(wc_row)
-                if not key[0] or not key[1] or not key[2]:
-                    continue
-                seen.setdefault(key, wc_row)
-    except Exception:
-        # WC projection is optional for the top-picks widget. Swallow errors so
-        # the rest of the picks still render.
-        pass
-
-    # De-dupe and filter to future fixtures.
-    candidates = [r for r in seen.values() if _is_future_top_pick(r)]
-
-    # Sort by confidence desc, then by date asc (earliest first), then by
-    # competition + teams for a deterministic order when ties exist.
-    candidates.sort(
-        key=lambda r: (
-            -_row_confidence(r),
-            str(r.get("match_date") or ""),
-            str(r.get("competition") or "").lower(),
-            str(r.get("home_team") or "").lower(),
-        )
-    )
-    return jsonify({
-        "ok": True,
-        "rows": candidates[:limit],
-        "total_candidates": len(candidates),
-        "limit": limit,
-    })
-
-
-def _load_all_fixtures_by_competition(csv_path):
-    """Read a prediction CSV and return all fixtures grouped by competition.
-
-    Returns a dict ``{competition_name: [fixture_dict, ...]}`` or empty dict.
-    Each fixture dict has the same fields as ``_load_upcoming_rows`` returns.
-    """
-    try:
-        frame = pd.read_csv(csv_path)
-    except Exception:
-        return {}
-    if frame.empty:
-        return {}
-    required = ["match_date", "competition", "home_team", "away_team",
-                "predicted_result", "prob_home", "prob_draw", "prob_away"]
-    for col in required:
-        if col not in frame.columns:
-            return {}
-
-    # Filter out rows with invalid dates
-    frame = frame.copy()
-    frame["parsed_date"] = pd.to_datetime(frame["match_date"], errors="coerce").dt.normalize()
-    frame = frame[frame["parsed_date"].notna()].reset_index(drop=True)
-    if frame.empty:
-        return {}
-
-    # Sort chronologically
-    frame = frame.sort_values(["parsed_date", "competition", "home_team", "away_team"])
-
-    result = {}
-    for _, row in frame.iterrows():
-        comp = str(row.get("competition", "")).strip()
-        if not comp:
-            continue
-        home = str(row.get("home_team", "")).strip()
-        away = str(row.get("away_team", "")).strip()
-        fixture = {
-            "match_date": row["parsed_date"].strftime("%Y-%m-%d"),
-            "home_team": home,
-            "away_team": away,
-            "predicted_result": str(row.get("predicted_result", "")),
-            "prob_home": _safe_float(row.get("prob_home"), None),
-            "prob_draw": _safe_float(row.get("prob_draw"), None),
-            "prob_away": _safe_float(row.get("prob_away"), None),
-            "pred_home_goals": _safe_int_c(row.get("pred_home_goals")),
-            "pred_away_goals": _safe_int_c(row.get("pred_away_goals")),
-        }
-        if "match_datetime_utc" in frame.columns:
-            fixture["match_datetime_utc"] = str(row.get("match_datetime_utc", ""))
-        if "actual_result" in frame.columns:
-            fixture["actual_result"] = str(row.get("actual_result", ""))
-        if "probability_reasoning" in frame.columns:
-            fixture["probability_reasoning"] = str(row.get("probability_reasoning", ""))
-        result.setdefault(comp, []).append(fixture)
-    return result
-
-
-def _safe_int_c(v):
-    """Convert to int, returning None on error."""
-    try:
-        return int(float(v))
-    except (TypeError, ValueError, OverflowError):
-        return None
-
-
-def _compute_odds_bracket():
-    """Build an odds-weighted projected cup bracket from prediction probabilities.
-
-    Takes the simulation-based projected cup bracket JSON and replaces each
-    match's winner with the team that has the higher win probability
-    (``prob_home`` vs ``prob_away`` from the cup predictions CSV).  The
-    original simulation bracket topology (which matches feed into which) is
-    preserved; only the winner selection method changes.
-
-    Returns a dict with the same structure as the projected cup brackets JSON:
-    ``{competition_name: bracket_entry, ...}``, or empty dict if data is
-    unavailable.
-    """
+    # ── Simulation / champion data from projected cup brackets ────
     bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
-    if not isinstance(bracket_data, dict):
-        return {}
+    if isinstance(bracket_data, dict):
+        comps = bracket_data.get("competitions", bracket_data)
+        if isinstance(comps, dict) and comp in comps:
+            entry = comps[comp]
+            if isinstance(entry, dict):
+                for key in ("champion", "simulations_run", "winner_probabilities", "sim_index"):
+                    if key in entry:
+                        result[key] = entry[key]
+                if "generated_at_utc" in bracket_data:
+                    result["generated_at_utc"] = bracket_data["generated_at_utc"]
 
-    # Build a lookup: (home_team_lower, away_team_lower) → {prob_home, prob_draw, prob_away}
-    odds_map = {}
+    # ── Knockout bracket (WC-style) ──────────────────────────────
+    # Build the three knockout structures using the same logic as
+    # /api/cup-bracket but without needing a separate request.
+    matches = []
+
+    # Completed games from history
+    history = _load_live_score_history()
+    seen_ids = set()
+    for g in history:
+        if g.get("competition") == comp:
+            mid = g.get("match_id", "")
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    # In-progress / finished today from live scores
+    with _live_scores_lock:
+        current = _live_scores.get(comp, {}).get("games", [])
+    for g in current:
+        mid = g.get("match_id", "")
+        if mid not in seen_ids:
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    # Upcoming from projected cup bracket
+    if isinstance(bracket_data, dict):
+        comps = bracket_data.get("competitions", bracket_data)
+        if isinstance(comps, dict) and comp in comps:
+            entry = comps[comp]
+            if isinstance(entry, dict):
+                rounds_list = entry.get("rounds") or []
+                for rnd in rounds_list:
+                    rnd_name = rnd.get("name", "")
+                    for m in rnd.get("matches", []):
+                        hm = str(m.get("home_team", "") or "")
+                        aw = str(m.get("away_team", "") or "")
+                        if not hm or not aw:
+                            continue
+                        matches.append({
+                            "home_team": hm,
+                            "away_team": aw,
+                            "home_score": None,
+                            "away_score": None,
+                            "status": "pre",
+                            "kickoff_utc": _utc_to_et(str(m.get("match_datetime_utc", "") or "")),
+                            "round": rnd_name,
+                            "competition": comp,
+                            "match_id": str(m.get("match_id", "") or ""),
+                        })
+
+    if not matches:
+        return jsonify(result)
+
+    # Enrich with odds from cup predictions CSV
+    odds_index = {}
     try:
         odds_df = pd.read_csv(CUP_UPCOMING_FILE)
         if not odds_df.empty and all(c in odds_df.columns for c in ("home_team", "away_team", "prob_home", "prob_draw", "prob_away")):
             for _, row in odds_df.iterrows():
                 key = (str(row["home_team"]).strip().lower(), str(row["away_team"]).strip().lower())
-                odds_map[key] = {
-                    "prob_home": _safe_float(row["prob_home"], 0),
-                    "prob_draw": _safe_float(row["prob_draw"], 0),
-                    "prob_away": _safe_float(row["prob_away"], 0),
+                odds_index[key] = {
+                    "prob_home": _safe_float(row["prob_home"], None),
+                    "prob_draw": _safe_float(row["prob_draw"], None),
+                    "prob_away": _safe_float(row["prob_away"], None),
                 }
     except Exception:
         pass
 
-    def _odds_winner(match):
-        """Return the team with higher win probability, or original winner as fallback."""
-        hm = str(match.get("home_team", "")).strip().lower()
-        aw = str(match.get("away_team", "")).strip().lower()
-        odds = odds_map.get((hm, aw)) or odds_map.get((aw, hm))
-        if odds:
-            ph = odds.get("prob_home", 0)
-            pa = odds.get("prob_away", 0)
-            if ph > pa and hm:
-                return str(match.get("home_team", ""))
-            elif pa > ph and aw:
-                return str(match.get("away_team", ""))
-        return match.get("winner") or match.get("home_team", "")
+    for g in matches:
+        rnd = g.get("round", "") or "Match"
+        order = g.get("round_order", 0)
+        if not isinstance(order, (int, float)):
+            try:
+                order = int(order)
+            except (ValueError, TypeError):
+                order = 0
+        g["round_order"] = order
+        g["round"] = rnd
 
-    def _walk_rounds(rounds):
-        """Recursively replace winners in rounds based on odds."""
-        result = []
-        for rnd_data in rounds:
-            rd = dict(rnd_data)
-            matches = []
-            for m in rnd_data.get("matches", []):
-                entry = dict(m)
-                entry["winner"] = _odds_winner(m)
-                matches.append(entry)
-            rd["matches"] = matches
-            result.append(rd)
-        return result
+        if g.get("status") == "post":
+            hs = g.get("home_score")
+            aws = g.get("away_score")
+            if hs is not None and aws is not None:
+                if hs > aws:
+                    g["winner"] = g.get("home_team", "")
+                elif aws > hs:
+                    g["winner"] = g.get("away_team", "")
 
-    output = {}
-    comps = bracket_data.get("competitions", bracket_data)
-    for comp_name, comp_entry in comps.items():
-        if not isinstance(comp_entry, dict):
-            continue
-        entry = dict(comp_entry)
-        if "rounds" in entry:
-            entry["rounds"] = _walk_rounds(entry["rounds"])
-        entry["odds_weighted"] = True
-        output[comp_name] = entry
-    return output
+        hm_name = str(g.get("home_team", "")).strip().lower()
+        aw_name = str(g.get("away_team", "")).strip().lower()
+        odds = odds_index.get((hm_name, aw_name)) or odds_index.get((aw_name, hm_name), {})
+        g["prob_home"] = odds.get("prob_home")
+        g["prob_draw"] = odds.get("prob_draw")
+        g["prob_away"] = odds.get("prob_away")
 
+    knockout, odds_knockout, real_knockout = _build_knockout_wc_format(matches)
+    result["knockout"] = knockout
+    result["odds_knockout"] = odds_knockout
+    result["real_knockout"] = real_knockout
 
-@app.get("/api/league-tables")
+    return jsonify(result)
 def api_league_tables():
     """Return projected league tables (and MLS playoff bracket when requested).
 
