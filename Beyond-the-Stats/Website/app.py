@@ -4940,6 +4940,9 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         lo = pd.Timestamp(prev_thursday)
         hi = pd.Timestamp(today_et)
         frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] < hi)].reset_index(drop=True)
+    elif date_range == "all":
+        # All available rows (no date filter)
+        pass
     else:
         # Upcoming: today → 21 days out (today + rest of current week + 2 full weeks)
         lo = pd.Timestamp(today_et)
@@ -5664,6 +5667,14 @@ _UPCOMING_MODE_MAP = {
     "world-cup": (NATIONAL_UPCOMING_FILE, "national"),
 }
 
+_ALL_UPCOMING_SOURCES = [
+    ("global", GLOBAL_UPCOMING_FILE),
+    ("mls", MLS_UPCOMING_FILE),
+    ("extra", EXTRA_UPCOMING_FILE),
+    ("cups", CUP_UPCOMING_FILE),
+    ("national", NATIONAL_UPCOMING_FILE),
+]
+
 
 @app.get("/api/upcoming/<mode>")
 def api_upcoming(mode):
@@ -5676,7 +5687,50 @@ def api_upcoming(mode):
 
         {"ok": true, "rows": [...], "stats": {...},
          "league_stats": [...], "available_leagues": [...]}
+
+    The ``global`` mode aggregates rows from **all** sources.
     """
+    if mode == "global":
+        all_rows = []
+        combined_stats = {"correct_total": 0, "total_predictions": 0, "pending_total": 0, "accuracy_pct": 0.0}
+        combined_league_stats = {}
+        seen_keys = set()
+        for source, csv_path in _ALL_UPCOMING_SOURCES:
+            # For global aggregation, include ALL future dates (no upper bound)
+            # and also include the current prediction week (completed range) so
+            # recently settled games appear until the next pipeline run.
+            rows, _st, _ls = _load_upcoming_rows(csv_path, source)
+            # If the standard window returned nothing, try a broader range
+            if not rows:
+                rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="all")
+            for r in rows:
+                ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
+                if ck and ck not in seen_keys:
+                    seen_keys.add(ck)
+                    all_rows.append(r)
+            for k, v in (_st or {}).items():
+                if k not in combined_stats or isinstance(v, (int, float)):
+                    combined_stats[k] = (combined_stats.get(k, 0) if isinstance(v, (int, float)) else 0) + (v if isinstance(v, (int, float)) else 0)
+            for ls in (_ls or []):
+                comp = ls.get("competition", "")
+                if comp and comp not in combined_league_stats:
+                    combined_league_stats[comp] = ls
+        # Re-sort aggregated rows: date → league → time
+        all_rows.sort(key=lambda r: (
+            str(r.get("match_date", "")),
+            str(r.get("competition", "")),
+            str(r.get("match_datetime_et", "") or r.get("match_datetime_utc", "")),
+            str(r.get("home_team", "")),
+        ))
+        leagues = sorted({r.get("competition", "") for r in all_rows if r.get("competition")})
+        return jsonify({
+            "ok": True,
+            "rows": all_rows,
+            "stats": combined_stats,
+            "league_stats": list(combined_league_stats.values()),
+            "available_leagues": leagues,
+        })
+
     entry = _UPCOMING_MODE_MAP.get(mode)
     if not entry:
         return jsonify({"ok": False, "error": f"Unknown mode: {mode}"}), 400
