@@ -3744,8 +3744,8 @@ def _update_cumulative_momentum(game):
     SOT_WEIGHT = 18.0        # per new SOT this cycle
     CORNER_WEIGHT = 8.0      # per new corner this cycle
     YELLOW_WEIGHT = 4.0      # per new yellow this cycle
-    POSSESSION_WEIGHT = 35.0  # scales with possession% difference
-    PASS_WEIGHT = 0.4        # per completed pass this cycle
+    POSSESSION_WEIGHT = 80.0  # scales with possession% difference
+    PASS_WEIGHT = 1.5        # per completed pass this cycle
     CROSS_WEIGHT = 6.0       # per cross this cycle
     KEY_PASS_WEIGHT = 8.0    # per key pass this cycle
     PASS_ACC_WEIGHT = 20.0   # scales with pass-accuracy % difference
