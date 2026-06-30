@@ -4953,7 +4953,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
     frame["match_date"] = frame["parsed_date"].dt.strftime("%Y-%m-%d")
     frame = frame.drop(columns=["parsed_date"])
 
-    frame = frame.sort_values(["match_date", "competition", "home_team", "away_team"])
+    frame = frame.sort_values(["match_date", "competition", "match_datetime_utc", "home_team", "away_team"])
     target_mode = mode or ("mls" if os.path.normpath(csv_path) == os.path.normpath(MLS_UPCOMING_FILE) else "global")
     is_mls_file = target_mode == "mls"
 
@@ -5654,6 +5654,42 @@ def api_teams():
         except Exception:
             display_teams = []
     return jsonify({"teams": display_teams})
+
+
+_UPCOMING_MODE_MAP = {
+    "global": (GLOBAL_UPCOMING_FILE, "global"),
+    "mls": (MLS_UPCOMING_FILE, "mls"),
+    "extra": (EXTRA_UPCOMING_FILE, "extra"),
+    "cups": (CUP_UPCOMING_FILE, "cups"),
+    "world-cup": (NATIONAL_UPCOMING_FILE, "national"),
+}
+
+
+@app.get("/api/upcoming/<mode>")
+def api_upcoming(mode):
+    """Return upcoming prediction rows for the given source mode.
+
+    The response matches the expected structure from
+    ``loadUpcoming()`` in the frontend:
+
+    .. code-block:: json
+
+        {"ok": true, "rows": [...], "stats": {...},
+         "league_stats": [...], "available_leagues": [...]}
+    """
+    entry = _UPCOMING_MODE_MAP.get(mode)
+    if not entry:
+        return jsonify({"ok": False, "error": f"Unknown mode: {mode}"}), 400
+    csv_path, source_mode = entry
+    rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode)
+    leagues = sorted({r.get("competition", "") for r in rows if r.get("competition")})
+    return jsonify({
+        "ok": True,
+        "rows": rows,
+        "stats": stats,
+        "league_stats": league_stats,
+        "available_leagues": leagues,
+    })
 
 
 @app.get("/api/world-cup")
@@ -6978,6 +7014,9 @@ def api_competition_data():
     result["real_knockout"] = real_knockout
 
     return jsonify(result)
+
+
+@app.get("/api/league-tables")
 def api_league_tables():
     """Return projected league tables (and MLS playoff bracket when requested).
 
@@ -7060,6 +7099,124 @@ def api_stats():
         "accuracy_pct": accuracy_pct,
         "league_count": 18,
         "refreshed_at": refreshed_at,
+    })
+
+
+@app.get("/api/league-leaders")
+def api_league_leaders():
+    """Return predicted and real (live) leaders for every league and cup.
+
+    Response:
+
+    .. code-block:: json
+
+        {"ok": true, "leagues": [{"competition": "...",
+          "predicted_winner": "...", "predicted_winner_odds": 0.0,
+          "current_leader": "...", "leader_source": "real"|"predicted"},
+          ...],
+         "cups": [{"competition": "...",
+          "predicted_winner": "...", "predicted_winner_odds": 0.0}, ...]}
+    """
+    leagues = []
+    cups = []
+
+    # ── Predicted winners from projected table CSVs ───────────────
+    table_sources = [
+        ("global", GLOBAL_PROJECTED_TABLE_FILE),
+        ("mls", MLS_PROJECTED_TABLE_FILE),
+        ("extra", EXTRA_PROJECTED_TABLE_FILE),
+        ("cups", CUP_PROJECTED_TABLE_FILE),
+    ]
+    for source_mode, csv_path in table_sources:
+        proj = _load_projected_tables(csv_path)
+        comp_list = proj.get("leagues") or []
+        for comp_name in comp_list:
+            comp_tbl = proj.get("tables", {}).get(comp_name, [])
+            predicted = None
+            for row in comp_tbl:
+                if row.get("position") == 1:
+                    predicted = {
+                        "winner": row.get("team", ""),
+                        "odds": row.get("win_league_pct"),
+                    }
+                    break
+            if not predicted:
+                continue
+            entry = {
+                "competition": comp_name,
+                "predicted_winner": predicted["winner"],
+                "predicted_winner_odds": round(predicted["odds"], 1) if predicted["odds"] is not None else None,
+            }
+            if source_mode == "cups":
+                cups.append(entry)
+            else:
+                leagues.append(entry)
+
+    # ── Cup champions from cup brackets JSON (simulation data) ────
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket_data, dict):
+        comps = bracket_data.get("competitions", bracket_data)
+        if isinstance(comps, dict):
+            for comp_name, comp_entry in comps.items():
+                if not isinstance(comp_entry, dict):
+                    continue
+                champion = comp_entry.get("champion")
+                winner_probs = comp_entry.get("winner_probabilities") or {}
+                prob = winner_probs.get(champion, None) if champion else None
+                # Avoid duplicating entries already from cup table CSV
+                if not any(c["competition"] == comp_name for c in cups):
+                    cups.append({
+                        "competition": comp_name,
+                        "predicted_winner": champion or "—",
+                        "predicted_winner_odds": round(prob * 100, 1) if prob is not None else None,
+                    })
+                else:
+                    # Update odds with simulation data when available
+                    if prob is not None:
+                        for c in cups:
+                            if c["competition"] == comp_name and champion:
+                                c["predicted_winner"] = champion
+                                c["predicted_winner_odds"] = round(prob * 100, 1)
+
+    # Also add World Cup as a cup
+    wc_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+    if os.path.exists(wc_file):
+        try:
+            with open(wc_file, "r") as f:
+                wc = json.load(f)
+            wc_champion = wc.get("champion")
+            wc_probs = wc.get("winner_probabilities") or {}
+            wc_prob = wc_probs.get(wc_champion, None) if wc_champion else None
+            if not any(c["competition"] == "FIFA/World Cup" for c in cups):
+                cups.append({
+                    "competition": "FIFA/World Cup",
+                    "predicted_winner": wc_champion or "—",
+                    "predicted_winner_odds": round(wc_prob * 100, 1) if wc_prob is not None else None,
+                })
+        except Exception:
+            pass
+
+    # ── Real leaders from live score history ──────────────────────
+    # Only applies to league competitions (not cups)
+    cup_set = set(c["competition"] for c in cups)
+    for entry in leagues:
+        comp = entry["competition"]
+        if comp in cup_set:
+            continue
+        real = _compute_standings_from_history(comp)
+        if real and isinstance(real, list) and len(real) > 0:
+            top = real[0]
+            entry["current_leader"] = top.get("team", "")
+            entry["leader_source"] = "real"
+        else:
+            # No real data yet — predicted leader is the best available
+            entry["current_leader"] = entry["predicted_winner"]
+            entry["leader_source"] = "predicted"
+
+    return jsonify({
+        "ok": True,
+        "leagues": leagues,
+        "cups": cups,
     })
 
 
