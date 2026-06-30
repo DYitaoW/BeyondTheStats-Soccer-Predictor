@@ -4935,10 +4935,10 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
     
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
     if date_range == "completed":
-        # Previous full prediction week → yesterday
+        # Previous full prediction week → today
         prev_thursday = today_et - timedelta(days=(today_et.weekday() - 3) % 7 + 7)
         lo = pd.Timestamp(prev_thursday)
-        hi = pd.Timestamp(today_et)
+        hi = pd.Timestamp(today_et + timedelta(days=1))
         frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] < hi)].reset_index(drop=True)
     elif date_range == "all":
         # All available rows (no date filter)
@@ -5659,6 +5659,46 @@ def api_teams():
     return jsonify({"teams": display_teams})
 
 
+@app.get("/api/help")
+def api_help():
+    """Return a listing of every /api/ route with a short description."""
+    routes = [
+        ("/api/teams", "GET", "List selectable teams for a given mode (?mode=global|mls|extra)"),
+        ("/api/upcoming/<mode>", "GET", "Upcoming prediction rows (mode=global|mls|extra|cups|world-cup)"),
+        ("/api/past-games", "GET", "Completed games with predictions, optional ?competition= filter"),
+        ("/api/world-cup", "GET", "World Cup standings + knockout brackets (odds + real)"),
+        ("/api/cup-bracket", "GET", "Domestic cup projected brackets (?competition=)"),
+        ("/api/real-cup-data", "GET", "Domestic cup real-life brackets (?competition=)"),
+        ("/api/competition-data", "GET", "Unified WC-format data for any competition (?competition=)"),
+        ("/api/league-tables", "GET", "Projected league tables for all competitions"),
+        ("/api/real-tables", "GET", "Live/recent real league standings"),
+        ("/api/league-leaders", "GET", "Predicted winner + current leader per competition"),
+        ("/api/live-scores", "GET", "Currently live matches with scores"),
+        ("/api/live-score-history", "GET", "Recent live score history"),
+        ("/api/h2h", "GET", "Head-to-head stats between two teams (?home=&away=)"),
+        ("/api/scorers", "GET", "Top scorers data"),
+        ("/api/stats", "GET", "Aggregate prediction statistics"),
+        ("/api/predict", "POST", "Run global predictions (triggers pipeline)"),
+        ("/api/predict/mls", "POST", "Run MLS-only predictions"),
+        ("/api/predict/extra", "POST", "Run extra-league predictions"),
+        ("/api/refresh", "POST", "Trigger data refresh from live sources"),
+        ("/api/last-refresh", "GET", "Timestamp of last manual refresh"),
+        ("/api/last-data-refresh", "GET", "Timestamp of last data refresh"),
+        ("/api/pipeline/status", "GET", "Current pipeline status"),
+        ("/api/notifications", "GET", "List notification subscriptions"),
+        ("/api/notifications", "POST", "Send a test notification"),
+        ("/api/notifications/register", "POST", "Register push notification token"),
+        ("/api/mobile/feed", "GET", "Mobile home feed"),
+        ("/api/mobile/widget", "GET", "Mobile widget data"),
+        ("/api/feedback", "POST", "Submit user feedback"),
+        ("/api/debug/live-score-sources", "GET", "Debug: show live score source files"),
+        ("/api/debug/manual-poll", "GET", "Debug: trigger manual live-score poll"),
+        ("/api/debug/poller-state", "GET", "Debug: show poller state"),
+        ("/api/help", "GET", "This listing"),
+    ]
+    return jsonify({"ok": True, "routes": routes})
+
+
 _UPCOMING_MODE_MAP = {
     "global": (GLOBAL_UPCOMING_FILE, "global"),
     "mls": (MLS_UPCOMING_FILE, "mls"),
@@ -5772,29 +5812,77 @@ def api_world_cup():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
     # ── 1. Odds-weighted knockout bracket ────────────────────────
-    # Walk the existing knockout and pick winners by higher prob.
+    # Build a self-consistent bracket where the higher-probability
+    # team wins each match and advances to the next round.
     raw_knockout = data.get("knockout") or {}
+    # Determine the order of stages from the original data
+    _SLOT_LABEL = {
+        "round_of_32": "Round of 32",
+        "round_of_16": "Round of 16",
+        "quarterfinals": "Quarterfinal",
+        "semifinals": "Semifinal",
+        "final": "Final",
+    }
     odds_knockout = {}
+    # Track slot → odds_winner for propagation: round_label → {slot_num → team}
+    odds_advancing = {}
     for stage_key, matches in raw_knockout.items():
+        if stage_key not in _SLOT_LABEL:
+            odds_knockout[stage_key] = [dict(m) for m in matches]
+            continue
+        label = _SLOT_LABEL[stage_key]
         round_rows = []
-        for m in matches:
+        slot_winners = {}
+        for idx, m in enumerate(matches):
             entry = dict(m)
             ph = _safe_float(entry.get("prob_home", 0), 0)
             pa = _safe_float(entry.get("prob_away", 0), 0)
             hm = str(entry.get("home_team", "")).strip()
             aw = str(entry.get("away_team", "")).strip()
+            # Decide winner by higher probability
             if ph > pa and hm:
                 entry["winner"] = hm
             elif pa > ph and aw:
                 entry["winner"] = aw
-            # if equal, leave original winner
+            # else keep original winner
             entry["odds_weighted"] = True
+
+            slot_num = idx + 1
+            slot_winners[slot_num] = entry["winner"]
+
+            # Override home/away team names if a previous-round winner
+            # feeds into this slot.
+            for prev_label, prev_winners in odds_advancing.items():
+                hs = str(entry.get("home_slot", "") or "")
+                for psn, ptm in prev_winners.items():
+                    tag = "%s %d Winner" % (prev_label, psn)
+                    if tag in hs:
+                        entry["home_team"] = ptm
+                        # Also correct winner if the swapped team changes the odds
+                        new_ph = _safe_float(entry.get("prob_home", 0), 0)
+                        new_pa = _safe_float(entry.get("prob_away", 0), 0)
+                        if new_ph > new_pa and ptm:
+                            entry["winner"] = ptm
+                        break
+                aws = str(entry.get("away_slot", "") or "")
+                for psn, ptm in prev_winners.items():
+                    tag = "%s %d Winner" % (prev_label, psn)
+                    if tag in aws:
+                        entry["away_team"] = ptm
+                        new_ph = _safe_float(entry.get("prob_home", 0), 0)
+                        new_pa = _safe_float(entry.get("prob_away", 0), 0)
+                        if new_pa > new_ph and ptm:
+                            entry["winner"] = ptm
+                        break
+
             round_rows.append(entry)
         odds_knockout[stage_key] = round_rows
+        odds_advancing[label] = slot_winners
 
     # ── 2. Real knockout bracket from live scores / history ──────
     real_knockout = {}
-    wc_stages = ["round-of-32", "round-of-16", "quarterfinals", "semifinals", "third-place", "final"]
+    # Use the actual stage keys from the source data
+    wc_stages = list(raw_knockout.keys())
     # Build a lookup of all WC matches from live data
     live_matches = {}
     history = _load_live_score_history()
@@ -6302,151 +6390,6 @@ def api_live_score_history():
     })
 
 
-def _enrich_past_game_row(r):
-    """Add computed fields to a raw past-game row so it matches upcoming format."""
-    pred_hg = r.get("pred_home_goals")
-    pred_ag = r.get("pred_away_goals")
-    ph = r.get("prob_home", 0.0) or 0.0
-    pdv = r.get("prob_draw", 0.0) or 0.0
-    pa = r.get("prob_away", 0.0) or 0.0
-    ph_float = float(ph) if ph else 0.0
-    pdv_float = float(pdv) if pdv else 0.0
-    pa_float = float(pa) if pa else 0.0
-    ph_pct = ph_float * 100.0
-    pdv_pct = pdv_float * 100.0
-    pa_pct = pa_float * 100.0
-
-    # Textual percentage fields
-    if "prob_home_text" not in r:
-        r["prob_home_text"] = _format_percent_value(ph_pct)
-    if "prob_draw_text" not in r:
-        r["prob_draw_text"] = _format_percent_value(pdv_pct)
-    if "prob_away_text" not in r:
-        r["prob_away_text"] = _format_percent_value(pa_pct)
-
-    # Goal probability fallbacks (missing from old rows)
-    for col, key in [
-        ("prob_home_goals_0", "home_0"),
-        ("prob_home_goals_1plus", "home_1plus"),
-        ("prob_home_goals_2plus", "home_2plus"),
-        ("prob_away_goals_0", "away_0"),
-        ("prob_away_goals_1plus", "away_1plus"),
-        ("prob_away_goals_2plus", "away_2plus"),
-        ("prob_both_score", "both"),
-        ("prob_over_1_5", "o1.5"),
-        ("prob_over_2_5", "o2.5"),
-        ("prob_over_3_5", "o3.5"),
-    ]:
-        if col not in r or r[col] is None:
-            if key == "both":
-                val = _compute_both_score(pred_hg, pred_ag)
-            elif key.startswith("home_"):
-                suffix = key[5:]
-                if suffix.endswith("plus"):
-                    n = int(suffix[:-4])
-                    val = _compute_goal_ge(pred_hg, n)
-                else:
-                    n = int(suffix)
-                    val = _compute_goal_eq(pred_hg, n)
-            elif key.startswith("away_"):
-                suffix = key[5:]
-                if suffix.endswith("plus"):
-                    n = int(suffix[:-4])
-                    val = _compute_goal_ge(pred_ag, n)
-                else:
-                    n = int(suffix)
-                    val = _compute_goal_eq(pred_ag, n)
-            elif key.startswith("o"):
-                n = float(key.split("o")[1].replace("_", "."))
-                val = _compute_total_ge(pred_hg, pred_ag, n)
-            else:
-                val = None
-            r[col] = round(val, 4) if val else None
-
-    # Pre-match prediction helpers
-    if "correct_score_dist" not in r:
-        r["correct_score_dist"] = _compute_correct_score_dist(pred_hg, pred_ag)
-    if "double_chance" not in r:
-        r["double_chance"] = _compute_double_chance(ph_float, pdv_float, pa_float)
-    if "asian_handicap" not in r:
-        r["asian_handicap"] = _compute_asian_handicap(
-            pred_hg, pred_ag,
-            prob_home=ph_float, prob_draw=pdv_float, prob_away=pa_float,
-        )
-
-    # New Poisson-derived markets
-    if "total_goals_dist" not in r:
-        r["total_goals_dist"] = _compute_total_goals_dist(pred_hg, pred_ag)
-    if "first_to_score" not in r:
-        r["first_to_score"] = _compute_first_to_score(pred_hg, pred_ag)
-    if "clean_sheet" not in r:
-        r["clean_sheet"] = _compute_clean_sheet(pred_hg, pred_ag)
-
-    # Last-5 form with opponent details
-    home = str(r.get("home_team", "")).strip()
-    away = str(r.get("away_team", "")).strip()
-    comp = str(r.get("competition", ""))
-    mode_hint = "mls" if "mls" in comp.lower() else ("extra" if any(x in comp.lower() for x in ("spl", "eredivisie", "liga portugal", "süper lig", "süperlig", "jupiler", "belgian", "championship", "league one", "league two", "scottish")) else "global")
-    form_index = _build_last5_form_index(mode_hint)
-    strength_index = _build_strength_index(mode_hint)
-    if "last_5_home" not in r:
-        r["last_5_home"] = form_index.get(home, [])
-    if "last_5_away" not in r:
-        r["last_5_away"] = form_index.get(away, [])
-    if "home_attack_rating" not in r:
-        r["home_attack_rating"] = strength_index.get(home, {}).get("attack_rating")
-    if "home_defence_rating" not in r:
-        r["home_defence_rating"] = strength_index.get(home, {}).get("defence_rating")
-    if "away_attack_rating" not in r:
-        r["away_attack_rating"] = strength_index.get(away, {}).get("attack_rating")
-    if "away_defence_rating" not in r:
-        r["away_defence_rating"] = strength_index.get(away, {}).get("defence_rating")
-
-    # Weekday / date label / time label
-    if "weekday" not in r or not r.get("weekday"):
-        md = r.get("match_date", "")
-        try:
-            dt = pd.to_datetime(md, errors="coerce")
-            if pd.notna(dt):
-                r["weekday"] = dt.strftime("%A")
-                r["date_label"] = dt.strftime("%B %d, %Y")
-        except Exception:
-            pass
-
-    # is_correct
-    if "is_correct" not in r:
-        actual = str(r.get("actual_result", "")).strip().upper()
-        predicted = str(r.get("predicted_result", "")).strip().upper()
-        if actual in {"H", "D", "A"}:
-            r["is_correct"] = "1" if predicted == actual else "0"
-        else:
-            r["is_correct"] = ""
-
-    # winner_label
-    if "winner_label" not in r:
-        predicted = str(r.get("predicted_result", "")).strip().upper()
-        if predicted == "H":
-            r["winner_label"] = f"Pred: {home}"
-        elif predicted == "A":
-            r["winner_label"] = f"Pred: {away}"
-        elif predicted == "D":
-            r["winner_label"] = "Pred: Draw"
-        else:
-            r["winner_label"] = ""
-
-    # match_datetime_et / time_label
-    if "match_datetime_et" not in r or not r.get("match_datetime_et"):
-        utc_dt = r.get("match_datetime_utc", "")
-        if utc_dt:
-            try:
-                dt = pd.to_datetime(utc_dt, utc=True, errors="coerce")
-                if pd.notna(dt):
-                    dt = dt.tz_convert("America/New_York")
-                    r["match_datetime_et"] = dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-                    r["time_label"] = dt.strftime("%I:%M %p ET").lstrip("0")
-            except Exception:
-                pass
-
 
 def _compute_goal_eq(lam, k):
     """P(home goals == k) via Poisson."""
@@ -6512,7 +6455,7 @@ def api_past_games():
     cutoff_days_ago = today_local - timedelta(days=14)
     cutoff = cutoff_days_ago.isoformat()
 
-    # Build enriched rows from all 5 CSVs (completed date range)
+    # Build rows from all 5 CSVs (completed date range) — identical format to upcoming
     enriched_by_key = {}
     for source, csv_path in (
         ("global", GLOBAL_UPCOMING_FILE),
@@ -6527,24 +6470,6 @@ def api_past_games():
                 ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
                 if ck:
                     enriched_by_key[ck] = r
-
-    # Also pull from the pipeline archive for any rows the CSVs might miss
-    archive_rows = []
-    if os.path.exists(PAST_GAMES_FILE):
-        try:
-            with open(PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
-                archive_rows = json.load(fh)
-        except Exception:
-            archive_rows = []
-    for r in archive_rows:
-        ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
-        if ck and ck not in enriched_by_key:
-            # Ensure consistent field naming
-            if "actual_home_goals" in r and "home_score" not in r:
-                r["home_score"] = r["actual_home_goals"]
-            if "actual_away_goals" in r and "away_score" not in r:
-                r["away_score"] = r["actual_away_goals"]
-            enriched_by_key[ck] = r
 
     all_rows = list(enriched_by_key.values())
 
