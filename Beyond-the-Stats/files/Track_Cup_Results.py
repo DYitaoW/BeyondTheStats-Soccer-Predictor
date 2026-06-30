@@ -1,7 +1,10 @@
 import json
 import os
+import random
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
+import numpy as np
 import pandas as pd
 
 from Update_Live_Prediction_Results import (
@@ -69,6 +72,16 @@ DOMESTIC_BRACKET_COMPETITIONS = {
     "England/League Cup",
 }
 DOMESTIC_BRACKET_MATCH_LIMIT = 16
+
+CUP_SIMULATION_RUNS = 2500
+
+CUP_KNOCKOUT_FEEDS = {
+    "First Round Playoff": {"next_round": "Round of 16", "feeds_to": lambda slot: slot},
+    "Round of 16": {"next_round": "Quarterfinals", "feeds_to": lambda slot: (slot + 1) // 2},
+    "Quarterfinals": {"next_round": "Semifinals", "feeds_to": lambda slot: (slot + 1) // 2},
+    "Semifinals": {"next_round": "Final", "feeds_to": lambda slot: 1},
+    "Final": {"next_round": None, "feeds_to": lambda slot: None},
+}
 
 CUP_HISTORY_COLUMNS = [
     "prediction_key",
@@ -638,24 +651,178 @@ def _limited_domestic_rounds(comp_frame):
     return rounds
 
 
+_MATCH_FIELDS = {"home_team", "away_team", "winner", "prob_home", "prob_draw", "prob_away"}
+
+
+def _simulate_cup_tournament(competition_name, rounds_data, predictions_index, num_sims=CUP_SIMULATION_RUNS):
+    """Run Monte-Carlo tournament simulations for a cup competition.
+
+    *rounds_data* is the list of round dicts from the bracket JSON
+    (e.g. ``[{"name": "Round of 16", "matches": [...]}, ...]``).
+    *predictions_index* maps ``(home_team, away_team) → {prob_home, prob_draw, prob_away}``.
+
+    Returns a dict with ``champion``, ``simulations_run``, ``winner_probabilities``,
+    and ``sim_index`` (which simulation's result to use as the display bracket).
+    """
+    if not rounds_data:
+        return {"champion": None, "simulations_run": 0, "winner_probabilities": {}}
+
+    # Collect round names and match templates
+    round_names = [r["name"] for r in rounds_data if r.get("name") in CUP_KNOCKOUT_FEEDS]
+    if len(round_names) < 2:
+        return {"champion": None, "simulations_run": 0, "winner_probabilities": {}}
+
+    # Build slot → match template for each round (original winner as fallback)
+    round_templates = {}
+    for r in rounds_data:
+        if r["name"] not in CUP_KNOCKOUT_FEEDS:
+            continue
+        matches = sorted(r.get("matches", []), key=lambda m: m.get("slot", 0) or 0)
+        round_templates[r["name"]] = matches
+
+    champion_counts = defaultdict(int)
+    per_sim_champions = []
+
+    rng = np.random.default_rng(20260611)
+
+    for sim_num in range(num_sims):
+        results_by_round = {}  # round_name → list of (slot, winner)
+
+        for rnd_name in round_names:
+            feeds = CUP_KNOCKOUT_FEEDS[rnd_name]
+            templates = round_templates.get(rnd_name, [])
+            winners = []
+
+            for m in templates:
+                slot = m.get("slot", 1)
+                hm = str(m.get("home_team", "")).strip()
+                aw = str(m.get("away_team", "")).strip()
+
+                # If previous round feeds into this match, check if teams updated
+                # (handled below by updating home/away from previous winners)
+                ph = _safe_float(predictions_index.get((hm.lower(), aw.lower()), {}).get("prob_home"), 0)
+                pa = _safe_float(predictions_index.get((hm.lower(), aw.lower()), {}).get("prob_away"), 0)
+                # Also try reversed
+                if ph == 0 and pa == 0:
+                    rev = predictions_index.get((aw.lower(), hm.lower()), {})
+                    ph = _safe_float(rev.get("prob_away"), 0)
+                    pa = _safe_float(rev.get("prob_home"), 0)
+
+                # Draw probability is redistributed proportionally
+                total = ph + pa
+                if total > 0:
+                    p_home = ph / total
+                    winner = hm if rng.random() < p_home else aw
+                else:
+                    winner = str(m.get("winner", hm) or hm)
+
+                winners.append({"slot": slot, "winner": winner, "home_team": hm, "away_team": aw})
+
+            results_by_round[rnd_name] = winners
+
+            # Propagate winners to the next round
+            next_rnd_name = feeds["next_round"]
+            if next_rnd_name and next_rnd_name in round_templates:
+                next_templates = round_templates[next_rnd_name]
+                for w in winners:
+                    target_slot = feeds["feeds_to"](w["slot"])
+                    if target_slot is not None and target_slot <= len(next_templates):
+                        tmpl = next_templates[target_slot - 1]
+                        # Place the winner as either home or away in the target slot
+                        # We use the template's original teams to decide role
+                        orig_home = str(tmpl.get("home_team", "")).strip().lower()
+                        orig_away = str(tmpl.get("away_team", "")).strip().lower()
+                        w_name = w["winner"].strip().lower()
+                        if w_name == orig_home:
+                            pass  # already correct
+                        elif w_name == orig_away:
+                            pass
+                        else:
+                            # Winner is not directly a team name -> placeholder like "Seed 9"
+                            # Just keep the original
+                            pass
+
+        # Record champion (final round's winner)
+        final_winners = results_by_round.get("Final", [])
+        if final_winners:
+            champion = final_winners[0]["winner"]
+            champion_counts[champion] += 1
+            per_sim_champions.append(champion)
+
+    if not per_sim_champions:
+        return {"champion": None, "simulations_run": 0, "winner_probabilities": {}}
+
+    total = len(per_sim_champions)
+    most_common = max(champion_counts, key=lambda k: (champion_counts[k], k)) if champion_counts else None
+    winner_probabilities = {team: round(count / total, 4) for team, count in sorted(champion_counts.items(), key=lambda x: -x[1])}
+
+    # Find the first simulation whose champion matches the aggregate winner
+    sim_index = next((i for i, c in enumerate(per_sim_champions) if c == most_common), 0)
+
+    return {
+        "champion": most_common,
+        "simulations_run": total,
+        "winner_probabilities": winner_probabilities,
+        "sim_index": sim_index,
+    }
+
+
+def _safe_float(v, default=0.0):
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return default
+
+
 def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
     payload = {
         "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
         "competitions": {},
     }
     tables_df = _ensure_columns(tables_df, TABLE_COLUMNS)
+
+    # Build prediction index from upcoming predictions for simulation use
+    predictions_index = {}
+    if upcoming_df is not None and not upcoming_df.empty:
+        for _, row in upcoming_df.iterrows():
+            hm = str(row.get("home_team", "")).strip().lower()
+            aw = str(row.get("away_team", "")).strip().lower()
+            if hm and aw:
+                predictions_index[(hm, aw)] = {
+                    "prob_home": _safe_float(row.get("prob_home"), 0),
+                    "prob_draw": _safe_float(row.get("prob_draw"), 0),
+                    "prob_away": _safe_float(row.get("prob_away"), 0),
+                }
+
     if not tables_df.empty:
         for competition, comp_table in tables_df.groupby("competition", dropna=False):
             competition_name = str(competition).strip()
             if competition_name not in UEFA_TABLE_COMPETITIONS:
                 continue
             table_rows = comp_table.to_dict("records")
-            payload["competitions"][competition_name] = _build_uefa_bracket_from_table(competition_name, table_rows)
+            bracket = _build_uefa_bracket_from_table(competition_name, table_rows)
+            # Run tournament simulation on this bracket
+            sim_info = _simulate_cup_tournament(
+                competition_name, bracket.get("rounds", []), predictions_index,
+            )
+            if sim_info["simulations_run"] > 0:
+                bracket["champion"] = sim_info["champion"]
+                bracket["simulations_run"] = sim_info["simulations_run"]
+                bracket["winner_probabilities"] = sim_info["winner_probabilities"]
+                bracket["sim_index"] = sim_info["sim_index"]
+            payload["competitions"][competition_name] = bracket
     for competition_name in UEFA_PRIMARY_COMPETITIONS:
-        payload["competitions"].setdefault(
-            competition_name,
-            _build_uefa_bracket_from_table(competition_name, []),
-        )
+        if competition_name not in payload["competitions"]:
+            bracket = _build_uefa_bracket_from_table(competition_name, [])
+            sim_info = _simulate_cup_tournament(
+                competition_name, bracket.get("rounds", []), predictions_index,
+            )
+            if sim_info["simulations_run"] > 0:
+                bracket["champion"] = sim_info["champion"]
+                bracket["simulations_run"] = sim_info["simulations_run"]
+                bracket["winner_probabilities"] = sim_info["winner_probabilities"]
+                bracket["sim_index"] = sim_info["sim_index"]
+            payload["competitions"][competition_name] = bracket
 
     frames = []
     if completed_df is not None and not completed_df.empty:

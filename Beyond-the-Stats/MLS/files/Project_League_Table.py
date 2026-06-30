@@ -42,7 +42,7 @@ OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
 OUT_BRACKET = os.path.join(OUT_DIR, "projected_mls_playoff_bracket.json")
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard"
 RNG = random.Random()
-SIMULATION_RUNS = 200
+SIMULATION_RUNS = 2500
 
 EASTERN_CONFERENCE_TEAMS = {
     "Atlanta Utd",
