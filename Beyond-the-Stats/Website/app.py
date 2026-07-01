@@ -109,6 +109,25 @@ LIVE_SCORE_COMPETITIONS = {
     "Belgium/First Division A": "bel.1",
     "Scotland/Premiership": "sco.1",
     "Turkey/Super Lig": "tur.1",
+    # Extra leagues (predicted but not live-polled — no ESPN ID)
+    "Austria/Bundesliga": None,
+    "Switzerland/Super League": None,
+    "Greece/Super League": None,
+    "Denmark/Superliga": None,
+    "Ukraine/Premier League": None,
+    "Norway/Eliteserien": None,
+    "Croatia/HNL": None,
+    "Romania/Liga I": None,
+    "Sweden/Allsvenskan": None,
+    "Hungary/NB I": None,
+    "Israel/Premier League": None,
+    "Czech Republic/First League": None,
+    "Poland/Ekstraklasa": None,
+    "Serbia/SuperLiga": None,
+    "Cyprus/First Division": None,
+    "Slovakia/Super Liga": None,
+    "Slovenia/PrvaLiga": None,
+    "Bulgaria/First League": None,
 }
 
 # In-memory store for active (today's) live scores.
@@ -7010,16 +7029,34 @@ def api_real_tables():
         if force_refresh:
             _clear_standings_cache(comp_filter)
             _clear_leaders_cache(comp_filter)
+        # Try persisted cache first
+        persisted = _load_json_payload(REAL_TABLES_PERSIST_FILE)
+        if isinstance(persisted, dict) and comp_filter in persisted:
+            return jsonify({"ok": True, "table": persisted[comp_filter]})
         table = _compute_standings_from_history(comp_filter)
         return jsonify({"ok": True, "table": table})
 
     results = {}
-    for comp_name in LIVE_SCORE_COMPETITIONS:
-        if force_refresh:
-            _clear_standings_cache(comp_name)
-            _clear_leaders_cache(comp_name)
-        table = _compute_standings_from_history(comp_name)
-        results[comp_name] = table if table is not None else []
+    # Try persisted standings cache first (built by the daily pipeline)
+    persisted = _load_json_payload(REAL_TABLES_PERSIST_FILE)
+    if isinstance(persisted, dict):
+        for comp_name in LIVE_SCORE_COMPETITIONS:
+            cached = persisted.get(comp_name)
+            if cached and cached.get("groups"):
+                results[comp_name] = cached
+                continue
+            if force_refresh:
+                _clear_standings_cache(comp_name)
+                _clear_leaders_cache(comp_name)
+            table = _compute_standings_from_history(comp_name)
+            results[comp_name] = table if table is not None else []
+    else:
+        for comp_name in LIVE_SCORE_COMPETITIONS:
+            if force_refresh:
+                _clear_standings_cache(comp_name)
+                _clear_leaders_cache(comp_name)
+            table = _compute_standings_from_history(comp_name)
+            results[comp_name] = table if table is not None else []
     return jsonify({"ok": True, "tables": results, "total": len(results)})
 
 
@@ -7071,7 +7108,7 @@ def api_competition_data():
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
 
-    if table is not None and isinstance(table, list):
+    if table is not None:
         result["table"] = table
     if cup_format:
         result["cup_format"] = cup_format
@@ -7382,7 +7419,7 @@ def api_league_leaders():
         except Exception:
             pass
 
-    # ── Real leaders from live score history ──────────────────────
+    # ── Real leaders from live score history / ESPN ──────────────
     # Only applies to league competitions (not cups)
     cup_set = set(c["competition"] for c in cups)
     for entry in leagues:
@@ -7390,12 +7427,16 @@ def api_league_leaders():
         if comp in cup_set:
             continue
         real = _compute_standings_from_history(comp)
-        if real and isinstance(real, list) and len(real) > 0:
-            top = real[0]
-            entry["current_leader"] = top.get("team", "")
-            entry["leader_source"] = "real"
+        if real and isinstance(real, dict):
+            for g in (real.get("groups") or []):
+                if g.get("entries"):
+                    entry["current_leader"] = g["entries"][0].get("team", "")
+                    entry["leader_source"] = "real"
+                    break
+            else:
+                entry["current_leader"] = entry["predicted_winner"]
+                entry["leader_source"] = "predicted"
         else:
-            # No real data yet — predicted leader is the best available
             entry["current_leader"] = entry["predicted_winner"]
             entry["leader_source"] = "predicted"
 
