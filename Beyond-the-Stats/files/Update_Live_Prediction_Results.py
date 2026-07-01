@@ -490,6 +490,20 @@ def save_completed_rows_to_past_games(frame, today=None):
             new_rows.append(row_dict)
     if new_rows:
         existing.extend(new_rows)
+    # Prune rows older than previous full week (keep current week + previous full week)
+    try:
+        today_local = (datetime.now(UTC) - timedelta(hours=4)).date()
+        current_week_start = today_local - timedelta(days=today_local.weekday())
+        cutoff = current_week_start - timedelta(days=7)
+        before = len(existing)
+        existing = [
+            r for r in existing
+            if str(r.get("match_date", "")).strip() >= cutoff.isoformat()
+        ]
+        pruned = before - len(existing)
+    except Exception:
+        pruned = 0
+    if new_rows or pruned:
         os.makedirs(os.path.dirname(PAST_GAMES_FILE), exist_ok=True)
         with open(PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
             json.dump(existing, fh, indent=2, ensure_ascii=False)

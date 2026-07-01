@@ -413,8 +413,10 @@ def _copy_today_games_to_past():
     when games end live — only this one snapshot at pipeline time.
     """
     today_et = (datetime.now(UTC) - timedelta(hours=4)).date()
-    cutoff_14 = today_et - timedelta(days=14)
-    cutoff_str = cutoff_14.isoformat()
+    # Keep current week (Mon‑today) + previous full week (Mon‑Sun)
+    current_week_start = today_et - timedelta(days=today_et.weekday())
+    cutoff = current_week_start - timedelta(days=7)
+    cutoff_str = cutoff.isoformat()
     today_ts = pd.Timestamp(today_et)
 
     upcoming_files = [
@@ -520,8 +522,204 @@ def _copy_today_games_to_past():
         print("  [past-games] No changes to past_games.json")
 
 
+_REAL_STANDINGS_FILE = SP_DIR / "Data" / "standings_cache.json"
+
+# ── Competitions that are leagues (not cups / national) ──────────────
+_REAL_TABLE_COMPETITIONS = {
+    "England/Premier League", "England/Championship",
+    "Spain/La Liga", "Spain/La Liga 2",
+    "Italy/Serie A", "Italy/Serie B",
+    "Germany/Bundesliga", "Germany/Bundesliga 2",
+    "France/Ligue 1", "France/Ligue 2",
+    "Portugal/Liga Portugal", "Netherlands/Eredivisie",
+    "United States/MLS",
+    "Belgium/First Division A", "Scotland/Premiership", "Turkey/Super Lig",
+    "Austria/Bundesliga", "Switzerland/Super League",
+    "Greece/Super League", "Denmark/Superliga",
+    "Ukraine/Premier League", "Norway/Eliteserien",
+    "Croatia/HNL", "Romania/Liga I",
+    "Sweden/Allsvenskan", "Hungary/NB I",
+    "Israel/Premier League", "Czech Republic/First League",
+    "Poland/Ekstraklasa", "Serbia/SuperLiga",
+    "Cyprus/First Division", "Slovakia/Super Liga",
+    "Slovenia/PrvaLiga", "Bulgaria/First League",
+}
+
+_CUP_COMPETITIONS = {
+    "England/FA Cup", "England/League Cup",
+    "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+    "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
+    "Italy/Coppa Italia", "Spain/Copa del Rey",
+    "Germany/DFB-Pokal", "France/Coupe de France",
+    "United States/US Open Cup",
+}
+
+
+def _build_real_standings():
+    """Build real league tables / cup brackets from completed game data.
+
+    Reads all prediction CSVs and ``past_games.json``, extracts games with
+    ``actual_result`` set, computes standings per competition, and writes
+    the result to ``_REAL_STANDINGS_FILE`` so the API can serve them.
+
+    Runs BEFORE sub-pipelines so real standings are available as input to
+    the prediction models.
+    """
+    now_utc = datetime.now(UTC).replace(microsecond=0).isoformat()
+    all_games = []
+
+    # 1. Collect completed games from all CSVs
+    csv_paths = [
+        ("global", GLOBAL_UPCOMING_FILE),
+        ("mls", MLS_UPCOMING_FILE),
+        ("extra", EXTRA_UPCOMING_FILE),
+        ("cups", CUP_UPCOMING_FILE),
+        ("national", NATIONAL_UPCOMING_FILE),
+    ]
+    for source, path in csv_paths:
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_csv(path, dtype=str)
+        except Exception:
+            continue
+        if df.empty or "actual_result" not in df.columns:
+            continue
+        settled = df[df["actual_result"].astype(str).str.strip().str.upper().isin({"H", "D", "A"})]
+        for _, row in settled.iterrows():
+            comp = str(row.get("competition", "")).strip()
+            home = str(row.get("home_team", "")).strip()
+            away = str(row.get("away_team", "")).strip()
+            try:
+                hs = int(float(row["actual_home_goals"]))
+                aws = int(float(row["actual_away_goals"]))
+            except (ValueError, TypeError):
+                continue
+            if not comp or not home or not away:
+                continue
+            all_games.append({
+                "competition": comp,
+                "home_team": home,
+                "away_team": away,
+                "home_score": hs,
+                "away_score": aws,
+                "status": "post",
+                "round": "",
+                "source": source,
+            })
+
+    # 2. Also collect from past_games.json (older completed games)
+    if PAST_GAMES_FILE.exists():
+        try:
+            past = json.loads(PAST_GAMES_FILE.read_text(encoding="utf-8"))
+            if isinstance(past, list):
+                for g in past:
+                    comp = str(g.get("competition", "")).strip()
+                    home = str(g.get("home_team", "")).strip()
+                    away = str(g.get("away_team", "")).strip()
+                    ahg = g.get("actual_home_goals") or g.get("home_score")
+                    aag = g.get("actual_away_goals") or g.get("away_score")
+                    try:
+                        hs = int(float(ahg))
+                        aws = int(float(aag))
+                    except (ValueError, TypeError):
+                        continue
+                    if not comp or not home or not away:
+                        continue
+                    all_games.append({
+                        "competition": comp,
+                        "home_team": home,
+                        "away_team": away,
+                        "home_score": hs,
+                        "away_score": aws,
+                        "status": "post",
+                        "round": "",
+                        "source": "past_games",
+                    })
+        except Exception:
+            pass
+
+    if not all_games:
+        print("  [real-standings] No completed games found — nothing to build.")
+        return False
+
+    # 3. Group by competition and compute standings
+    comp_games: dict[str, list] = {}
+    for g in all_games:
+        comp_games.setdefault(g["competition"], []).append(g)
+
+    standings: dict[str, dict] = {}
+    for comp_name, games in comp_games.items():
+        if comp_name not in _REAL_TABLE_COMPETITIONS and comp_name not in _CUP_COMPETITIONS:
+            continue
+        teams = set()
+        for g in games:
+            teams.add(g["home_team"])
+            teams.add(g["away_team"])
+        if not teams:
+            continue
+
+        # Build table
+        table = {t: {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0} for t in sorted(teams)}
+        for g in games:
+            ht, at = g["home_team"], g["away_team"]
+            hs, aws = g["home_score"], g["away_score"]
+            row = table[ht]
+            row["P"] += 1; row["GF"] += hs; row["GA"] += aws
+            row["GD"] = row["GF"] - row["GA"]
+            if hs > aws:
+                row["W"] += 1; row["Pts"] += 3
+            elif aws > hs:
+                row["L"] += 1
+            else:
+                row["D"] += 1; row["Pts"] += 1
+            row2 = table[at]
+            row2["P"] += 1; row2["GF"] += aws; row2["GA"] += hs
+            row2["GD"] = row2["GF"] - row2["GA"]
+            if aws > hs:
+                row2["W"] += 1; row2["Pts"] += 3
+            elif hs > aws:
+                row2["L"] += 1
+            else:
+                row2["D"] += 1; row2["Pts"] += 1
+
+        # Sort by Pts, GD, GF
+        sorted_teams = sorted(table.items(), key=lambda kv: (-kv[1]["Pts"], -kv[1]["GD"], -kv[1]["GF"], kv[0]))
+        entries = []
+        for pos, (team, stats) in enumerate(sorted_teams, start=1):
+            entry = {"team": team, "position": pos, **stats}
+            entries.append(entry)
+
+        standings[comp_name] = {
+            "competition": comp_name,
+            "updated_at": now_utc,
+            "groups": [{"name": "Overall", "entries": entries}],
+            "source": "computed",
+        }
+
+    if standings:
+        try:
+            _REAL_STANDINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _REAL_STANDINGS_FILE.write_text(
+                json.dumps(standings, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            print(f"  [real-standings] Built and saved {len(standings)} competition(s)")
+        except Exception as exc:
+            print(f"  [real-standings] Failed to save: {exc}")
+            return False
+    else:
+        print("  [real-standings] No standings computed.")
+        return False
+    return True
+
+
 def run_full_pipeline(args, api_token, results=None):
     """Run every pipeline step and record success/failure in `results`.
+
+    Execution order:
+    1. **Real standings** — build from completed CSV results (pre-pipeline)
+    2. **Sub-pipelines** (global / MLS / extra) — in parallel if ``--workers > 1``
+    3. **Post-pipeline steps** — settle, track cups, accuracy history
 
     When ``args.workers > 1`` the three sub-pipelines (global/MLS/extra) are
     scheduled concurrently via ``ProcessPoolExecutor``; their step order is
@@ -544,6 +742,9 @@ def run_full_pipeline(args, api_token, results=None):
     py = sys.executable  # noqa: F841  (kept for backwards-compat with external callers)
 
     _check_dependencies()
+
+    # ── Pre-pipeline: build real standings from completed games ──
+    results["build_real_standings"] = _build_real_standings()
 
     workers = max(1, min(int(getattr(args, "workers", 1) or 1), MAX_SUBPIPELINE_WORKERS))
     sub_tasks = []
