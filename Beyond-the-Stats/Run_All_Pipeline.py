@@ -413,8 +413,10 @@ def _copy_today_games_to_past():
     when games end live — only this one snapshot at pipeline time.
     """
     today_et = (datetime.now(UTC) - timedelta(hours=4)).date()
-    cutoff_14 = today_et - timedelta(days=14)
-    cutoff_str = cutoff_14.isoformat()
+    # Keep current week (Mon‑today) + previous full week (Mon‑Sun)
+    current_week_start = today_et - timedelta(days=today_et.weekday())
+    cutoff = current_week_start - timedelta(days=7)
+    cutoff_str = cutoff.isoformat()
     today_ts = pd.Timestamp(today_et)
 
     upcoming_files = [

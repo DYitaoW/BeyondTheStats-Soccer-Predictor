@@ -2886,6 +2886,66 @@ def _round_to_stage_key(round_name):
     return _RN_RE.sub("-", round_name.strip().lower()).strip("-")
 
 
+def _compute_odds_bracket():
+    """Build odds-weighted bracket for all cup competitions.
+
+    For each match in the projected cup bracket JSON, picks the winner
+    with the higher win probability from the cup predictions CSV.
+    Returns ``{competition_name: {round_name: [match_dict, …], …}, …}``.
+    """
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    if not isinstance(bracket_data, dict):
+        return {}
+    comps = bracket_data.get("competitions", bracket_data)
+    if not isinstance(comps, dict):
+        return {}
+
+    # Build odds index from cup predictions CSV
+    odds_index = {}
+    try:
+        odds_df = pd.read_csv(CUP_UPCOMING_FILE)
+        if not odds_df.empty and all(c in odds_df.columns for c in ("home_team", "away_team", "prob_home")):
+            for _, row in odds_df.iterrows():
+                key = (str(row["home_team"]).strip().lower(), str(row["away_team"]).strip().lower())
+                odds_index[key] = _safe_float(row["prob_home"], 0)
+    except Exception:
+        pass
+
+    result = {}
+    for comp_name, entry in comps.items():
+        if not isinstance(entry, dict):
+            continue
+        rounds = entry.get("rounds") or []
+        comp_result = {}
+        for rnd in rounds:
+            rname = rnd.get("name", "")
+            matches = rnd.get("matches") or []
+            rnd_matches = []
+            for m in matches:
+                hm = str(m.get("home_team", "")).strip()
+                aw = str(m.get("away_team", "")).strip()
+                if not hm or not aw:
+                    continue
+                key = (hm.lower(), aw.lower())
+                ph = odds_index.get(key, 0)
+                pa = odds_index.get((aw.lower(), hm.lower()), 0)
+                winner = hm if ph > pa else (aw if pa > ph else "")
+                rnd_matches.append({
+                    "home_team": hm,
+                    "away_team": aw,
+                    "prob_home": ph,
+                    "prob_away": pa,
+                    "winner": winner,
+                    "slot": m.get("slot", 0),
+                    "stage": rname,
+                })
+            if rnd_matches:
+                comp_result[rname] = rnd_matches
+        if comp_result:
+            result[comp_name] = comp_result
+    return result
+
+
 def _build_knockout_wc_format(matches):
     """Convert a flat list of cup matches into WC-style knockout/odds_knockout/real_knockout.
 
@@ -3165,15 +3225,31 @@ def _clear_leaders_cache(comp_name):
 BREAK_PERIODS = {"Halftime", "HT", "Half Time"}
 
 
-def _get_todays_competitions():
+def _effective_poller_date():
+    """Return the effective date for live-score polling.
+
+    Before 2am ET the previous day's games are still active, so we return
+    yesterday's date.  After 2am ET we switch to today's date.
+    """
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    if now_et.hour < 2:
+        return (now_et - timedelta(days=1)).date()
+    return now_et.date()
+
+
+def _get_todays_competitions(today_date=None):
     """Return {competition: [kickoff_et, ...]} for competitions with games today.
 
     Checks all available data sources:
       1. Upcoming predictions CSVs (club, MLS, extra, cups, national team)
       2. World Cup projection JSON (group_fixtures + knockout rounds)
       3. Cup bracket JSON (knockout fixtures)
+
+    Args:
+        today_date: date override (defaults to ``date.today()``).
     """
-    today_date = date.today()
+    if today_date is None:
+        today_date = date.today()
     now_et = datetime.now(ZoneInfo("America/New_York"))
     todays = defaultdict(list)
 
@@ -4178,8 +4254,9 @@ def _live_score_poller_loop():
     results = {}
     while True:
         try:
-            today_str = date.today().strftime("%Y%m%d")
-            todays_comps = _get_todays_competitions()
+            poll_date = _effective_poller_date()
+            today_str = poll_date.strftime("%Y%m%d")
+            todays_comps = _get_todays_competitions(today_date=poll_date)
             active_comps = {}
             for comp in todays_comps:
                 eid = LIVE_SCORE_COMPETITIONS.get(comp)
@@ -4218,14 +4295,32 @@ def _live_score_poller_loop():
                             prev_statuses[mid] = (comp_name, g.get("status", ""))
 
             with _live_scores_lock:
-                # Day boundary: save finished games then clear.
-                _today_for_poller = date.today().isoformat()
-                if getattr(_live_score_poller_loop, "_poller_date", None) != _today_for_poller:
+                # Day boundary: save ALL games (not just completed) then clear.
+                _poller_day_str = poll_date.isoformat()
+                if getattr(_live_score_poller_loop, "_poller_date", None) != _poller_day_str:
                     _merge_completed_to_history()
+                    # Save any in-progress games that started yesterday but
+                    # haven't finished yet so they persist in history.
+                    now_utc = datetime.now(timezone.utc)
+                    for comp_name, comp_data in list(_live_scores.items()):
+                        for g in comp_data.get("games", []):
+                            if g.get("status") not in ("post", "in"):
+                                continue
+                            mid = g.get("match_id")
+                            if not mid:
+                                continue
+                            history = _load_live_score_history()
+                            historic_ids = {h["match_id"] for h in history if h.get("match_id")}
+                            if mid not in historic_ids:
+                                entry = dict(g)
+                                entry.setdefault("competition", comp_name)
+                                entry.setdefault("completed_at", now_utc.isoformat())
+                                history.append(entry)
+                                _save_live_score_history(history)
                     _live_scores.clear()
                     with _live_summary_cache_lock:
                         _live_summary_cache.clear()
-                    _live_score_poller_loop._poller_date = _today_for_poller
+                    _live_score_poller_loop._poller_date = _poller_day_str
                 # Merge new results into existing so finished games persist.
                 for comp_name, comp_data in results.items():
                     new_games = comp_data.get("games", [])
@@ -5098,6 +5193,22 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         )
     persistent_stats, persistent_league_stats = _build_persistent_accuracy_stats(target_mode, rows)
     return rows, persistent_stats, persistent_league_stats
+
+
+def _load_all_fixtures_by_competition(csv_path):
+    """Load all fixtures from a predictions CSV grouped by competition.
+
+    Returns a dict ``{competition_name: [row_dict, …]}`` where each row
+    has the same enriched format as ``_load_upcoming_rows()`` output.
+    """
+    rows, _st, _ls = _load_upcoming_rows(csv_path, date_range="all")
+    grouped = {}
+    for r in rows:
+        comp = str(r.get("competition", "")).strip()
+        if not comp:
+            continue
+        grouped.setdefault(comp, []).append(r)
+    return grouped
 
 
 def _load_projected_tables(csv_path):
@@ -6418,20 +6529,96 @@ def _compute_total_ge(lam_h, lam_a, threshold):
     return 1.0 - sum(_poisson_pmf(i, lam) for i in range(int(threshold)))
 
 
+def _enrich_json_past_row(r):
+    """Add display fields to a raw past_games.json row so it matches upcoming format."""
+    pred = str(r.get("predicted_result", "")).strip().upper()
+    home = str(r.get("home_team", "")).strip()
+    away = str(r.get("away_team", "")).strip()
+    r["winner_label"] = (
+        f"Pred: {home}" if pred == "H" else
+        f"Pred: {away}" if pred == "A" else
+        "Pred: Draw" if pred == "D" else ""
+    )
+    actual = str(r.get("actual_result", "")).strip().upper()
+    if actual in {"H", "D", "A"}:
+        r["is_correct"] = "1" if pred == actual else "0"
+    else:
+        r["is_correct"] = ""
+
+    try:
+        ph = float(r.get("prob_home", 0) or 0) * 100
+        pdv = float(r.get("prob_draw", 0) or 0) * 100
+        pa = float(r.get("prob_away", 0) or 0) * 100
+    except Exception:
+        ph = pdv = pa = 0.0
+    r["prob_home_text"] = _format_percent_value(ph)
+    r["prob_draw_text"] = _format_percent_value(pdv)
+    r["prob_away_text"] = _format_percent_value(pa)
+
+    md = str(r.get("match_date", "")).strip()
+    if md:
+        try:
+            dt = pd.to_datetime(md, errors="coerce")
+            if pd.notna(dt):
+                r["weekday"] = dt.strftime("%A")
+                r["date_label"] = dt.strftime("%B %d, %Y")
+        except Exception:
+            r["weekday"] = ""
+            r["date_label"] = md
+    else:
+        r["weekday"] = ""
+        r["date_label"] = ""
+
+    utc_dt = str(r.get("match_datetime_utc", "")).strip()
+    if utc_dt:
+        try:
+            dt = pd.to_datetime(utc_dt, utc=True, errors="coerce")
+            if pd.notna(dt):
+                dt = dt.tz_convert("America/New_York")
+                r["match_datetime_et"] = dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+                r["time_label"] = dt.strftime("%I:%M %p ET").lstrip("0")
+        except Exception:
+            pass
+    if "time_label" not in r:
+        r["time_label"] = ""
+
+    # Normalize score fields
+    for score_key in ("actual_home_goals", "actual_away_goals", "home_score", "away_score"):
+        v = r.get(score_key)
+        if v is not None:
+            try:
+                r[score_key] = int(float(v))
+            except (ValueError, TypeError):
+                pass
+
+    # Map home_score → actual_home_goals and vice versa
+    if r.get("home_score") is not None and r.get("actual_home_goals") is None:
+        r["actual_home_goals"] = r["home_score"]
+    if r.get("away_score") is not None and r.get("actual_away_goals") is None:
+        r["actual_away_goals"] = r["away_score"]
+    if r.get("actual_home_goals") is not None and r.get("home_score") is None:
+        r["home_score"] = r["actual_home_goals"]
+    if r.get("actual_away_goals") is not None and r.get("away_score") is None:
+        r["away_score"] = r["actual_away_goals"]
+
+
+def _week_based_cutoff():
+    """Return ISO date string for the start of the previous full week (Mon)."""
+    today_local = datetime.now(ZoneInfo("America/New_York")).date()
+    current_week_start = today_local - timedelta(days=today_local.weekday())
+    return (current_week_start - timedelta(days=7)).isoformat()
+
+
 @app.get("/api/past-games")
 def api_past_games():
-    """Return completed games from the previous full week + current week's past days.
+    """Return completed games persisted across pipeline runs.
 
-    Response structure matches ``/api/upcoming/global`` per-row format
-    (``match_datetime_et``, ``weekday``, ``date_label``, ``time_label``,
-    ``prob_home``, ``prob_draw``, ``prob_away``, ``pred_home_goals``,
-    ``pred_away_goals``, goal probabilities, ``correct_score_dist``,
-    ``double_chance``, ``asian_handicap``, ``actual_result``, ``is_correct``,
-    etc.).
+    Response structure matches ``/api/upcoming/global`` per-row format.
 
-    Data is sourced from the prediction CSVs (completed rows) so all
-    prediction fields are present.  The pipeline archive (``past_games.json``)
-    is merged for any rows not covered by the CSVs.
+    Data is sourced from ``past_games.json`` (the persistent archive) and
+    supplemented with any recently completed rows from the prediction CSVs
+    that haven't been archived yet.  Rows older than the previous full week
+    are excluded.
 
     For full live-score details (lineups, stats, key events, game info),
     use ``/api/live-score-history``.
@@ -6451,12 +6638,23 @@ def api_past_games():
     except (ValueError, TypeError):
         per_page = 50
 
-    today_local = datetime.now(ZoneInfo("America/New_York")).date()
-    cutoff_days_ago = today_local - timedelta(days=14)
-    cutoff = cutoff_days_ago.isoformat()
+    cutoff = _week_based_cutoff()
 
-    # Build rows from all 5 CSVs (completed date range) — identical format to upcoming
-    enriched_by_key = {}
+    # ── 1. Rows from persistent archive ────────────────────────────
+    by_key = {}
+    archive = _load_json_payload(PAST_GAMES_FILE)
+    if isinstance(archive, list):
+        for r in archive:
+            if str(r.get("match_date", "")).strip() < cutoff:
+                continue
+            if not r.get("actual_result"):
+                continue
+            _enrich_json_past_row(r)
+            ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
+            if ck:
+                by_key[ck] = r
+
+    # ── 2. Supplement with CSV rows (richer data) ──────────────────
     for source, csv_path in (
         ("global", GLOBAL_UPCOMING_FILE),
         ("mls", MLS_UPCOMING_FILE),
@@ -6466,17 +6664,20 @@ def api_past_games():
     ):
         rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
         for r in rows:
-            if r.get("actual_result") and r["actual_result"].upper() in {"H", "D", "A"}:
-                ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
-                if ck:
-                    enriched_by_key[ck] = r
+            if not r.get("actual_result") or r["actual_result"].upper() not in {"H", "D", "A"}:
+                continue
+            if str(r.get("match_date", "")).strip() < cutoff:
+                continue
+            ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
+            if ck:
+                by_key[ck] = r  # CSV row (enriched) takes priority
 
-    all_rows = list(enriched_by_key.values())
+    all_rows = list(by_key.values())
 
     if league:
         league_lower = league.lower()
         all_rows = [r for r in all_rows if league_lower in r.get("competition", "").lower()]
-    all_rows = [r for r in all_rows if str(r.get("match_date", "")).strip() >= cutoff]
+
     all_rows.sort(key=lambda r: r.get("match_date", ""), reverse=True)
 
     total = len(all_rows)
@@ -6492,7 +6693,7 @@ def api_past_games():
         "per_page": per_page,
         "date_window": {
             "from": cutoff,
-            "to": today_local.isoformat(),
+            "to": datetime.now(ZoneInfo("America/New_York")).date().isoformat(),
         },
     })
 
@@ -6818,8 +7019,7 @@ def api_real_tables():
             _clear_standings_cache(comp_name)
             _clear_leaders_cache(comp_name)
         table = _compute_standings_from_history(comp_name)
-        if table:
-            results[comp_name] = table
+        results[comp_name] = table if table is not None else []
     return jsonify({"ok": True, "tables": results, "total": len(results)})
 
 
@@ -7017,6 +7217,13 @@ def api_league_tables():
         data = _load_projected_tables(csv_path)
         brackets = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
         data["last_prediction_refresh"] = _file_mtime_utc(csv_path)
+        # Ensure all known cup competitions appear in the leagues list even
+        # when the projected table CSV has no rows.
+        known_cups = set(data.get("leagues") or [])
+        for comp_name in _CUP_FORMATS:
+            if comp_name not in known_cups:
+                known_cups.add(comp_name)
+        data["leagues"] = sorted(known_cups)
         # Attach cup format descriptors so the frontend can label league/group
         # phase vs knockout stages for every projected cup competition.
         cup_formats = {}
@@ -7028,7 +7235,7 @@ def api_league_tables():
                     if fmt:
                         cup_formats[comp_name] = fmt
         # Also add formats for any competition in the tables data not covered above
-        for comp_name in (data.get("leagues") or []):
+        for comp_name in data.get("leagues") or []:
             if comp_name not in cup_formats:
                 fmt = _CUP_FORMATS.get(comp_name)
                 if fmt:
