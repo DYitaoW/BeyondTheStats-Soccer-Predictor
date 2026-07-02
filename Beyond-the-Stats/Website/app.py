@@ -6747,6 +6747,15 @@ def _enrich_json_past_row(r):
         r["away_score"] = r["actual_away_goals"]
 
 
+def _is_placeholder_game(r):
+    """Return True if a game dict is a placeholder (not a real match)."""
+    for key in ("home_team", "away_team"):
+        val = str(r.get(key, "")).lower()
+        if "group" in val or "third place" in val or "winner" in val or "runner" in val:
+            return True
+    return False
+
+
 def _week_based_cutoff():
     """Return ISO date string for the start of the previous full week (Mon)."""
     today_local = datetime.now(ZoneInfo("America/New_York")).date()
@@ -6793,6 +6802,8 @@ def api_past_games():
         for r in archive:
             if str(r.get("match_date", "")).strip() < cutoff:
                 continue
+            if _is_placeholder_game(r):
+                continue
             _enrich_json_past_row(r)
             ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
             if ck:
@@ -6809,6 +6820,11 @@ def api_past_games():
         rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
         for r in rows:
             if str(r.get("match_date", "")).strip() < cutoff:
+                continue
+            # Only include actually settled games — skip placeholders
+            if str(r.get("actual_result", "")).strip().upper() not in {"H", "D", "A"}:
+                continue
+            if _is_placeholder_game(r):
                 continue
             ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
             if ck:
