@@ -5295,8 +5295,10 @@ def _load_projected_tables(csv_path):
     frame = frame.sort_values(["competition", "position", "team"], na_position="last")
 
     tables = {}
+    position_odds_tables = {}
     for competition, comp_frame in frame.groupby("competition", dropna=False):
         rows = []
+        pos_odds_rows = []
         for _, row in comp_frame.iterrows():
             win_league_pct_raw = pd.to_numeric(row.get("win_league_pct"), errors="coerce")
             top4_pct_raw = pd.to_numeric(row.get("top4_pct"), errors="coerce")
@@ -5317,10 +5319,11 @@ def _load_projected_tables(csv_path):
                                 position_odds[int(pos_num)] = float(pct_num)
                 except Exception:
                     position_odds = {}
+            team_name = _team_name_for_display(str(row["team"]))
             rows.append(
                 {
                     "position": int(row["position"]) if pd.notna(row["position"]) else 0,
-                    "team": _team_name_for_display(str(row["team"])),
+                    "team": team_name,
                     "P": int(pd.to_numeric(row.get("P"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("P"), errors="coerce")) else 0,
                     "W": int(pd.to_numeric(row.get("W"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("W"), errors="coerce")) else 0,
                     "D": int(pd.to_numeric(row.get("D"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("D"), errors="coerce")) else 0,
@@ -5340,10 +5343,18 @@ def _load_projected_tables(csv_path):
                     "sim_runs": int(sim_runs_raw) if pd.notna(sim_runs_raw) else 0,
                 }
             )
+            # Build position odds row: team + odds for each position
+            if position_odds:
+                odds_entry: dict = {"team": team_name}
+                for pos, pct in position_odds.items():
+                    odds_entry[str(pos)] = pct
+                pos_odds_rows.append(odds_entry)
         tables[str(competition)] = rows
+        if pos_odds_rows:
+            position_odds_tables[str(competition)] = pos_odds_rows
 
     leagues = sorted(tables.keys(), key=lambda name: name.lower())
-    return {"leagues": leagues, "tables": tables}
+    return {"leagues": leagues, "tables": tables, "position_odds": position_odds_tables}
 
 
 def _load_json_payload(path):
@@ -5827,6 +5838,55 @@ def api_help():
         ("/api/help", "GET", "This listing"),
     ]
     return jsonify({"ok": True, "routes": routes})
+
+
+@app.get("/api/help/all")
+def api_help_all():
+    """Return every competition with its available API calls (predicted + real)."""
+    now_str = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    leagues_list = []
+    cups_list = []
+
+    for comp_name in sorted(LIVE_SCORE_COMPETITIONS, key=str.lower):
+        is_cup = comp_name in _CUP_FORMATS
+        base = {
+            "competition": comp_name,
+            "is_cup": is_cup,
+        }
+
+        # ── Predicted data ──────────────────────────────────────
+        predicted = {
+            "upcoming": f"/api/upcoming/{'world-cup' if 'World Cup' in comp_name else 'cups' if is_cup else 'global'}",
+            "league_table": f"/api/league-tables?mode={'cups' if is_cup else 'global'}",
+            "cup_bracket": f"/api/cup-bracket?competition={comp_name.replace('/', '%2F').replace(' ', '+')}" if is_cup else None,
+        }
+        # Predicted winner / league leader
+        predicted["leader"] = f"/api/league-leaders"
+        base["predicted"] = {k: v for k, v in predicted.items() if v is not None}
+
+        # ── Real data ───────────────────────────────────────────
+        real = {
+            "real_table": f"/api/real-tables?competition={comp_name.replace('/', '%2F').replace(' ', '+')}",
+            "real_cup_data": f"/api/real-cup-data?competition={comp_name.replace('/', '%2F').replace(' ', '+')}" if is_cup else None,
+        }
+        real["competition_data"] = f"/api/competition-data?competition={comp_name.replace('/', '%2F').replace(' ', '+')}"
+        base["real"] = {k: v for k, v in real.items() if v is not None}
+
+        # ── Past games ──────────────────────────────────────────
+        base["past_games"] = f"/api/past-games?league={comp_name.replace(' ', '+')}"
+
+        if is_cup:
+            cups_list.append(base)
+        else:
+            leagues_list.append(base)
+
+    return jsonify({
+        "ok": True,
+        "generated_at_utc": now_str,
+        "total": len(leagues_list) + len(cups_list),
+        "leagues": leagues_list,
+        "cups": cups_list,
+    })
 
 
 _UPCOMING_MODE_MAP = {
@@ -6666,8 +6726,6 @@ def api_past_games():
         for r in archive:
             if str(r.get("match_date", "")).strip() < cutoff:
                 continue
-            if not r.get("actual_result"):
-                continue
             _enrich_json_past_row(r)
             ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
             if ck:
@@ -6683,8 +6741,6 @@ def api_past_games():
     ):
         rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
         for r in rows:
-            if not r.get("actual_result") or r["actual_result"].upper() not in {"H", "D", "A"}:
-                continue
             if str(r.get("match_date", "")).strip() < cutoff:
                 continue
             ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
@@ -7007,6 +7063,115 @@ def api_real_cup_data():
     return jsonify(result)
 
 
+def _build_fallback_standings(comp_name):
+    """Return a placeholder standings dict with all known teams on 0 points.
+
+    Reads every upcoming prediction CSV source (including ``Output/`` dirs)
+    for *comp_name* and returns teams sorted alphabetically.  If no teams
+    are found, returns ``None``.
+
+    Response shape (matches ``_compute_standings_from_history``):
+    ``{"competition": str, "groups": [{"name": "Overall", "entries": [...]}]}``
+    """
+    teams = set()
+    csv_candidates = [
+        GLOBAL_UPCOMING_FILE,
+        MLS_UPCOMING_FILE,
+        EXTRA_UPCOMING_FILE,
+        CUP_UPCOMING_FILE,
+        NATIONAL_UPCOMING_FILE,
+        os.path.join(PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv"),
+        os.path.join(PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv"),
+        os.path.join(PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv"),
+        GLOBAL_PROJECTED_TABLE_FILE,
+        MLS_PROJECTED_TABLE_FILE,
+        EXTRA_PROJECTED_TABLE_FILE,
+        CUP_PROJECTED_TABLE_FILE,
+    ]
+    for path in csv_candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            df = pd.read_csv(path, dtype=str, encoding="utf-8")
+        except Exception:
+            continue
+        if "competition" not in df.columns:
+            continue
+        mask = df["competition"].astype(str).str.strip() == comp_name
+        sub = df[mask]
+        if sub.empty:
+            continue
+        if "team" in sub.columns:
+            teams.update(sub["team"].dropna().astype(str).str.strip())
+        elif "home_team" in sub.columns:
+            teams.update(sub["home_team"].dropna().astype(str).str.strip())
+        if "away_team" in sub.columns:
+            teams.update(sub["away_team"].dropna().astype(str).str.strip())
+
+    if not teams:
+        # Fall back to ESPN schedule API for team list
+        espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
+        # Extra league ESPN IDs (valid for team lookup but not for live polling)
+        _TEAM_LOOKUP_KEYS = {
+            "Austria/Bundesliga": "aut.1",
+            "Switzerland/Super League": "sui.1",
+            "Greece/Super League": "gre.1",
+            "Denmark/Superliga": "den.1",
+            "Norway/Eliteserien": "nor.1",
+            "Romania/Liga I": "rou.1",
+            "Sweden/Allsvenskan": "swe.1",
+            "Israel/Premier League": "isr.1",
+            "Cyprus/First Division": "cyp.1",
+        }
+        if not espn_id:
+            espn_id = _TEAM_LOOKUP_KEYS.get(comp_name)
+        if espn_id:
+            try:
+                espn_teams = _fetch_competition_teams(comp_name, espn_id)
+            except Exception:
+                espn_teams = None
+            if espn_teams:
+                teams = {t.get("display_name", t.get("short_name", "")) for t in espn_teams}
+                teams.discard("")
+        # Also try the short competition name from ESPN scoreboard
+        if not teams and espn_id:
+            try:
+                # Fetch scoreboard for the current season year
+                season_year = datetime.now().year
+                url = f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard?season={season_year}"
+                data = _fetch_espn_json(url)
+                if data and data.get("events"):
+                    for event in data["events"]:
+                        comps = event.get("competitions") or []
+                        for comp in comps:
+                            compet = comp.get("competitors") or []
+                            for c in compet:
+                                t = c.get("team") or {}
+                                name = str(t.get("displayName", t.get("name", "")))
+                                if name:
+                                    teams.add(name)
+            except Exception:
+                pass
+
+    if not teams:
+        return None
+
+    now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    entries = []
+    for pos, team in enumerate(sorted(teams), start=1):
+        entries.append({
+            "position": pos, "team": team,
+            "P": 0, "W": 0, "D": 0, "L": 0,
+            "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
+        })
+    return {
+        "competition": comp_name,
+        "updated_at": now_utc,
+        "groups": [{"name": "Overall", "entries": entries}],
+        "source": "placeholder",
+    }
+
+
 @app.get("/api/real-tables")
 def api_real_tables():
     """Return real league tables computed from live-score history.
@@ -7034,7 +7199,10 @@ def api_real_tables():
         if isinstance(persisted, dict) and comp_filter in persisted:
             return jsonify({"ok": True, "table": persisted[comp_filter]})
         table = _compute_standings_from_history(comp_filter)
-        return jsonify({"ok": True, "table": table})
+        if table is not None:
+            return jsonify({"ok": True, "table": table})
+        fallback = _build_fallback_standings(comp_filter)
+        return jsonify({"ok": True, "table": fallback})
 
     results = {}
     # Try persisted standings cache first (built by the daily pipeline)
@@ -7049,14 +7217,22 @@ def api_real_tables():
                 _clear_standings_cache(comp_name)
                 _clear_leaders_cache(comp_name)
             table = _compute_standings_from_history(comp_name)
-            results[comp_name] = table if table is not None else []
+            if table is not None:
+                results[comp_name] = table
+            else:
+                fallback = _build_fallback_standings(comp_name)
+                results[comp_name] = fallback if fallback is not None else []
     else:
         for comp_name in LIVE_SCORE_COMPETITIONS:
             if force_refresh:
                 _clear_standings_cache(comp_name)
                 _clear_leaders_cache(comp_name)
             table = _compute_standings_from_history(comp_name)
-            results[comp_name] = table if table is not None else []
+            if table is not None:
+                results[comp_name] = table
+            else:
+                fallback = _build_fallback_standings(comp_name)
+                results[comp_name] = fallback if fallback is not None else []
     return jsonify({"ok": True, "tables": results, "total": len(results)})
 
 
@@ -7419,8 +7595,29 @@ def api_league_leaders():
         except Exception:
             pass
 
+    # ── Include all known competitions with predictions or real tables ──
+    cup_set = set(c["competition"] for c in cups)
+    league_names = set(e["competition"] for e in leagues)
+
+    # Add any cup competitions from LIVE_SCORE_COMPETITIONS not yet listed
+    for comp_name in LIVE_SCORE_COMPETITIONS:
+        if comp_name in cup_set or comp_name in league_names:
+            continue
+        # Check if this is a cup format or has projected table data
+        if comp_name in _CUP_FORMATS:
+            cups.append({
+                "competition": comp_name,
+                "predicted_winner": "—",
+                "predicted_winner_odds": None,
+            })
+        else:
+            leagues.append({
+                "competition": comp_name,
+                "predicted_winner": "—",
+                "predicted_winner_odds": None,
+            })
+
     # ── Real leaders from live score history / ESPN ──────────────
-    # Only applies to league competitions (not cups)
     cup_set = set(c["competition"] for c in cups)
     for entry in leagues:
         comp = entry["competition"]
@@ -7434,11 +7631,19 @@ def api_league_leaders():
                     entry["leader_source"] = "real"
                     break
             else:
+                if entry.get("predicted_winner") and entry["predicted_winner"] != "—":
+                    entry["current_leader"] = entry["predicted_winner"]
+                    entry["leader_source"] = "predicted"
+                else:
+                    entry["current_leader"] = None
+                    entry["leader_source"] = "predicted"
+        else:
+            if entry.get("predicted_winner") and entry["predicted_winner"] != "—":
                 entry["current_leader"] = entry["predicted_winner"]
                 entry["leader_source"] = "predicted"
-        else:
-            entry["current_leader"] = entry["predicted_winner"]
-            entry["leader_source"] = "predicted"
+            else:
+                entry["current_leader"] = None
+                entry["leader_source"] = "predicted"
 
     return jsonify({
         "ok": True,
