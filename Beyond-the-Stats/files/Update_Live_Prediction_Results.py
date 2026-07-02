@@ -478,6 +478,15 @@ def _enrich_past_row(r):
             pass
 
 
+def _is_placeholder_game(r):
+    """Return True if a game dict is a placeholder (not a real match)."""
+    for key in ("home_team", "away_team"):
+        val = str(r.get(key, "")).lower()
+        if "group" in val or "third place" in val or "winner" in val or "runner" in val:
+            return True
+    return False
+
+
 def save_completed_rows_to_past_games(frame, today=None):
     """Extract rows about to be dropped and append them to past_games.json.
 
@@ -524,12 +533,12 @@ def save_completed_rows_to_past_games(frame, today=None):
                 except Exception:
                     row_dict[k] = v if v is not None else None
         pk = str(row_dict.get("prediction_key", "")).strip()
+        if _is_placeholder_game(row_dict):
+            continue
         if pk and pk not in existing_keys:
             existing_keys.add(pk)
-            _enrich_past_row(row_dict)
             new_rows.append(row_dict)
         elif not pk:
-            _enrich_past_row(row_dict)
             new_rows.append(row_dict)
     if new_rows:
         existing.extend(new_rows)

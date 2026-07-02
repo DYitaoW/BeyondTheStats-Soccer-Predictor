@@ -405,18 +405,28 @@ def _check_dependencies():
     print("--- End pre-flight check ---\n")
 
 
+def _is_placeholder_game(r):
+    """Return True if a game dict is a placeholder (not a real match)."""
+    for key in ("home_team", "away_team"):
+        val = str(r.get(key, "")).lower()
+        if "group" in val or "third place" in val or "winner" in val or "runner" in val:
+            return True
+    return False
+
+
 def _archive_completed_games():
     """Archive completed/settled games from CSVs into past_games.json.
 
     Called AFTER settle so the CSVs already have ``actual_result`` filled in.
-    Uses the enriched format from ``_load_upcoming_rows`` (via app.py) so the
-    past-games endpoint serves data in the same format as upcoming games.
+    Only today's settled games are archived (not all games in the date window).
+    Placeholder rows (group/third-place matchups) are skipped.
 
     Upserts by composite key (match_date|competition|home_team|away_team)
     so existing rows get their actual_result updated, and old rows beyond
     the rolling 2-week window are pruned.
     """
     today_et = (datetime.now(UTC) - timedelta(hours=4)).date()
+    today_str = today_et.isoformat()
     current_week_start = today_et - timedelta(days=today_et.weekday())
     cutoff = current_week_start - timedelta(days=7)
     cutoff_str = cutoff.isoformat()
@@ -450,11 +460,9 @@ def _archive_completed_games():
         webapp = module_from_spec(spec)
         spec.loader.exec_module(webapp)
         load_upcoming = webapp._load_upcoming_rows
-        enrich_row = webapp._enrich_json_past_row
     except Exception as exc:
         print(f"  [WARN] Could not import from app.py: {exc} — falling back to raw CSV dump")
         load_upcoming = None
-        enrich_row = None
 
     for csv_path, mode in csv_sources + extra_sources:
         if not csv_path.exists():
@@ -467,13 +475,15 @@ def _archive_completed_games():
                 print(f"  [WARN] _load_upcoming_rows failed for {csv_path}: {exc}")
                 rows = []
             for r in rows:
+                # Only keep today's games — skip placeholders
+                if str(r.get("match_date", "")).strip() != today_str:
+                    continue
+                if _is_placeholder_game(r):
+                    continue
                 ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
                 if not ck or ck in seen_in_batch:
                     continue
                 seen_in_batch.add(ck)
-                # Enrich any missing display fields
-                if enrich_row is not None:
-                    enrich_row(r)
                 all_rows.append(r)
         else:
             # Fallback: raw CSV dump
@@ -485,6 +495,10 @@ def _archive_completed_games():
                 continue
             for _, row in df.iterrows():
                 entry = row.dropna().to_dict()
+                if str(entry.get("match_date", "")).strip() != today_str:
+                    continue
+                if _is_placeholder_game(entry):
+                    continue
                 ck = "|".join(str(entry.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
                 if not ck or ck in seen_in_batch:
                     continue
@@ -512,14 +526,18 @@ def _archive_completed_games():
         if ck:
             existing_by_key[ck] = r
 
+    _RESULT_FIELDS = {"actual_result", "actual_home_goals", "actual_away_goals", "is_correct", "settled_at_utc"}
+
     upserted = 0
     for r in all_rows:
         ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
         if not ck:
             continue
         if ck in existing_by_key:
-            # Update in-place (e.g. actual_result changed)
-            existing_by_key[ck].update(r)
+            # Only update result fields — never overwrite pre-match predictions
+            for k in _RESULT_FIELDS:
+                if k in r:
+                    existing_by_key[ck][k] = r[k]
             upserted += 1
         else:
             existing_by_key[ck] = r
