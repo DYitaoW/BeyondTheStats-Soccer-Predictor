@@ -43,30 +43,41 @@ SOURCES = [
     {"country": "Mexico",         "league": "Liga MX",             "type": "new",  "url": "https://www.football-data.co.uk/new/MEX.csv",  "file_prefix": "mexstat"},
     # ---- Additional "new" format sources ----
     {"country": "Austria",        "league": "Bundesliga",          "type": "new",  "url": "https://www.football-data.co.uk/new/AUT.csv",  "file_prefix": "autstat"},
-    {"country": "Norway",         "league": "Eliteserien",         "type": "new",  "url": "https://www.football-data.co.uk/new/NOR.csv",  "file_prefix": "norstat"},
     {"country": "Romania",        "league": "Liga I",              "type": "new",  "url": "https://www.football-data.co.uk/new/ROU.csv",  "file_prefix": "roustat"},
-    {"country": "Sweden",         "league": "Allsvenskan",         "type": "new",  "url": "https://www.football-data.co.uk/new/SWE.csv",  "file_prefix": "swestat"},
     {"country": "Poland",         "league": "Ekstraklasa",         "type": "new",  "url": "https://www.football-data.co.uk/new/POL.csv",  "file_prefix": "polstat"},
-    # ---- mmz4281 format sources (seasonal CSVs) ----
-    # Greece  (G1)
-    {"country": "Greece",         "league": "Super League",        "type": "mmz4281", "league_code": "G1",   "file_prefix": "grecstat"},
-    # Denmark (DK1)
-    {"country": "Denmark",        "league": "Superliga",           "type": "mmz4281", "league_code": "DK1",  "file_prefix": "denstat"},
-    # Czech Republic (CE1)
-    {"country": "Czech Republic", "league": "First League",        "type": "mmz4281", "league_code": "CE1",  "file_prefix": "czestat"},
-    # Israel (I1)
-    {"country": "Israel",         "league": "Premier League",      "type": "mmz4281", "league_code": "I1",   "file_prefix": "isrstat"},
-    # Serbia (SE1)
-    {"country": "Serbia",         "league": "SuperLiga",           "type": "mmz4281", "league_code": "SE1",  "file_prefix": "srbstat"},
-    # Bulgaria (BU1)
-    {"country": "Bulgaria",       "league": "First League",        "type": "mmz4281", "league_code": "BU1",  "file_prefix": "bulstat"},
-    # Cyprus (CP1)
-    {"country": "Cyprus",         "league": "First Division",      "type": "mmz4281", "league_code": "CP1",  "file_prefix": "cyprusstat"},
-    # Belarus (BL1)
-    {"country": "Belarus",        "league": "Premier League",      "type": "mmz4281", "league_code": "BL1",  "file_prefix": "belstat"},
-    # Moldova (MD1)
-    {"country": "Moldova",        "league": "Super Liga",          "type": "mmz4281", "league_code": "MD1",  "file_prefix": "moldstat"},
 ]
+
+# ---------------------------------------------------------------------------
+# NOTE on leagues removed from this list (2026 audit):
+#
+# - Norway (Eliteserien) and Sweden (Allsvenskan) were moved to the regular
+#   ``files/Download_Latest_Data.py`` pipeline: they have real, correctly
+#   sourced "new"-format data and their clubs regularly qualify for UEFA
+#   Champions/Europa/Conference League, so real domestic results should feed
+#   the same database the cup predictor consults instead of always falling
+#   back to synthetic UEFA-coefficient estimates.
+# - Greece (Super League) was moved to the regular pipeline too, using the
+#   real mmz4281 ``G1`` code (verified to return genuine Greek Super League
+#   data with full match statistics).
+# - Denmark ("DK1"), Czech Republic ("CE1"), Israel ("I1"), Serbia ("SE1"),
+#   Bulgaria ("BU1"), Cyprus ("CP1"), Belarus ("BL1") and Moldova ("MD1")
+#   were REMOVED entirely rather than moved: these mmz4281 league codes are
+#   stale/incorrect and currently silently redirect to a completely
+#   different country's data (verified: "DK1" -> Germany Bundesliga,
+#   "CE1"/"SE1" -> England Championship, "I1" -> Italy Serie A,
+#   "BU1" -> Belgium First Division A, "CP1" -> Portugal Liga Portugal,
+#   "BL1" -> Belgium First Division A, "MD1" -> Germany Bundesliga).
+#   football-data.co.uk does not currently publish a legitimate feed for
+#   any of these five countries (confirmed via https://football-data.co.uk/
+#   data.php and https://football-data.co.uk/all_new_data.php, and by
+#   probing https://www.football-data.co.uk/new/{CODE}.csv, which 404s for
+#   ISR/SRB/BUL/BGR/CYP/CZE). Rather than keep training on mislabeled data,
+#   these five European leagues now rely entirely on the UEFA fallback path
+#   (uefa_country_coefficients.json + team registry + ESPN domestic tables +
+#   squad values, see UEFA_Data_Manager.py / inject_fallback_team()) for any
+#   of their clubs that appear in European-cup fixtures — which is exactly
+#   the "team not in database" fallback the fixture predictor already uses.
+# ---------------------------------------------------------------------------
 
 NEW_REQUIRED_COLUMNS = ["Season", "Date", "Home", "Away", "HG", "AG", "Res"]
 MMZ4281_REQUIRED_COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"]
