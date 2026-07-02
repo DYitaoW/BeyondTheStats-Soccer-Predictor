@@ -437,6 +437,47 @@ def cleanup_all_settled_rows(frame):
     return frame, cleaned
 
 
+def _enrich_past_row(r):
+    """Inline enrichment so it works without importing app.py."""
+    pred = str(r.get("predicted_result", "")).strip().upper()
+    home = str(r.get("home_team", "")).strip()
+    away = str(r.get("away_team", "")).strip()
+    r["winner_label"] = (
+        f"Pred: {home}" if pred == "H" else
+        f"Pred: {away}" if pred == "A" else
+        "Pred: Draw" if pred == "D" else ""
+    )
+    actual = str(r.get("actual_result", "")).strip().upper()
+    r["is_correct"] = "1" if actual in {"H", "D", "A"} and pred == actual else (
+        "0" if actual in {"H", "D", "A"} else ""
+    )
+    for pct_key in ("prob_home", "prob_draw", "prob_away"):
+        try:
+            val = float(r.get(pct_key, 0) or 0) * 100
+            r[f"{pct_key}_text"] = f"{val:.1f}%"
+        except (ValueError, TypeError):
+            r[f"{pct_key}_text"] = ""
+    md = str(r.get("match_date", "")).strip()
+    if md:
+        try:
+            dt = pd.to_datetime(md, errors="coerce")
+            if pd.notna(dt):
+                r["weekday"] = dt.strftime("%A")
+                r["date_label"] = dt.strftime("%B %d, %Y")
+        except Exception:
+            pass
+    utc_dt = str(r.get("match_datetime_utc", "")).strip()
+    if utc_dt:
+        try:
+            dt = pd.to_datetime(utc_dt, utc=True, errors="coerce")
+            if pd.notna(dt):
+                dt = dt.tz_convert("America/New_York")
+                r["match_datetime_et"] = dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+                r["time_label"] = dt.strftime("%I:%M %p ET").lstrip("0")
+        except Exception:
+            pass
+
+
 def save_completed_rows_to_past_games(frame, today=None):
     """Extract rows about to be dropped and append them to past_games.json.
 
@@ -485,8 +526,10 @@ def save_completed_rows_to_past_games(frame, today=None):
         pk = str(row_dict.get("prediction_key", "")).strip()
         if pk and pk not in existing_keys:
             existing_keys.add(pk)
+            _enrich_past_row(row_dict)
             new_rows.append(row_dict)
         elif not pk:
+            _enrich_past_row(row_dict)
             new_rows.append(row_dict)
     if new_rows:
         existing.extend(new_rows)

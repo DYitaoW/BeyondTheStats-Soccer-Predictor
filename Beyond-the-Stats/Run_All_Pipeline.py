@@ -405,21 +405,23 @@ def _check_dependencies():
     print("--- End pre-flight check ---\n")
 
 
-def _copy_today_games_to_past():
-    """Copy today's games from all upcoming CSVs into past_games.json.
+def _archive_completed_games():
+    """Archive completed/settled games from CSVs into past_games.json.
 
-    Called after all sub-pipelines finish so the freshly-generated prediction
-    data is captured before games are played.  Past-games are NOT updated
-    when games end live — only this one snapshot at pipeline time.
+    Called AFTER settle so the CSVs already have ``actual_result`` filled in.
+    Uses the enriched format from ``_load_upcoming_rows`` (via app.py) so the
+    past-games endpoint serves data in the same format as upcoming games.
+
+    Upserts by composite key (match_date|competition|home_team|away_team)
+    so existing rows get their actual_result updated, and old rows beyond
+    the rolling 2-week window are pruned.
     """
     today_et = (datetime.now(UTC) - timedelta(hours=4)).date()
-    # Keep current week (Mon‑today) + previous full week (Mon‑Sun)
     current_week_start = today_et - timedelta(days=today_et.weekday())
     cutoff = current_week_start - timedelta(days=7)
     cutoff_str = cutoff.isoformat()
-    today_ts = pd.Timestamp(today_et)
 
-    upcoming_files = [
+    csv_sources = [
         (GLOBAL_UPCOMING_FILE, "global"),
         (MLS_UPCOMING_FILE, "mls"),
         (EXTRA_UPCOMING_FILE, "extra"),
@@ -427,53 +429,71 @@ def _copy_today_games_to_past():
         (NATIONAL_UPCOMING_FILE, "national"),
     ]
 
-    new_rows = []
+    # Also check Output/ dirs for any additional global predictions
+    output_global = SP_DIR / "Output" / "Upcoming" / "all_upcoming.csv"
+    output_europe = SP_DIR / "Output" / "Europe" / "Upcoming" / "europe_upcoming.csv"
+    output_national = SP_DIR / "Output" / "National" / "Upcoming" / "national_upcoming.csv"
+    extra_sources = [
+        (output_global, "global"),
+        (output_europe, "global"),
+        (output_national, "global"),
+    ]
+
+    all_rows = []
     seen_in_batch = set()
 
-    for csv_path, mode in upcoming_files:
+    # Import enrichment from app.py
+    try:
+        from importlib.util import spec_from_file_location, module_from_spec
+        app_path = str(SP_DIR / "Website" / "app.py")
+        spec = spec_from_file_location("webapp", app_path)
+        webapp = module_from_spec(spec)
+        spec.loader.exec_module(webapp)
+        load_upcoming = webapp._load_upcoming_rows
+        enrich_row = webapp._enrich_json_past_row
+    except Exception as exc:
+        print(f"  [WARN] Could not import from app.py: {exc} — falling back to raw CSV dump")
+        load_upcoming = None
+        enrich_row = None
+
+    for csv_path, mode in csv_sources + extra_sources:
         if not csv_path.exists():
             continue
-        try:
-            df = pd.read_csv(csv_path, dtype=str)
-        except Exception as exc:
-            print(f"  [WARN] Could not read {csv_path}: {exc}")
-            continue
-        if df.empty or "match_date" not in df.columns:
-            continue
-
-        df["_parsed_date"] = pd.to_datetime(df["match_date"], errors="coerce")
-        # Only today's games
-        is_today = df["_parsed_date"].notna() & (df["_parsed_date"] == today_ts)
-        qualified = df[is_today]
-
-        for _, row in qualified.iterrows():
-            entry = row.dropna().to_dict()
-            entry.pop("_parsed_date", None)
-            # Composite key for dedup: date|competition|home|away
-            ck = "|".join(
-                str(entry.get(k, "")).strip()
-                for k in ("match_date", "competition", "home_team", "away_team")
-            ).lower()
-            if not ck or ck in seen_in_batch:
+        if load_upcoming is not None:
+            # Use enriched loader with date_range="completed" (last Thu → tomorrow)
+            try:
+                rows, _stats, _league_stats = load_upcoming(str(csv_path), mode, date_range="completed")
+            except Exception as exc:
+                print(f"  [WARN] _load_upcoming_rows failed for {csv_path}: {exc}")
+                rows = []
+            for r in rows:
+                ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
+                if not ck or ck in seen_in_batch:
+                    continue
+                seen_in_batch.add(ck)
+                # Enrich any missing display fields
+                if enrich_row is not None:
+                    enrich_row(r)
+                all_rows.append(r)
+        else:
+            # Fallback: raw CSV dump
+            try:
+                df = pd.read_csv(csv_path, dtype=str)
+            except Exception:
                 continue
-            seen_in_batch.add(ck)
+            if df.empty:
+                continue
+            for _, row in df.iterrows():
+                entry = row.dropna().to_dict()
+                ck = "|".join(str(entry.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
+                if not ck or ck in seen_in_batch:
+                    continue
+                seen_in_batch.add(ck)
+                entry["source"] = f"pipeline_{mode}"
+                all_rows.append(entry)
 
-            entry["source"] = f"pipeline_{mode}"
-            # Map CSV actual_home_goals/actual_away_goals → home_score/away_score
-            if "actual_home_goals" in entry and "home_score" not in entry:
-                try:
-                    entry["home_score"] = int(float(entry["actual_home_goals"]))
-                except (ValueError, TypeError):
-                    entry["home_score"] = None
-            if "actual_away_goals" in entry and "away_score" not in entry:
-                try:
-                    entry["away_score"] = int(float(entry["actual_away_goals"]))
-                except (ValueError, TypeError):
-                    entry["away_score"] = None
-            new_rows.append(entry)
-
-    if not new_rows:
-        print("  [past-games] No today's games found in upcoming CSVs.")
+    if not all_rows:
+        print("  [past-games] No completed/past games found — nothing to archive.")
         return
 
     # Load existing past_games.json
@@ -485,38 +505,38 @@ def _copy_today_games_to_past():
     else:
         existing = []
 
-    existing_keys = set()
+    # Build key index of existing rows; upsert matching keys
+    existing_by_key: dict[str, dict] = {}
     for r in existing:
-        ck = "|".join(
-            str(r.get(k, "")).strip()
-            for k in ("match_date", "competition", "home_team", "away_team")
-        ).lower()
+        ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
         if ck:
-            existing_keys.add(ck)
+            existing_by_key[ck] = r
 
-    merged = list(existing)
-    added = 0
-    for r in new_rows:
-        ck = "|".join(
-            str(r.get(k, "")).strip()
-            for k in ("match_date", "competition", "home_team", "away_team")
-        ).lower()
-        if ck not in existing_keys:
-            existing_keys.add(ck)
-            merged.append(r)
-            added += 1
+    upserted = 0
+    for r in all_rows:
+        ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
+        if not ck:
+            continue
+        if ck in existing_by_key:
+            # Update in-place (e.g. actual_result changed)
+            existing_by_key[ck].update(r)
+            upserted += 1
+        else:
+            existing_by_key[ck] = r
 
-    # Prune rows older than the rolling window
+    merged = list(existing_by_key.values())
+
+    # Prune rows older than cutoff
     before = len(merged)
     merged = [r for r in merged if str(r.get("match_date", "")).strip() >= cutoff_str]
     pruned = before - len(merged)
 
-    if added or pruned:
+    if upserted or pruned:
         PAST_GAMES_FILE.parent.mkdir(parents=True, exist_ok=True)
         PAST_GAMES_FILE.write_text(
             json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-        print(f"  [past-games] Added {added} today's rows, pruned {pruned} old "
+        print(f"  [past-games] Upserted {upserted} row(s), pruned {pruned} old "
               f"→ past_games.json ({len(merged)} total)")
     else:
         print("  [past-games] No changes to past_games.json")
@@ -575,6 +595,9 @@ def _build_real_standings():
         ("extra", EXTRA_UPCOMING_FILE),
         ("cups", CUP_UPCOMING_FILE),
         ("national", NATIONAL_UPCOMING_FILE),
+        ("global", SP_DIR / "Output" / "Upcoming" / "all_upcoming.csv"),
+        ("global", SP_DIR / "Output" / "Europe" / "Upcoming" / "europe_upcoming.csv"),
+        ("global", SP_DIR / "Output" / "National" / "Upcoming" / "national_upcoming.csv"),
     ]
     for source, path in csv_paths:
         if not path.exists():
@@ -789,15 +812,15 @@ def run_full_pipeline(args, api_token, results=None):
                 results.update(sub_result)
                 print(f"  [OK] {name} sub-pipeline finished")
 
-    # Copy today's games from freshly-generated upcoming CSVs into past_games.json
-    # before they are played (past-games are NOT updated live).
-    print("\n=== [past-games] Copy today's games to past_games.json ===")
-    _copy_today_games_to_past()
-
     # Post-pipeline steps (depend on all sub-pipelines' outputs being on disk).
     post_start = time.monotonic()
     print("\n>>> Running post-pipeline steps")
     results.update(_run_shared_post_steps(args, api_token))
+
+    # Archive completed games AFTER settle (so CSVs have actual_result filled).
+    print("\n=== [past-games] Archive completed games to past_games.json ===")
+    _archive_completed_games()
+
     print(f"  [TIMING] post-pipeline steps: {time.monotonic() - post_start:.1f}s")
     print(f"\n[TIMING] full pipeline: {time.monotonic() - pipeline_start:.1f}s")
     print(f"[DEBUG] pipeline wall clock done at T+{time.monotonic() - _pipeline_start_global:.0f}s")

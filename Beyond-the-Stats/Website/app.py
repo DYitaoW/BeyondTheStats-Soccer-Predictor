@@ -42,12 +42,93 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, date, timezone
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import httpx
+import hashlib
+import functools
 
 # ── Global state ──────────────────────────────────────────────────
 # Most state is module-level so the background poller and API handlers
 # share it within the same process/gunicorn worker.
 
 _last_pipeline_run: datetime | None = None
+
+# ── Redis response cache ────────────────────────────────────────
+REDIS_URL = os.environ.get("REDIS_URL", "")
+_redis_client = None
+if REDIS_URL:
+    try:
+        import redis as _redis_mod
+        _redis_client = _redis_mod.from_url(REDIS_URL, socket_timeout=2, decode_responses=True)
+        _redis_client.ping()
+    except Exception:
+        _redis_client = None
+
+CACHE_TTL_DEFAULT = int(os.environ.get("CACHE_TTL_DEFAULT", "120"))  # seconds
+CACHE_TTL_LONG = int(os.environ.get("CACHE_TTL_LONG", "600"))       # 10 min for stable data
+
+
+def _cache_key(endpoint: str, query_str: str = "") -> str:
+    """Return a deterministic cache key for an API call."""
+    raw = f"{endpoint}:{query_str}"
+    return f"api:{hashlib.md5(raw.encode()).hexdigest()}"
+
+
+def _cache_get(key: str) -> str | None:
+    """Return cached JSON string or None."""
+    if _redis_client is None:
+        return None
+    try:
+        return _redis_client.get(key)
+    except Exception:
+        return None
+
+
+def _cache_set(key: str, value: str, ttl: int = CACHE_TTL_DEFAULT) -> None:
+    if _redis_client is None:
+        return
+    try:
+        _redis_client.setex(key, ttl, value)
+    except Exception:
+        pass
+
+
+def _cache_clear_pattern(pattern: str = "api:*") -> None:
+    """Clear all cached API responses.  Called after pipeline refresh."""
+    if _redis_client is None:
+        return
+    try:
+        for k in _redis_client.scan_iter(match=pattern):
+            _redis_client.delete(k)
+    except Exception:
+        pass
+
+
+def _cached_response(ttl: int = CACHE_TTL_DEFAULT):
+    """Decorator that caches a route's JSON response in Redis.
+
+    The cache key is ``api:{md5(endpoint + query_string)}``.
+    Skips caching when ``?no_cache=1`` is present.
+    """
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            if request.args.get("no_cache", "").strip() in ("1", "true"):
+                return f(*args, **kwargs)
+            key = _cache_key(request.path, request.query_string.decode("utf-8", errors="replace"))
+            cached = _cache_get(key)
+            if cached is not None:
+                resp = app.response_class(
+                    response=cached, status=200, mimetype="application/json"
+                )
+                resp.headers["X-Cache"] = "redis"
+                return resp
+            result = f(*args, **kwargs)
+            if isinstance(result, app.response_class) and result.status_code == 200:
+                _cache_set(key, result.get_data(as_text=True), ttl=ttl)
+            return result
+        return wrapper
+    return decorator
+
 
 # Cache for h2h/form data to avoid re-reading CSVs on every request.
 # Keyed by pm_mod.TEAM_DATA_DIR, value is (mtime_summary, (head_to_head, current_form)).
@@ -447,14 +528,124 @@ STATIC_PREDICTIONS_MLS_FILE = os.environ.get("STATIC_PREDICTIONS_MLS_FILE", MLS_
 STATIC_PREDICTIONS_EXTRA_FILE = os.environ.get("STATIC_PREDICTIONS_EXTRA_FILE", EXTRA_UPCOMING_FILE)
 REFRESH_API_TOKEN = os.environ.get("REFRESH_API_TOKEN", "").strip()
 NOTIFICATIONS_API_KEY = os.environ.get("NOTIFICATIONS_API_KEY", "").strip()
+DEBUG_API_KEY = os.environ.get("DEBUG_API_KEY", "").strip()
+_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "").strip()
 _notifications = deque(maxlen=100)
 _device_tokens = set()
+_ios_device_tokens: set[str] = set()
+
+# ── Apple Push Notification Service (APNs) ──────────────────────
+APNS_KEY_FILE = os.environ.get("APNS_KEY_FILE", "")
+APNS_KEY_ID = os.environ.get("APNS_KEY_ID", "")
+APNS_TEAM_ID = os.environ.get("APNS_TEAM_ID", "")
+APNS_BUNDLE_ID = os.environ.get("APNS_BUNDLE_ID", "")
+APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "true").strip().lower() in ("1", "true")
+_apns_client_lock = threading.Lock()
+_apns_token_cache: str | None = None
+_apns_token_expires: float = 0.0
+_apns_notification_queue: deque[dict] = deque(maxlen=500)
+_apns_worker_started = False
 if FILES_DIR not in sys.path:
     sys.path.insert(0, FILES_DIR)
 if MLS_FILES_DIR not in sys.path:
     sys.path.insert(0, MLS_FILES_DIR)
 if EXTRA_FILES_DIR not in sys.path:
     sys.path.insert(0, EXTRA_FILES_DIR)
+
+# ── Apple Push Notification Service (APNs) helpers ──────────────
+
+def _generate_apns_token() -> str | None:
+    """Generate a JWT token for APNs token-based authentication.
+    
+    Returns the encoded JWT string or None if config is incomplete.
+    """
+    global _apns_token_cache, _apns_token_expires
+    now = time.time()
+    if _apns_token_cache and now < _apns_token_expires:
+        return _apns_token_cache
+    if not APNS_KEY_FILE or not APNS_KEY_ID or not APNS_TEAM_ID:
+        return None
+    try:
+        with open(APNS_KEY_FILE, "rb") as f:
+            key_data = f.read()
+        import jwt as pyjwt
+        issued_at = int(now)
+        expiry = issued_at + 3600  # tokens valid for 1 hour
+        headers = {"kid": APNS_KEY_ID}
+        payload = {
+            "iss": APNS_TEAM_ID,
+            "iat": issued_at,
+        }
+        token = pyjwt.encode(payload, key_data, algorithm="ES256", headers=headers)
+        _apns_token_cache = token
+        _apns_token_expires = expiry - 60  # refresh 1 min early
+        return token
+    except Exception:
+        return None
+
+
+def _send_apns_notification(device_token: str, title: str, body: str, badge: int = 0) -> bool:
+    """Send a push notification to a single iOS device via APNs.
+    
+    Uses HTTP/2 (required by Apple). Returns True on success.
+    """
+    token = _generate_apns_token()
+    if not token:
+        return False
+    apns_host = "api.sandbox.push.apple.com" if APNS_USE_SANDBOX else "api.push.apple.com"
+    url = f"https://{apns_host}/3/device/{device_token}"
+    notification = {
+        "aps": {
+            "alert": {"title": title, "body": body},
+            "badge": badge,
+            "sound": "default",
+        }
+    }
+    try:
+        with httpx.Client(http2=True, timeout=10.0) as client:
+            resp = client.post(
+                url,
+                json=notification,
+                headers={
+                    "authorization": f"bearer {token}",
+                    "apns-topic": APNS_BUNDLE_ID,
+                    "apns-push-type": "alert",
+                },
+            )
+            return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _apns_worker():
+    """Background thread that drains the notification queue to APNs."""
+    while True:
+        try:
+            item = _apns_notification_queue.popleft() if _apns_notification_queue else None
+        except IndexError:
+            item = None
+        if item:
+            _send_apns_notification(
+                device_token=item["token"],
+                title=item["title"],
+                body=item["body"],
+                badge=item.get("badge", 0),
+            )
+        else:
+            time.sleep(2.0)
+
+
+def _start_apns_worker():
+    """Start the APNs background worker once."""
+    global _apns_worker_started
+    if _apns_worker_started:
+        return
+    if not APNS_KEY_FILE or not APNS_KEY_ID or not APNS_TEAM_ID or not APNS_BUNDLE_ID:
+        return
+    _apns_worker_started = True
+    t = threading.Thread(target=_apns_worker, daemon=True, name="apns-worker")
+    t.start()
+
 
 # ── Module / HTTP Utilities ──────────────────────────────────────
 # _load_module handles dynamic imports (e.g. Predict_Match from three
@@ -477,6 +668,7 @@ uefa = _load_module("uefa_data_manager", os.path.join(FILES_DIR, "UEFA_Data_Mana
 
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+app.secret_key = _SECRET_KEY or None
 API_RATE_LIMIT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_PER_MINUTE", "120"))
 _api_rate_lock = threading.Lock()
 _api_rate_events_by_ip = {}
@@ -522,6 +714,25 @@ def _add_cache_headers(response):
             f"public, max-age={int(_STATIC_CACHE_MAX_AGE * 24)}"
         )
 
+    # Security headers
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-XSS-Protection", "0")
+    # HSTS — only set when using HTTPS
+    if request.is_secure:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    # CSP — strict but permissive enough for the legacy UI
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' https://cdnjs.cloudflare.com; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'",
+    )
+
     # CORS for the Cloudflare Pages frontend (and any future static origin).
     # Allow-list is read from ALLOWED_ORIGINS env var (comma-separated).
     origin = request.headers.get("Origin")
@@ -538,7 +749,7 @@ def _add_cache_headers(response):
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Vary"] = "Origin"
             response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Refresh-Token, X-Notifications-Key"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Refresh-Token, X-Notifications-Key, X-Debug-Key"
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
 
     return response
@@ -611,6 +822,30 @@ def _refresh_auth_ok():
         if auth_header.lower().startswith("bearer "):
             token = auth_header[7:].strip()
     return token == REFRESH_API_TOKEN
+
+
+def _debug_auth_ok():
+    """Return True if the caller is authorized for debug endpoints.
+
+    Requires at least one of DEBUG_API_KEY or REFRESH_API_TOKEN to be set
+    in the environment; the caller must present the matching value via a
+    ``X-Debug-Key`` header or ``Authorization: Bearer <key>`` header.
+
+    When neither env var is set, debug endpoints are **permanently disabled**
+    (always return 401). Set one of them to re-enable them.
+    """
+    if not DEBUG_API_KEY and not REFRESH_API_TOKEN:
+        return False
+    got = request.headers.get("X-Debug-Key", "").strip()
+    if not got:
+        auth = request.headers.get("Authorization", "").strip()
+        if auth.lower().startswith("bearer "):
+            got = auth[7:].strip()
+    if DEBUG_API_KEY and got == DEBUG_API_KEY:
+        return True
+    if REFRESH_API_TOKEN and got == REFRESH_API_TOKEN:
+        return True
+    return False
 
 
 @app.before_request
@@ -5295,8 +5530,10 @@ def _load_projected_tables(csv_path):
     frame = frame.sort_values(["competition", "position", "team"], na_position="last")
 
     tables = {}
+    position_odds_tables = {}
     for competition, comp_frame in frame.groupby("competition", dropna=False):
         rows = []
+        pos_odds_rows = []
         for _, row in comp_frame.iterrows():
             win_league_pct_raw = pd.to_numeric(row.get("win_league_pct"), errors="coerce")
             top4_pct_raw = pd.to_numeric(row.get("top4_pct"), errors="coerce")
@@ -5317,10 +5554,11 @@ def _load_projected_tables(csv_path):
                                 position_odds[int(pos_num)] = float(pct_num)
                 except Exception:
                     position_odds = {}
+            team_name = _team_name_for_display(str(row["team"]))
             rows.append(
                 {
                     "position": int(row["position"]) if pd.notna(row["position"]) else 0,
-                    "team": _team_name_for_display(str(row["team"])),
+                    "team": team_name,
                     "P": int(pd.to_numeric(row.get("P"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("P"), errors="coerce")) else 0,
                     "W": int(pd.to_numeric(row.get("W"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("W"), errors="coerce")) else 0,
                     "D": int(pd.to_numeric(row.get("D"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("D"), errors="coerce")) else 0,
@@ -5340,10 +5578,18 @@ def _load_projected_tables(csv_path):
                     "sim_runs": int(sim_runs_raw) if pd.notna(sim_runs_raw) else 0,
                 }
             )
+            # Build position odds row: team + odds for each position
+            if position_odds:
+                odds_entry: dict = {"team": team_name}
+                for pos, pct in position_odds.items():
+                    odds_entry[str(pos)] = pct
+                pos_odds_rows.append(odds_entry)
         tables[str(competition)] = rows
+        if pos_odds_rows:
+            position_odds_tables[str(competition)] = pos_odds_rows
 
     leagues = sorted(tables.keys(), key=lambda name: name.lower())
-    return {"leagues": leagues, "tables": tables}
+    return {"leagues": leagues, "tables": tables, "position_odds": position_odds_tables}
 
 
 def _load_json_payload(path):
@@ -5829,6 +6075,55 @@ def api_help():
     return jsonify({"ok": True, "routes": routes})
 
 
+@app.get("/api/help/all")
+def api_help_all():
+    """Return every competition with its available API calls (predicted + real)."""
+    now_str = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    leagues_list = []
+    cups_list = []
+
+    for comp_name in sorted(LIVE_SCORE_COMPETITIONS, key=str.lower):
+        is_cup = comp_name in _CUP_FORMATS
+        base = {
+            "competition": comp_name,
+            "is_cup": is_cup,
+        }
+
+        # ── Predicted data ──────────────────────────────────────
+        predicted = {
+            "upcoming": f"/api/upcoming/{'world-cup' if 'World Cup' in comp_name else 'cups' if is_cup else 'global'}",
+            "league_table": f"/api/league-tables?mode={'cups' if is_cup else 'global'}",
+            "cup_bracket": f"/api/cup-bracket?competition={comp_name.replace('/', '%2F').replace(' ', '+')}" if is_cup else None,
+        }
+        # Predicted winner / league leader
+        predicted["leader"] = f"/api/league-leaders"
+        base["predicted"] = {k: v for k, v in predicted.items() if v is not None}
+
+        # ── Real data ───────────────────────────────────────────
+        real = {
+            "real_table": f"/api/real-tables?competition={comp_name.replace('/', '%2F').replace(' ', '+')}",
+            "real_cup_data": f"/api/real-cup-data?competition={comp_name.replace('/', '%2F').replace(' ', '+')}" if is_cup else None,
+        }
+        real["competition_data"] = f"/api/competition-data?competition={comp_name.replace('/', '%2F').replace(' ', '+')}"
+        base["real"] = {k: v for k, v in real.items() if v is not None}
+
+        # ── Past games ──────────────────────────────────────────
+        base["past_games"] = f"/api/past-games?league={comp_name.replace(' ', '+')}"
+
+        if is_cup:
+            cups_list.append(base)
+        else:
+            leagues_list.append(base)
+
+    return jsonify({
+        "ok": True,
+        "generated_at_utc": now_str,
+        "total": len(leagues_list) + len(cups_list),
+        "leagues": leagues_list,
+        "cups": cups_list,
+    })
+
+
 _UPCOMING_MODE_MAP = {
     "global": (GLOBAL_UPCOMING_FILE, "global"),
     "mls": (MLS_UPCOMING_FILE, "mls"),
@@ -5847,6 +6142,7 @@ _ALL_UPCOMING_SOURCES = [
 
 
 @app.get("/api/upcoming/<mode>")
+@_cached_response(ttl=CACHE_TTL_DEFAULT)
 def api_upcoming(mode):
     """Return upcoming prediction rows for the given source mode.
 
@@ -5936,212 +6232,10 @@ def api_world_cup():
     if not os.path.exists(world_cup_file):
         return jsonify({"ok": False, "error": "World Cup projection not available"}), 404
     try:
-        with open(world_cup_file, "r") as f:
-            data = json.load(f)
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
-
-    # ── 1. Odds-weighted knockout bracket ────────────────────────
-    # Build a self-consistent bracket where the higher-probability
-    # team wins each match and advances to the next round.
-    raw_knockout = data.get("knockout") or {}
-    # Determine the order of stages from the original data
-    _SLOT_LABEL = {
-        "round_of_32": "Round of 32",
-        "round_of_16": "Round of 16",
-        "quarterfinals": "Quarterfinal",
-        "semifinals": "Semifinal",
-        "final": "Final",
-    }
-    odds_knockout = {}
-    # Track slot → odds_winner for propagation: round_label → {slot_num → team}
-    odds_advancing = {}
-    for stage_key, matches in raw_knockout.items():
-        if stage_key not in _SLOT_LABEL:
-            odds_knockout[stage_key] = [dict(m) for m in matches]
-            continue
-        label = _SLOT_LABEL[stage_key]
-        round_rows = []
-        slot_winners = {}
-        for idx, m in enumerate(matches):
-            entry = dict(m)
-            ph = _safe_float(entry.get("prob_home", 0), 0)
-            pa = _safe_float(entry.get("prob_away", 0), 0)
-            hm = str(entry.get("home_team", "")).strip()
-            aw = str(entry.get("away_team", "")).strip()
-            # Decide winner by higher probability
-            if ph > pa and hm:
-                entry["winner"] = hm
-            elif pa > ph and aw:
-                entry["winner"] = aw
-            # else keep original winner
-            entry["odds_weighted"] = True
-
-            slot_num = idx + 1
-            slot_winners[slot_num] = entry["winner"]
-
-            # Override home/away team names if a previous-round winner
-            # feeds into this slot.
-            for prev_label, prev_winners in odds_advancing.items():
-                hs = str(entry.get("home_slot", "") or "")
-                for psn, ptm in prev_winners.items():
-                    tag = "%s %d Winner" % (prev_label, psn)
-                    if tag in hs:
-                        entry["home_team"] = ptm
-                        # Also correct winner if the swapped team changes the odds
-                        new_ph = _safe_float(entry.get("prob_home", 0), 0)
-                        new_pa = _safe_float(entry.get("prob_away", 0), 0)
-                        if new_ph > new_pa and ptm:
-                            entry["winner"] = ptm
-                        break
-                aws = str(entry.get("away_slot", "") or "")
-                for psn, ptm in prev_winners.items():
-                    tag = "%s %d Winner" % (prev_label, psn)
-                    if tag in aws:
-                        entry["away_team"] = ptm
-                        new_ph = _safe_float(entry.get("prob_home", 0), 0)
-                        new_pa = _safe_float(entry.get("prob_away", 0), 0)
-                        if new_pa > new_ph and ptm:
-                            entry["winner"] = ptm
-                        break
-
-            round_rows.append(entry)
-        odds_knockout[stage_key] = round_rows
-        odds_advancing[label] = slot_winners
-
-    # ── 2. Real knockout bracket from live scores / history ──────
-    real_knockout = {}
-    # Use the actual stage keys from the source data
-    wc_stages = list(raw_knockout.keys())
-    # Build a lookup of all WC matches from live data
-    live_matches = {}
-    history = _load_live_score_history()
-    for g in history:
-        if g.get("competition") in ("FIFA/World Cup",):
-            mid = g.get("match_id", "")
-            if mid:
-                live_matches[mid] = g
-    with _live_scores_lock:
-        current = _live_scores.get("FIFA/World Cup", {}).get("games", [])
-    for g in current:
-        mid = g.get("match_id", "")
-        if mid:
-            if mid not in live_matches or g.get("status") != "pre":
-                live_matches[mid] = g
-
-    for stage_key in wc_stages:
-        projected_matches = raw_knockout.get(stage_key) or []
-        round_rows = []
-        for m in projected_matches:
-            mid = str(m.get("match_id", "") or m.get("event_id", "") or "").strip()
-            live = live_matches.get(mid) if mid else None
-            entry = {
-                "label": m.get("label", ""),
-                "stage": stage_key,
-                "match_date": m.get("match_date", ""),
-                "match_datetime_utc": m.get("match_datetime_utc", ""),
-                "home_team": m.get("home_team", ""),
-                "away_team": m.get("away_team", ""),
-                "home_slot": m.get("home_slot", ""),
-                "away_slot": m.get("away_slot", ""),
-                "venue": m.get("venue", ""),
-            }
-            if live and live.get("status") == "post":
-                hs = live.get("home_score")
-                aws = live.get("away_score")
-                entry["status"] = "post"
-                entry["home_score"] = hs
-                entry["away_score"] = aws
-                if hs is not None and aws is not None:
-                    if hs > aws:
-                        entry["winner"] = live.get("home_team", "")
-                    elif aws > hs:
-                        entry["winner"] = live.get("away_team", "")
-            elif live and live.get("status") == "in":
-                entry["status"] = "in"
-                entry["home_score"] = live.get("home_score")
-                entry["away_score"] = live.get("away_score")
-            else:
-                entry["status"] = "pre"
-                entry["home_score"] = None
-                entry["away_score"] = None
-            round_rows.append(entry)
-        real_knockout[stage_key] = round_rows
-
-    # Inject the computed brackets into the payload
-    data["odds_knockout"] = odds_knockout
-    data["real_knockout"] = real_knockout
-
-    return jsonify(data)
-
-
-@app.post("/api/refresh")
-def api_refresh():
-    """Trigger a full pipeline refresh in the background."""
-    if not _refresh_auth_ok():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
-    backend_refresh = app.config.get("_backend_refresh")
-    if backend_refresh:
-        backend_refresh(trigger="manual")
-        return jsonify({"ok": True, "message": "Refresh started."})
-
-    def _run():
-        print("[refresh] Manual refresh requested via API (legacy path).")
-        _run_full_pipeline_once()
-
-    threading.Thread(target=_run, daemon=True, name="manual-refresh").start()
-    return jsonify({"ok": True, "message": "Refresh started."})
-
-
-@app.get("/api/last-refresh")
-def api_last_refresh():
-    """Return the timestamp of the last successful pipeline run.
-    
-    The iOS app can compare this with its own cached timestamp to decide
-    whether to reload data or use the cache.
-    """
-    global _last_pipeline_run
-    if _last_pipeline_run is None:
-        return jsonify({"ok": True, "last_refresh_utc": None})
-    return jsonify({
-        "ok": True,
-        "last_refresh_utc": _last_pipeline_run.isoformat(),
-    })
-
-
-@app.get("/api/last-data-refresh")
-def api_last_data_refresh():
-    """Return the timestamp of the last data refresh (any pipeline run).
-    
-    The iOS app can compare this with its own cached timestamp to decide
-    whether to reload data or use the cache. This is updated on every
-    pipeline run (both full retrain and light refresh).
-    """
-    dt = _load_last_data_refresh()
-    if dt is None:
-        return jsonify({"ok": True, "last_data_refresh_utc": None})
-    return jsonify({
-        "ok": True,
-        "last_data_refresh_utc": dt.isoformat(),
-    })
-
-
-@app.get("/api/pipeline/status")
-def api_pipeline_status():
-    """Return step-by-step results from the last pipeline run.
-
-    Shows which steps passed/failed, count totals, and the timestamp
-    of the run. Useful for debugging failed downloads or model steps.
-    """
-    if not os.path.exists(PIPELINE_STATUS_FILE):
-        return jsonify({"ok": True, "status": None, "note": "No pipeline has run yet."})
-    try:
-        with open(PIPELINE_STATUS_FILE, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        return jsonify({"ok": True, "status": data})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": f"Could not read pipeline status: {exc}"}), 500
+        pid = pipe_status["pid"]
+        return jsonify({"ok": True, "running": pipe_status.get("running", False), "pid": pid})
+    except Exception:
+        return jsonify({"ok": False, "error": "Could not read pipeline status"}), 500
 
 
 MOBILE_FEED_FILE = os.path.join(PROJECT_DIR, "Output", "mobile_app_feed.json")
@@ -6163,8 +6257,8 @@ def api_mobile_feed():
     try:
         with open(MOBILE_FEED_FILE, "r", encoding="utf-8") as f:
             return jsonify(json.load(f))
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+    except Exception:
+        return jsonify({"ok": False, "error": "Could not load mobile feed"}), 500
 
 
 @app.get("/api/mobile/widget")
@@ -6258,8 +6352,8 @@ def api_predict():
         mode = "global"
     try:
         result = _predict(home_team, away_team, mode=mode)
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        return jsonify({"ok": False, "error": "Prediction failed"}), 400
     return jsonify({"ok": True, "prediction": result})
 
 
@@ -6271,8 +6365,8 @@ def api_predict_mls():
     away_team = str(payload.get("away_team", "")).strip()
     try:
         result = _predict(home_team, away_team, mode="mls")
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        return jsonify({"ok": False, "error": "Prediction failed"}), 400
     return jsonify({"ok": True, "prediction": result})
 
 
@@ -6284,14 +6378,14 @@ def api_predict_extra():
     away_team = str(payload.get("away_team", "")).strip()
     try:
         result = _predict(home_team, away_team, mode="extra")
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        return jsonify({"ok": False, "error": "Prediction failed"}), 400
     return jsonify({"ok": True, "prediction": result})
 
 
 @app.post("/api/notifications")
 def api_push_notification():
-    """Push a notification to the in-memory queue. Requires API key auth."""
+    """Push a notification to in-memory queue + APNs for iOS devices. Requires API key auth."""
     key = request.headers.get("X-Notifications-Key", "").strip()
     if NOTIFICATIONS_API_KEY and key != NOTIFICATIONS_API_KEY:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
@@ -6307,6 +6401,14 @@ def api_push_notification():
         "created_at": datetime.now(UTC).isoformat(),
         "type": payload.get("type", "info"),
     })
+    # Queue for APNs delivery to all registered iOS devices
+    for device_token in list(_ios_device_tokens):
+        _apns_notification_queue.append({
+            "token": device_token,
+            "title": title,
+            "body": body,
+            "badge": payload.get("badge", 0),
+        })
     return jsonify({"ok": True})
 
 
@@ -6320,7 +6422,15 @@ def api_get_notifications():
 
 @app.post("/api/notifications/register")
 def api_register_device():
-    """Register a device token for push notifications."""
+    """Register a device token for push notifications.
+    
+    Supports both generic and iOS (APNs) tokens.  iOS tokens are sent
+    to Apple's APNs for validation.  Requires APNs env vars set.
+    
+    Body params:
+        token  (str, required)  — device push token
+        platform (str)          — "ios" or "generic" (default)
+    """
     key = request.headers.get("X-Notifications-Key", "").strip()
     if NOTIFICATIONS_API_KEY and key != NOTIFICATIONS_API_KEY:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
@@ -6328,7 +6438,11 @@ def api_register_device():
     token = str(payload.get("token", "")).strip()
     if not token:
         return jsonify({"ok": False, "error": "token required"}), 400
-    _device_tokens.add(token)
+    platform = str(payload.get("platform", "generic")).strip().lower()
+    if platform == "ios":
+        _ios_device_tokens.add(token)
+    else:
+        _device_tokens.add(token)
     return jsonify({"ok": True, "registered": True})
 
 
@@ -6394,6 +6508,8 @@ def api_h2h():
 @app.get("/api/debug/live-score-sources")
 def api_debug_live_score_sources():
     """Debug endpoint: show what _get_todays_competitions() detects and which files exist/stale."""
+    if not _debug_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
     info = {}
     info["today_date"] = date.today().isoformat()
     info["now_et"] = datetime.now(ZoneInfo("America/New_York")).isoformat()
@@ -6438,6 +6554,8 @@ def api_debug_live_score_sources():
 @app.get("/api/debug/manual-poll")
 def api_debug_manual_poll():
     """Manually run one ESPN poll cycle and return the results."""
+    if not _debug_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
     today_str = date.today().strftime("%Y%m%d")
     all_results = {}
     for comp_name, espn_id in LIVE_SCORE_COMPETITIONS.items():
@@ -6463,6 +6581,8 @@ def api_debug_manual_poll():
 @app.get("/api/debug/poller-state")
 def api_debug_poller_state():
     """Show what the poller thread currently has stored and its last poll timing."""
+    if not _debug_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
     with _live_scores_lock:
         state = {
             "poll_competitions": list(_live_scores.keys()),
@@ -6475,6 +6595,11 @@ def api_debug_poller_state():
             "live_scores": _live_scores,
         }
     return jsonify({"ok": True, "state": state})
+
+
+def _valid_date_iso(s):
+    """Return True if s matches YYYY-MM-DD (ISO 8601 date)."""
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s))
 
 
 @app.get("/api/live-score-history")
@@ -6490,6 +6615,12 @@ def api_live_score_history():
     league = request.args.get("league", "").strip()
     from_date = request.args.get("from", "").strip()
     to_date = request.args.get("to", "").strip()
+
+    # Validate date format
+    if from_date and not _valid_date_iso(from_date):
+        return jsonify({"ok": False, "error": "Invalid 'from' date format (use YYYY-MM-DD)"}), 400
+    if to_date and not _valid_date_iso(to_date):
+        return jsonify({"ok": False, "error": "Invalid 'to' date format (use YYYY-MM-DD)"}), 400
 
     games = _load_live_score_history()
 
@@ -6629,6 +6760,7 @@ def _week_based_cutoff():
 
 
 @app.get("/api/past-games")
+@_cached_response(ttl=CACHE_TTL_DEFAULT)
 def api_past_games():
     """Return completed games persisted across pipeline runs.
 
@@ -6666,8 +6798,6 @@ def api_past_games():
         for r in archive:
             if str(r.get("match_date", "")).strip() < cutoff:
                 continue
-            if not r.get("actual_result"):
-                continue
             _enrich_json_past_row(r)
             ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
             if ck:
@@ -6683,8 +6813,6 @@ def api_past_games():
     ):
         rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
         for r in rows:
-            if not r.get("actual_result") or r["actual_result"].upper() not in {"H", "D", "A"}:
-                continue
             if str(r.get("match_date", "")).strip() < cutoff:
                 continue
             ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
@@ -6718,6 +6846,7 @@ def api_past_games():
 
 
 @app.get("/api/cup-bracket")
+@_cached_response(ttl=CACHE_TTL_LONG)
 def api_cup_bracket():
     """Return real bracket for a cup competition in World Cup format.
 
@@ -7007,7 +7136,117 @@ def api_real_cup_data():
     return jsonify(result)
 
 
+def _build_fallback_standings(comp_name):
+    """Return a placeholder standings dict with all known teams on 0 points.
+
+    Reads every upcoming prediction CSV source (including ``Output/`` dirs)
+    for *comp_name* and returns teams sorted alphabetically.  If no teams
+    are found, returns ``None``.
+
+    Response shape (matches ``_compute_standings_from_history``):
+    ``{"competition": str, "groups": [{"name": "Overall", "entries": [...]}]}``
+    """
+    teams = set()
+    csv_candidates = [
+        GLOBAL_UPCOMING_FILE,
+        MLS_UPCOMING_FILE,
+        EXTRA_UPCOMING_FILE,
+        CUP_UPCOMING_FILE,
+        NATIONAL_UPCOMING_FILE,
+        os.path.join(PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv"),
+        os.path.join(PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv"),
+        os.path.join(PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv"),
+        GLOBAL_PROJECTED_TABLE_FILE,
+        MLS_PROJECTED_TABLE_FILE,
+        EXTRA_PROJECTED_TABLE_FILE,
+        CUP_PROJECTED_TABLE_FILE,
+    ]
+    for path in csv_candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            df = pd.read_csv(path, dtype=str, encoding="utf-8")
+        except Exception:
+            continue
+        if "competition" not in df.columns:
+            continue
+        mask = df["competition"].astype(str).str.strip() == comp_name
+        sub = df[mask]
+        if sub.empty:
+            continue
+        if "team" in sub.columns:
+            teams.update(sub["team"].dropna().astype(str).str.strip())
+        elif "home_team" in sub.columns:
+            teams.update(sub["home_team"].dropna().astype(str).str.strip())
+        if "away_team" in sub.columns:
+            teams.update(sub["away_team"].dropna().astype(str).str.strip())
+
+    if not teams:
+        # Fall back to ESPN schedule API for team list
+        espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
+        # Extra league ESPN IDs (valid for team lookup but not for live polling)
+        _TEAM_LOOKUP_KEYS = {
+            "Austria/Bundesliga": "aut.1",
+            "Switzerland/Super League": "sui.1",
+            "Greece/Super League": "gre.1",
+            "Denmark/Superliga": "den.1",
+            "Norway/Eliteserien": "nor.1",
+            "Romania/Liga I": "rou.1",
+            "Sweden/Allsvenskan": "swe.1",
+            "Israel/Premier League": "isr.1",
+            "Cyprus/First Division": "cyp.1",
+        }
+        if not espn_id:
+            espn_id = _TEAM_LOOKUP_KEYS.get(comp_name)
+        if espn_id:
+            try:
+                espn_teams = _fetch_competition_teams(comp_name, espn_id)
+            except Exception:
+                espn_teams = None
+            if espn_teams:
+                teams = {t.get("display_name", t.get("short_name", "")) for t in espn_teams}
+                teams.discard("")
+        # Also try the short competition name from ESPN scoreboard
+        if not teams and espn_id:
+            try:
+                # Fetch scoreboard for the current season year
+                season_year = datetime.now().year
+                url = f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard?season={season_year}"
+                data = _fetch_espn_json(url)
+                if data and data.get("events"):
+                    for event in data["events"]:
+                        comps = event.get("competitions") or []
+                        for comp in comps:
+                            compet = comp.get("competitors") or []
+                            for c in compet:
+                                t = c.get("team") or {}
+                                name = str(t.get("displayName", t.get("name", "")))
+                                if name:
+                                    teams.add(name)
+            except Exception:
+                pass
+
+    if not teams:
+        return None
+
+    now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    entries = []
+    for pos, team in enumerate(sorted(teams), start=1):
+        entries.append({
+            "position": pos, "team": team,
+            "P": 0, "W": 0, "D": 0, "L": 0,
+            "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
+        })
+    return {
+        "competition": comp_name,
+        "updated_at": now_utc,
+        "groups": [{"name": "Overall", "entries": entries}],
+        "source": "placeholder",
+    }
+
+
 @app.get("/api/real-tables")
+@_cached_response(ttl=CACHE_TTL_DEFAULT)
 def api_real_tables():
     """Return real league tables computed from live-score history.
 
@@ -7034,7 +7273,10 @@ def api_real_tables():
         if isinstance(persisted, dict) and comp_filter in persisted:
             return jsonify({"ok": True, "table": persisted[comp_filter]})
         table = _compute_standings_from_history(comp_filter)
-        return jsonify({"ok": True, "table": table})
+        if table is not None:
+            return jsonify({"ok": True, "table": table})
+        fallback = _build_fallback_standings(comp_filter)
+        return jsonify({"ok": True, "table": fallback})
 
     results = {}
     # Try persisted standings cache first (built by the daily pipeline)
@@ -7049,18 +7291,27 @@ def api_real_tables():
                 _clear_standings_cache(comp_name)
                 _clear_leaders_cache(comp_name)
             table = _compute_standings_from_history(comp_name)
-            results[comp_name] = table if table is not None else []
+            if table is not None:
+                results[comp_name] = table
+            else:
+                fallback = _build_fallback_standings(comp_name)
+                results[comp_name] = fallback if fallback is not None else []
     else:
         for comp_name in LIVE_SCORE_COMPETITIONS:
             if force_refresh:
                 _clear_standings_cache(comp_name)
                 _clear_leaders_cache(comp_name)
             table = _compute_standings_from_history(comp_name)
-            results[comp_name] = table if table is not None else []
+            if table is not None:
+                results[comp_name] = table
+            else:
+                fallback = _build_fallback_standings(comp_name)
+                results[comp_name] = fallback if fallback is not None else []
     return jsonify({"ok": True, "tables": results, "total": len(results)})
 
 
 @app.get("/api/competition-data")
+@_cached_response(ttl=CACHE_TTL_DEFAULT)
 def api_competition_data():
     """Return full competition data in World Cup format for any competition.
 
@@ -7233,6 +7484,7 @@ def api_competition_data():
 
 
 @app.get("/api/league-tables")
+@_cached_response(ttl=CACHE_TTL_LONG)
 def api_league_tables():
     """Return projected league tables (and MLS playoff bracket when requested).
 
@@ -7326,6 +7578,7 @@ def api_stats():
 
 
 @app.get("/api/league-leaders")
+@_cached_response(ttl=CACHE_TTL_LONG)
 def api_league_leaders():
     """Return predicted and real (live) leaders for every league and cup.
 
@@ -7419,8 +7672,29 @@ def api_league_leaders():
         except Exception:
             pass
 
+    # ── Include all known competitions with predictions or real tables ──
+    cup_set = set(c["competition"] for c in cups)
+    league_names = set(e["competition"] for e in leagues)
+
+    # Add any cup competitions from LIVE_SCORE_COMPETITIONS not yet listed
+    for comp_name in LIVE_SCORE_COMPETITIONS:
+        if comp_name in cup_set or comp_name in league_names:
+            continue
+        # Check if this is a cup format or has projected table data
+        if comp_name in _CUP_FORMATS:
+            cups.append({
+                "competition": comp_name,
+                "predicted_winner": "—",
+                "predicted_winner_odds": None,
+            })
+        else:
+            leagues.append({
+                "competition": comp_name,
+                "predicted_winner": "—",
+                "predicted_winner_odds": None,
+            })
+
     # ── Real leaders from live score history / ESPN ──────────────
-    # Only applies to league competitions (not cups)
     cup_set = set(c["competition"] for c in cups)
     for entry in leagues:
         comp = entry["competition"]
@@ -7434,11 +7708,19 @@ def api_league_leaders():
                     entry["leader_source"] = "real"
                     break
             else:
+                if entry.get("predicted_winner") and entry["predicted_winner"] != "—":
+                    entry["current_leader"] = entry["predicted_winner"]
+                    entry["leader_source"] = "predicted"
+                else:
+                    entry["current_leader"] = None
+                    entry["leader_source"] = "predicted"
+        else:
+            if entry.get("predicted_winner") and entry["predicted_winner"] != "—":
                 entry["current_leader"] = entry["predicted_winner"]
                 entry["leader_source"] = "predicted"
-        else:
-            entry["current_leader"] = entry["predicted_winner"]
-            entry["leader_source"] = "predicted"
+            else:
+                entry["current_leader"] = None
+                entry["leader_source"] = "predicted"
 
     return jsonify({
         "ok": True,
@@ -7472,7 +7754,7 @@ def api_feedback():
             with open(FEEDBACK_FILE, "a", encoding="utf-8") as fh:
                 fh.write(entry)
     except Exception as exc:
-        return jsonify({"ok": False, "error": f"Failed to save feedback: {exc}"}), 500
+        return jsonify({"ok": False, "error": "Failed to save feedback"}), 500
     return jsonify({"ok": True})
 
 
@@ -7498,7 +7780,7 @@ def api_scorers():
         with open(TOP_SCORERS_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
     except Exception as exc:
-        return jsonify({"ok": False, "error": f"Could not load scorers: {exc}", "competitions": {}}), 500
+        return jsonify({"ok": False, "error": "Could not load scorers", "competitions": {}}), 500
     
     competitions = data.get("competitions", {})
     last_updated = data.get("last_updated_utc", "Unknown")
@@ -7551,7 +7833,18 @@ if __name__ == "__main__":
         except Exception:
             pass
 
+    # Warn when auth env vars are missing
+    if not REFRESH_API_TOKEN:
+        print("[startup] WARNING: REFRESH_API_TOKEN not set — /api/refresh is unprotected!")
+    if not NOTIFICATIONS_API_KEY:
+        print("[startup] WARNING: NOTIFICATIONS_API_KEY not set — notification endpoints are unprotected!")
+    if not DEBUG_API_KEY and not REFRESH_API_TOKEN:
+        print("[startup] WARNING: DEBUG_API_KEY and REFRESH_API_TOKEN both unset — debug endpoints are disabled (all return 401)!")
+
     start_live_score_poller()
+
+    # Start APNs background worker (does nothing if env vars not set)
+    _start_apns_worker()
 
     app.run(
         host=args.host,
