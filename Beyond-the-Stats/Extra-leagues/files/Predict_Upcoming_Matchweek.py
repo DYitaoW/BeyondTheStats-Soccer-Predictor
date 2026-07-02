@@ -294,7 +294,8 @@ def inject_fallback_team(team_name, competition, season_key, context):
             context.setdefault("uefa_squad_values", {})[team_name] = uefa_data["squad_value_eur_m"]
 
         ls = uefa_data["league_strength"]
-        scale = max(0.6, min(1.2, ls / 0.85))
+        value_scale = uefa.squad_value_scale_factor(uefa_data.get("squad_value_eur_m"))
+        scale = max(0.6, min(1.2, ls / 0.85)) * value_scale
 
         domestic = uefa_data.get("domestic")
         if domestic:
