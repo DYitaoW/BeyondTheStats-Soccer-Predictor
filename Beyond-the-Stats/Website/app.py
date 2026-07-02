@@ -6214,28 +6214,23 @@ def api_upcoming(mode):
 
 @app.get("/api/world-cup")
 def api_world_cup():
-    """Return the World Cup projection data.
-
-    Includes three knockout brackets:
-
-    * ``knockout`` — simulation-based bracket from ``Project_World_Cup.py``
-      (the displayed bracket whose champion matches the highest-odds winner
-      from 2500 simulations).
-    * ``odds_knockout`` — same bracket topology but each match's winner is
-      the team with the higher predicted win probability (``prob_home`` vs
-      ``prob_away``), independent of the simulation.
-    * ``real_knockout`` — bracket built from actual live scores / history.
-      Only completed matches have a ``winner``; future matchups are shown
-      with both teams but no winner.
-    """
+    """Return the World Cup projection data."""
     world_cup_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
     if not os.path.exists(world_cup_file):
         return jsonify({"ok": False, "error": "World Cup projection not available"}), 404
     try:
-        pid = pipe_status["pid"]
-        return jsonify({"ok": True, "running": pipe_status.get("running", False), "pid": pid})
+        with open(world_cup_file, "r") as f:
+            data = json.load(f)
+        return jsonify(data)
     except Exception:
-        return jsonify({"ok": False, "error": "Could not read pipeline status"}), 500
+        return jsonify({"ok": False, "error": "Could not load World Cup projection"}), 500
+
+
+@app.get("/api/last-refresh")
+def api_last_refresh():
+    """Return the timestamp of the last pipeline refresh."""
+    refreshed_at = _last_pipeline_run.isoformat() if _last_pipeline_run else None
+    return jsonify({"ok": True, "last_refresh_utc": refreshed_at})
 
 
 MOBILE_FEED_FILE = os.path.join(PROJECT_DIR, "Output", "mobile_app_feed.json")
