@@ -49,19 +49,108 @@ def _save_json(path: str, data: Any) -> None:
 
 # ── 1. Country coefficients ───────────────────────────────────────
 
+# Code-backed fallback strengths for every UEFA member association (plus
+# Russia, retained for historical/team-registry compatibility). These mirror
+# the same 0.50-1.00 scale used by Data/Team_Data/league_strength.json: top
+# domestic leagues sit near 1.00, mid-tier UEFA leagues in the 0.60-0.75 band,
+# and microstate/developing leagues near 0.50. The generated
+# uefa_country_coefficients.json file, when present, can still override any
+# value below, but missing countries will never drop to an undifferentiated
+# fallback just because the local generated cache is incomplete.
+DEFAULT_UEFA_COUNTRY_STRENGTH = {
+    "England": 1.00,
+    "Spain": 0.97,
+    "Germany": 0.96,
+    "Italy": 0.95,
+    "France": 0.92,
+    "Netherlands": 0.86,
+    "Portugal": 0.88,
+    "Belgium": 0.80,
+    "Turkey": 0.84,
+    "Czech Republic": 0.67,
+    "Greece": 0.65,
+    "Norway": 0.62,
+    "Austria": 0.68,
+    "Scotland": 0.74,
+    "Denmark": 0.66,
+    "Switzerland": 0.69,
+    "Sweden": 0.63,
+    "Poland": 0.58,
+    "Croatia": 0.61,
+    "Serbia": 0.60,
+    "Cyprus": 0.57,
+    "Israel": 0.59,
+    "Ukraine": 0.64,
+    "Romania": 0.55,
+    "Hungary": 0.56,
+    "Slovakia": 0.54,
+    "Slovenia": 0.53,
+    "Moldova": 0.50,
+    "Azerbaijan": 0.52,
+    "Bulgaria": 0.54,
+    "Finland": 0.52,
+    "Ireland": 0.52,
+    "Bosnia and Herzegovina": 0.51,
+    "Kosovo": 0.50,
+    "Kazakhstan": 0.52,
+    "Armenia": 0.50,
+    "Faroe Islands": 0.50,
+    "Iceland": 0.51,
+    "Latvia": 0.50,
+    "Albania": 0.50,
+    "Belarus": 0.51,
+    "Malta": 0.50,
+    "Georgia": 0.51,
+    "Northern Ireland": 0.50,
+    "Estonia": 0.50,
+    "Lithuania": 0.50,
+    "Wales": 0.50,
+    "North Macedonia": 0.50,
+    "Luxembourg": 0.50,
+    "Montenegro": 0.50,
+    "Gibraltar": 0.50,
+    "Liechtenstein": 0.50,
+    "Andorra": 0.50,
+    "San Marino": 0.50,
+    "Russia": 0.65,
+}
+
+UEFA_COUNTRY_ALIASES = {
+    "Bosnia": "Bosnia and Herzegovina",
+    "Bosnia-Herzegovina": "Bosnia and Herzegovina",
+    "Czechia": "Czech Republic",
+    "Czech Rep.": "Czech Republic",
+    "Macedonia": "North Macedonia",
+    "Republic of Ireland": "Ireland",
+}
+
 
 def load_country_coefficients() -> dict:
-    """Return {country_name: strength_float} from the static file."""
+    """Return {country_name: strength_float} for all UEFA associations.
+
+    Generated cache values in Data/Team_Data/uefa_country_coefficients.json
+    override these code defaults when present, but incomplete/missing cache
+    files still leave every UEFA country with a usable fallback coefficient.
+    """
+    coeffs = dict(DEFAULT_UEFA_COUNTRY_STRENGTH)
     raw = _load_json(COEFFICIENTS_FILE, {})
-    coeffs = raw.get("coefficients", {})
-    return {name: info["strength"] for name, info in coeffs.items()}
+    for name, info in raw.get("coefficients", {}).items():
+        try:
+            coeffs[name] = float(info["strength"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    for alias, canonical in UEFA_COUNTRY_ALIASES.items():
+        if canonical in coeffs:
+            coeffs.setdefault(alias, coeffs[canonical])
+    return coeffs
 
 
 def get_country_strength(country: str, coeffs: dict | None = None) -> float:
     """Return mapped league strength for *country*, or 0.50 if unknown."""
     if coeffs is None:
         coeffs = load_country_coefficients()
-    return coeffs.get(country, 0.50)
+    canonical = UEFA_COUNTRY_ALIASES.get(country, country)
+    return coeffs.get(country, coeffs.get(canonical, 0.50))
 
 
 # ── 2. Team registry ──────────────────────────────────────────────
