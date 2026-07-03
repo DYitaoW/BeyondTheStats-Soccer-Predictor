@@ -495,6 +495,7 @@ function renderFixtureCard(match) {
 // All rounds except the Final are collapsed by default; click the header to expand.
 function renderKnockoutRounds(knockout) {
   const stages = [
+    ["knockout_round_playoffs", "Knockout Play-offs"],
     ["round_of_32", "Round of 32"],
     ["round_of_16", "Round of 16"],
     ["quarterfinals", "Quarterfinals"],

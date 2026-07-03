@@ -3170,9 +3170,30 @@ def _build_knockout_framework(comp_name):
 
 
 _RN_RE = re.compile(r"[^a-z0-9]+")
+
+# Canonical knockout JSON keys shared by World Cup projection, cup APIs,
+# mobile feed, and the iOS app (underscore form, no hyphenated round keys).
+_KNOCKOUT_STAGE_KEY_ALIASES = {
+    "round-of-32": "round_of_32",
+    "round-of-16": "round_of_16",
+    "quarter-finals": "quarterfinals",
+    "quarterfinals": "quarterfinals",
+    "semi-finals": "semifinals",
+    "semifinals": "semifinals",
+    "third-place": "third_place",
+    "knockout-round-play-offs": "knockout_round_playoffs",
+    "knockout-round-playoff": "knockout_round_playoffs",
+    "first-round-playoff": "knockout_round_playoffs",
+    "final": "final",
+}
+
+
 def _round_to_stage_key(round_name):
-    """Convert 'Quarter-finals' -> 'quarter-finals', 'Round of 16' -> 'round-of-16'."""
-    return _RN_RE.sub("-", round_name.strip().lower()).strip("-")
+    """Convert a round label to the canonical underscore knockout JSON key."""
+    slug = _RN_RE.sub("-", round_name.strip().lower()).strip("-")
+    if slug in _KNOCKOUT_STAGE_KEY_ALIASES:
+        return _KNOCKOUT_STAGE_KEY_ALIASES[slug]
+    return slug.replace("-", "_")
 
 
 def _normalize_round_token(name):
