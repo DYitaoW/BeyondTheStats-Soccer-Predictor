@@ -195,50 +195,49 @@ def _run_global_subpipeline(args, api_token):
     sub = {}
     comp_workers = int(getattr(args, "competition_workers", 0) or 0)
 
-    # Global league steps commented out — no active league games (Jun 2026).
-    # sub["global_download_latest_data"] = run_step(
-    #     "[global] Download latest data",
-    #     [py, str(FILES_DIR / "Download_Latest_Data.py")],
-    #     continue_on_error=args.continue_on_error,
-    #     timeout=1200,
-    # )
-    # sub["global_process_data"] = run_step(
-    #     "[global] Process data",
-    #     [py, str(FILES_DIR / "Process_Data.py")],
-    #     continue_on_error=args.continue_on_error,
-    #     timeout=1800,
-    # )
-    # sub["global_sort_data"] = run_step(
-    #     "[global] Sort data",
-    #     [py, str(FILES_DIR / "Sort_Data.py")],
-    #     continue_on_error=args.continue_on_error,
-    #     timeout=600,
-    # )
-    # if not args.skip_model_train:
-    #     sub["global_build_model_cache"] = run_step(
-    #         "[global] Build model cache (non-interactive)",
-    #         [py, str(FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
-    #         continue_on_error=args.continue_on_error,
-    #         timeout=3600,
-    #     )
-    # upcoming_cmd = [py, str(FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)]
-    # if api_token:
-    #     upcoming_cmd += ["--api-token", api_token]
-    # sub["global_upcoming_matchweek"] = run_step(
-    #     "[global] Upcoming matchweek predictions",
-    #     upcoming_cmd,
-    #     continue_on_error=args.continue_on_error,
-    # )
-    # sub["global_projected_league_tables"] = run_step(
-    #     "[global] Projected league tables",
-    #     _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
-    #     continue_on_error=args.continue_on_error,
-    # )
-    # sub["global_upcoming_cups"] = run_step(
-    #     "[global] Upcoming cup predictions",
-    #     [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.window_days)],
-    #     continue_on_error=args.continue_on_error,
-    # )
+    sub["global_download_latest_data"] = run_step(
+        "[global] Download latest data",
+        [py, str(FILES_DIR / "Download_Latest_Data.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=1200,
+    )
+    sub["global_process_data"] = run_step(
+        "[global] Process data",
+        [py, str(FILES_DIR / "Process_Data.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=1800,
+    )
+    sub["global_sort_data"] = run_step(
+        "[global] Sort data",
+        [py, str(FILES_DIR / "Sort_Data.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=600,
+    )
+    if not args.skip_model_train:
+        sub["global_build_model_cache"] = run_step(
+            "[global] Build model cache (non-interactive)",
+            [py, str(FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
+            continue_on_error=args.continue_on_error,
+            timeout=3600,
+        )
+    upcoming_cmd = [py, str(FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)]
+    if api_token:
+        upcoming_cmd += ["--api-token", api_token]
+    sub["global_upcoming_matchweek"] = run_step(
+        "[global] Upcoming matchweek predictions",
+        upcoming_cmd,
+        continue_on_error=args.continue_on_error,
+    )
+    sub["global_projected_league_tables"] = run_step(
+        "[global] Projected league tables",
+        _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
+        continue_on_error=args.continue_on_error,
+    )
+    sub["global_upcoming_cups"] = run_step(
+        "[global] Upcoming cup predictions",
+        [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.window_days)],
+        continue_on_error=args.continue_on_error,
+    )
     national_process_cmd = [py, str(FILES_DIR / "Process_National_Team_Data.py"), "--world-cup-only"]
     if args.skip_model_train:
         national_process_cmd.append("--skip-squad-values")
@@ -278,16 +277,15 @@ def _run_mls_subpipeline(args, api_token):
     sub = {}
     comp_workers = int(getattr(args, "competition_workers", 0) or 0)
 
-    # MLS download commented out — ESPN returns 403 (no active games Jun 2026).
-    # mls_dl_cmd = [py, str(MLS_FILES_DIR / "Download_Latest_Data.py")]
-    # if args.skip_model_train:
-    #     mls_dl_cmd.append("--skip-squad-values")
-    # sub["mls_download_process_sort"] = run_step(
-    #     "[mls] Download/process/sort latest data",
-    #     mls_dl_cmd,
-    #     continue_on_error=args.continue_on_error,
-    #     timeout=1200,
-    # )
+    mls_dl_cmd = [py, str(MLS_FILES_DIR / "Download_Latest_Data.py")]
+    if args.skip_model_train:
+        mls_dl_cmd.append("--skip-squad-values")
+    sub["mls_download_process_sort"] = run_step(
+        "[mls] Download/process/sort latest data",
+        mls_dl_cmd,
+        continue_on_error=args.continue_on_error,
+        timeout=1200,
+    )
     if not args.skip_model_train:
         sub["mls_build_model_cache"] = run_step(
             "[mls] Build model cache (non-interactive)",
@@ -680,23 +678,35 @@ def _build_real_standings():
         except Exception:
             pass
 
-    if not all_games:
-        print("  [real-standings] No completed games found — nothing to build.")
-        return False
+    # 3. Seed team rosters from league_teams.json for competitions with no games
+    league_teams = {}
+    lt_path = SP_DIR / "Data" / "Predictions" / "league_teams.json"
+    if lt_path.exists():
+        try:
+            lt_data = json.loads(lt_path.read_text(encoding="utf-8"))
+            if isinstance(lt_data, dict):
+                league_teams = lt_data
+        except Exception:
+            pass
 
-    # 3. Group by competition and compute standings
+    # 4. Group by competition and compute standings
     comp_games: dict[str, list] = {}
     for g in all_games:
         comp_games.setdefault(g["competition"], []).append(g)
 
+    known_comps = _REAL_TABLE_COMPETITIONS | _CUP_COMPETITIONS
     standings: dict[str, dict] = {}
     for comp_name, games in comp_games.items():
-        if comp_name not in _REAL_TABLE_COMPETITIONS and comp_name not in _CUP_COMPETITIONS:
+        if comp_name not in known_comps:
             continue
         teams = set()
         for g in games:
             teams.add(g["home_team"])
             teams.add(g["away_team"])
+        # Also include teams from league roster (catches offseason / no-game leagues)
+        roster = league_teams.get(comp_name)
+        if roster:
+            teams.update(roster)
         if not teams:
             continue
 
@@ -736,6 +746,29 @@ def _build_real_standings():
             "updated_at": now_utc,
             "groups": [{"name": "Overall", "entries": entries}],
             "source": "computed",
+        }
+
+    # 5. Also seed competitions that have team rosters but zero completed games
+    for comp_name in league_teams:
+        if comp_name in standings:
+            continue
+        if comp_name not in known_comps:
+            continue
+        roster = league_teams.get(comp_name)
+        if not roster:
+            continue
+        entries = []
+        for pos, team in enumerate(sorted(roster), start=1):
+            entries.append({
+                "team": team, "position": pos,
+                "P": 0, "W": 0, "D": 0, "L": 0,
+                "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
+            })
+        standings[comp_name] = {
+            "competition": comp_name,
+            "updated_at": now_utc,
+            "groups": [{"name": "Overall", "entries": entries}],
+            "source": "roster",
         }
 
     if standings:

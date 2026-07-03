@@ -1,0 +1,55 @@
+[
+  {
+    "match_id": "760497",
+    "home_team": "Spain",
+    "away_team": "Austria",
+    "home_team_id": "164",
+    "away_team_id": "474",
+    "home_score": 3,
+    "away_score": 0,
+    "status": "post",
+    "period": "FT",
+    "clock": "FT",
+    "kickoff_utc": "2026-07-02T15:00:00-0400",
+    "match_date": "2026-07-02",
+    "goalscorers": [
+      {
+        "team": "home",
+        "scorer": "Mikel Oyarzabal",
+        "minute": "36'",
+        "type": "Goal"
+      },
+      {
+        "team": "home",
+        "scorer": "Pedro Porro",
+        "minute": "66'",
+        "type": "Goal - Header"
+      },
+      {
+        "team": "home",
+        "scorer": "Mikel Oyarzabal",
+        "minute": "89'",
+        "type": "Goal"
+      }
+    ],
+    "red_cards": [],
+    "home_stats": {
+      "foulsCommitted": "8",
+      "wonCorners": "9",
+      "possessionPct": "64.5",
+      "shotsOnTarget": "10",
+      "totalGoals": "3",
+      "totalShots": "23"
+    },
+    "away_stats": {
+      "foulsCommitted": "15",
+      "wonCorners": "0",
+      "possessionPct": "35.5",
+      "shotsOnTarget": "0",
+      "totalGoals": "0",
+      "totalShots": "5"
+    },
+    "competition": "FIFA/World Cup",
+    "completed_at": "2026-07-02T22:33:48.502416+00:00"
+  }
+]
