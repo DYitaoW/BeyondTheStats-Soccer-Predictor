@@ -3188,9 +3188,20 @@ _KNOCKOUT_STAGE_KEY_ALIASES = {
 }
 
 
+def _normalize_round_label(round_name):
+    """Return a safe string round label for knockout grouping."""
+    if round_name is None:
+        return "Match"
+    label = str(round_name).strip()
+    return label or "Match"
+
+
 def _round_to_stage_key(round_name):
     """Convert a round label to the canonical underscore knockout JSON key."""
-    slug = _RN_RE.sub("-", round_name.strip().lower()).strip("-")
+    label = _normalize_round_label(round_name)
+    slug = _RN_RE.sub("-", label.lower()).strip("-")
+    if not slug:
+        return "match"
     if slug in _KNOCKOUT_STAGE_KEY_ALIASES:
         return _KNOCKOUT_STAGE_KEY_ALIASES[slug]
     return slug.replace("-", "_")
@@ -3471,7 +3482,7 @@ def _build_knockout_wc_format(matches):
     by_round = {}
     round_orders = {}
     for g in matches:
-        rnd = g.get("round", "") or "Match"
+        rnd = _normalize_round_label(g.get("round"))
         by_round.setdefault(rnd, []).append(g)
         order = g.get("round_order", 999)
         try:
@@ -3550,9 +3561,9 @@ def _build_knockout_wc_format(matches):
             real_entry["from_live"] = g.get("status") in ("post", "in")
             real_list.append(real_entry)
 
-        knockout[stage_key] = ko_list
-        odds_knockout[stage_key] = odds_list
-        real_knockout[stage_key] = real_list
+        knockout.setdefault(stage_key, []).extend(ko_list)
+        odds_knockout.setdefault(stage_key, []).extend(odds_list)
+        real_knockout.setdefault(stage_key, []).extend(real_list)
 
     return knockout, odds_knockout, real_knockout
 
@@ -7288,29 +7299,7 @@ def api_cup_bracket():
 
     # 3. Upcoming games from the projected cup bracket JSON
     bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
-    if isinstance(bracket_data, dict):
-        comp_entry = bracket_data.get(comp)
-        if isinstance(comp_entry, dict):
-            for round_name, round_matches in comp_entry.items():
-                if isinstance(round_matches, list):
-                    for entry in round_matches:
-                        if not isinstance(entry, dict):
-                            continue
-                        hm = str(entry.get("home_team", "") or "")
-                        aw = str(entry.get("away_team", "") or "")
-                        if not hm or not aw:
-                            continue
-                        matches.append({
-                            "home_team": hm,
-                            "away_team": aw,
-                            "home_score": None,
-                            "away_score": None,
-                            "status": "pre",
-                            "kickoff_utc": _utc_to_et(str(entry.get("match_datetime_utc", "") or "")),
-                            "round": round_name,
-                            "competition": comp,
-                            "match_id": str(entry.get("match_id", "") or ""),
-                        })
+    _append_projected_cup_matches(matches, comp, bracket_data)
 
     # 4. Enrich with odds from cup predictions CSV
     odds_index = {}
@@ -7328,7 +7317,7 @@ def api_cup_bracket():
         pass
 
     for g in matches:
-        rnd = g.get("round", "") or "Match"
+        rnd = _normalize_round_label(g.get("round"))
         order = g.get("round_order", 0)
         if not isinstance(order, (int, float)):
             try:
@@ -7436,29 +7425,7 @@ def api_real_cup_data():
 
     # Upcoming matchups from projected cup bracket
     bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
-    if isinstance(bracket_data, dict):
-        comp_entry = bracket_data.get(comp)
-        if isinstance(comp_entry, dict):
-            for round_name, round_matches in comp_entry.items():
-                if isinstance(round_matches, list):
-                    for entry in round_matches:
-                        if not isinstance(entry, dict):
-                            continue
-                        hm = str(entry.get("home_team", "") or "")
-                        aw = str(entry.get("away_team", "") or "")
-                        if not hm or not aw:
-                            continue
-                        matches.append({
-                            "home_team": hm,
-                            "away_team": aw,
-                            "home_score": None,
-                            "away_score": None,
-                            "status": "pre",
-                            "kickoff_utc": _utc_to_et(str(entry.get("match_datetime_utc", "") or "")),
-                            "round": round_name,
-                            "competition": comp,
-                            "match_id": str(entry.get("match_id", "") or ""),
-                        })
+    _append_projected_cup_matches(matches, comp, bracket_data)
 
     # 4. Enrich with odds and round metadata
     odds_index = {}
@@ -7476,7 +7443,7 @@ def api_real_cup_data():
         pass
 
     for g in matches:
-        rnd = g.get("round", "") or "Match"
+        rnd = _normalize_round_label(g.get("round"))
         order = g.get("round_order", 0)
         if not isinstance(order, (int, float)):
             try:
@@ -7822,30 +7789,7 @@ def api_competition_data():
             matches.append(g)
 
     # Upcoming from projected cup bracket
-    if isinstance(bracket_data, dict):
-        comps = bracket_data.get("competitions", bracket_data)
-        if isinstance(comps, dict) and comp in comps:
-            entry = comps[comp]
-            if isinstance(entry, dict):
-                rounds_list = entry.get("rounds") or []
-                for rnd in rounds_list:
-                    rnd_name = rnd.get("name", "")
-                    for m in rnd.get("matches", []):
-                        hm = str(m.get("home_team", "") or "")
-                        aw = str(m.get("away_team", "") or "")
-                        if not hm or not aw:
-                            continue
-                        matches.append({
-                            "home_team": hm,
-                            "away_team": aw,
-                            "home_score": None,
-                            "away_score": None,
-                            "status": "pre",
-                            "kickoff_utc": _utc_to_et(str(m.get("match_datetime_utc", "") or "")),
-                            "round": rnd_name,
-                            "competition": comp,
-                            "match_id": str(m.get("match_id", "") or ""),
-                        })
+    _append_projected_cup_matches(matches, comp, bracket_data)
 
     if not matches:
         if comp in _CUP_FORMATS:
@@ -7868,7 +7812,7 @@ def api_competition_data():
         pass
 
     for g in matches:
-        rnd = g.get("round", "") or "Match"
+        rnd = _normalize_round_label(g.get("round"))
         order = g.get("round_order", 0)
         if not isinstance(order, (int, float)):
             try:
