@@ -211,6 +211,22 @@ LIVE_SCORE_COMPETITIONS = {
     "Bulgaria/First League": None,
 }
 
+# Mobile app / website tournament keys → canonical competition names.
+TOURNAMENT_KEY_MAP = {
+    "world-cup": "FIFA/World Cup",
+    "champions-league": "UEFA/Champions League",
+    "europa-league": "UEFA/Europa League",
+    "conference-league": "UEFA/Conference League",
+    "euros": "UEFA/European Championship",
+    "copa-america": "CONMEBOL/Copa America",
+    "fa-cup": "England/FA Cup",
+    "efl-cup": "England/League Cup",
+    "dfb-pokal": "Germany/DFB-Pokal",
+    "coupe-de-france": "France/Coupe de France",
+    "coppa-italia": "Italy/Coppa Italia",
+    "us-open-cup": "United States/US Open Cup",
+}
+
 # In-memory store for active (today's) live scores.
 # Shape: {competition_name: {"competition": str, "games": [game_dict, ...], "last_polled_utc": str}}
 _live_scores: dict[str, dict] = {}
@@ -6100,6 +6116,7 @@ def api_help():
         ("/api/upcoming/<mode>", "GET", "Upcoming prediction rows (mode=global|mls|extra|cups|world-cup)"),
         ("/api/past-games", "GET", "Completed games with predictions, optional ?competition= filter"),
         ("/api/world-cup", "GET", "World Cup standings + knockout brackets (odds + real)"),
+        ("/api/tournament/<key>", "GET", "Tournament projection in World Cup format (champions-league, fa-cup, etc.)"),
         ("/api/cup-bracket", "GET", "Domestic cup projected brackets (?competition=)"),
         ("/api/real-cup-data", "GET", "Domestic cup real-life brackets (?competition=)"),
         ("/api/competition-data", "GET", "Unified WC-format data for any competition (?competition=)"),
@@ -6281,6 +6298,84 @@ def api_world_cup():
         return jsonify(data)
     except Exception:
         return jsonify({"ok": False, "error": "Could not load World Cup projection"}), 500
+
+
+def _enrich_tournament_payload(comp_name, data):
+    """Add projected tables and fixtures so cup pages match World Cup format."""
+    if not isinstance(data, dict):
+        return data
+
+    projected = _load_projected_tables(CUP_PROJECTED_TABLE_FILE)
+    rows = (projected.get("tables") or {}).get(comp_name) or []
+    if rows and not data.get("group_tables"):
+        data["group_tables"] = [{
+            "group": "League Phase",
+            "teams": [{
+                "team": row.get("team"),
+                "P": row.get("P"),
+                "W": row.get("W"),
+                "D": row.get("D"),
+                "L": row.get("L"),
+                "GF": row.get("GF"),
+                "GA": row.get("GA"),
+                "GD": row.get("GD"),
+                "Pts": row.get("Pts"),
+                "position": row.get("position"),
+                "PlayedPred": row.get("PlayedPred"),
+                "PlayedReal": row.get("PlayedReal"),
+            } for row in rows if row.get("team")],
+        }]
+
+    fixtures_by_comp = _load_all_fixtures_by_competition(CUP_UPCOMING_FILE)
+    comp_fixtures = fixtures_by_comp.get(comp_name) or []
+    if comp_fixtures and not data.get("group_fixtures"):
+        data["group_fixtures"] = comp_fixtures
+
+    if rows:
+        pos_probs = {}
+        for row in rows:
+            team = row.get("team")
+            if not team:
+                continue
+            odds = {}
+            raw_odds = row.get("position_odds_json")
+            if raw_odds:
+                try:
+                    odds = json.loads(raw_odds) if isinstance(raw_odds, str) else raw_odds
+                except Exception:
+                    odds = {}
+            if odds:
+                pos_probs[team] = {
+                    f"group_position_{key}": value
+                    for key, value in odds.items()
+                }
+        if pos_probs:
+            simulations = data.get("simulations") or {}
+            simulations.setdefault("position_probabilities", pos_probs)
+            data["simulations"] = simulations
+
+    return data
+
+
+@app.get("/api/tournament/<key>")
+@_cached_response(ttl=CACHE_TTL_DEFAULT)
+def api_tournament(key):
+    """Return tournament projection data in World Cup format for the mobile app.
+
+    ``key`` is a short slug such as ``champions-league`` or ``fa-cup``.
+    """
+    comp_name = TOURNAMENT_KEY_MAP.get(str(key or "").strip().lower())
+    if not comp_name:
+        return jsonify({"ok": False, "error": f"Unknown tournament: {key}"}), 404
+    if comp_name == "FIFA/World Cup":
+        return api_world_cup()
+
+    with app.test_request_context(query_string={"competition": comp_name}):
+        response = api_competition_data()
+    data = response.get_json()
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return response
+    return jsonify(_enrich_tournament_payload(comp_name, data))
 
 
 @app.get("/api/last-refresh")
@@ -7512,6 +7607,8 @@ def api_competition_data():
                         })
 
     if not matches:
+        if comp in _CUP_FORMATS:
+            result = _enrich_tournament_payload(comp, result)
         return jsonify(result)
 
     # Enrich with odds from cup predictions CSV
@@ -7561,6 +7658,8 @@ def api_competition_data():
     result["odds_knockout"] = odds_knockout
     result["real_knockout"] = real_knockout
 
+    if comp in _CUP_FORMATS:
+        result = _enrich_tournament_payload(comp, result)
     return jsonify(result)
 
 
