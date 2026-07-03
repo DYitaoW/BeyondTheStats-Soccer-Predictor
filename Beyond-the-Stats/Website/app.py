@@ -211,6 +211,22 @@ LIVE_SCORE_COMPETITIONS = {
     "Bulgaria/First League": None,
 }
 
+# Mobile app / website tournament keys → canonical competition names.
+TOURNAMENT_KEY_MAP = {
+    "world-cup": "FIFA/World Cup",
+    "champions-league": "UEFA/Champions League",
+    "europa-league": "UEFA/Europa League",
+    "conference-league": "UEFA/Conference League",
+    "euros": "UEFA/European Championship",
+    "copa-america": "CONMEBOL/Copa America",
+    "fa-cup": "England/FA Cup",
+    "efl-cup": "England/League Cup",
+    "dfb-pokal": "Germany/DFB-Pokal",
+    "coupe-de-france": "France/Coupe de France",
+    "coppa-italia": "Italy/Coppa Italia",
+    "us-open-cup": "United States/US Open Cup",
+}
+
 # In-memory store for active (today's) live scores.
 # Shape: {competition_name: {"competition": str, "games": [game_dict, ...], "last_polled_utc": str}}
 _live_scores: dict[str, dict] = {}
@@ -3191,29 +3207,81 @@ def _round_to_stage_key(round_name):
     return slug.replace("-", "_")
 
 
-def _append_projected_cup_matches(matches, comp, bracket_data):
-    """Append projected cup bracket matchups for *comp* into *matches*."""
-    if not isinstance(bracket_data, dict):
-        return
+def _normalize_round_token(name):
+    return _RN_RE.sub("-", str(name or "").strip().lower()).strip("-")
 
-    entry = None
-    comps = bracket_data.get("competitions")
-    if isinstance(comps, dict):
-        entry = comps.get(comp)
 
-    # Legacy flat format: {competition: {round_name: [match, ...]}}
-    if entry is None:
-        legacy = bracket_data.get(comp)
-        if isinstance(legacy, dict):
-            if isinstance(legacy.get("rounds"), list):
-                entry = legacy
-            else:
-                for round_name, round_matches in legacy.items():
-                    if not isinstance(round_matches, list):
-                        continue
-                    for m in round_matches:
-                        if not isinstance(m, dict):
-                            continue
+def _expand_two_leg_knockout(knockout_dict, two_leg_rounds):
+    """Expand two-legged knockout rounds into separate Leg 1 / Leg 2 match entries."""
+    if not knockout_dict or not two_leg_rounds:
+        return knockout_dict
+    two_leg_keys = {_normalize_round_token(r) for r in two_leg_rounds}
+    expanded = {}
+    for stage_key, matches in knockout_dict.items():
+        round_name = str(matches[0].get("round", "") or "") if matches else ""
+        stage_norm = _normalize_round_token(stage_key)
+        round_norm = _normalize_round_token(round_name)
+        is_two_leg = (
+            stage_norm in two_leg_keys
+            or round_norm in two_leg_keys
+            or any(tl in stage_norm or tl in round_norm for tl in two_leg_keys)
+        )
+        if not is_two_leg:
+            expanded[stage_key] = matches
+            continue
+        new_matches = []
+        for idx, m in enumerate(matches, start=1):
+            tie_id = m.get("slot") or m.get("tie_id") or idx
+            rnd_label = round_name or stage_key.replace("-", " ").title()
+            leg1 = dict(m)
+            leg1["leg"] = 1
+            leg1["tie_id"] = tie_id
+            leg1["label"] = f"{rnd_label} — Leg 1"
+            new_matches.append(leg1)
+            leg2 = dict(m)
+            leg2["leg"] = 2
+            leg2["tie_id"] = tie_id
+            leg2["home_team"] = m.get("away_team", "")
+            leg2["away_team"] = m.get("home_team", "")
+            leg2["label"] = f"{rnd_label} — Leg 2"
+            leg2["prob_home"] = m.get("prob_away")
+            leg2["prob_away"] = m.get("prob_home")
+            new_matches.append(leg2)
+        expanded[stage_key] = new_matches
+    return expanded
+
+
+def _gather_competition_cup_matches(comp):
+    """Collect completed, live, and projected cup matches for knockout building."""
+    matches = []
+    seen_ids = set()
+
+    history = _load_live_score_history()
+    for g in history:
+        if g.get("competition") == comp:
+            mid = g.get("match_id", "")
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    with _live_scores_lock:
+        current = _live_scores.get(comp, {}).get("games", [])
+    for g in current:
+        mid = g.get("match_id", "")
+        if mid not in seen_ids:
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket_data, dict):
+        comps = bracket_data.get("competitions", bracket_data)
+        if isinstance(comps, dict) and comp in comps:
+            entry = comps[comp]
+            if isinstance(entry, dict):
+                for rnd in entry.get("rounds") or []:
+                    rnd_name = rnd.get("name", "")
+                    for m in rnd.get("matches", []):
                         hm = str(m.get("home_team", "") or "")
                         aw = str(m.get("away_team", "") or "")
                         if not hm or not aw:
@@ -3221,41 +3289,128 @@ def _append_projected_cup_matches(matches, comp, bracket_data):
                         matches.append({
                             "home_team": hm,
                             "away_team": aw,
-                            "home_score": None,
-                            "away_score": None,
-                            "status": "pre",
+                            "home_score": m.get("actual_home_goals"),
+                            "away_score": m.get("actual_away_goals"),
+                            "status": "post" if str(m.get("status", "")).lower() in ("completed", "post") else "pre",
                             "kickoff_utc": _utc_to_et(str(m.get("match_datetime_utc", "") or "")),
-                            "round": _normalize_round_label(round_name),
+                            "round": rnd_name,
                             "competition": comp,
                             "match_id": str(m.get("match_id", "") or ""),
+                            "pred_home_goals": m.get("pred_home_goals"),
+                            "pred_away_goals": m.get("pred_away_goals"),
+                            "prob_home": m.get("prob_home"),
+                            "prob_draw": m.get("prob_draw"),
+                            "prob_away": m.get("prob_away"),
                         })
-                return
 
-    if not isinstance(entry, dict):
-        return
+    odds_index = {}
+    try:
+        odds_df = pd.read_csv(CUP_UPCOMING_FILE)
+        if not odds_df.empty and all(c in odds_df.columns for c in ("home_team", "away_team", "prob_home", "prob_draw", "prob_away")):
+            for _, row in odds_df.iterrows():
+                key = (str(row["home_team"]).strip().lower(), str(row["away_team"]).strip().lower())
+                odds_index[key] = {
+                    "prob_home": _safe_float(row["prob_home"], None),
+                    "prob_draw": _safe_float(row["prob_draw"], None),
+                    "prob_away": _safe_float(row["prob_away"], None),
+                }
+    except Exception:
+        pass
 
-    for rnd in entry.get("rounds") or []:
-        if not isinstance(rnd, dict):
-            continue
-        rnd_name = _normalize_round_label(rnd.get("name", ""))
-        for m in rnd.get("matches", []):
-            if not isinstance(m, dict):
-                continue
-            hm = str(m.get("home_team", "") or "")
-            aw = str(m.get("away_team", "") or "")
-            if not hm or not aw:
-                continue
-            matches.append({
-                "home_team": hm,
-                "away_team": aw,
-                "home_score": None,
-                "away_score": None,
-                "status": "pre",
-                "kickoff_utc": _utc_to_et(str(m.get("match_datetime_utc", "") or "")),
-                "round": rnd_name,
-                "competition": comp,
-                "match_id": str(m.get("match_id", "") or ""),
-            })
+    for g in matches:
+        rnd = g.get("round", "") or "Match"
+        order = g.get("round_order", 0)
+        if not isinstance(order, (int, float)):
+            try:
+                order = int(order)
+            except (ValueError, TypeError):
+                order = 0
+        g["round_order"] = order
+        g["round"] = rnd
+
+        if g.get("status") == "post":
+            hs = g.get("home_score")
+            aws = g.get("away_score")
+            if hs is not None and aws is not None:
+                if hs > aws:
+                    g["winner"] = g.get("home_team", "")
+                elif aws > hs:
+                    g["winner"] = g.get("away_team", "")
+
+        if g.get("prob_home") is None:
+            hm_name = str(g.get("home_team", "")).strip().lower()
+            aw_name = str(g.get("away_team", "")).strip().lower()
+            odds = odds_index.get((hm_name, aw_name)) or odds_index.get((aw_name, hm_name), {})
+            g["prob_home"] = odds.get("prob_home")
+            g["prob_draw"] = odds.get("prob_draw")
+            g["prob_away"] = odds.get("prob_away")
+
+    return matches
+
+
+def _enrich_league_data_cup_fields(comp, payload):
+    """Add tournament winner odds and knockout bracket data for cup competitions."""
+    cup_format = _CUP_FORMATS.get(comp)
+    is_cup = comp in _CUP_FORMATS or comp in _UEFA_COMPETITIONS
+    if not is_cup:
+        return payload
+
+    if cup_format:
+        payload["cup_format"] = cup_format
+
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket_data, dict):
+        comps = bracket_data.get("competitions", bracket_data)
+        if isinstance(comps, dict) and comp in comps:
+            entry = comps[comp]
+            if isinstance(entry, dict):
+                for key in ("champion", "simulations_run", "winner_probabilities"):
+                    if key in entry:
+                        payload[key] = entry[key]
+                probs = entry.get("winner_probabilities") or {}
+                if probs:
+                    winners = []
+                    for team, pct in sorted(probs.items(), key=lambda x: -(x[1] or 0)):
+                        pct_f = float(pct or 0)
+                        display_pct = round(pct_f * 100, 2) if pct_f <= 1 else round(pct_f, 2)
+                        winners.append({
+                            "team": team,
+                            "win_league_pct": display_pct,
+                            "top4_pct": None,
+                            "bottom3_pct": None,
+                            "most_likely_position": None,
+                            "most_likely_position_pct": None,
+                        })
+                    payload["winners_odds"] = winners
+
+    matches = _gather_competition_cup_matches(comp)
+    if matches:
+        knockout, odds_knockout, real_knockout = _build_knockout_wc_format(matches)
+        if cup_format and cup_format.get("two_leg_rounds"):
+            knockout = _expand_two_leg_knockout(knockout, cup_format["two_leg_rounds"])
+            odds_knockout = _expand_two_leg_knockout(odds_knockout, cup_format["two_leg_rounds"])
+            real_knockout = _expand_two_leg_knockout(real_knockout, cup_format["two_leg_rounds"])
+        payload["knockout"] = knockout
+        payload["odds_knockout"] = odds_knockout
+        payload["real_knockout"] = real_knockout
+
+    return payload
+
+
+_TOURNAMENT_KEY_TO_COMP = {
+    "world-cup": "FIFA/World Cup",
+    "champions-league": "UEFA/Champions League",
+    "europa-league": "UEFA/Europa League",
+    "conference-league": "UEFA/Conference League",
+    "euros": "International/UEFA European Championship",
+    "copa-america": "International/Copa America",
+    "fa-cup": "England/FA Cup",
+    "efl-cup": "England/EFL Cup",
+    "dfb-pokal": "Germany/DFB-Pokal",
+    "coupe-de-france": "France/Coupe de France",
+    "coppa-italia": "Italy/Coppa Italia",
+    "us-open-cup": "United States/US Open Cup",
+}
 
 
 def _compute_odds_bracket():
@@ -6199,6 +6354,7 @@ def api_help():
         ("/api/upcoming/<mode>", "GET", "Upcoming prediction rows (mode=global|mls|extra|cups|world-cup)"),
         ("/api/past-games", "GET", "Completed games with predictions, optional ?competition= filter"),
         ("/api/world-cup", "GET", "World Cup standings + knockout brackets (odds + real)"),
+        ("/api/tournament/<key>", "GET", "Tournament projection in World Cup format (champions-league, fa-cup, etc.)"),
         ("/api/cup-bracket", "GET", "Domestic cup projected brackets (?competition=)"),
         ("/api/real-cup-data", "GET", "Domestic cup real-life brackets (?competition=)"),
         ("/api/competition-data", "GET", "Unified WC-format data for any competition (?competition=)"),
@@ -6380,6 +6536,84 @@ def api_world_cup():
         return jsonify(data)
     except Exception:
         return jsonify({"ok": False, "error": "Could not load World Cup projection"}), 500
+
+
+def _enrich_tournament_payload(comp_name, data):
+    """Add projected tables and fixtures so cup pages match World Cup format."""
+    if not isinstance(data, dict):
+        return data
+
+    projected = _load_projected_tables(CUP_PROJECTED_TABLE_FILE)
+    rows = (projected.get("tables") or {}).get(comp_name) or []
+    if rows and not data.get("group_tables"):
+        data["group_tables"] = [{
+            "group": "League Phase",
+            "teams": [{
+                "team": row.get("team"),
+                "P": row.get("P"),
+                "W": row.get("W"),
+                "D": row.get("D"),
+                "L": row.get("L"),
+                "GF": row.get("GF"),
+                "GA": row.get("GA"),
+                "GD": row.get("GD"),
+                "Pts": row.get("Pts"),
+                "position": row.get("position"),
+                "PlayedPred": row.get("PlayedPred"),
+                "PlayedReal": row.get("PlayedReal"),
+            } for row in rows if row.get("team")],
+        }]
+
+    fixtures_by_comp = _load_all_fixtures_by_competition(CUP_UPCOMING_FILE)
+    comp_fixtures = fixtures_by_comp.get(comp_name) or []
+    if comp_fixtures and not data.get("group_fixtures"):
+        data["group_fixtures"] = comp_fixtures
+
+    if rows:
+        pos_probs = {}
+        for row in rows:
+            team = row.get("team")
+            if not team:
+                continue
+            odds = {}
+            raw_odds = row.get("position_odds_json")
+            if raw_odds:
+                try:
+                    odds = json.loads(raw_odds) if isinstance(raw_odds, str) else raw_odds
+                except Exception:
+                    odds = {}
+            if odds:
+                pos_probs[team] = {
+                    f"group_position_{key}": value
+                    for key, value in odds.items()
+                }
+        if pos_probs:
+            simulations = data.get("simulations") or {}
+            simulations.setdefault("position_probabilities", pos_probs)
+            data["simulations"] = simulations
+
+    return data
+
+
+@app.get("/api/tournament/<key>")
+@_cached_response(ttl=CACHE_TTL_DEFAULT)
+def api_tournament(key):
+    """Return tournament projection data in World Cup format for the mobile app.
+
+    ``key`` is a short slug such as ``champions-league`` or ``fa-cup``.
+    """
+    comp_name = TOURNAMENT_KEY_MAP.get(str(key or "").strip().lower())
+    if not comp_name:
+        return jsonify({"ok": False, "error": f"Unknown tournament: {key}"}), 404
+    if comp_name == "FIFA/World Cup":
+        return api_world_cup()
+
+    with app.test_request_context(query_string={"competition": comp_name}):
+        response = api_competition_data()
+    data = response.get_json()
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return response
+    return jsonify(_enrich_tournament_payload(comp_name, data))
 
 
 @app.get("/api/last-refresh")
@@ -7446,6 +7680,20 @@ def api_real_tables():
     return jsonify({"ok": True, "tables": results, "total": len(results)})
 
 
+@app.get("/api/tournament/<key>")
+@_cached_response(ttl=CACHE_TTL_DEFAULT)
+def api_tournament(key):
+    """Alias for competition-data keyed by short tournament slug (mobile app)."""
+    comp = _TOURNAMENT_KEY_TO_COMP.get(str(key).strip().lower())
+    if not comp:
+        return jsonify({"ok": False, "error": f"Unknown tournament: {key}"}), 404
+    if comp == "FIFA/World Cup":
+        return api_world_cup()
+    from urllib.parse import quote
+    with app.test_request_context(f"/api/competition-data?competition={quote(comp, safe='')}"):
+        return api_competition_data()
+
+
 @app.get("/api/competition-data")
 @_cached_response(ttl=CACHE_TTL_DEFAULT)
 def api_competition_data():
@@ -7544,6 +7792,8 @@ def api_competition_data():
     _append_projected_cup_matches(matches, comp, bracket_data)
 
     if not matches:
+        if comp in _CUP_FORMATS:
+            result = _enrich_tournament_payload(comp, result)
         return jsonify(result)
 
     # Enrich with odds from cup predictions CSV
@@ -7589,10 +7839,16 @@ def api_competition_data():
         g["prob_away"] = odds.get("prob_away")
 
     knockout, odds_knockout, real_knockout = _build_knockout_wc_format(matches)
+    if cup_format and cup_format.get("two_leg_rounds"):
+        knockout = _expand_two_leg_knockout(knockout, cup_format["two_leg_rounds"])
+        odds_knockout = _expand_two_leg_knockout(odds_knockout, cup_format["two_leg_rounds"])
+        real_knockout = _expand_two_leg_knockout(real_knockout, cup_format["two_leg_rounds"])
     result["knockout"] = knockout
     result["odds_knockout"] = odds_knockout
     result["real_knockout"] = real_knockout
 
+    if comp in _CUP_FORMATS:
+        result = _enrich_tournament_payload(comp, result)
     return jsonify(result)
 
 
@@ -7807,7 +8063,7 @@ def api_league_data(competition):
         except Exception:
             continue
 
-    return jsonify({
+    payload = {
         "ok": True,
         "competition": comp,
         "predicted_table": predicted_table,
@@ -7818,7 +8074,9 @@ def api_league_data(competition):
         "winners_odds": winners_odds,
         "real_table": real_table,
         "fixtures": fixtures,
-    })
+    }
+    payload = _enrich_league_data_cup_fields(comp, payload)
+    return jsonify(payload)
 
 
 @app.get("/api/stats")
