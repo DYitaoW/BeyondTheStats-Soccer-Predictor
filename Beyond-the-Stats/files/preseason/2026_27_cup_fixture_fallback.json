@@ -1,0 +1,74 @@
+{
+  "season": "2026-27",
+  "purpose": "Provisional offseason fallback fixtures used only when live cup APIs return no usable upcoming matches.",
+  "notes": [
+    "days_from_today keeps these smoke-test fixtures from going stale.",
+    "These are not official cup draws; real API data from TheSportsDB/ESPN takes precedence.",
+    "Team names are chosen to exercise both known-database and UEFA unknown-team fallback paths."
+  ],
+  "fixtures": [
+    {
+      "competition": "England/FA Cup",
+      "home_team": "Arsenal",
+      "away_team": "Tottenham",
+      "days_from_today": 2,
+      "match_datetime_et": "15:00"
+    },
+    {
+      "competition": "England/League Cup",
+      "home_team": "Man United",
+      "away_team": "Newcastle",
+      "days_from_today": 2,
+      "match_datetime_et": "15:00"
+    },
+    {
+      "competition": "UEFA/Champions League",
+      "home_team": "Bodo/Glimt",
+      "away_team": "Malmo FF",
+      "days_from_today": 3,
+      "match_datetime_et": "15:00"
+    },
+    {
+      "competition": "UEFA/Europa League",
+      "home_team": "Fenerbahce",
+      "away_team": "Rangers",
+      "days_from_today": 3,
+      "match_datetime_et": "15:00"
+    },
+    {
+      "competition": "UEFA/Conference League",
+      "home_team": "Partizan Belgrade",
+      "away_team": "Levski Sofia",
+      "days_from_today": 4,
+      "match_datetime_et": "15:00"
+    },
+    {
+      "competition": "Italy/Coppa Italia",
+      "home_team": "Roma",
+      "away_team": "Torino",
+      "days_from_today": 4,
+      "match_datetime_et": "15:00"
+    },
+    {
+      "competition": "Spain/Copa del Rey",
+      "home_team": "Sevilla",
+      "away_team": "Valencia",
+      "days_from_today": 5,
+      "match_datetime_et": "15:00"
+    },
+    {
+      "competition": "Germany/DFB-Pokal",
+      "home_team": "Bayern Munich",
+      "away_team": "Stuttgart",
+      "days_from_today": 5,
+      "match_datetime_et": "15:00"
+    },
+    {
+      "competition": "France/Coupe de France",
+      "home_team": "Marseille",
+      "away_team": "Lyon",
+      "days_from_today": 6,
+      "match_datetime_et": "15:00"
+    }
+  ]
+}

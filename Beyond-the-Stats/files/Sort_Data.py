@@ -27,12 +27,29 @@ DEFAULT_LEAGUE_STRENGTH = {
     "Italy/Serie A": 0.95,
     "France/Ligue 1": 0.92,
     "Portugal/Liga Portugal": 0.88,
+    "Netherlands/Eredivisie": 0.86,
+    "Turkey/Super Lig": 0.84,
     "England/Championship": 0.82,
+    "Belgium/First Division A": 0.80,
     "Spain/La Liga 2": 0.78,
     "Germany/Bundesliga 2": 0.77,
     "Italy/Serie B": 0.76,
     "France/Ligue 2": 0.75,
+    "Scotland/Premiership": 0.74,
+    # Moved here from Extra-leagues (see Download_Latest_Data.py) since these
+    # leagues regularly send clubs into UEFA Champions/Europa/Conference
+    # League qualifying rounds. Coefficients are approximate, informed by
+    # UEFA's national-association coefficient rankings, and only need to be
+    # broadly ordered correctly relative to the tiers above/below.
+    "Greece/Super League": 0.65,
+    "Sweden/Allsvenskan": 0.63,
+    "Norway/Eliteserien": 0.62,
 }
+
+# Smaller/lower-data leagues handled by the separate Extra-leagues
+# sub-pipeline (see Extra-leagues/files/Sort_Data.py) get their own
+# DEFAULT_LEAGUE_STRENGTH dict; the European ones there (Austria, Romania,
+# Poland) are also approximate UEFA-coefficient-informed values.
 H2H_RECENT_YEARS = 3
 USE_GPU_DF = os.getenv("SOCCER_USE_GPU_DF", "1").strip().lower() not in {"0", "false", "no"}
 
@@ -526,11 +543,15 @@ def sort_all_seasons():
             hg = row.FTHG
             ag = row.FTAG
 
-            hs = row.HS
-            ass = row.AS
+            # Leagues without published shot statistics (e.g. Norway/Sweden,
+            # sourced from football-data.co.uk's "new" format) leave these
+            # columns blank; treat missing values as 0 rather than letting
+            # NaN propagate through the running totals/averages below.
+            hs = row.HS if pd.notna(row.HS) else 0
+            ass = row.AS if pd.notna(row.AS) else 0
 
-            hst = row.HST
-            ast = row.AST
+            hst = row.HST if pd.notna(row.HST) else 0
+            ast = row.AST if pd.notna(row.AST) else 0
 
             result = row.FTR
 

@@ -25,6 +25,9 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_cup_predictions.csv") # NEW OUTPUT FILE
+PRESEASON_DIR = os.path.join(os.path.dirname(__file__), "preseason")
+PRESEASON_CUP_FIXTURES_FILE = os.path.join(PRESEASON_DIR, "2026_27_cup_fixture_fallback.json")
+PRESEASON_LEAGUE_FALLBACK_FILE = os.path.join(PRESEASON_DIR, "2026_27_league_team_fallback.json")
 SHARED_PREDICTIONS_DIR = PREDICTIONS_DIR
 TEAM_MAPPING_FILE = os.path.join(SHARED_PREDICTIONS_DIR, "team_name_mapping_master.json")
 LEGACY_GLOBAL_MAPPING_FILE = os.path.join(SHARED_PREDICTIONS_DIR, "upcoming_fixture_team_mapping.json")
@@ -118,7 +121,7 @@ CUP_COMPETITIONS = {
     },
     "Carabao Cup": {
         "name": "England/League Cup",
-        "espn_id": "eng.efl",  # ESPN Carabao Cup (EFL Cup)
+        "espn_id": "eng.league_cup",  # ESPN Carabao Cup (EFL Cup)
         "priority": 2,
         "api_source": "espn",
         "fixture_window_days": 5,
@@ -146,7 +149,7 @@ CUP_COMPETITIONS = {
     },
     "Coppa Italia": {
         "name": "Italy/Coppa Italia",
-        "espn_id": "ita.coppa",
+        "espn_id": "ita.coppa_italia",
         "priority": 6,
         "api_source": "espn",
         "fixture_window_days": 5,
@@ -179,6 +182,12 @@ AUTO_RESOLVE_CUP_COMPETITIONS = {
     "Spain/Copa del Rey",
     "Germany/DFB-Pokal",
     "France/Coupe de France",
+}
+
+UEFA_CUP_COMPETITIONS = {
+    "UEFA/Champions League",
+    "UEFA/Europa League",
+    "UEFA/Conference League",
 }
 
 # --- CORE CLASSES AND UTILITIES (Copied from original script) ---
@@ -405,6 +414,7 @@ def build_prediction_context():
     }
 
     uefa.build_uefa_context(ctx)
+    apply_preseason_league_fallback_to_context(ctx)
     return ctx
 
 
@@ -910,6 +920,15 @@ def apply_team_mapping_to_fixtures(fixtures, mapping, context):
             return ""
         if api_name in known_teams:
             return api_name
+        if api_name in context.get("preseason_known_teams", set()):
+            return api_name
+        if competition in UEFA_CUP_COMPETITIONS:
+            # UEFA qualifying/preseason fixtures often include clubs that are
+            # not in the trained database yet. Preserve the API name so
+            # inject_fallback_team() can synthesize stats from UEFA country
+            # coefficients, league context, domestic table data, and squad
+            # values rather than skipping the fixture outright.
+            return api_name
         if competition in AUTO_RESOLVE_CUP_COMPETITIONS:
             resolved = resolve_live_team_name(api_name, competition, context)
             if resolved:
@@ -962,7 +981,7 @@ def inject_fallback_team(team_name, competition, season_key, context):
     available_teams = context["available_teams"]
 
     if team_name in overall_teams:
-        team_competition_map[team_name] = competition
+        team_competition_map.setdefault(team_name, competition)
         if team_name not in available_teams:
             available_teams.append(team_name)
         if team_name not in season_teams.get(season_key, {}):
@@ -989,7 +1008,14 @@ def inject_fallback_team(team_name, competition, season_key, context):
         domestic = uefa_data.get("domestic")
         dom_ppg = uefa_data["domestic_ppg"]
         ls = uefa_data["league_strength"]
-        scale = max(0.6, min(1.2, ls / 0.85))
+        # Combine the league coefficient with the team's own squad market
+        # value: a side worth noticeably more/less than a typical squad in
+        # a league of this strength nudges the synthetic attack/defense
+        # estimate accordingly (used only for teams missing from the
+        # training database — see the `if team_name in overall_teams` guard
+        # above).
+        value_scale = uefa.squad_value_scale_factor(uefa_data.get("squad_value_eur_m"))
+        scale = max(0.6, min(1.2, ls / 0.85)) * value_scale
         base_gf = 1.35 * scale
         base_ga = 1.35 * scale
         home_gf = 1.45 * scale
@@ -1126,7 +1152,11 @@ def inject_fallback_team(team_name, competition, season_key, context):
             },
         )
 
-    team_competition_map[team_name] = competition
+    fallback_league = (
+        context.get("_uefa_team_league", {}).get(team_name)
+        or context.get("_preseason_team_league", {}).get(team_name)
+    )
+    team_competition_map[team_name] = fallback_league or competition
     if team_name not in available_teams:
         available_teams.append(team_name)
 
@@ -1154,6 +1184,150 @@ def fetch_json(url, headers=None, timeout=30):
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = response.read().decode("utf-8")
     return json.loads(payload)
+
+
+def load_preseason_json(path):
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            payload = json.load(file)
+    except Exception as exc:
+        print(f"Preseason fallback: could not read {path}: {exc}")
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def apply_preseason_league_fallback_to_context(context):
+    """Inject provisional 2026-27 league context when live season data is absent.
+
+    This does not overwrite real trained team stats. It only adds league
+    strength entries and a team->league hint list so upcoming cup fixtures
+    involving not-yet-seen 2026-27 clubs can pass through to the existing
+    unknown-team fallback path.
+    """
+    payload = load_preseason_json(PRESEASON_LEAGUE_FALLBACK_FILE)
+    leagues = payload.get("leagues", {}) if isinstance(payload, dict) else {}
+    if not isinstance(leagues, dict):
+        return context
+
+    league_strength = context.setdefault("league_strength", {})
+    team_competition_map = context.setdefault("team_competition_map", {})
+    preseason_known = set(context.get("preseason_known_teams", set()))
+    preseason_team_league = context.setdefault("_preseason_team_league", {})
+
+    for league, info in leagues.items():
+        if not isinstance(info, dict):
+            continue
+        league = str(league).strip()
+        if not league:
+            continue
+        try:
+            strength = float(info.get("league_strength"))
+        except (TypeError, ValueError):
+            country = str(info.get("country", "")).strip()
+            strength = uefa.get_country_strength(country) if country else None
+        if strength is not None:
+            league_strength.setdefault(league, strength)
+
+        for team_name in info.get("teams", []) or []:
+            team_name = str(team_name).strip()
+            if not team_name:
+                continue
+            team_competition_map.setdefault(team_name, league)
+            preseason_team_league[team_name] = league
+            preseason_known.add(team_name)
+
+    context["preseason_known_teams"] = preseason_known
+    return context
+
+
+def load_preseason_cup_fixtures(window_days, competition_name):
+    """Return provisional preseason fixtures for API smoke tests/offseason gaps."""
+    payload = load_preseason_json(PRESEASON_CUP_FIXTURES_FILE)
+    fixtures = payload.get("fixtures", []) if isinstance(payload, dict) else []
+    if not isinstance(fixtures, list):
+        return pd.DataFrame()
+
+    today = pd.Timestamp(datetime.now(UTC).date()).normalize()
+    rows = []
+    for fixture in fixtures:
+        if not isinstance(fixture, dict):
+            continue
+        if str(fixture.get("competition", "")).strip() != competition_name:
+            continue
+        home_team = str(fixture.get("home_team", "")).strip()
+        away_team = str(fixture.get("away_team", "")).strip()
+        if not home_team or not away_team:
+            continue
+
+        days_from_today = fixture.get("days_from_today")
+        if days_from_today is not None:
+            try:
+                match_date = today + pd.Timedelta(days=int(days_from_today))
+            except (TypeError, ValueError):
+                continue
+        else:
+            match_date = pd.to_datetime(fixture.get("match_date"), errors="coerce")
+            if pd.isna(match_date):
+                continue
+            match_date = match_date.normalize()
+            if match_date < today:
+                continue
+
+        rows.append(
+            {
+                "match_date": match_date,
+                "match_datetime_utc": str(fixture.get("match_datetime_utc", "")).strip(),
+                "match_datetime_et": str(fixture.get("match_datetime_et", "")).strip(),
+                "competition": competition_name,
+                "home_team": home_team,
+                "away_team": away_team,
+                "fixture_source": "preseason_fallback",
+            }
+        )
+
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    frame = frame.sort_values(["match_date", "home_team", "away_team"]).reset_index(drop=True)
+    frame = filter_to_next_fixture_window(frame, window_days, f"Preseason fallback {competition_name}")
+    print(f"Preseason fallback: Loaded {len(frame)} provisional fixtures for {competition_name}.")
+    return frame
+
+
+def validate_cup_api_endpoints(timeout=15):
+    """Probe ESPN cup scoreboard endpoints and report whether each returns data.
+
+    The upcoming-cups loader handles empty event lists gracefully, but a 400/404
+    here means the espn_id itself is wrong and should be fixed. This helper is
+    intentionally side-effect-free so it can be used by smoke tests.
+    """
+    statuses = []
+    for cup_name, cup_data in sorted(CUP_COMPETITIONS.items(), key=lambda item: item[1]["priority"]):
+        espn_id = cup_data.get("espn_id")
+        url = ESPN_SCOREBOARD_API.format(espn_id=espn_id)
+        status = {
+            "cup": cup_name,
+            "competition": cup_data.get("name", ""),
+            "espn_id": espn_id,
+            "ok": False,
+            "http_status": None,
+            "events": 0,
+            "error": "",
+        }
+        try:
+            data = fetch_json(url, timeout=timeout)
+            status["http_status"] = 200
+            status["events"] = len(data.get("events") or [])
+            status["ok"] = True
+        except urllib.error.HTTPError as exc:
+            status["http_status"] = exc.code
+            status["error"] = f"HTTP {exc.code}"
+        except Exception as exc:
+            status["error"] = str(exc)
+        statuses.append(status)
+    return statuses
 
 
 def load_upcoming_matchweek_fixtures_from_csv_fallback(window_days, competition_name):
@@ -1334,29 +1508,27 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
             print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from TheSportsDB.")
             continue
 
-        # A. Try CSV Fallback FIRST (most reliable for cups)
-        """fixtures = load_upcoming_matchweek_fixtures_from_csv_fallback(window_days, cup_data['name'])
-        if not fixtures.empty:
-            all_fixtures.append(fixtures)
-            print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from CSV fallback.")
-            continue
-
-       
-
-        # C. Try ESPN (secondary)
-        fixtures = load_upcoming_matchweek_fixtures_from_espn(window_days, cup_data['name'], cup_data['espn_id'])
+        # Try ESPN as a secondary live source. This must stay outside any
+        # preseason/static fallback so broken ESPN IDs (400/404) remain visible
+        # in logs and tests instead of being silently masked.
+        fixtures = load_upcoming_matchweek_fixtures_from_espn(
+            cup_window_days,
+            cup_data["name"],
+            cup_data["espn_id"],
+        )
         if not fixtures.empty:
             all_fixtures.append(fixtures)
             print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from ESPN.")
             continue
 
-        # D. Try Paid API (Fallback for MLS/General Leagues)
-        if cup_data['api_source'] == 'mls' and api_token:
-            fixtures = load_upcoming_matchweek_fixtures_from_api(api_token, window_days)
-            if not fixtures.empty:
-                all_fixtures.append(fixtures)
-                print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from football-data.org API.")
-                continue """
+        # Final offline/preseason fallback. This gives the 2026-27 offseason
+        # pipeline and API smoke tests deterministic fixtures even when real
+        # cup draws have not been finalized yet.
+        fixtures = load_preseason_cup_fixtures(cup_window_days, cup_data["name"])
+        if not fixtures.empty:
+            all_fixtures.append(fixtures)
+            print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from preseason fallback.")
+            continue
 
     # Aggregate all fixtures into one DataFrame
     if not all_fixtures:

@@ -631,9 +631,13 @@ def inject_fallback_team(team_name, competition, season_key, context):
         domestic = uefa_data.get("domestic")
         dom_ppg = uefa_data["domestic_ppg"]
 
-        # Build stats using league strength and domestic table data
+        # Build stats using league strength, squad market value, and
+        # domestic table data (used only for teams missing from the
+        # training database — see the `if team_name in overall_teams`
+        # guard above).
         ls = uefa_data["league_strength"]
-        scale = max(0.6, min(1.2, ls / 0.85))  # scale relative to 0.85 baseline
+        value_scale = uefa.squad_value_scale_factor(uefa_data.get("squad_value_eur_m"))
+        scale = max(0.6, min(1.2, ls / 0.85)) * value_scale  # scale relative to 0.85 baseline
         base_gf = 1.35 * scale
         base_ga = 1.35 * scale
         home_gf = 1.45 * scale
