@@ -1,7 +1,7 @@
 {
   "Austria/Bundesliga": {
     "competition": "Austria/Bundesliga",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -157,7 +157,7 @@
   },
   "Belgium/First Division A": {
     "competition": "Belgium/First Division A",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -385,7 +385,7 @@
   },
   "Cyprus/First Division": {
     "competition": "Cyprus/First Division",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -565,7 +565,7 @@
   },
   "Denmark/Superliga": {
     "competition": "Denmark/Superliga",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -721,7 +721,7 @@
   },
   "England/Championship": {
     "competition": "England/Championship",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -1021,7 +1021,7 @@
   },
   "England/FA Cup": {
     "competition": "England/FA Cup",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -2521,7 +2521,7 @@
   },
   "England/Premier League": {
     "competition": "England/Premier League",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -2773,7 +2773,7 @@
   },
   "France/Coupe de France": {
     "competition": "France/Coupe de France",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -3553,7 +3553,7 @@
   },
   "France/Ligue 1": {
     "competition": "France/Ligue 1",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -3781,7 +3781,7 @@
   },
   "France/Ligue 2": {
     "competition": "France/Ligue 2",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -4009,7 +4009,7 @@
   },
   "Germany/Bundesliga": {
     "competition": "Germany/Bundesliga",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -4237,7 +4237,7 @@
   },
   "Germany/Bundesliga 2": {
     "competition": "Germany/Bundesliga 2",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -4465,7 +4465,7 @@
   },
   "Germany/DFB-Pokal": {
     "competition": "Germany/DFB-Pokal",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -5245,7 +5245,7 @@
   },
   "Greece/Super League": {
     "competition": "Greece/Super League",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -5425,7 +5425,7 @@
   },
   "Israel/Premier League": {
     "competition": "Israel/Premier League",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -5605,7 +5605,7 @@
   },
   "Italy/Serie A": {
     "competition": "Italy/Serie A",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -5857,7 +5857,7 @@
   },
   "Italy/Serie B": {
     "competition": "Italy/Serie B",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -6109,7 +6109,7 @@
   },
   "Netherlands/Eredivisie": {
     "competition": "Netherlands/Eredivisie",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -6337,7 +6337,7 @@
   },
   "Norway/Eliteserien": {
     "competition": "Norway/Eliteserien",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -6541,7 +6541,7 @@
   },
   "Portugal/Liga Portugal": {
     "competition": "Portugal/Liga Portugal",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -6769,7 +6769,7 @@
   },
   "Romania/Liga I": {
     "competition": "Romania/Liga I",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -6973,7 +6973,7 @@
   },
   "Scotland/Premiership": {
     "competition": "Scotland/Premiership",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -7129,7 +7129,7 @@
   },
   "Spain/Copa del Rey": {
     "competition": "Spain/Copa del Rey",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -8653,7 +8653,7 @@
   },
   "Spain/La Liga": {
     "competition": "Spain/La Liga",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -8905,7 +8905,7 @@
   },
   "Spain/La Liga 2": {
     "competition": "Spain/La Liga 2",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -9181,7 +9181,7 @@
   },
   "Sweden/Allsvenskan": {
     "competition": "Sweden/Allsvenskan",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -9385,7 +9385,7 @@
   },
   "Switzerland/Super League": {
     "competition": "Switzerland/Super League",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -9541,7 +9541,7 @@
   },
   "Turkey/Super Lig": {
     "competition": "Turkey/Super Lig",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -9769,7 +9769,7 @@
   },
   "UEFA/Champions League": {
     "competition": "UEFA/Champions League",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -10213,7 +10213,7 @@
   },
   "UEFA/Conference League": {
     "competition": "UEFA/Conference League",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -10657,7 +10657,7 @@
   },
   "UEFA/Europa League": {
     "competition": "UEFA/Europa League",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",
@@ -11101,7 +11101,7 @@
   },
   "United States/MLS": {
     "competition": "United States/MLS",
-    "updated_at": "2026-07-02T22:34:00+00:00",
+    "updated_at": "2026-07-03T02:45:35+00:00",
     "groups": [
       {
         "name": "Overall",

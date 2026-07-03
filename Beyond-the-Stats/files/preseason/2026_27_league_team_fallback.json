@@ -24,102 +24,102 @@
     },
     "Germany/Bundesliga": {
       "country": "Germany",
-      "league_strength": 0.96,
+      "league_strength": 0.92,
       "teams": ["Augsburg", "Bayern Munich", "Dortmund", "Ein Frankfurt", "Freiburg", "Heidenheim", "Hoffenheim", "Leverkusen", "M'gladbach", "Mainz", "RB Leipzig", "St Pauli", "Stuttgart", "Union Berlin", "Werder Bremen", "Wolfsburg"]
     },
     "France/Ligue 1": {
       "country": "France",
-      "league_strength": 0.92,
+      "league_strength": 0.91,
       "teams": ["Angers", "Auxerre", "Brest", "Lens", "Lille", "Lyon", "Marseille", "Monaco", "Montpellier", "Nantes", "Nice", "Paris SG", "Rennes", "Strasbourg", "Toulouse"]
     },
     "Portugal/Liga Portugal": {
       "country": "Portugal",
-      "league_strength": 0.88,
+      "league_strength": 0.85,
       "teams": ["Benfica", "Boavista", "Braga", "Casa Pia", "Estoril", "Famalicao", "Gil Vicente", "Guimaraes", "Moreirense", "Porto", "Rio Ave", "Santa Clara", "Sporting CP"]
     },
     "Netherlands/Eredivisie": {
       "country": "Netherlands",
-      "league_strength": 0.86,
+      "league_strength": 0.83,
       "teams": ["Ajax", "AZ Alkmaar", "Feyenoord", "Groningen", "Heerenveen", "PSV Eindhoven", "Sparta Rotterdam", "Twente", "Utrecht", "Vitesse"]
     },
     "Belgium/First Division A": {
       "country": "Belgium",
-      "league_strength": 0.8,
+      "league_strength": 0.77,
       "teams": ["Anderlecht", "Antwerp", "Club Brugge", "Genk", "Gent", "Mechelen", "Standard", "St. Gilloise"]
     },
     "Scotland/Premiership": {
       "country": "Scotland",
-      "league_strength": 0.74,
+      "league_strength": 0.70,
       "teams": ["Aberdeen", "Celtic", "Dundee", "Dundee United", "Hearts", "Hibernian", "Kilmarnock", "Motherwell", "Rangers", "St Mirren"]
     },
     "Turkey/Super Lig": {
       "country": "Turkey",
-      "league_strength": 0.84,
+      "league_strength": 0.74,
       "teams": ["Besiktas", "Fenerbahce", "Galatasaray", "Istanbul Basaksehir", "Samsunspor", "Trabzonspor"]
     },
     "Greece/Super League": {
       "country": "Greece",
-      "league_strength": 0.65,
+      "league_strength": 0.55,
       "teams": ["AEK", "Aris", "Asteras Tripolis", "OFI Crete", "Olympiakos", "PAOK", "Panathinaikos"]
     },
     "Norway/Eliteserien": {
       "country": "Norway",
-      "league_strength": 0.62,
+      "league_strength": 0.52,
       "teams": ["Bodo/Glimt", "Brann", "Fredrikstad", "Molde", "Rosenborg", "Tromso", "Viking"]
     },
     "Sweden/Allsvenskan": {
       "country": "Sweden",
-      "league_strength": 0.63,
+      "league_strength": 0.53,
       "teams": ["AIK", "Djurgarden", "Elfsborg", "Hacken", "Hammarby", "Malmo FF", "Norrkoping"]
     },
     "Denmark/Superliga": {
       "country": "Denmark",
-      "league_strength": 0.66,
+      "league_strength": 0.56,
       "teams": ["Aarhus", "Brondby", "FC Copenhagen", "Midtjylland", "Nordsjaelland", "Randers", "Silkeborg"]
     },
     "Czech Republic/First League": {
       "country": "Czech Republic",
-      "league_strength": 0.67,
+      "league_strength": 0.57,
       "teams": ["Banik Ostrava", "Jablonec", "Mlada Boleslav", "Plzen", "Slavia Prague", "Slovacko", "Sparta Prague"]
     },
     "Serbia/SuperLiga": {
       "country": "Serbia",
-      "league_strength": 0.6,
+      "league_strength": 0.5,
       "teams": ["Backa Topola", "Cukaricki", "Partizan Belgrade", "Radnicki Nis", "Red Star Belgrade", "Vojvodina"]
     },
     "Israel/Premier League": {
       "country": "Israel",
-      "league_strength": 0.59,
+      "league_strength": 0.39,
       "teams": ["Beitar Jerusalem", "Hapoel Beer Sheva", "Maccabi Haifa", "Maccabi Tel Aviv"]
     },
     "Bulgaria/First League": {
       "country": "Bulgaria",
-      "league_strength": 0.54,
+      "league_strength": 0.34,
       "teams": ["Botev Plovdiv", "CSKA Sofia", "Levski Sofia", "Ludogorets"]
     },
     "Cyprus/First Division": {
       "country": "Cyprus",
-      "league_strength": 0.57,
+      "league_strength": 0.37,
       "teams": ["AEK Larnaca", "AEL Limassol", "APOEL Nicosia", "Anorthosis", "Apollon Limassol", "Omonia Nicosia", "Pafos FC"]
     },
     "Austria/Bundesliga": {
       "country": "Austria",
-      "league_strength": 0.68,
+      "league_strength": 0.58,
       "teams": ["Austria Vienna", "LASK Linz", "Rapid Vienna", "Red Bull Salzburg", "Sturm Graz", "Wolfsberger AC"]
     },
     "Poland/Ekstraklasa": {
       "country": "Poland",
-      "league_strength": 0.58,
+      "league_strength": 0.48,
       "teams": ["Jagiellonia", "Lech Poznan", "Legia Warsaw", "Piast Gliwice", "Rakow", "Slask Wroclaw"]
     },
     "Romania/Liga I": {
       "country": "Romania",
-      "league_strength": 0.55,
+      "league_strength": 0.45,
       "teams": ["CFR Cluj", "FCSB", "Rapid Bucuresti", "Sepsi", "Univ Craiova"]
     },
     "Switzerland/Super League": {
       "country": "Switzerland",
-      "league_strength": 0.69,
+      "league_strength": 0.59,
       "teams": ["Basel", "Lugano", "Servette", "St Gallen", "Young Boys", "Zurich"]
     },
     "Croatia/HNL": {
@@ -129,7 +129,7 @@
     },
     "Ukraine/Premier League": {
       "country": "Ukraine",
-      "league_strength": 0.64,
+      "league_strength": 0.58,
       "teams": ["Dynamo Kyiv", "Kryvbas", "Oleksandriya", "Shakhtar Donetsk", "Zorya Luhansk"]
     },
     "Hungary/NB I": {
