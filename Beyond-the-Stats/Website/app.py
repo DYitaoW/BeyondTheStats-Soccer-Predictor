@@ -3397,22 +3397,6 @@ def _enrich_league_data_cup_fields(comp, payload):
     return payload
 
 
-_TOURNAMENT_KEY_TO_COMP = {
-    "world-cup": "FIFA/World Cup",
-    "champions-league": "UEFA/Champions League",
-    "europa-league": "UEFA/Europa League",
-    "conference-league": "UEFA/Conference League",
-    "euros": "International/UEFA European Championship",
-    "copa-america": "International/Copa America",
-    "fa-cup": "England/FA Cup",
-    "efl-cup": "England/EFL Cup",
-    "dfb-pokal": "Germany/DFB-Pokal",
-    "coupe-de-france": "France/Coupe de France",
-    "coppa-italia": "Italy/Coppa Italia",
-    "us-open-cup": "United States/US Open Cup",
-}
-
-
 def _compute_odds_bracket():
     """Build odds-weighted bracket for all cup competitions.
 
@@ -7678,20 +7662,6 @@ def api_real_tables():
                         "source": "placeholder",
                     }
     return jsonify({"ok": True, "tables": results, "total": len(results)})
-
-
-@app.get("/api/tournament/<key>")
-@_cached_response(ttl=CACHE_TTL_DEFAULT)
-def api_tournament(key):
-    """Alias for competition-data keyed by short tournament slug (mobile app)."""
-    comp = _TOURNAMENT_KEY_TO_COMP.get(str(key).strip().lower())
-    if not comp:
-        return jsonify({"ok": False, "error": f"Unknown tournament: {key}"}), 404
-    if comp == "FIFA/World Cup":
-        return api_world_cup()
-    from urllib.parse import quote
-    with app.test_request_context(f"/api/competition-data?competition={quote(comp, safe='')}"):
-        return api_competition_data()
 
 
 @app.get("/api/competition-data")
