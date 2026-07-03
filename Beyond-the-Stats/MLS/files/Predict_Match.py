@@ -19,7 +19,8 @@ from datetime import datetime
 import joblib
 import pandas as pd
 from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, RandomForestRegressor
-from sklearn.preprocessing import LabelEncoder
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.linear_model import LogisticRegression
 
 try:
@@ -1193,7 +1194,13 @@ GOAL_PROB_RESULT_KEYS = [
 
 
 def train_goal_prob_model(X_train, y_train, random_state):
-    model = LogisticRegression(max_iter=2000, random_state=random_state)
+    # Standardize features before fitting lbfgs to improve convergence, per
+    # https://scikit-learn.org/stable/modules/preprocessing.html and
+    # https://scikit-learn.org/stable/modules/linear_model.html#logistic-regression.
+    model = make_pipeline(
+        StandardScaler(),
+        LogisticRegression(max_iter=2000, random_state=random_state),
+    )
     model.fit(X_train, y_train)
     return model
 

@@ -217,6 +217,35 @@ def get_team_squad_value(team_name: str, registry: dict | None = None,
     return None
 
 
+# ── 4b. Squad-value-informed stat scaling ─────────────────────────
+
+# Roughly the squad market value (in EUR millions) of a club in a
+# league with strength ~0.85 (i.e. the fallback default). Squads worth
+# noticeably more/less than this nudge the synthetic attack/defense
+# estimate used for unknown-team matchups, on top of the league
+# coefficient and domestic-table signal.
+_SQUAD_VALUE_BASELINE_EUR_M = 90.0
+_SQUAD_VALUE_SCALE_MIN = 0.85
+_SQUAD_VALUE_SCALE_MAX = 1.25
+_SQUAD_VALUE_SCALE_EXPONENT = 0.12
+
+
+def squad_value_scale_factor(squad_value_eur_m: float | None) -> float:
+    """Return a multiplicative scale factor derived from squad market value.
+
+    Used by ``inject_fallback_team()`` implementations so that, for a team
+    not found in the training database, both the *league coefficient* and
+    the *team's transfer-market value* influence the synthetic stats used
+    to estimate a European-cup matchup — not just the league coefficient
+    alone. Returns 1.0 (no adjustment) when no value is available.
+    """
+    if squad_value_eur_m is None or squad_value_eur_m <= 0:
+        return 1.0
+    ratio = squad_value_eur_m / _SQUAD_VALUE_BASELINE_EUR_M
+    factor = ratio ** _SQUAD_VALUE_SCALE_EXPONENT
+    return max(_SQUAD_VALUE_SCALE_MIN, min(_SQUAD_VALUE_SCALE_MAX, factor))
+
+
 # ── 5. Historical European H2H ────────────────────────────────────
 
 
@@ -280,6 +309,10 @@ _TRACKED_LEAGUES = frozenset({
     "Portugal/Liga Portugal", "Netherlands/Eredivisie",
     "United States/MLS",
     "Belgium/First Division A", "Scotland/Premiership", "Turkey/Super Lig",
+    # Moved from Extra-leagues into the regular pipeline (see
+    # files/Download_Latest_Data.py): real domestic data is now downloaded
+    # for these, so ESPN domestic-table fetching is no longer needed for them.
+    "Greece/Super League", "Norway/Eliteserien", "Sweden/Allsvenskan",
 })
 
 

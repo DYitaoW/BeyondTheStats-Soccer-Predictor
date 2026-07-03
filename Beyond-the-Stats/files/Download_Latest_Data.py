@@ -27,6 +27,9 @@ RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 URL_TEMPLATE = "https://www.football-data.co.uk/mmz4281/{season_code}/{league_code}.csv"
 
 # Add/remove competitions here.
+# NOTE: Greece was moved here from Extra-leagues (real, correctly-coded mmz4281
+# data with full match statistics) since its clubs regularly appear in UEFA
+# Champions/Europa/Conference League qualifiers.
 COMPETITIONS = [
     {"country": "England", "league": "Premier League", "league_code": "E0", "file_prefix": "premstat"},
     {"country": "England", "league": "Championship", "league_code": "E1", "file_prefix": "champstat"},
@@ -43,7 +46,28 @@ COMPETITIONS = [
     {"country": "Belgium", "league": "First Division A", "league_code": "B1", "file_prefix": "belgiestat"},
     {"country": "Scotland", "league": "Premiership", "league_code": "SC0", "file_prefix": "scotpremstat"},
     {"country": "Turkey", "league": "Super Lig", "league_code": "T1", "file_prefix": "turkstat"},
+    {"country": "Greece", "league": "Super League", "league_code": "G1", "file_prefix": "grecstat"},
 ]
+
+# ---------------------------------------------------------------------------
+# "New" single-CSV-per-country sources (football-data.co.uk/new/{code}.csv).
+#
+# Norway and Sweden were moved here from Extra-leagues: they don't have
+# per-season mmz4281 codes (their whole history ships as one CSV without
+# shot statistics), but their clubs are regular UEFA Champions/Europa/
+# Conference League qualifiers, so their real domestic results should feed
+# the same database used for European-cup fallback lookups instead of always
+# relying on synthetic estimates. Missing HS/HST/AS/AST are left blank and
+# treated as -1 sentinels downstream (see Process_Data.py / Predict_Match.py).
+# ---------------------------------------------------------------------------
+NEW_FORMAT_BASE_URL = "https://www.football-data.co.uk/new/{code}.csv"
+NEW_FORMAT_COMPETITIONS = [
+    {"country": "Norway", "league": "Eliteserien", "code": "NOR", "file_prefix": "norstat"},
+    {"country": "Sweden", "league": "Allsvenskan", "code": "SWE", "file_prefix": "swestat"},
+]
+NEW_FORMAT_REQUIRED_COLUMNS = ["Season", "Date", "Home", "Away", "HG", "AG", "Res"]
+NEW_FORMAT_MIN_ROWS = 100
+NEW_FORMAT_CURRENT_SEASON_MIN_ROWS = 20
 
 GENERAL_REQUIRED_COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR", "HS", "HST", "AS", "AST"]
 MIN_COMPLETENESS_RATIO = 0.90
@@ -101,6 +125,90 @@ def write_bytes(path, content):
         file.write(content)
 
 
+def fetch_new_format_dataframe(url):
+    with urllib.request.urlopen(url, timeout=30) as response:
+        raw = response.read()
+    text = raw.decode("utf-8-sig", errors="replace")
+    try:
+        return pd.read_csv(StringIO(text))
+    except Exception:
+        text = raw.decode("latin-1", errors="replace")
+        return pd.read_csv(StringIO(text), engine="python", on_bad_lines="skip")
+
+
+def normalize_new_format_season(value):
+    try:
+        return int(float(value))
+    except Exception:
+        return None
+
+
+def download_new_format_competition(source, current_year):
+    """Download+split a "new" single-CSV-per-country source (Norway, Sweden).
+
+    Writes one file per season using the same ``{prefix}{start}-{end2}.csv``
+    naming as the mmz4281 competitions so Process_Data.py / Predict_Match.py
+    pick them up transparently. Shot columns (HS/HST/AS/AST) are absent from
+    this source and are simply left out of the written CSV; downstream code
+    treats missing shot stats as -1 sentinels rather than dropping the match.
+    """
+    country = source["country"]
+    league = source["league"]
+    prefix = source["file_prefix"]
+    target_dir = os.path.join(RAW_DATA_DIR, country, league)
+    os.makedirs(target_dir, exist_ok=True)
+    print(f"\nDownloading {country} - {league} ({source['code']}, new format)")
+
+    url = NEW_FORMAT_BASE_URL.format(code=source["code"])
+    try:
+        df = fetch_new_format_dataframe(url)
+    except Exception as exc:
+        print(f"  Failed to download {url}: {exc}")
+        return 0
+    if any(col not in df.columns for col in NEW_FORMAT_REQUIRED_COLUMNS):
+        print("  Source CSV missing required columns; skipping.")
+        return 0
+
+    df = df.copy()
+    df["SeasonInt"] = df["Season"].map(normalize_new_format_season)
+    df = df[df["SeasonInt"].notna()]
+    valid_years = sorted(
+        int(y) for y in df["SeasonInt"].unique().tolist()
+        if MIN_START_YEAR <= int(y) <= current_year
+    )
+
+    updated_count = 0
+    refresh_cutoff = current_year - REFRESH_RECENT_SEASONS
+    for start_year in valid_years:
+        out_name = f"{prefix}{season_label(start_year)}.csv"
+        out_path = os.path.join(target_dir, out_name)
+
+        season_complete = start_year < refresh_cutoff
+        if os.path.exists(out_path) and season_complete:
+            continue
+
+        season_rows = df[df["SeasonInt"] == start_year].drop(columns=["SeasonInt"]).copy()
+        if season_rows.empty:
+            continue
+        in_progress_season = start_year == (current_year - 1)
+        min_rows = NEW_FORMAT_CURRENT_SEASON_MIN_ROWS if in_progress_season else NEW_FORMAT_MIN_ROWS
+        if len(season_rows) < min_rows:
+            continue
+
+        season_rows = season_rows.rename(
+            columns={"Home": "HomeTeam", "Away": "AwayTeam", "HG": "FTHG", "AG": "FTAG", "Res": "FTR"}
+        )
+        for col in ["HS", "HST", "AS", "AST"]:
+            if col not in season_rows.columns:
+                season_rows[col] = ""
+
+        season_rows.to_csv(out_path, index=False)
+        updated_count += 1
+        print(f"  {out_name} ({len(season_rows)} rows)")
+
+    return updated_count
+
+
 def main():
     os.makedirs(RAW_DATA_DIR, exist_ok=True)
     current_year = datetime.now().year
@@ -145,6 +253,9 @@ def main():
             write_bytes(out_path, csv_bytes)
             kept_count += 1
             print(f"Downloaded/Updated {name}")
+
+    for source in NEW_FORMAT_COMPETITIONS:
+        kept_count += download_new_format_competition(source, current_year)
 
     print(f"\nDone. Updated {kept_count} CSV files across all configured competitions.")
 

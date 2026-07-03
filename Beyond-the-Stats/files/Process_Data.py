@@ -26,10 +26,27 @@ RAW_FOLDER = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PROCESSED_FOLDER = os.path.join(BASE_DIR, "Data", "Processed_Data")
 SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})-(\d{2})\.csv$", re.IGNORECASE)
 GENERAL_REQUIRED_COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR", "HS", "HST", "AS", "AST"]
+CORE_REQUIRED_COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"]
 MIN_COMPLETENESS_RATIO = 0.95
 MIN_ROWS = 250
 CURRENT_SEASON_MIN_ROWS = 20
 MIN_START_YEAR = 2002
+
+# Leagues sourced from football-data.co.uk's "new" single-CSV format (see
+# Download_Latest_Data.py) don't publish shot statistics (HS/HST/AS/AST).
+# These file prefixes are exempt from the shot-column completeness check so
+# their matches aren't dropped outright; missing shot stats are instead left
+# blank and treated as -1 sentinels by Predict_Match.py.
+NO_SHOT_STATS_PREFIXES = {"norstat", "swestat"}
+
+# Smaller top-flight divisions play noticeably fewer matches per season than
+# the 250-row default MIN_ROWS (tuned for ~20+ team top-5-league divisions):
+# Norway/Sweden have 16 teams (240 matches/season) and Greece's Super League
+# (14 teams plus a playoff round) runs ~230-240. Without this override every
+# one of their *completed* seasons would be silently dropped as
+# "insufficient data" (only the current in-progress season, which uses the
+# separate CURRENT_SEASON_MIN_ROWS bar, would ever pass).
+MIN_ROWS_OVERRIDES = {"norstat": 220, "swestat": 220, "grecstat": 220}
 PROCESS_WORKERS = int(os.getenv("SOCCER_PROCESS_WORKERS", str(max(1, (os.cpu_count() or 2) // 2))))
 USE_GPU_DF = os.getenv("SOCCER_USE_GPU_DF", "1").strip().lower() not in {"0", "false", "no"}
 
@@ -105,8 +122,11 @@ def get_target_season_files(folder):
     return [name for _, name in valid]
 
 
-def has_required_general_data(df, start_year):
-    if any(col not in df.columns for col in GENERAL_REQUIRED_COLUMNS):
+def has_required_general_data(df, start_year, competition_prefix=""):
+    required_columns = (
+        CORE_REQUIRED_COLUMNS if competition_prefix in NO_SHOT_STATS_PREFIXES else GENERAL_REQUIRED_COLUMNS
+    )
+    if any(col not in df.columns for col in required_columns):
         return False
 
     current_year = datetime.now().year
@@ -114,10 +134,11 @@ def has_required_general_data(df, start_year):
     if in_progress_season:
         return len(df) >= CURRENT_SEASON_MIN_ROWS
 
-    if len(df) < MIN_ROWS:
+    min_rows = MIN_ROWS_OVERRIDES.get(competition_prefix, MIN_ROWS)
+    if len(df) < min_rows:
         return False
 
-    complete_rows = df[GENERAL_REQUIRED_COLUMNS].notna().all(axis=1).mean()
+    complete_rows = df[required_columns].notna().all(axis=1).mean()
     return complete_rows >= MIN_COMPLETENESS_RATIO
 
 
@@ -256,8 +277,12 @@ def process_one_file(rel_path):
     if season_start_year is None:
         return False, rel_path, "skipped_invalid_name"
 
+    fname = os.path.basename(rel_path)
+    prefix_match = re.match(r"^([a-z0-9]+stat)\d{4}-\d{2}\.csv$", fname, re.IGNORECASE)
+    competition_prefix = prefix_match.group(1).lower() if prefix_match else ""
+
     df = read_csv_fast(file_path)
-    if not has_required_general_data(df, season_start_year):
+    if not has_required_general_data(df, season_start_year, competition_prefix):
         return False, rel_path, "skipped_insufficient_data"
 
     if "Date" in df.columns:
@@ -265,13 +290,16 @@ def process_one_file(rel_path):
 
     available_columns = [col for col in columns if col in df.columns]
     df = df[available_columns]
+    # Downstream Sort_Data.py accesses HS/HST/AS/AST unconditionally; leagues
+    # without shot statistics (see NO_SHOT_STATS_PREFIXES) still need these
+    # columns present, just left blank/NaN rather than omitted entirely.
+    for shot_col in ("HS", "HST", "AS", "AST"):
+        if shot_col not in df.columns:
+            df[shot_col] = pd.NA
 
     if "Date" in df.columns:
         df = df.sort_values("Date")
 
-    fname = os.path.basename(rel_path)
-    prefix_match = re.match(r"^([a-z0-9]+stat)\d{4}-\d{2}\.csv$", fname, re.IGNORECASE)
-    competition_prefix = prefix_match.group(1).lower() if prefix_match else ""
     df = add_table_context_columns(df, competition=competition_prefix)
 
     if "FTR" in df.columns:

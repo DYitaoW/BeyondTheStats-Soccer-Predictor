@@ -14,7 +14,22 @@ PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
 OUTPUT_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
 SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})\.csv$", re.IGNORECASE)
 MIN_START_YEAR = 2002
-DEFAULT_LEAGUE_STRENGTH = {}
+# Approximate relative-strength coefficients so every Extra-leagues
+# competition isn't silently flattened to the same 0.85 fallback used by
+# sort_all_seasons() below. European leagues here are informed by UEFA's
+# national-association coefficient rankings; the non-European ones use a
+# rough domestic-quality ordering. These only need to be broadly ordered
+# correctly relative to the main global-pipeline leagues (see
+# files/Sort_Data.py's DEFAULT_LEAGUE_STRENGTH for the top tiers).
+DEFAULT_LEAGUE_STRENGTH = {
+    "Brazil/Serie A": 0.75,
+    "Argentina/Primera Division": 0.70,
+    "Austria/Bundesliga": 0.68,
+    "Mexico/Liga MX": 0.62,
+    "Japan/J1 League": 0.60,
+    "Poland/Ekstraklasa": 0.58,
+    "Romania/Liga I": 0.55,
+}
 H2H_RECENT_YEARS = 2
 USE_GPU_DF = os.getenv("SOCCER_USE_GPU_DF", "1").strip().lower() not in {"0", "false", "no"}
 

@@ -35,7 +35,8 @@ import joblib
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import LabelEncoder
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 try:
     from xgboost import XGBClassifier, XGBRegressor
@@ -798,6 +799,15 @@ def load_training_matches(processed_dir):
         for col in ["HomePointsBefore", "AwayPointsBefore", "HomeLeaguePosBefore", "AwayLeaguePosBefore"]:
             if col not in df.columns:
                 df[col] = 0.0
+        # A handful of smaller European leagues (e.g. Norway/Sweden, sourced
+        # from football-data.co.uk's "new" single-CSV format) don't publish
+        # shot statistics. Rather than dropping every one of their matches,
+        # coerce missing shot columns to the -1 sentinel already understood
+        # by is_invalid_stat_value()/coerce_feature_value() elsewhere.
+        for col in ["HS", "AS", "HST", "AST"]:
+            if col not in df.columns:
+                df[col] = -1
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(-1)
 
         df = df[
             [
@@ -818,7 +828,7 @@ def load_training_matches(processed_dir):
                 "HomeLeaguePosBefore",
                 "AwayLeaguePosBefore",
             ]
-        ].dropna(subset=["HomeTeam", "AwayTeam", "FTR", "FTHG", "FTAG", "HS", "AS", "HST", "AST"])
+        ].dropna(subset=["HomeTeam", "AwayTeam", "FTR", "FTHG", "FTAG"])
 
         df["season_key"] = rel_path.replace(".csv", "")
         df["competition"] = os.path.dirname(rel_path).replace("\\", "/") or "Unknown"
@@ -1095,7 +1105,17 @@ GOAL_PROB_RESULT_KEYS = [
 
 
 def train_goal_prob_model(X_train, y_train, random_state):
-    model = LogisticRegression(max_iter=2000, random_state=random_state)
+    # Goal-probability features span wildly different scales (odds ~1-10,
+    # league position ~1-24, goals-per-game ~0-3, etc.). Per the sklearn
+    # preprocessing guide (https://scikit-learn.org/stable/modules/preprocessing.html)
+    # and the LogisticRegression solver notes
+    # (https://scikit-learn.org/stable/modules/linear_model.html#logistic-regression),
+    # standardizing features before fitting lbfgs both speeds up and improves
+    # convergence, on top of the higher max_iter.
+    model = make_pipeline(
+        StandardScaler(),
+        LogisticRegression(max_iter=2000, random_state=random_state),
+    )
     model.fit(X_train, y_train)
     return model
 
