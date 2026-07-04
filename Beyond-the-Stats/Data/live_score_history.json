@@ -1,5 +1,194 @@
 [
   {
+    "match_id": "760501",
+    "home_team": "Colombia",
+    "away_team": "Ghana",
+    "home_team_id": "208",
+    "away_team_id": "4469",
+    "home_score": 1,
+    "away_score": 0,
+    "status": "post",
+    "period": "FT",
+    "clock": "FT",
+    "kickoff_utc": "2026-07-03T21:30:00-0400",
+    "match_date": "2026-07-03",
+    "goalscorers": [
+      {
+        "team": "home",
+        "scorer": "Jhon Arias",
+        "minute": "14'",
+        "type": "Goal"
+      }
+    ],
+    "red_cards": [],
+    "home_stats": {
+      "foulsCommitted": "14",
+      "wonCorners": "3",
+      "possessionPct": "60.6",
+      "shotsOnTarget": "8",
+      "totalGoals": "1",
+      "totalShots": "20"
+    },
+    "away_stats": {
+      "foulsCommitted": "10",
+      "wonCorners": "2",
+      "possessionPct": "39.4",
+      "shotsOnTarget": "0",
+      "totalGoals": "0",
+      "totalShots": "8"
+    },
+    "competition": "FIFA/World Cup",
+    "completed_at": "2026-07-04T04:05:11.669888+00:00"
+  },
+  {
+    "match_id": "760500",
+    "home_team": "Argentina",
+    "away_team": "Cape Verde",
+    "home_team_id": "202",
+    "away_team_id": "2597",
+    "home_score": 3,
+    "away_score": 2,
+    "status": "post",
+    "period": "AET",
+    "clock": "AET",
+    "kickoff_utc": "2026-07-03T18:00:00-0400",
+    "match_date": "2026-07-03",
+    "goalscorers": [
+      {
+        "team": "home",
+        "scorer": "Lionel Messi",
+        "minute": "29'",
+        "type": "Goal"
+      },
+      {
+        "team": "away",
+        "scorer": "Deroy Duarte",
+        "minute": "59'",
+        "type": "Goal"
+      },
+      {
+        "team": "home",
+        "scorer": "Lisandro Mart\u00ednez",
+        "minute": "92'",
+        "type": "Goal"
+      },
+      {
+        "team": "away",
+        "scorer": "Sidny Lopes Cabral",
+        "minute": "103'",
+        "type": "Goal"
+      },
+      {
+        "team": "home",
+        "scorer": "Diney Borges",
+        "minute": "111'",
+        "type": "Own Goal"
+      }
+    ],
+    "red_cards": [],
+    "home_stats": {
+      "foulsCommitted": "13",
+      "wonCorners": "8",
+      "possessionPct": "63.6",
+      "shotsOnTarget": "10",
+      "totalGoals": "3",
+      "totalShots": "22"
+    },
+    "away_stats": {
+      "foulsCommitted": "12",
+      "wonCorners": "8",
+      "possessionPct": "36.4",
+      "shotsOnTarget": "5",
+      "totalGoals": "2",
+      "totalShots": "16"
+    },
+    "competition": "FIFA/World Cup",
+    "completed_at": "2026-07-04T04:05:11.669884+00:00"
+  },
+  {
+    "match_id": "760499",
+    "home_team": "Australia",
+    "away_team": "Egypt",
+    "home_team_id": "628",
+    "away_team_id": "2620",
+    "home_score": 1,
+    "away_score": 1,
+    "status": "post",
+    "period": "FT-Pens",
+    "clock": "FT-Pens",
+    "kickoff_utc": "2026-07-03T14:00:00-0400",
+    "match_date": "2026-07-03",
+    "goalscorers": [
+      {
+        "team": "away",
+        "scorer": "Emam Ashour",
+        "minute": "13'",
+        "type": "Goal - Header"
+      },
+      {
+        "team": "home",
+        "scorer": "Mohamed Hany",
+        "minute": "55'",
+        "type": "Own Goal"
+      },
+      {
+        "team": "away",
+        "scorer": "Mahmoud Saber",
+        "minute": "120'",
+        "type": "Penalty - Scored"
+      },
+      {
+        "team": "home",
+        "scorer": "Jackson Irvine",
+        "minute": "120'",
+        "type": "Penalty - Scored"
+      },
+      {
+        "team": "away",
+        "scorer": "Ramy Rabia",
+        "minute": "120'",
+        "type": "Penalty - Scored"
+      },
+      {
+        "team": "home",
+        "scorer": "Awer Mabil",
+        "minute": "120'",
+        "type": "Penalty - Scored"
+      },
+      {
+        "team": "away",
+        "scorer": "Mohamed Salah",
+        "minute": "120'",
+        "type": "Penalty - Scored"
+      },
+      {
+        "team": "away",
+        "scorer": "Hossam Abdelmaguid",
+        "minute": "120'",
+        "type": "Penalty - Scored"
+      }
+    ],
+    "red_cards": [],
+    "home_stats": {
+      "foulsCommitted": "12",
+      "wonCorners": "4",
+      "possessionPct": "41.7",
+      "shotsOnTarget": "1",
+      "totalGoals": "1",
+      "totalShots": "16"
+    },
+    "away_stats": {
+      "foulsCommitted": "14",
+      "wonCorners": "7",
+      "possessionPct": "58.3",
+      "shotsOnTarget": "3",
+      "totalGoals": "1",
+      "totalShots": "14"
+    },
+    "competition": "FIFA/World Cup",
+    "completed_at": "2026-07-04T04:05:11.669876+00:00"
+  },
+  {
     "match_id": "760497",
     "home_team": "Spain",
     "away_team": "Austria",

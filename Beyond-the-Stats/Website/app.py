@@ -261,6 +261,7 @@ FEEDBACK_FILE = os.path.join(FEEDBACK_DIR, "feedback.txt")
 ACCURACY_HISTORY_DIR = os.path.join(WEBSITE_FILES_DIR, "accuracy_history")
 ACCURACY_TOTALS_FILE = os.path.join(WEBSITE_FILES_DIR, "accuracy_totals.json")
 GLOBAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv")
+ALL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv")
 CUP_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_cup_predictions.csv")
 CUP_COMPLETED_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "completed_cup_predictions.csv")
 MLS_UPCOMING_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
@@ -5391,6 +5392,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         rows.append(
             {
                 "match_date": date_label if is_mls_file else str(row["match_date"]),
+                "match_date_iso": str(row["match_date"]),
                 "match_datetime_et": match_dt_et,
                 "weekday": weekday,
                 "date_label": date_label,
@@ -6182,7 +6184,7 @@ def api_help_all():
 
 
 _UPCOMING_MODE_MAP = {
-    "global": (GLOBAL_UPCOMING_FILE, "global"),
+    "global": (ALL_UPCOMING_FILE if os.path.exists(ALL_UPCOMING_FILE) else GLOBAL_UPCOMING_FILE, "global"),
     "mls": (MLS_UPCOMING_FILE, "mls"),
     "extra": (EXTRA_UPCOMING_FILE, "extra"),
     "cups": (CUP_UPCOMING_FILE, "cups"),
@@ -6190,12 +6192,59 @@ _UPCOMING_MODE_MAP = {
 }
 
 _ALL_UPCOMING_SOURCES = [
+    ("global", ALL_UPCOMING_FILE),
     ("global", GLOBAL_UPCOMING_FILE),
     ("mls", MLS_UPCOMING_FILE),
     ("extra", EXTRA_UPCOMING_FILE),
     ("cups", CUP_UPCOMING_FILE),
     ("national", NATIONAL_UPCOMING_FILE),
 ]
+
+
+def _date_window_bounds():
+    """Return the website's stored match window as ISO date bounds."""
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    current_week_start = today_et - timedelta(days=today_et.weekday())
+    return current_week_start - timedelta(days=7), current_week_start + timedelta(days=20)
+
+
+def _parse_query_date(value, fallback):
+    """Parse a YYYY-MM-DD query date, falling back when invalid."""
+    try:
+        return datetime.strptime(str(value or ""), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _row_date_iso(row):
+    """Return the normalized ISO match date used by website filters."""
+    raw = str(row.get("match_date_iso") or row.get("match_date") or "").strip()
+    if len(raw) >= 10 and raw[4:5] == "-" and raw[7:8] == "-":
+        return raw[:10]
+    parsed = pd.to_datetime(raw, errors="coerce")
+    if pd.isna(parsed):
+        return ""
+    return parsed.strftime("%Y-%m-%d")
+
+
+def _group_rows_by_league(rows):
+    """Group matches by league, keeping games chronologically ordered."""
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[row.get("competition") or "Other"].append(row)
+    groups = []
+    for league, league_rows in grouped.items():
+        league_rows.sort(key=lambda r: (
+            _row_date_iso(r),
+            str(r.get("match_datetime_et") or r.get("match_datetime_utc") or ""),
+            str(r.get("home_team") or ""),
+        ))
+        groups.append({"league": league, "matches": league_rows})
+    groups.sort(key=lambda group: (
+        _row_date_iso(group["matches"][0]) if group["matches"] else "",
+        group["league"],
+    ))
+    return groups
 
 
 @app.get("/api/upcoming/<mode>")
@@ -6266,6 +6315,61 @@ def api_upcoming(mode):
         "stats": stats,
         "league_stats": league_stats,
         "available_leagues": leagues,
+    })
+
+
+@app.get("/api/home/upcoming")
+@_cached_response(ttl=CACHE_TTL_DEFAULT)
+def api_home_upcoming():
+    """Return home-page upcoming matches grouped by league for a date range."""
+    window_start, window_end = _date_window_bounds()
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    default_day = min(max(today_et, window_start), window_end)
+    start_date = _parse_query_date(request.args.get("start"), default_day)
+    end_date = _parse_query_date(request.args.get("end"), start_date)
+
+    # Keep user-selected ranges inside the locally stored fixture window.
+    if end_date < start_date:
+        start_date, end_date = end_date, start_date
+    start_date = min(max(start_date, window_start), window_end)
+    end_date = min(max(end_date, window_start), window_end)
+
+    # Prefer the new combined CSV; fall back to legacy per-source files.
+    source_paths = [("global", ALL_UPCOMING_FILE)] if os.path.exists(ALL_UPCOMING_FILE) else _ALL_UPCOMING_SOURCES
+    all_rows = []
+    seen_keys = set()
+    for source, csv_path in source_paths:
+        rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source, date_range="all")
+        for row in rows:
+            match_date = _row_date_iso(row)
+            if not match_date:
+                continue
+            try:
+                parsed_date = datetime.strptime(match_date, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if parsed_date < start_date or parsed_date > end_date:
+                continue
+            key = "|".join(str(row.get(field, "")).strip().lower() for field in ("match_date_iso", "competition", "home_team", "away_team"))
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            all_rows.append(row)
+
+    all_rows.sort(key=lambda row: (
+        _row_date_iso(row),
+        str(row.get("competition") or ""),
+        str(row.get("match_datetime_et") or row.get("match_datetime_utc") or ""),
+        str(row.get("home_team") or ""),
+    ))
+    return jsonify({
+        "ok": True,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
+        "groups": _group_rows_by_league(all_rows),
+        "rows": all_rows,
     })
 
 
