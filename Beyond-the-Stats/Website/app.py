@@ -32,7 +32,7 @@ from accuracy_tracker import (
     _compute_league_accuracy_stats,
     update_accuracy_history_files,
 )
-from espn_api import _fetch_competition_schedule, _fetch_competition_teams, _fetch_team_info
+from espn_api import _fetch_competition_schedule, _fetch_competition_scores, _fetch_competition_teams, _fetch_team_info
 from knockout import (
     _append_projected_cup_matches,
     _build_cup_knockout_payload,
@@ -55,17 +55,21 @@ from live_poller import (
 )
 from notifications import (
     _apns_notification_queue,
+    _notifications,
     device_tokens,
     ios_device_tokens,
     start_apns_worker,
 )
 from predictions import (
+    _enrich_json_past_row,
     _file_mtime_utc,
     _format_percent_value,
     _get_static_predictions,
+    _is_placeholder_game,
     _load_all_fixtures_by_competition,
     _load_context,
     _load_current_season_tables,
+    _load_h2h_and_form,
     _load_json_payload,
     _load_last_data_refresh,
     _load_last_refresh,
@@ -83,6 +87,8 @@ from predictions import (
     _to_float_or_none,
     _to_int,
     _utc_to_et,
+    _valid_date_iso,
+    _week_based_cutoff,
     _winner_label,
     get_context,
     get_last_pipeline_run,
@@ -96,6 +102,8 @@ from predictions import (
 from standings import (
     _UEFA_COMPETITIONS,
     _build_fallback_standings,
+    _clear_leaders_cache,
+    _clear_standings_cache,
     _compute_standings_from_history,
     _fill_placeholder_tables,
     _get_or_fetch_leaders,
@@ -247,123 +255,6 @@ def _group_rows_by_league(rows):
         group["league"],
     ))
     return groups
-def _valid_date_iso(s):
-    """Return True if s matches YYYY-MM-DD (ISO 8601 date)."""
-    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s))
-def _compute_goal_eq(lam, k):
-    """P(home goals == k) via Poisson."""
-    lam = max(0.01, _safe_float(lam, 0.0))
-    return _poisson_pmf(k, lam)
-
-
-def _compute_goal_ge(lam, k):
-    """P(home goals >= k) via Poisson."""
-    lam = max(0.01, _safe_float(lam, 0.0))
-    return 1.0 - sum(_poisson_pmf(i, lam) for i in range(k)) if k > 0 else 1.0
-
-
-def _compute_both_score(lam_h, lam_a):
-    """P(both teams score) via independent Poisson."""
-    hg = max(0.01, _safe_float(lam_h, 0.0))
-    ag = max(0.01, _safe_float(lam_a, 0.0))
-    return (1.0 - math.exp(-hg)) * (1.0 - math.exp(-ag))
-
-
-def _compute_total_ge(lam_h, lam_a, threshold):
-    """P(total goals >= threshold) via Poisson of sum."""
-    hg = max(0.01, _safe_float(lam_h, 0.0))
-    ag = max(0.01, _safe_float(lam_a, 0.0))
-    lam = hg + ag
-    return 1.0 - sum(_poisson_pmf(i, lam) for i in range(int(threshold)))
-
-
-def _enrich_json_past_row(r):
-    """Add display fields to a raw past_games.json row so it matches upcoming format."""
-    pred = str(r.get("predicted_result", "")).strip().upper()
-    home = str(r.get("home_team", "")).strip()
-    away = str(r.get("away_team", "")).strip()
-    r["winner_label"] = (
-        f"Pred: {home}" if pred == "H" else
-        f"Pred: {away}" if pred == "A" else
-        "Pred: Draw" if pred == "D" else ""
-    )
-    actual = str(r.get("actual_result", "")).strip().upper()
-    if actual in {"H", "D", "A"}:
-        r["is_correct"] = "1" if pred == actual else "0"
-    else:
-        r["is_correct"] = ""
-
-    try:
-        ph = float(r.get("prob_home", 0) or 0) * 100
-        pdv = float(r.get("prob_draw", 0) or 0) * 100
-        pa = float(r.get("prob_away", 0) or 0) * 100
-    except Exception:
-        ph = pdv = pa = 0.0
-    r["prob_home_text"] = _format_percent_value(ph)
-    r["prob_draw_text"] = _format_percent_value(pdv)
-    r["prob_away_text"] = _format_percent_value(pa)
-
-    md = str(r.get("match_date", "")).strip()
-    if md:
-        try:
-            dt = pd.to_datetime(md, errors="coerce")
-            if pd.notna(dt):
-                r["weekday"] = dt.strftime("%A")
-                r["date_label"] = dt.strftime("%B %d, %Y")
-        except Exception:
-            r["weekday"] = ""
-            r["date_label"] = md
-    else:
-        r["weekday"] = ""
-        r["date_label"] = ""
-
-    utc_dt = str(r.get("match_datetime_utc", "")).strip()
-    if utc_dt:
-        try:
-            dt = pd.to_datetime(utc_dt, utc=True, errors="coerce")
-            if pd.notna(dt):
-                dt = dt.tz_convert("America/New_York")
-                r["match_datetime_et"] = dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-                r["time_label"] = dt.strftime("%I:%M %p ET").lstrip("0")
-        except Exception:
-            pass
-    if "time_label" not in r:
-        r["time_label"] = ""
-
-    # Normalize score fields
-    for score_key in ("actual_home_goals", "actual_away_goals", "home_score", "away_score"):
-        v = r.get(score_key)
-        if v is not None:
-            try:
-                r[score_key] = int(float(v))
-            except (ValueError, TypeError):
-                pass
-
-    # Map home_score → actual_home_goals and vice versa
-    if r.get("home_score") is not None and r.get("actual_home_goals") is None:
-        r["actual_home_goals"] = r["home_score"]
-    if r.get("away_score") is not None and r.get("actual_away_goals") is None:
-        r["actual_away_goals"] = r["away_score"]
-    if r.get("actual_home_goals") is not None and r.get("home_score") is None:
-        r["home_score"] = r["actual_home_goals"]
-    if r.get("actual_away_goals") is not None and r.get("away_score") is None:
-        r["away_score"] = r["actual_away_goals"]
-
-
-def _is_placeholder_game(r):
-    """Return True if a game dict is a placeholder (not a real match)."""
-    for key in ("home_team", "away_team"):
-        val = str(r.get(key, "")).lower()
-        if "group" in val or "third place" in val or "winner" in val or "runner" in val:
-            return True
-    return False
-
-
-def _week_based_cutoff():
-    """Return ISO date string for the start of the previous full week (Mon)."""
-    today_local = datetime.now(ZoneInfo("America/New_York")).date()
-    current_week_start = today_local - timedelta(days=today_local.weekday())
-    return (current_week_start - timedelta(days=7)).isoformat()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -911,11 +802,11 @@ def api_push_notification():
         "id": len(_notifications),
         "title": title,
         "body": body,
-        "created_at": datetime.now(UTC).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "type": payload.get("type", "info"),
     })
     # Queue for APNs delivery to all registered iOS devices
-    for device_token in list(_iosdevice_tokens):
+    for device_token in list(ios_device_tokens):
         _apns_notification_queue.append({
             "token": device_token,
             "title": title,
@@ -952,7 +843,7 @@ def api_register_device():
         return jsonify({"ok": False, "error": "token required"}), 400
     platform = str(payload.get("platform", "generic")).strip().lower()
     if platform == "ios":
-        _iosdevice_tokens.add(token)
+        ios_device_tokens.add(token)
     else:
         device_tokens.add(token)
     return jsonify({"ok": True, "registered": True})
@@ -1109,11 +1000,6 @@ def api_debug_poller_state():
     return jsonify({"ok": True, "state": state})
 
 
-def _valid_date_iso(s):
-    """Return True if s matches YYYY-MM-DD (ISO 8601 date)."""
-    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s))
-
-
 @app.get("/api/live-score-history")
 def api_live_score_history():
     """Return historical completed games, grouped by competition
@@ -1161,123 +1047,6 @@ def api_live_score_history():
         "ok": True,
         "competitions": competitions,
     })
-
-
-
-def _compute_goal_eq(lam, k):
-    """P(home goals == k) via Poisson."""
-    lam = max(0.01, _safe_float(lam, 0.0))
-    return _poisson_pmf(k, lam)
-
-
-def _compute_goal_ge(lam, k):
-    """P(home goals >= k) via Poisson."""
-    lam = max(0.01, _safe_float(lam, 0.0))
-    return 1.0 - sum(_poisson_pmf(i, lam) for i in range(k)) if k > 0 else 1.0
-
-
-def _compute_both_score(lam_h, lam_a):
-    """P(both teams score) via independent Poisson."""
-    hg = max(0.01, _safe_float(lam_h, 0.0))
-    ag = max(0.01, _safe_float(lam_a, 0.0))
-    return (1.0 - math.exp(-hg)) * (1.0 - math.exp(-ag))
-
-
-def _compute_total_ge(lam_h, lam_a, threshold):
-    """P(total goals >= threshold) via Poisson of sum."""
-    hg = max(0.01, _safe_float(lam_h, 0.0))
-    ag = max(0.01, _safe_float(lam_a, 0.0))
-    lam = hg + ag
-    return 1.0 - sum(_poisson_pmf(i, lam) for i in range(int(threshold)))
-
-
-def _enrich_json_past_row(r):
-    """Add display fields to a raw past_games.json row so it matches upcoming format."""
-    pred = str(r.get("predicted_result", "")).strip().upper()
-    home = str(r.get("home_team", "")).strip()
-    away = str(r.get("away_team", "")).strip()
-    r["winner_label"] = (
-        f"Pred: {home}" if pred == "H" else
-        f"Pred: {away}" if pred == "A" else
-        "Pred: Draw" if pred == "D" else ""
-    )
-    actual = str(r.get("actual_result", "")).strip().upper()
-    if actual in {"H", "D", "A"}:
-        r["is_correct"] = "1" if pred == actual else "0"
-    else:
-        r["is_correct"] = ""
-
-    try:
-        ph = float(r.get("prob_home", 0) or 0) * 100
-        pdv = float(r.get("prob_draw", 0) or 0) * 100
-        pa = float(r.get("prob_away", 0) or 0) * 100
-    except Exception:
-        ph = pdv = pa = 0.0
-    r["prob_home_text"] = _format_percent_value(ph)
-    r["prob_draw_text"] = _format_percent_value(pdv)
-    r["prob_away_text"] = _format_percent_value(pa)
-
-    md = str(r.get("match_date", "")).strip()
-    if md:
-        try:
-            dt = pd.to_datetime(md, errors="coerce")
-            if pd.notna(dt):
-                r["weekday"] = dt.strftime("%A")
-                r["date_label"] = dt.strftime("%B %d, %Y")
-        except Exception:
-            r["weekday"] = ""
-            r["date_label"] = md
-    else:
-        r["weekday"] = ""
-        r["date_label"] = ""
-
-    utc_dt = str(r.get("match_datetime_utc", "")).strip()
-    if utc_dt:
-        try:
-            dt = pd.to_datetime(utc_dt, utc=True, errors="coerce")
-            if pd.notna(dt):
-                dt = dt.tz_convert("America/New_York")
-                r["match_datetime_et"] = dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-                r["time_label"] = dt.strftime("%I:%M %p ET").lstrip("0")
-        except Exception:
-            pass
-    if "time_label" not in r:
-        r["time_label"] = ""
-
-    # Normalize score fields
-    for score_key in ("actual_home_goals", "actual_away_goals", "home_score", "away_score"):
-        v = r.get(score_key)
-        if v is not None:
-            try:
-                r[score_key] = int(float(v))
-            except (ValueError, TypeError):
-                pass
-
-    # Map home_score → actual_home_goals and vice versa
-    if r.get("home_score") is not None and r.get("actual_home_goals") is None:
-        r["actual_home_goals"] = r["home_score"]
-    if r.get("away_score") is not None and r.get("actual_away_goals") is None:
-        r["actual_away_goals"] = r["away_score"]
-    if r.get("actual_home_goals") is not None and r.get("home_score") is None:
-        r["home_score"] = r["actual_home_goals"]
-    if r.get("actual_away_goals") is not None and r.get("away_score") is None:
-        r["away_score"] = r["actual_away_goals"]
-
-
-def _is_placeholder_game(r):
-    """Return True if a game dict is a placeholder (not a real match)."""
-    for key in ("home_team", "away_team"):
-        val = str(r.get(key, "")).lower()
-        if "group" in val or "third place" in val or "winner" in val or "runner" in val:
-            return True
-    return False
-
-
-def _week_based_cutoff():
-    """Return ISO date string for the start of the previous full week (Mon)."""
-    today_local = datetime.now(ZoneInfo("America/New_York")).date()
-    current_week_start = today_local - timedelta(days=today_local.weekday())
-    return (current_week_start - timedelta(days=7)).isoformat()
 
 
 @app.get("/api/past-games")
@@ -1553,111 +1322,6 @@ def api_real_cup_data():
         result["table"] = table
 
     return jsonify(result)
-
-
-def _fill_placeholder_tables(data):
-    """Fill ``data["tables"]`` with zero-stat team entries from league_teams.json
-    for any competition in ``data["leagues"]`` that has no projected table data.
-
-    Mutates ``data["tables"]`` in place.
-    """
-    league_teams = _load_league_teams()
-    tables = data.get("tables", {})
-    leagues = data.get("leagues", [])
-    now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    for comp_name in leagues:
-        if comp_name in tables and tables[comp_name]:
-            continue
-        roster = league_teams.get(comp_name)
-        if not roster:
-            continue
-        entries = []
-        for pos, team in enumerate(sorted(roster), start=1):
-            entries.append({
-                "position": pos, "team": team,
-                "P": 0, "W": 0, "D": 0, "L": 0,
-                "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-                "PlayedReal": 0, "PlayedPred": 0,
-                "win_league_pct": 0.0, "top4_pct": 0.0, "bottom3_pct": 0.0,
-                "most_likely_position": 0, "most_likely_position_pct": 0.0,
-                "position_odds": {}, "sim_runs": 0,
-            })
-        tables[comp_name] = entries
-    data["tables"] = tables
-
-
-def _build_fallback_standings(comp_name):
-    """Return a placeholder standings dict with all known teams on 0 points.
-
-    Reads every upcoming prediction CSV source (including ``Output/`` dirs)
-    and projected table CSVs for *comp_name* and returns teams sorted
-    alphabetically.  If no teams are found, returns ``None``.
-
-    Does NOT call ESPN API — teams are discovered from local CSV data only.
-
-    Response shape (matches ``_compute_standings_from_history``):
-    ``{"competition": str, "groups": [{"name": "Overall", "entries": [...]}]}``
-    """
-    teams = set()
-
-    # 1. Persisted league-team rosters (offseason fallback from fetch_league_teams.py)
-    league_teams = _load_league_teams()
-    cached = league_teams.get(comp_name)
-    if cached:
-        teams.update(cached)
-
-    # 2. Upcoming prediction CSVs and projected table CSVs
-    csv_sources = [
-        config.GLOBAL_UPCOMING_FILE,
-        config.MLS_UPCOMING_FILE,
-        config.EXTRA_UPCOMING_FILE,
-        config.CUP_UPCOMING_FILE,
-        config.NATIONAL_UPCOMING_FILE,
-        os.path.join(config.PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv"),
-        os.path.join(config.PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv"),
-        os.path.join(config.PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv"),
-        config.GLOBAL_PROJECTED_TABLE_FILE,
-        config.MLS_PROJECTED_TABLE_FILE,
-        config.EXTRA_PROJECTED_TABLE_FILE,
-        config.CUP_PROJECTED_TABLE_FILE,
-    ]
-    for path in csv_sources:
-        if not os.path.exists(path):
-            continue
-        try:
-            df = pd.read_csv(path, dtype=str, encoding="utf-8")
-        except Exception:
-            continue
-        if "competition" not in df.columns:
-            continue
-        mask = df["competition"].astype(str).str.strip() == comp_name
-        sub = df[mask]
-        if sub.empty:
-            continue
-        if "team" in sub.columns:
-            teams.update(sub["team"].dropna().astype(str).str.strip())
-        elif "home_team" in sub.columns:
-            teams.update(sub["home_team"].dropna().astype(str).str.strip())
-        if "away_team" in sub.columns:
-            teams.update(sub["away_team"].dropna().astype(str).str.strip())
-
-    if not teams:
-        return None
-
-    now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    entries = []
-    for pos, team in enumerate(sorted(teams), start=1):
-        entries.append({
-            "position": pos, "team": team,
-            "P": 0, "W": 0, "D": 0, "L": 0,
-            "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-        })
-    return {
-        "competition": comp_name,
-        "updated_at": now_utc,
-        "groups": [{"name": "Overall", "entries": entries}],
-        "source": "placeholder",
-    }
 
 
 @app.get("/api/real-tables")

@@ -1,12 +1,15 @@
 """In-game live match probability updates."""
 import math
+import os
+import re
 
 import pandas as pd
 
-from math_utils import _poisson_pmf, _safe_float
+import config
 from espn_parser import _parse_elapsed_minutes
-from predictions import _load_upcoming_rows
-from team_utils import _normalize_team_key, _to_float
+from math_utils import _safe_float
+from predictions import _to_float_or_none
+from team_utils import _normalize_team_key, _team_name_for_db, _to_float
 
 def _poisson_match_probs(lambda_h, lambda_a):
     """Compute P(H), P(D), P(A) from Poisson final-score distribution."""

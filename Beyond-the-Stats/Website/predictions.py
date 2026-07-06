@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -1547,3 +1548,95 @@ def _run_full_pipeline_once():
 def _should_run_startup_tasks(debug_mode):
     """Avoid running startup jobs twice when Flask reloader is enabled."""
     return (not debug_mode) or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+
+
+def _valid_date_iso(s):
+    """Return True if s matches YYYY-MM-DD (ISO 8601 date)."""
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s))
+
+
+def _enrich_json_past_row(r):
+    """Add display fields to a raw past_games.json row so it matches upcoming format."""
+    pred = str(r.get("predicted_result", "")).strip().upper()
+    home = str(r.get("home_team", "")).strip()
+    away = str(r.get("away_team", "")).strip()
+    r["winner_label"] = (
+        f"Pred: {home}" if pred == "H" else
+        f"Pred: {away}" if pred == "A" else
+        "Pred: Draw" if pred == "D" else ""
+    )
+    actual = str(r.get("actual_result", "")).strip().upper()
+    if actual in {"H", "D", "A"}:
+        r["is_correct"] = "1" if pred == actual else "0"
+    else:
+        r["is_correct"] = ""
+
+    try:
+        ph = float(r.get("prob_home", 0) or 0) * 100
+        pdv = float(r.get("prob_draw", 0) or 0) * 100
+        pa = float(r.get("prob_away", 0) or 0) * 100
+    except Exception:
+        ph = pdv = pa = 0.0
+    r["prob_home_text"] = _format_percent_value(ph)
+    r["prob_draw_text"] = _format_percent_value(pdv)
+    r["prob_away_text"] = _format_percent_value(pa)
+
+    md = str(r.get("match_date", "")).strip()
+    if md:
+        try:
+            dt = pd.to_datetime(md, errors="coerce")
+            if pd.notna(dt):
+                r["weekday"] = dt.strftime("%A")
+                r["date_label"] = dt.strftime("%B %d, %Y")
+        except Exception:
+            r["weekday"] = ""
+            r["date_label"] = md
+    else:
+        r["weekday"] = ""
+        r["date_label"] = ""
+
+    utc_dt = str(r.get("match_datetime_utc", "")).strip()
+    if utc_dt:
+        try:
+            dt = pd.to_datetime(utc_dt, utc=True, errors="coerce")
+            if pd.notna(dt):
+                dt = dt.tz_convert("America/New_York")
+                r["match_datetime_et"] = dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+                r["time_label"] = dt.strftime("%I:%M %p ET").lstrip("0")
+        except Exception:
+            pass
+    if "time_label" not in r:
+        r["time_label"] = ""
+
+    for score_key in ("actual_home_goals", "actual_away_goals", "home_score", "away_score"):
+        v = r.get(score_key)
+        if v is not None:
+            try:
+                r[score_key] = int(float(v))
+            except (ValueError, TypeError):
+                pass
+
+    if r.get("home_score") is not None and r.get("actual_home_goals") is None:
+        r["actual_home_goals"] = r["home_score"]
+    if r.get("away_score") is not None and r.get("actual_away_goals") is None:
+        r["actual_away_goals"] = r["away_score"]
+    if r.get("actual_home_goals") is not None and r.get("home_score") is None:
+        r["home_score"] = r["actual_home_goals"]
+    if r.get("actual_away_goals") is not None and r.get("away_score") is None:
+        r["away_score"] = r["actual_away_goals"]
+
+
+def _is_placeholder_game(r):
+    """Return True if a game dict is a placeholder (not a real match)."""
+    for key in ("home_team", "away_team"):
+        val = str(r.get(key, "")).lower()
+        if "group" in val or "third place" in val or "winner" in val or "runner" in val:
+            return True
+    return False
+
+
+def _week_based_cutoff():
+    """Return ISO date string for the start of the previous full week (Mon)."""
+    today_local = datetime.now(ZoneInfo("America/New_York")).date()
+    current_week_start = today_local - timedelta(days=today_local.weekday())
+    return (current_week_start - timedelta(days=7)).isoformat()

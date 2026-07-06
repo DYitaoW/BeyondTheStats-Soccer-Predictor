@@ -562,7 +562,8 @@ def _live_score_poller_loop():
                         if g.get("status") == "in":
                             _update_cumulative_momentum(g)
             except Exception:
-                pass
+                import traceback
+                traceback.print_exc()
         except Exception:
             import traceback
             traceback.print_exc()

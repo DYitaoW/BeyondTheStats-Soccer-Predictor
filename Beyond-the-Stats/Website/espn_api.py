@@ -2,7 +2,7 @@
 import json
 import time
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import config
 from espn_parser import _parse_espn_live_event
@@ -316,6 +316,7 @@ def _fetch_leaders(comp_name, espn_id):
                     "value": val,
                 })
         if parsed_entries:
+            from standings import LEADER_CATEGORY_LABELS
             label = LEADER_CATEGORY_LABELS.get(abbr, abbr)
             categories[abbr] = {
                 "label": label,
