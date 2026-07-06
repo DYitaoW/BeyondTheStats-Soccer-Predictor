@@ -369,7 +369,11 @@ def _update_cumulative_momentum(game):
             v = _stat(side, "passesAccurate")
         return v
 
-    dh_passes, da_passes = _delta_from_fn(_pass_stat, _pass_stat, "passes")
+    dh_passes, da_passes = _delta_from_fn(
+        lambda: _pass_stat("home"),
+        lambda: _pass_stat("away"),
+        "passes",
+    )
     dh_crosses, da_crosses = _delta("crosses", "crosses", "crosses")
     dh_keypass, da_keypass = _delta("keyPasses", "keyPasses", "keypasses")
 
