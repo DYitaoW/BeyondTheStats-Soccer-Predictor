@@ -46,88 +46,44 @@ import httpx
 import hashlib
 import functools
 
+# ── Modular imports (refactored subsystems) ────────────────────────
+import config
+import cache
+import auth
+import team_utils
+import math_utils
+from cache import _cache_key, _cache_get, _cache_set, _cache_clear_pattern, _cached_response
+from auth import _client_ip, _refresh_auth_ok, _debug_auth_ok, _mutation_auth_ok
+from team_utils import _normalize_team_key, _to_float, _team_name_for_display, _team_name_for_db, TEAM_DB_TO_DISPLAY, TEAM_DISPLAY_TO_DB
+from math_utils import _poisson_pmf, _safe_float, _compute_correct_score_dist, _compute_double_chance, _compute_total_goals_dist, _compute_first_to_score, _compute_clean_sheet, _compute_asian_handicap
+
+# ── Convenience imports from config ────────────────────────────────────
+from config import (
+    WEBSITE_DIR, PROJECT_DIR, LAST_REFRESH_FILE, FILES_DIR, MLS_FILES_DIR,
+    EXTRA_FILES_DIR, WEBSITE_FILES_DIR, GRAPHICS_DIR, FEEDBACK_DIR, FEEDBACK_FILE,
+    ACCURACY_HISTORY_DIR, ACCURACY_TOTALS_FILE, GLOBAL_UPCOMING_FILE, ALL_UPCOMING_FILE,
+    CUP_UPCOMING_FILE, CUP_COMPLETED_FILE, MLS_UPCOMING_FILE, EXTRA_UPCOMING_FILE,
+    NATIONAL_UPCOMING_FILE, GLOBAL_PROJECTED_TABLE_FILE, CUP_PROJECTED_TABLE_FILE,
+    CUP_PROJECTED_BRACKET_FILE, PAST_GAMES_FILE, MLS_PROJECTED_TABLE_FILE,
+    EXTRA_PROJECTED_TABLE_FILE, MLS_PROJECTED_BRACKET_FILE, LIVE_RESULTS_UPDATER,
+    RUN_ALL_PIPELINE, LAST_DATA_REFRESH_FILE, PIPELINE_STATUS_FILE,
+    TEAM_NAME_DISPLAY_MAPPING_FILE, TOP_SCORERS_FILE, LIVE_SCORE_HISTORY_FILE,
+    PREDICTION_TRACKING_FILE, REAL_TABLES_PERSIST_FILE, LEAGUE_TEAMS_FILE,
+    CURRENT_SEASON_TEAMS_FILE, CACHE_TTL_DEFAULT, CACHE_TTL_LONG,
+    REAL_TABLES_CACHE_TTL, REAL_LEADERS_CACHE_TTL, _API_CACHE_MAX_AGE,
+    _STATIC_CACHE_MAX_AGE, STATIC_PREDICTIONS_CACHE, MLS_COMPETITION, CUP_COMPETITIONS,
+    _CUP_FORMATS, H2H_LEAGUES, STATIC_PREDICTIONS, LOW_MEMORY_STATIC,
+    USE_DISPLAY_NAME_MAPPING, STATIC_PREDICTIONS_GLOBAL_FILE, STATIC_PREDICTIONS_MLS_FILE,
+    STATIC_PREDICTIONS_EXTRA_FILE, REFRESH_API_TOKEN, NOTIFICATIONS_API_KEY, DEBUG_API_KEY,
+    MUTATION_API_TOKEN, _SECRET_KEY, API_RATE_LIMIT_PER_MINUTE, APNS_KEY_FILE, APNS_KEY_ID,
+    APNS_TEAM_ID, APNS_BUNDLE_ID, APNS_USE_SANDBOX, ALLOWED_ORIGINS
+)
+
 # ── Global state ──────────────────────────────────────────────────
 # Most state is module-level so the background poller and API handlers
 # share it within the same process/gunicorn worker.
 
 _last_pipeline_run: datetime | None = None
-
-# ── Redis response cache ────────────────────────────────────────
-REDIS_URL = os.environ.get("REDIS_URL", "")
-_redis_client = None
-if REDIS_URL:
-    try:
-        import redis as _redis_mod
-        _redis_client = _redis_mod.from_url(REDIS_URL, socket_timeout=2, decode_responses=True)
-        _redis_client.ping()
-    except Exception:
-        _redis_client = None
-
-CACHE_TTL_DEFAULT = int(os.environ.get("CACHE_TTL_DEFAULT", "120"))  # seconds
-CACHE_TTL_LONG = int(os.environ.get("CACHE_TTL_LONG", "600"))       # 10 min for stable data
-
-
-def _cache_key(endpoint: str, query_str: str = "") -> str:
-    """Return a deterministic cache key for an API call."""
-    raw = f"{endpoint}:{query_str}"
-    return f"api:{hashlib.md5(raw.encode()).hexdigest()}"
-
-
-def _cache_get(key: str) -> str | None:
-    """Return cached JSON string or None."""
-    if _redis_client is None:
-        return None
-    try:
-        return _redis_client.get(key)
-    except Exception:
-        return None
-
-
-def _cache_set(key: str, value: str, ttl: int = CACHE_TTL_DEFAULT) -> None:
-    if _redis_client is None:
-        return
-    try:
-        _redis_client.setex(key, ttl, value)
-    except Exception:
-        pass
-
-
-def _cache_clear_pattern(pattern: str = "api:*") -> None:
-    """Clear all cached API responses.  Called after pipeline refresh."""
-    if _redis_client is None:
-        return
-    try:
-        for k in _redis_client.scan_iter(match=pattern):
-            _redis_client.delete(k)
-    except Exception:
-        pass
-
-
-def _cached_response(ttl: int = CACHE_TTL_DEFAULT):
-    """Decorator that caches a route's JSON response in Redis.
-
-    The cache key is ``api:{md5(endpoint + query_string)}``.
-    Skips caching when ``?no_cache=1`` is present.
-    """
-    def decorator(f):
-        @functools.wraps(f)
-        def wrapper(*args, **kwargs):
-            if request.args.get("no_cache", "").strip() in ("1", "true"):
-                return f(*args, **kwargs)
-            key = _cache_key(request.path, request.query_string.decode("utf-8", errors="replace"))
-            cached = _cache_get(key)
-            if cached is not None:
-                resp = app.response_class(
-                    response=cached, status=200, mimetype="application/json"
-                )
-                resp.headers["X-Cache"] = "redis"
-                return resp
-            result = f(*args, **kwargs)
-            if isinstance(result, app.response_class) and result.status_code == 200:
-                _cache_set(key, result.get_data(as_text=True), ttl=ttl)
-            return result
-        return wrapper
-    return decorator
 
 
 # Cache for h2h/form data to avoid re-reading CSVs on every request.
@@ -136,80 +92,8 @@ _h2h_form_cache: dict[str, tuple[float, tuple[dict, dict]]] = {}
 
 # ── Live Score Polling ──────────────────────────────────────────
 # ESPN base URL for all soccer endpoints (scoreboard, summary, standings).
-LIVE_SCORE_ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
-
-# Map of internal competition names → ESPN league slugs.
-# Used by both the poller (scoreboard/summary URLs) and the API
-# (standings, leaders). Keys are the canonical identifiers returned
-# in all API responses.
-LIVE_SCORE_COMPETITIONS = {
-    # Club leagues (top European + MLS)
-    "England/Premier League": "eng.1",
-    "England/Championship": "eng.2",
-    "Spain/La Liga": "esp.1",
-    "Spain/La Liga 2": "esp.2",
-    "Italy/Serie A": "ita.1",
-    "Italy/Serie B": "ita.2",
-    "Germany/Bundesliga": "ger.1",
-    "Germany/Bundesliga 2": "ger.2",
-    "France/Ligue 1": "fra.1",
-    "France/Ligue 2": "fra.2",
-    "Portugal/Liga Portugal": "por.1",
-    "Netherlands/Eredivisie": "ned.1",
-    "United States/MLS": "usa.1",
-    # Domestic cups
-    "England/FA Cup": "eng.fa",
-    "England/League Cup": "eng.efl",
-    "UEFA/Champions League": "uefa.champions",
-    "UEFA/Europa League": "uefa.europa",
-    "UEFA/Conference League": "uefa.europa.conf",
-    # Europe/ prefix aliases (used by Predict_Upcoming_Matchweek short codes)
-    "Europe/Champions League": "uefa.champions",
-    "Europe/Europa League": "uefa.europa",
-    "Europe/Conference League": "uefa.europa.conf",
-    # Domestic cups (predictions pipeline produces these)
-    "Italy/Coppa Italia": "ita.coppa",
-    "Spain/Copa del Rey": "esp.copa_del_rey",
-    "Germany/DFB-Pokal": "ger.dfb_pokal",
-    "France/Coupe de France": "fra.coupe_de_france",
-    "United States/US Open Cup": "usa.open_cup",
-    # National team & World Cup
-    "FIFA/World Cup": "fifa.world",
-    "FIFA/World Cup Qualifying - UEFA": "fifa.worldq.uefa",
-    "FIFA/World Cup Qualifying - CONMEBOL": "fifa.worldq.conmebol",
-    "FIFA/World Cup Qualifying - CONCACAF": "fifa.worldq.concacaf",
-    "FIFA/World Cup Qualifying - AFC": "fifa.worldq.afc",
-    "FIFA/Friendly": "fifa.friendly",
-    "UEFA/European Championship": "uefa.euro",
-    "UEFA/Nations League": "uefa.nations",
-    "CONMEBOL/Copa America": "conmebol.america",
-    "CONCACAF/Gold Cup": "concacaf.gold",
-    "CAF/Africa Cup of Nations": "caf.nations",
-    "AFC/Asian Cup": "afc.cup",
-    # Belgian, Scottish & Turkish (for live table tracking)
-    "Belgium/First Division A": "bel.1",
-    "Scotland/Premiership": "sco.1",
-    "Turkey/Super Lig": "tur.1",
-    # Extra leagues (predicted but not live-polled — no ESPN ID)
-    "Austria/Bundesliga": None,
-    "Switzerland/Super League": None,
-    "Greece/Super League": None,
-    "Denmark/Superliga": None,
-    "Ukraine/Premier League": None,
-    "Norway/Eliteserien": None,
-    "Croatia/HNL": None,
-    "Romania/Liga I": None,
-    "Sweden/Allsvenskan": None,
-    "Hungary/NB I": None,
-    "Israel/Premier League": None,
-    "Czech Republic/First League": None,
-    "Poland/Ekstraklasa": None,
-    "Serbia/SuperLiga": None,
-    "Cyprus/First Division": None,
-    "Slovakia/Super Liga": None,
-    "Slovenia/PrvaLiga": None,
-    "Bulgaria/First League": None,
-}
+LIVE_SCORE_ESPN_BASE = config.LIVE_SCORE_ESPN_BASE
+LIVE_SCORE_COMPETITIONS = config.LIVE_SCORE_COMPETITIONS
 
 # In-memory store for active (today's) live scores.
 # Shape: {competition_name: {"competition": str, "games": [game_dict, ...], "last_polled_utc": str}}
@@ -246,45 +130,6 @@ class AveragedProbaClassifier:
         avg = self.predict_proba(X)
         idx = avg.argmax(axis=1)
         return self.classes_[idx]
-
-
-WEBSITE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(WEBSITE_DIR)
-LAST_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_refresh.json")
-FILES_DIR = os.path.join(PROJECT_DIR, "files")
-MLS_FILES_DIR = os.path.join(PROJECT_DIR, "MLS", "files")
-EXTRA_FILES_DIR = os.path.join(PROJECT_DIR, "Extra-leagues", "files")
-WEBSITE_FILES_DIR = os.path.join(WEBSITE_DIR, "files")
-GRAPHICS_DIR = os.path.join(WEBSITE_DIR, "graphics")
-FEEDBACK_DIR = os.path.join(WEBSITE_FILES_DIR, "feedback")
-FEEDBACK_FILE = os.path.join(FEEDBACK_DIR, "feedback.txt")
-ACCURACY_HISTORY_DIR = os.path.join(WEBSITE_FILES_DIR, "accuracy_history")
-ACCURACY_TOTALS_FILE = os.path.join(WEBSITE_FILES_DIR, "accuracy_totals.json")
-GLOBAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv")
-ALL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv")
-CUP_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_cup_predictions.csv")
-CUP_COMPLETED_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "completed_cup_predictions.csv")
-MLS_UPCOMING_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
-EXTRA_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Extra-leagues", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
-NATIONAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_national_team_predictions.csv")
-GLOBAL_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_league_tables.csv")
-CUP_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_tables.csv")
-CUP_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_brackets.json")
-PAST_GAMES_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "past_games.json")
-MLS_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "projected_league_tables.csv")
-EXTRA_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Extra-leagues", "Data", "Predictions", "projected_league_tables.csv")
-MLS_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "projected_mls_playoff_bracket.json")
-LIVE_RESULTS_UPDATER = os.path.join(FILES_DIR, "Update_Live_Prediction_Results.py")
-RUN_ALL_PIPELINE = os.path.join(PROJECT_DIR, "Run_All_Pipeline.py")
-LAST_DATA_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_data_refresh.json")
-PIPELINE_STATUS_FILE = os.path.join(PROJECT_DIR, "Data", "pipeline_status.json")
-TEAM_NAME_DISPLAY_MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "team_name_mapping_master.json")
-TOP_SCORERS_FILE = os.path.join(PROJECT_DIR, "Data", "Team_Data", "current_season_top_scorers.json")
-LIVE_SCORE_HISTORY_FILE = os.path.join(PROJECT_DIR, "Data", "live_score_history.json")
-PREDICTION_TRACKING_FILE = os.path.join(PROJECT_DIR, "Data", "prediction_tracking.json")
-REAL_TABLES_PERSIST_FILE = os.path.join(PROJECT_DIR, "Data", "standings_cache.json")
-LEAGUE_TEAMS_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "league_teams.json")
-CURRENT_SEASON_TEAMS_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "current_season_teams.json")
 
 # ── Standings Cache ───────────────────────────────────────────
 _real_tables: dict[str, dict] = {}
@@ -549,6 +394,7 @@ STATIC_PREDICTIONS_EXTRA_FILE = os.environ.get("STATIC_PREDICTIONS_EXTRA_FILE", 
 REFRESH_API_TOKEN = os.environ.get("REFRESH_API_TOKEN", "").strip()
 NOTIFICATIONS_API_KEY = os.environ.get("NOTIFICATIONS_API_KEY", "").strip()
 DEBUG_API_KEY = os.environ.get("DEBUG_API_KEY", "").strip()
+MUTATION_API_TOKEN = os.environ.get("MUTATION_API_TOKEN", "").strip() or REFRESH_API_TOKEN
 _SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "").strip()
 _notifications = deque(maxlen=100)
 _device_tokens = set()
@@ -834,27 +680,32 @@ def _client_ip():
 
 def _refresh_auth_ok():
     """Return True if refresh endpoint is authorized."""
-    if not REFRESH_API_TOKEN:
+    if not REFRESH_API_TOKEN and not MUTATION_API_TOKEN:
         return True
     token = request.headers.get("X-Refresh-Token", "").strip()
     if not token:
         auth_header = request.headers.get("Authorization", "").strip()
         if auth_header.lower().startswith("bearer "):
             token = auth_header[7:].strip()
-    return token == REFRESH_API_TOKEN
+    if REFRESH_API_TOKEN and token == REFRESH_API_TOKEN:
+        return True
+    if MUTATION_API_TOKEN and token == MUTATION_API_TOKEN:
+        return True
+    return False
 
 
 def _debug_auth_ok():
     """Return True if the caller is authorized for debug endpoints.
 
-    Requires at least one of DEBUG_API_KEY or REFRESH_API_TOKEN to be set
-    in the environment; the caller must present the matching value via a
-    ``X-Debug-Key`` header or ``Authorization: Bearer <key>`` header.
+    Requires at least one of DEBUG_API_KEY, REFRESH_API_TOKEN, or
+    MUTATION_API_TOKEN to be set in the environment; the caller must present
+    the matching value via a ``X-Debug-Key`` header or
+    ``Authorization: Bearer <key>`` header.
 
-    When neither env var is set, debug endpoints are **permanently disabled**
+    When none are set, debug endpoints are **permanently disabled**
     (always return 401). Set one of them to re-enable them.
     """
-    if not DEBUG_API_KEY and not REFRESH_API_TOKEN:
+    if not DEBUG_API_KEY and not REFRESH_API_TOKEN and not MUTATION_API_TOKEN:
         return False
     got = request.headers.get("X-Debug-Key", "").strip()
     if not got:
@@ -865,7 +716,56 @@ def _debug_auth_ok():
         return True
     if REFRESH_API_TOKEN and got == REFRESH_API_TOKEN:
         return True
+    if MUTATION_API_TOKEN and got == MUTATION_API_TOKEN:
+        return True
     return False
+
+
+def _mutation_auth_ok():
+    """Return True if the caller is authorized for backend-changing endpoints."""
+    if not MUTATION_API_TOKEN and not NOTIFICATIONS_API_KEY:
+        return False
+
+    for header_name in ("X-Admin-Token", "X-Notifications-Key"):
+        token = request.headers.get(header_name, "").strip()
+        if token and MUTATION_API_TOKEN and token == MUTATION_API_TOKEN:
+            return True
+        if token and NOTIFICATIONS_API_KEY and token == NOTIFICATIONS_API_KEY:
+            return True
+
+    auth_header = request.headers.get("Authorization", "").strip()
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        if MUTATION_API_TOKEN and token == MUTATION_API_TOKEN:
+            return True
+        if NOTIFICATIONS_API_KEY and token == NOTIFICATIONS_API_KEY:
+            return True
+
+    return False
+
+
+@app.before_request
+def _enforce_mutation_auth():
+    """Block backend-changing API calls unless a valid mutation secret is supplied."""
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+
+    protected_paths = {
+        "/api/notifications",
+        "/api/notifications/register",
+        "/api/feedback",
+        "/api/predict",
+        "/api/predict/mls",
+        "/api/predict/extra",
+        "/api/refresh",
+    }
+    if request.path not in protected_paths:
+        return None
+
+    if _mutation_auth_ok():
+        return None
+
+    return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
 
 @app.before_request
@@ -2171,17 +2071,10 @@ _UPCOMING_CSV_MODE_MAP = {
     "France/Coupe de France": "cups",
     "United States/US Open Cup": "cups",
     "FIFA/World Cup": "national",
-    "FIFA/World Cup Qualifying - UEFA": "national",
-    "FIFA/World Cup Qualifying - CONMEBOL": "national",
-    "FIFA/World Cup Qualifying - CONCACAF": "national",
-    "FIFA/World Cup Qualifying - AFC": "national",
     "FIFA/Friendly": "national",
     "UEFA/European Championship": "national",
     "UEFA/Nations League": "national",
     "CONMEBOL/Copa America": "national",
-    "CONCACAF/Gold Cup": "national",
-    "CAF/Africa Cup of Nations": "national",
-    "AFC/Asian Cup": "national",
     "United States/MLS": "mls",
     "Belgium/First Division A": "extra",
     "Scotland/Premiership": "extra",
@@ -6500,6 +6393,9 @@ def api_predict():
         away_team (str, required)
         mode (str, optional) — "global" (default), "mls", or "extra"
     """
+    if not _mutation_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
     payload = request.get_json(silent=True) or request.form
     home_team = str(payload.get("home_team", "")).strip()
     away_team = str(payload.get("away_team", "")).strip()
@@ -6516,6 +6412,9 @@ def api_predict():
 @app.post("/api/predict/mls")
 def api_predict_mls():
     """Predict a single MLS matchup from user input."""
+    if not _mutation_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
     payload = request.get_json(silent=True) or request.form
     home_team = str(payload.get("home_team", "")).strip()
     away_team = str(payload.get("away_team", "")).strip()
@@ -6529,6 +6428,9 @@ def api_predict_mls():
 @app.post("/api/predict/extra")
 def api_predict_extra():
     """Predict a single extra-league matchup from user input."""
+    if not _mutation_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
     payload = request.get_json(silent=True) or request.form
     home_team = str(payload.get("home_team", "")).strip()
     away_team = str(payload.get("away_team", "")).strip()
@@ -6541,9 +6443,8 @@ def api_predict_extra():
 
 @app.post("/api/notifications")
 def api_push_notification():
-    """Push a notification to in-memory queue + APNs for iOS devices. Requires API key auth."""
-    key = request.headers.get("X-Notifications-Key", "").strip()
-    if NOTIFICATIONS_API_KEY and key != NOTIFICATIONS_API_KEY:
+    """Push a notification to in-memory queue + APNs for iOS devices."""
+    if not _mutation_auth_ok():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     title = str(payload.get("title", "")).strip()
@@ -6587,8 +6488,7 @@ def api_register_device():
         token  (str, required)  — device push token
         platform (str)          — "ios" or "generic" (default)
     """
-    key = request.headers.get("X-Notifications-Key", "").strip()
-    if NOTIFICATIONS_API_KEY and key != NOTIFICATIONS_API_KEY:
+    if not _mutation_auth_ok():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     token = str(payload.get("token", "")).strip()
@@ -8140,6 +8040,9 @@ def api_league_leaders():
 @app.post("/api/feedback")
 def api_feedback():
     """Persist user feedback to a local text file."""
+    if not _mutation_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
     payload = request.get_json(silent=True) or request.form or {}
     feedback_text = str(payload.get("feedback", "")).strip()
     if not feedback_text:
@@ -8242,10 +8145,12 @@ if __name__ == "__main__":
             pass
 
     # Warn when auth env vars are missing
+    if not MUTATION_API_TOKEN and not NOTIFICATIONS_API_KEY:
+        print("[startup] WARNING: no mutation auth configured — write-capable API endpoints are disabled!")
     if not REFRESH_API_TOKEN:
         print("[startup] WARNING: REFRESH_API_TOKEN not set — /api/refresh is unprotected!")
     if not NOTIFICATIONS_API_KEY:
-        print("[startup] WARNING: NOTIFICATIONS_API_KEY not set — notification endpoints are unprotected!")
+        print("[startup] WARNING: NOTIFICATIONS_API_KEY not set — notification endpoints require MUTATION_API_TOKEN or a matching header!")
     if not DEBUG_API_KEY and not REFRESH_API_TOKEN:
         print("[startup] WARNING: DEBUG_API_KEY and REFRESH_API_TOKEN both unset — debug endpoints are disabled (all return 401)!")
 

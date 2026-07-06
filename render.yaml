@@ -10,3 +10,5 @@ services:
         value: 3.12.6
       - key: API_RATE_LIMIT_PER_MINUTE
         value: 60
+      - key: MUTATION_API_TOKEN
+        value: "change-me-to-a-long-random-secret"
