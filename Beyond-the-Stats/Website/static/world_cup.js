@@ -1,43 +1,136 @@
-// World Cup page behavior: loads the saved projection and renders each tournament section.
+// Tournament projection pages: World Cup and other cups share the same renderer.
 async function loadWorldCupProjection() {
   const viewEl = document.getElementById("world-cup-view");
   if (!viewEl) return;
+  await loadTournamentProjection({
+    viewEl,
+    competition: "FIFA/World Cup",
+    endpoint: "/api/world-cup",
+    loadingMessage: "Loading World Cup projection...",
+    errorMessage: "Failed to load World Cup projection data.",
+  });
+}
 
-  viewEl.innerHTML = '<p class="loading-message">Loading World Cup projection...</p>';
+async function loadTournamentProjection({
+  viewEl,
+  competition,
+  endpoint = null,
+  projectedRows = null,
+  loadingMessage = "Loading cup projection...",
+  errorMessage = "Failed to load cup projection data.",
+}) {
+  if (!viewEl) return;
+
+  viewEl.innerHTML = `<p class="loading-message">${escapeHtml(loadingMessage)}</p>`;
 
   try {
-    // Fetch the projection JSON exposed by Flask from Data/Predictions.
-    const response = await fetch("/api/world-cup");
+    const url = endpoint || `/api/competition-data?competition=${encodeURIComponent(competition)}`;
+    const response = await fetch(url);
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) {
-      viewEl.innerHTML = `<p class="error-message">${escapeHtml(data.error || "Failed to load World Cup projection data.")}</p>`;
+      viewEl.innerHTML = `<p class="error-message">${escapeHtml(data.error || errorMessage)}</p>`;
       return;
     }
-    displayWorldCupData(data, viewEl);
+    displayWorldCupData(normalizeTournamentData(data, projectedRows), viewEl);
   } catch (error) {
-    console.error("Error loading World Cup data:", error);
-    viewEl.innerHTML = `<p class="error-message">Error loading World Cup projection: ${escapeHtml(error.message)}</p>`;
+    console.error(`Error loading tournament data for ${competition}:`, error);
+    viewEl.innerHTML = `<p class="error-message">Error loading projection: ${escapeHtml(error.message)}</p>`;
   }
+}
+
+function winnerProbabilitiesFor(data) {
+  return data.simulations?.winner_probabilities || data.winner_probabilities || {};
+}
+
+function normalizeGroupTables(data, projectedRows) {
+  if (Array.isArray(data.group_tables) && data.group_tables.length) {
+    return data.group_tables;
+  }
+
+  if (data.group_tables && typeof data.group_tables === "object" && !Array.isArray(data.group_tables)) {
+    return Object.entries(data.group_tables).map(([key, group]) => ({
+      group: group.group || key,
+      teams: group.teams || [],
+    }));
+  }
+
+  const tableGroups = data.table?.groups;
+  if (Array.isArray(tableGroups) && tableGroups.length) {
+    return tableGroups.map((group) => ({
+      group: group.name || "Overall",
+      teams: (group.entries || []).map((entry) => ({
+        team: entry.team,
+        P: entry.P,
+        W: entry.W,
+        D: entry.D,
+        L: entry.L,
+        GF: entry.GF,
+        GA: entry.GA,
+        GD: entry.GD,
+        Pts: entry.Pts,
+        position: entry.rank || entry.position,
+        PlayedPred: entry.PlayedPred,
+        PlayedReal: entry.PlayedReal,
+      })),
+    }));
+  }
+
+  if (Array.isArray(projectedRows) && projectedRows.length) {
+    return [{
+      group: "League Phase",
+      teams: projectedRows.map((row) => ({
+        team: row.team,
+        P: row.P,
+        W: row.W,
+        D: row.D,
+        L: row.L,
+        GF: row.GF,
+        GA: row.GA,
+        GD: row.GD,
+        Pts: row.Pts,
+        position: row.position,
+        PlayedPred: row.PlayedPred,
+        PlayedReal: row.PlayedReal,
+      })),
+    }];
+  }
+
+  return [];
+}
+
+function normalizeTournamentData(data, projectedRows = null) {
+  const normalized = { ...data };
+  const winnerProbabilities = winnerProbabilitiesFor(data);
+  normalized.group_tables = normalizeGroupTables(data, projectedRows);
+  normalized.simulations = {
+    ...(data.simulations || {}),
+    winner_probabilities: winnerProbabilities,
+    position_probabilities: data.simulations?.position_probabilities || data.position_probabilities || {},
+  };
+  if (!normalized.winner_probabilities) {
+    normalized.winner_probabilities = winnerProbabilities;
+  }
+  return normalized;
 }
 
 // Main renderer: keeps the page useful even when optional projection fields are absent.
 function displayWorldCupData(data, container) {
   const knockout = data.knockout || {};
   const champion = data.champion || getFinalWinner(knockout.final);
-  const championProbability = data.simulations?.winner_probabilities?.[champion];
+  const winnerProbabilities = winnerProbabilitiesFor(data);
+  const championProbability = winnerProbabilities[champion];
   let html = "";
 
   html += renderProjectionSummary(data, champion, championProbability);
-  html += renderWinnerOdds(data.simulations?.winner_probabilities || {});
+  html += renderWinnerOdds(winnerProbabilities);
   html += renderGroupTablesWithToggle(data, container);
   html += renderBestThirdTable(data.third_place_table || data.best_third_place || data.best_third_teams || []);
   html += renderGroupFixtures(data.group_fixtures || []);
   html += renderKnockoutRounds(knockout);
 
-  container.innerHTML = html || '<p class="info-message">No World Cup projection data is available yet.</p>';
-  // Wire up the projected-tables <-> position-odds toggle after the HTML is in the DOM.
+  const competitionLabel = data.competition || "this competition";
+  container.innerHTML = html || `<p class="info-message">No projection data is available yet for ${escapeHtml(competitionLabel)}.</p>`;
   wireGroupTablesToggle(container);
-  // Wire up the group-fixtures dropdown after the HTML is in the DOM.
   wireGroupFixturesFilter(container);
 }
 
@@ -402,6 +495,7 @@ function renderFixtureCard(match) {
 // All rounds except the Final are collapsed by default; click the header to expand.
 function renderKnockoutRounds(knockout) {
   const stages = [
+    ["knockout_round_playoffs", "Knockout Play-offs"],
     ["round_of_32", "Round of 32"],
     ["round_of_16", "Round of 16"],
     ["quarterfinals", "Quarterfinals"],

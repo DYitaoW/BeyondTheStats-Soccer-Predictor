@@ -1846,6 +1846,7 @@ if (ACTIVE_PAGE === "global") {
     const source = currentUpcomingSource();
     await loadUpcoming(source, upcomingUrlForSource(source), globalList, globalStats, globalLeagueFilter);
 } else if (ACTIVE_PAGE === "cups") {
+    if (document.getElementById("cup-projection-view")) return;
     if (!cupProjectionTabs) return;
     await loadCupProjections();
 } else if (ACTIVE_PAGE === "league-table") {

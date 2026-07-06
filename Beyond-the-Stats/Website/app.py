@@ -18,6 +18,202 @@ import threading
 from collections import defaultdict
 from datetime import datetime, timedelta, date, timezone
 from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import httpx
+import hashlib
+import functools
+
+# ── Global state ──────────────────────────────────────────────────
+# Most state is module-level so the background poller and API handlers
+# share it within the same process/gunicorn worker.
+
+_last_pipeline_run: datetime | None = None
+
+# ── Redis response cache ────────────────────────────────────────
+REDIS_URL = os.environ.get("REDIS_URL", "")
+_redis_client = None
+if REDIS_URL:
+    try:
+        import redis as _redis_mod
+        _redis_client = _redis_mod.from_url(REDIS_URL, socket_timeout=2, decode_responses=True)
+        _redis_client.ping()
+    except Exception:
+        _redis_client = None
+
+CACHE_TTL_DEFAULT = int(os.environ.get("CACHE_TTL_DEFAULT", "120"))  # seconds
+CACHE_TTL_LONG = int(os.environ.get("CACHE_TTL_LONG", "600"))       # 10 min for stable data
+
+
+def _cache_key(endpoint: str, query_str: str = "") -> str:
+    """Return a deterministic cache key for an API call."""
+    raw = f"{endpoint}:{query_str}"
+    return f"api:{hashlib.md5(raw.encode()).hexdigest()}"
+
+
+def _cache_get(key: str) -> str | None:
+    """Return cached JSON string or None."""
+    if _redis_client is None:
+        return None
+    try:
+        return _redis_client.get(key)
+    except Exception:
+        return None
+
+
+def _cache_set(key: str, value: str, ttl: int = CACHE_TTL_DEFAULT) -> None:
+    if _redis_client is None:
+        return
+    try:
+        _redis_client.setex(key, ttl, value)
+    except Exception:
+        pass
+
+
+def _cache_clear_pattern(pattern: str = "api:*") -> None:
+    """Clear all cached API responses.  Called after pipeline refresh."""
+    if _redis_client is None:
+        return
+    try:
+        for k in _redis_client.scan_iter(match=pattern):
+            _redis_client.delete(k)
+    except Exception:
+        pass
+
+
+def _cached_response(ttl: int = CACHE_TTL_DEFAULT):
+    """Decorator that caches a route's JSON response in Redis.
+
+    The cache key is ``api:{md5(endpoint + query_string)}``.
+    Skips caching when ``?no_cache=1`` is present.
+    """
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            if request.args.get("no_cache", "").strip() in ("1", "true"):
+                return f(*args, **kwargs)
+            key = _cache_key(request.path, request.query_string.decode("utf-8", errors="replace"))
+            cached = _cache_get(key)
+            if cached is not None:
+                resp = app.response_class(
+                    response=cached, status=200, mimetype="application/json"
+                )
+                resp.headers["X-Cache"] = "redis"
+                return resp
+            result = f(*args, **kwargs)
+            if isinstance(result, app.response_class) and result.status_code == 200:
+                _cache_set(key, result.get_data(as_text=True), ttl=ttl)
+            return result
+        return wrapper
+    return decorator
+
+
+# Cache for h2h/form data to avoid re-reading CSVs on every request.
+# Keyed by pm_mod.TEAM_DATA_DIR, value is (mtime_summary, (head_to_head, current_form)).
+_h2h_form_cache: dict[str, tuple[float, tuple[dict, dict]]] = {}
+
+# ── Live Score Polling ──────────────────────────────────────────
+# ESPN base URL for all soccer endpoints (scoreboard, summary, standings).
+LIVE_SCORE_ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+
+# Map of internal competition names → ESPN league slugs.
+# Used by both the poller (scoreboard/summary URLs) and the API
+# (standings, leaders). Keys are the canonical identifiers returned
+# in all API responses.
+LIVE_SCORE_COMPETITIONS = {
+    # Club leagues (top European + MLS)
+    "England/Premier League": "eng.1",
+    "England/Championship": "eng.2",
+    "Spain/La Liga": "esp.1",
+    "Spain/La Liga 2": "esp.2",
+    "Italy/Serie A": "ita.1",
+    "Italy/Serie B": "ita.2",
+    "Germany/Bundesliga": "ger.1",
+    "Germany/Bundesliga 2": "ger.2",
+    "France/Ligue 1": "fra.1",
+    "France/Ligue 2": "fra.2",
+    "Portugal/Liga Portugal": "por.1",
+    "Netherlands/Eredivisie": "ned.1",
+    "United States/MLS": "usa.1",
+    # Domestic cups
+    "England/FA Cup": "eng.fa",
+    "England/League Cup": "eng.efl",
+    "UEFA/Champions League": "uefa.champions",
+    "UEFA/Europa League": "uefa.europa",
+    "UEFA/Conference League": "uefa.europa.conf",
+    # Europe/ prefix aliases (used by Predict_Upcoming_Matchweek short codes)
+    "Europe/Champions League": "uefa.champions",
+    "Europe/Europa League": "uefa.europa",
+    "Europe/Conference League": "uefa.europa.conf",
+    # Domestic cups (predictions pipeline produces these)
+    "Italy/Coppa Italia": "ita.coppa",
+    "Spain/Copa del Rey": "esp.copa_del_rey",
+    "Germany/DFB-Pokal": "ger.dfb_pokal",
+    "France/Coupe de France": "fra.coupe_de_france",
+    "United States/US Open Cup": "usa.open_cup",
+    # National team & World Cup
+    "FIFA/World Cup": "fifa.world",
+    "FIFA/World Cup Qualifying - UEFA": "fifa.worldq.uefa",
+    "FIFA/World Cup Qualifying - CONMEBOL": "fifa.worldq.conmebol",
+    "FIFA/World Cup Qualifying - CONCACAF": "fifa.worldq.concacaf",
+    "FIFA/World Cup Qualifying - AFC": "fifa.worldq.afc",
+    "FIFA/Friendly": "fifa.friendly",
+    "UEFA/European Championship": "uefa.euro",
+    "UEFA/Nations League": "uefa.nations",
+    "CONMEBOL/Copa America": "conmebol.america",
+    "CONCACAF/Gold Cup": "concacaf.gold",
+    "CAF/Africa Cup of Nations": "caf.nations",
+    "AFC/Asian Cup": "afc.cup",
+    # Belgian, Scottish & Turkish (for live table tracking)
+    "Belgium/First Division A": "bel.1",
+    "Scotland/Premiership": "sco.1",
+    "Turkey/Super Lig": "tur.1",
+    # Extra leagues (predicted but not live-polled — no ESPN ID)
+    "Austria/Bundesliga": None,
+    "Switzerland/Super League": None,
+    "Greece/Super League": None,
+    "Denmark/Superliga": None,
+    "Ukraine/Premier League": None,
+    "Norway/Eliteserien": None,
+    "Croatia/HNL": None,
+    "Romania/Liga I": None,
+    "Sweden/Allsvenskan": None,
+    "Hungary/NB I": None,
+    "Israel/Premier League": None,
+    "Czech Republic/First League": None,
+    "Poland/Ekstraklasa": None,
+    "Serbia/SuperLiga": None,
+    "Cyprus/First Division": None,
+    "Slovakia/Super Liga": None,
+    "Slovenia/PrvaLiga": None,
+    "Bulgaria/First League": None,
+}
+
+# Mobile app / website tournament keys → canonical competition names.
+TOURNAMENT_KEY_MAP = {
+    "world-cup": "FIFA/World Cup",
+    "champions-league": "UEFA/Champions League",
+    "europa-league": "UEFA/Europa League",
+    "conference-league": "UEFA/Conference League",
+    "euros": "UEFA/European Championship",
+    "copa-america": "CONMEBOL/Copa America",
+    "fa-cup": "England/FA Cup",
+    "efl-cup": "England/League Cup",
+    "dfb-pokal": "Germany/DFB-Pokal",
+    "coupe-de-france": "France/Coupe de France",
+    "coppa-italia": "Italy/Coppa Italia",
+    "us-open-cup": "United States/US Open Cup",
+}
+
+# In-memory store for active (today's) live scores.
+# Shape: {competition_name: {"competition": str, "games": [game_dict, ...], "last_polled_utc": str}}
+_live_scores: dict[str, dict] = {}
+_live_scores_lock = threading.RLock()
+
+# Separate store for summary data (lineups, h2h, last5, key_events, boxscore)
+# keyed by match_id so scoreboard merges can never overwrite it.
+# Re-applied to game objects after every scoreboard merge and every summary fetch.
+_live_summary_cache: dict[str, dict] = {}
+_live_summary_cache_lock = threading.Lock()
 
 import pandas as pd
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
@@ -100,7 +296,4590 @@ _feedback_lock = threading.Lock()
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = config._SECRET_KEY or None
 
-auth.register_auth_handlers(app)
+# ── Pre-match advanced market helpers ──────────────────────────
+
+# Cache: mode -> [(team, [{opponent, date, result, home_score, away_score, is_home}])]
+_LAST_5_FORM_CACHE: dict = {}
+_LAST_5_FORM_CACHE_TIME: float = 0.0
+_STRENGTH_CACHE: dict = {}
+_STRENGTH_CACHE_TIME: float = 0.0
+
+
+def _compute_total_goals_dist(pred_home_goals, pred_away_goals, max_total=6):
+    """Exact total goals distribution: probability per total goal count 0..max_total.
+    
+    Returns dict like {"0": 0.05, "1": 0.12, ..., "6plus": 0.01}.
+    The "6plus" key covers 6+ goals.
+    """
+    hg = max(0.01, _safe_float(pred_home_goals, 0.0))
+    ag = max(0.01, _safe_float(pred_away_goals, 0.0))
+    lam = hg + ag
+    dist = {}
+    total_p = 0.0
+    for k in range(max_total):
+        p = _poisson_pmf(k, lam)
+        dist[str(k)] = round(p, 6)
+        total_p += p
+    dist["6plus"] = round(max(0.0, 1.0 - total_p), 6)
+    return dist
+
+
+def _compute_first_to_score(pred_home_goals, pred_away_goals):
+    """First team to score probabilities.
+    
+    Returns dict with "home", "away", "none" probabilities (0-1 scale).
+    Based on relative attack rates from Poisson expected goals.
+    """
+    hg = max(0.01, _safe_float(pred_home_goals, 0.0))
+    ag = max(0.01, _safe_float(pred_away_goals, 0.0))
+    lam = hg + ag
+    p_no_goal = math.exp(-lam)
+    if lam <= 0:
+        return {"home": 0.0, "away": 0.0, "none": 1.0}
+    return {
+        "home": round((1.0 - p_no_goal) * hg / lam, 6),
+        "away": round((1.0 - p_no_goal) * ag / lam, 6),
+        "none": round(p_no_goal, 6),
+    }
+
+
+def _compute_clean_sheet(pred_home_goals, pred_away_goals):
+    """Clean sheet probabilities (0-1 scale).
+    
+    Returns dict with "home" (home team keeps a clean sheet), "away".
+    """
+    hg = max(0.01, _safe_float(pred_home_goals, 0.0))
+    ag = max(0.01, _safe_float(pred_away_goals, 0.0))
+    return {
+        "home": round(math.exp(-ag), 6),
+        "away": round(math.exp(-hg), 6),
+    }
+
+
+def _build_last5_form_index(mode):
+    """Build a cached index of last-5 matches per team for a given mode.
+    
+    Returns dict mapping team name (str) -> list of last-5 match dicts:
+        {"opponent": str, "date": str, "result": str, "home_score": int,
+         "away_score": int, "is_home": bool}
+    """
+    global _LAST_5_FORM_CACHE_TIME
+    now = time.time()
+    cache_key = mode
+    cached = _LAST_5_FORM_CACHE.get(cache_key)
+    if cached and (now - _LAST_5_FORM_CACHE_TIME) < 300:
+        return cached
+
+    # Map mode to processed data directory
+    mode_dirs = {
+        "global": os.path.join(FILES_DIR, "Processed_Data"),
+        "mls": os.path.join(MLS_FILES_DIR, "Processed_Data"),
+        "extra": os.path.join(EXTRA_FILES_DIR, "Processed_Data"),
+    }
+    processed_dir = mode_dirs.get(mode)
+    if not processed_dir or not os.path.exists(processed_dir):
+        _LAST_5_FORM_CACHE[cache_key] = {}
+        _LAST_5_FORM_CACHE_TIME = now
+        return {}
+
+    # Walk all CSVs and build team -> matches
+    team_matches = defaultdict(list)
+    for root, _, files in os.walk(processed_dir):
+        for name in sorted(files):
+            if not name.endswith(".csv"):
+                continue
+            path = os.path.join(root, name)
+            try:
+                df = pd.read_csv(path, usecols=lambda c: c in {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"})
+            except Exception:
+                continue
+            if "HomeTeam" not in df.columns or "AwayTeam" not in df.columns:
+                continue
+            comp = os.path.basename(os.path.dirname(path)) or "Unknown"
+            for _, r in df.iterrows():
+                home = str(r["HomeTeam"]).strip()
+                away = str(r["AwayTeam"]).strip()
+                try:
+                    hg = int(r["FTHG"]) if pd.notna(r.get("FTHG")) else 0
+                    ag = int(r["FTAG"]) if pd.notna(r.get("FTAG")) else 0
+                except (ValueError, TypeError):
+                    continue
+                date_str = str(r.get("Date", ""))
+                result = str(r.get("FTR", ""))
+                team_matches[home].append({
+                    "opponent": away,
+                    "date": date_str,
+                    "result": result,
+                    "home_score": hg,
+                    "away_score": ag,
+                    "is_home": True,
+                    "venue": "home",
+                    "competition": comp,
+                })
+                team_matches[away].append({
+                    "opponent": home,
+                    "date": date_str,
+                    "result": "H" if result == "A" else ("A" if result == "H" else result),
+                    "home_score": hg,
+                    "away_score": ag,
+                    "is_home": False,
+                    "venue": "away",
+                    "competition": comp,
+                })
+
+    # Keep only last-5 per team, sorted by date descending
+    result_index = {}
+    for team, matches in team_matches.items():
+        matches.sort(key=lambda x: x["date"], reverse=True)
+        result_index[team] = matches[:5]
+
+    _LAST_5_FORM_CACHE[cache_key] = result_index
+    _LAST_5_FORM_CACHE_TIME = now
+    return result_index
+
+
+def _build_strength_index(mode):
+    """Build cached attack/defence strength ratings per team for a mode.
+    
+    Returns dict mapping team name -> {"attack_rating": float, "defence_rating": float}.
+    Ratings are relative to league average (1.0 = average).
+    Computed from current_form.json when available.
+    """
+    global _STRENGTH_CACHE_TIME
+    now = time.time()
+    cache_key = f"strength_{mode}"
+    cached = _STRENGTH_CACHE.get(cache_key)
+    if cached and (now - _STRENGTH_CACHE_TIME) < 300:
+        return cached
+
+    # Map mode to Predict_Match module and TEAM_DATA_DIR
+    mode_info = {
+        "global": (pm_global, "global"),
+        "mls": (pm_mls, "mls"),
+        "extra": (pm_extra, "extra"),
+    }
+    entry = mode_info.get(mode)
+    if not entry:
+        _STRENGTH_CACHE[cache_key] = {}
+        _STRENGTH_CACHE_TIME = now
+        return {}
+
+    pm_mod, _ = entry
+    form_path = os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json")
+    try:
+        current_form = pm_mod.load_json_if_exists(form_path) or {}
+    except Exception:
+        current_form = {}
+
+    teams_data = current_form.get("teams", {}) if isinstance(current_form, dict) else {}
+    if not teams_data:
+        _STRENGTH_CACHE[cache_key] = {}
+        _STRENGTH_CACHE_TIME = now
+        return {}
+
+    # Compute league averages for goals for and against
+    gf_vals = [t.get("avg_goals_for_last_10", 0) or 0 for t in teams_data.values() if isinstance(t, dict)]
+    ga_vals = [t.get("avg_goals_against_last_10", 0) or 0 for t in teams_data.values() if isinstance(t, dict)]
+    avg_gf = (sum(gf_vals) / len(gf_vals)) if gf_vals else 1.0
+    avg_ga = (sum(ga_vals) / len(ga_vals)) if ga_vals else 1.0
+    if avg_gf <= 0:
+        avg_gf = 1.0
+    if avg_ga <= 0:
+        avg_ga = 1.0
+
+    result = {}
+    for team, stats in teams_data.items():
+        if not isinstance(stats, dict):
+            continue
+        gf = stats.get("avg_goals_for_last_10", 0) or 0
+        ga = stats.get("avg_goals_against_last_10", 0) or 0
+        result[team] = {
+            "attack_rating": round(float(gf) / avg_gf, 4),
+            "defence_rating": round(float(ga) / avg_ga, 4),
+        }
+
+    _STRENGTH_CACHE[cache_key] = result
+    _STRENGTH_CACHE_TIME = now
+    return result
+
+
+# ── ESPN summary data parsers (venue, officials, broadcasts) ──
+
+def _parse_espn_game_info(summary_data):
+    """Extract venue, attendance, officials, and weather from ESPN summary ``gameInfo``.
+
+    Returns dict with keys:
+        ``venue`` (str), ``attendance`` (int/None), ``officials`` (list),
+        ``weather`` (dict: temperature, windSpeed, conditions, humidity)
+    or empty dict if unavailable.
+    """
+    game_info = summary_data.get("gameInfo") or {}
+    venue = game_info.get("venue") or {}
+    broadcasts = summary_data.get("broadcasts") or []
+    result = {}
+    if venue.get("fullName"):
+        result["venue"] = str(venue["fullName"])
+    att = game_info.get("attendance")
+    if att is not None:
+        try:
+            result["attendance"] = int(att)
+        except (ValueError, TypeError):
+            pass
+    officials_list = game_info.get("officials") or []
+    if officials_list:
+        refs = []
+        for off in officials_list:
+            name = str(off.get("fullName", ""))
+            pos = str(off.get("position", {}).get("displayName", ""))
+            if name:
+                refs.append({"name": name, "role": pos})
+        if refs:
+            result["officials"] = refs
+    # ── Weather ────────────────────────────────────────────────
+    weather = game_info.get("weather") or {}
+    if weather:
+        w = {}
+        for key in ("temperature", "windSpeed", "conditions", "humidity"):
+            val = weather.get(key)
+            if val is not None:
+                try:
+                    w[key] = int(val) if key in ("temperature", "humidity") else str(val)
+                except (ValueError, TypeError):
+                    w[key] = str(val)
+        if w:
+            result["weather"] = w
+    if broadcasts:
+        tv = []
+        for b in broadcasts:
+            media = b.get("media") or {}
+            mkt = b.get("market") or {}
+            tv.append({
+                "network": str(media.get("shortName", media.get("name", ""))),
+                "type": str(b.get("type", {}).get("shortName", "")),
+                "region": str(mkt.get("type", "")),
+            })
+        if tv:
+            result["broadcasts"] = tv
+    return result
+
+
+def _parse_espn_shot_mapping(summary_data):
+    """Extract shot-plot and goal-location data from ESPN summary.
+
+    Returns dict with:
+        ``shot_origins``  — list of {x, y, minute, player, team_id, is_goal, on_target}
+        ``goal_locations`` — list of {x, y, minute, player, team_id}  (goal-frame coords)
+    or empty dict if unavailable.
+    """
+    shot_origins = []
+    goal_locations = []
+
+    # Helper to normalise 2-element coordinate values.
+    def _coord(entry, key, default=None):
+        raw = (entry.get(key) or {}) if isinstance(entry, dict) else {}
+        x = raw.get("x")
+        y = raw.get("y")
+        if x is not None and y is not None:
+            try:
+                return (round(float(x), 1), round(float(y), 1))
+            except (ValueError, TypeError):
+                pass
+        return default
+
+    # ── 1. shotChart (common in ESPN v2) ──────────────────────
+    sc = summary_data.get("shotChart")
+    if isinstance(sc, dict):
+        for side_key, team_shots in sc.items():
+            if not isinstance(team_shots, list):
+                continue
+            team_id = {"home": "home", "away": "away"}.get(side_key, "")
+            for shot in team_shots:
+                if not isinstance(shot, dict):
+                    continue
+                xy = _coord(shot, "coordinates")
+                gl = _coord(shot, "goalLocation")
+                ath = shot.get("athlete") or {}
+                player = str(ath.get("displayName", ""))
+                scoring = bool(shot.get("scoringPlay"))
+                t_id = str(team_id)
+                minute = str(shot.get("clock", {}).get("displayValue", ""))
+                if xy:
+                    shot_origins.append({
+                        "x": xy[0], "y": xy[1],
+                        "minute": minute,
+                        "player": player,
+                        "team_id": t_id,
+                        "is_goal": scoring,
+                        "on_target": bool(shot.get("onTarget", scoring)),
+                    })
+                if gl and scoring:
+                    goal_locations.append({
+                        "x": gl[0], "y": gl[1],
+                        "minute": minute,
+                        "player": player,
+                        "team_id": t_id,
+                    })
+
+    # ── 2. situations (alternative ESPN path) ─────────────────
+    situations = summary_data.get("situations")
+    if isinstance(situations, list):
+        for ev in situations:
+            if not isinstance(ev, dict):
+                continue
+            action = ev.get("lastAction") or ev
+            if not isinstance(action, dict):
+                continue
+            ev_type = str(ev.get("type", {}).get("text", action.get("type", {}).get("text", "")))
+            if "shot" not in ev_type.lower() and "goal" not in ev_type.lower() and "save" not in ev_type.lower():
+                continue
+            xy = _coord(action, "coordinates")
+            gl = _coord(action, "goalLocation")
+            ath = action.get("athlete") or {}
+            player = str(ath.get("displayName", ""))
+            team = action.get("team") or ev.get("team") or {}
+            t_id = str(team.get("id", ""))
+            scoring = bool(action.get("scoringPlay", ev.get("scoringPlay")))
+            minute = str(action.get("clock", {}).get("displayValue", ev.get("clock", {}).get("displayValue", "")))
+            on_target = "save" in ev_type.lower() or "goal" in ev_type.lower() or "on target" in ev_type.lower()
+            if xy:
+                shot_origins.append({
+                    "x": xy[0], "y": xy[1],
+                    "minute": minute,
+                    "player": player,
+                    "team_id": t_id,
+                    "is_goal": scoring,
+                    "on_target": on_target or scoring,
+                })
+            if gl and scoring:
+                goal_locations.append({
+                    "x": gl[0], "y": gl[1],
+                    "minute": minute,
+                    "player": player,
+                    "team_id": t_id,
+                })
+
+    result = {}
+    if shot_origins:
+        result["shot_origins"] = shot_origins
+    if goal_locations:
+        result["goal_locations"] = goal_locations
+    return result
+
+
+# ── Possession zones / game situation ─────────────────────────
+
+
+def _parse_espn_situation(summary_data):
+    """Extract possession-zone splits and game-control data from ESPN summary.
+
+    The ``situation`` (singular) block contains territory splits,
+    possession percentages, and zone-by-zone breakdowns.
+
+    Returns dict with:
+        ``possession`` — overall possession {home: %, away: %}
+        ``possession_zones`` — possession by third … {home: {attacking, midfield, defensive}, away: …}
+        ``territory`` — territory split by third {home: {attacking, midfield, defensive}, away: …}
+    or empty dict if unavailable.
+    """
+    sit = summary_data.get("situation") or {}
+    if not sit:
+        return {}
+
+    result = {}
+
+    def _safe_number(v):
+        try:
+            return round(float(v), 2)
+        except (TypeError, ValueError):
+            return v
+
+    def _parse_third_dict(raw):
+        """Normalise a possessive-third dict e.g. {attacking: 30, midfield: 45, defensive: 25}."""
+        if not isinstance(raw, dict):
+            return None
+        out = {}
+        for zone in ("attacking", "midfield", "defensive"):
+            val = raw.get(zone)
+            if val is not None:
+                out[zone] = _safe_number(val)
+        return out if out else None
+
+    # ── Overall possession ─────────────────────────────────────
+    poss = sit.get("possession")
+    if isinstance(poss, dict):
+        h = _safe_number(poss.get("home"))
+        a = _safe_number(poss.get("away"))
+        if h is not None and a is not None:
+            result["possession"] = {"home": h, "away": a}
+
+    # ── Possession by zone ─────────────────────────────────────
+    zones = sit.get("possessionZones") or sit.get("possessionByArea") or {}
+    if isinstance(zones, dict):
+        hz = _parse_third_dict(zones.get("home"))
+        az = _parse_third_dict(zones.get("away"))
+        if hz or az:
+            result["possession_zones"] = {}
+            if hz:
+                result["possession_zones"]["home"] = hz
+            if az:
+                result["possession_zones"]["away"] = az
+
+    # ── Territory split (alternative path) ─────────────────────
+    terr = sit.get("territory") or sit.get("territorySplit") or {}
+    if isinstance(terr, dict):
+        hz = _parse_third_dict(terr.get("home"))
+        az = _parse_third_dict(terr.get("away"))
+        if hz or az:
+            result["territory"] = {}
+            if hz:
+                result["territory"]["home"] = hz
+            if az:
+                result["territory"]["away"] = az
+
+    # ── Most-possession indicator ──────────────────────────────
+    most = sit.get("mostPossession")
+    if isinstance(most, str) and most in ("home", "away"):
+        result["most_possession"] = most
+
+    return result
+
+
+# ── Injuries / availability ──────────────────────────────────
+
+
+def _parse_espn_injuries_availability(summary_data):
+    """Extract player injury and availability data from ESPN summary.
+
+    ESPN soccer summaries **do not** always include a structured injuries
+    block, but when available it lives under ``gameInfo.injuries`` or
+    ``playerStatus`` / ``availability`` at the summary root.
+
+    Returns dict with:
+        ``injuries`` — list of {player, team_id, status, detail}
+        ``availability`` — list of {player, team_id, status}
+    or empty dict if unavailable.
+    """
+    result = {}
+
+    # ── gameInfo.injuries ─────────────────────────────────────
+    game_info = summary_data.get("gameInfo") or {}
+    injuries_raw = game_info.get("injuries") or summary_data.get("injuries") or []
+    if isinstance(injuries_raw, list) and injuries_raw:
+        parsed = []
+        for entry in injuries_raw:
+            if not isinstance(entry, dict):
+                continue
+            ath = entry.get("athlete") or {}
+            team = entry.get("team") or {}
+            status = entry.get("status", {}).get("text", "") or entry.get("status", "")
+            parsed.append({
+                "player": str(ath.get("displayName", ath.get("fullName", ""))),
+                "team_id": str(team.get("id", "")),
+                "status": str(status),
+                "detail": str(entry.get("text", entry.get("comment", ""))),
+            })
+        if parsed:
+            result["injuries"] = parsed
+
+    # ── availability / playerStatus (root-level) ──────────────
+    avail = summary_data.get("availability") or summary_data.get("playerStatus") or []
+    if isinstance(avail, list) and avail:
+        parsed = []
+        for entry in avail:
+            if not isinstance(entry, dict):
+                continue
+            ath = entry.get("athlete") or {}
+            team = entry.get("team") or {}
+            parsed.append({
+                "player": str(ath.get("displayName", ath.get("fullName", ""))),
+                "team_id": str(team.get("id", "")),
+                "status": str(entry.get("status", {}).get("text", entry.get("status", ""))),
+            })
+        if parsed:
+            result["availability"] = parsed
+
+    return result
+
+
+# ── Advanced team stats (teamStats block) ────────────────────
+
+
+def _parse_espn_team_stats(summary_data):
+    """Extract granular per-team stats from the ``teamStats`` block.
+
+    ESPN's ``teamStats`` block provides stats grouped by category
+    (e.g. ``offensive``, ``defensive``, ``passing``, ``possession``)
+    with richer detail than the flat ``boxscore`` list.
+
+    Returns dict mapping ``"home"`` / ``"away"`` to a dict of
+    category → list-of-stats, or empty dict if unavailable.
+
+    Fields commonly found inside each category:
+      offensive  → expectedGoals, shotsTotal, shotsOnGoal, shotsOffGoal,
+                    blockedShots, shotsInsideBox, shotsOutsideBox
+      defensive  → tackles, clearances, interceptions, blocks, aerialsWon,
+                    duelsWon, recoveries
+      passing    → passesTotal, passesAccurate, passAccuracy, longPasses,
+                    crosses, keyPasses, throughBalls
+      possession → possessionPct, possession90, dominantThird
+      cards      → yellowCards, redCards, fouls
+    """
+    team_stats = summary_data.get("teamStats")
+    if not isinstance(team_stats, dict):
+        return {}
+
+    result = {}
+    for side_key in ("home", "away"):
+        side = team_stats.get(side_key)
+        if not isinstance(side, dict):
+            continue
+        categories = side.get("statistics") or side.get("categories") or []
+        if isinstance(categories, list):
+            side_out = {}
+            for cat in categories:
+                if not isinstance(cat, dict):
+                    continue
+                cat_name = str(cat.get("name", cat.get("displayName", "")))
+                stats_list = cat.get("stats") or cat.get("statistics") or []
+                if not isinstance(stats_list, list):
+                    continue
+                parsed_stats = []
+                for s in stats_list:
+                    if not isinstance(s, dict):
+                        continue
+                    parsed_stats.append({
+                        "name": s.get("name", ""),
+                        "display_name": s.get("displayName", s.get("label", "")),
+                        "value": s.get("displayValue", s.get("value", "")),
+                    })
+                if parsed_stats:
+                    side_out[cat_name] = parsed_stats
+            if side_out:
+                result[side_key] = side_out
+
+    return result
+
+
+def _load_static_predictions(path):
+    if not path or not os.path.exists(path):
+        return {}, set()
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return {}, set()
+    if df.empty:
+        return {}, set()
+
+    lower_cols = {str(col).strip().lower(): col for col in df.columns}
+    def find_col(*names):
+        for name in names:
+            col = lower_cols.get(name)
+            if col is not None:
+                return col
+        return None
+
+    home_col = find_col("home_team", "hometeam", "home")
+    away_col = find_col("away_team", "awayteam", "away")
+    if home_col is None or away_col is None:
+        return {}, set()
+
+    comp_col = find_col("competition", "league")
+    result_col = find_col("predicted_result", "prediction", "result")
+    ph_col = find_col("prob_home", "prob_h", "home_prob")
+    pd_col = find_col("prob_draw", "prob_d", "draw_prob")
+    pa_col = find_col("prob_away", "prob_a", "away_prob")
+    hg_col = find_col("pred_home_goals", "home_goals")
+    ag_col = find_col("pred_away_goals", "away_goals")
+    hs_col = find_col("pred_home_shots", "home_shots")
+    as_col = find_col("pred_away_shots", "away_shots")
+    hst_col = find_col("pred_home_sot", "home_sot")
+    ast_col = find_col("pred_away_sot", "away_sot")
+
+    lookup = {}
+    teams = set()
+    for _, row in df.iterrows():
+        home_raw = row.get(home_col)
+        away_raw = row.get(away_col)
+        home = str(home_raw or "").strip()
+        away = str(away_raw or "").strip()
+        if not home or not away:
+            continue
+        key = (_normalize_team_key(home), _normalize_team_key(away))
+        record = {
+            "home_team": home,
+            "away_team": away,
+            "competition": str(row.get(comp_col, "")).strip() if comp_col else "",
+            "predicted_result": str(row.get(result_col, "")).strip().upper() if result_col else "",
+            "prob_home": _to_float(row.get(ph_col)) if ph_col else 0.0,
+            "prob_draw": _to_float(row.get(pd_col)) if pd_col else 0.0,
+            "prob_away": _to_float(row.get(pa_col)) if pa_col else 0.0,
+            "pred_home_goals": _to_float(row.get(hg_col)) if hg_col else 0.0,
+            "pred_away_goals": _to_float(row.get(ag_col)) if ag_col else 0.0,
+            "pred_home_shots": _to_float(row.get(hs_col)) if hs_col else 0.0,
+            "pred_away_shots": _to_float(row.get(as_col)) if as_col else 0.0,
+            "pred_home_sot": _to_float(row.get(hst_col)) if hst_col else 0.0,
+            "pred_away_sot": _to_float(row.get(ast_col)) if ast_col else 0.0,
+        }
+        hg = record.get("pred_home_goals", 0.0)
+        ag = record.get("pred_away_goals", 0.0)
+        try:
+            goal_probs = pm_global.compute_goal_probabilities(float(hg), float(ag))
+        except Exception:
+            goal_probs = {}
+        for gp_key in ["prob_home_goals_0", "prob_home_goals_1plus", "prob_home_goals_2plus",
+                        "prob_away_goals_0", "prob_away_goals_1plus", "prob_away_goals_2plus",
+                        "prob_both_score", "prob_over_1_5", "prob_over_2_5", "prob_over_3_5"]:
+            record[gp_key] = goal_probs.get(gp_key, None)
+        lookup[key] = record
+        teams.add(home)
+        teams.add(away)
+
+    return lookup, teams
+
+
+def _get_static_predictions(mode):
+    if mode == "mls":
+        path = STATIC_PREDICTIONS_MLS_FILE
+    elif mode == "extra":
+        path = STATIC_PREDICTIONS_EXTRA_FILE
+    else:
+        path = STATIC_PREDICTIONS_GLOBAL_FILE
+    if not path or not os.path.exists(path):
+        return {}, set()
+    mtime = os.path.getmtime(path)
+    if STATIC_PREDICTIONS_CACHE:
+        cache = _static_predictions_cache.get(mode)
+        if cache and cache.get("path") == path and cache.get("mtime") == mtime:
+            return cache["lookup"], cache["teams"]
+
+    lookup, teams = _load_static_predictions(path)
+    if STATIC_PREDICTIONS_CACHE:
+        _static_predictions_cache[mode] = {"path": path, "mtime": mtime, "lookup": lookup, "teams": teams}
+    return lookup, teams
+
+
+def _load_teams_from_team_data(pm_mod):
+    overall = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "overall_teams.json")) or {}
+    teams = []
+    if isinstance(overall, dict):
+        teams = list(overall.keys())
+    if not teams:
+        season_teams = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "season_teams.json")) or {}
+        if isinstance(season_teams, dict):
+            for season_map in season_teams.values():
+                if isinstance(season_map, dict):
+                    teams.extend(list(season_map.keys()))
+    return sorted({str(team).strip() for team in teams if str(team).strip()})
+
+
+def _load_h2h_and_form(pm_mod, use_cache=True):
+    cache_key = pm_mod.TEAM_DATA_DIR
+    if use_cache and cache_key in _h2h_form_cache:
+        mtime_sum, result = _h2h_form_cache[cache_key]
+        # Check if either JSON file has changed since we cached.
+        h2h_path = os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json")
+        form_path = os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json")
+        current_sum = 0.0
+        for p in (h2h_path, form_path):
+            try:
+                current_sum += os.path.getmtime(p)
+            except Exception:
+                pass
+        if current_sum == mtime_sum:
+            return result
+    head_to_head = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json"))
+    current_form = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json"))
+    try:
+        matches, season_files = pm_mod.load_training_matches(pm_mod.PROCESSED_DIR)
+    except (ValueError, FileNotFoundError, OSError):
+        return head_to_head or {}, {"teams": {}}
+    dynamic_form = pm_mod.build_dynamic_form_from_matches(matches)
+
+    if (
+        head_to_head is None
+        or current_form is None
+        or not isinstance(head_to_head, dict)
+        or not isinstance(current_form, dict)
+    ):
+        _, _, head_to_head, current_form = pm_mod.build_fallback_data(matches, season_files)
+
+    try:
+        head_to_head = pm_mod.replace_nan_with_sentinel(head_to_head)
+        current_form = pm_mod.replace_nan_with_sentinel(current_form)
+    except Exception:
+        pass
+
+    if not isinstance(current_form, dict):
+        current_form = {"teams": {}}
+    if "teams" not in current_form or not isinstance(current_form["teams"], dict):
+        current_form["teams"] = {}
+
+    current_form_teams = current_form["teams"]
+    for team, stats in dynamic_form.items():
+        if team not in current_form_teams or not isinstance(current_form_teams.get(team), dict):
+            current_form_teams[team] = stats
+            continue
+
+        for key, value in stats.items():
+            if key not in current_form_teams[team] or current_form_teams[team][key] is None:
+                current_form_teams[team][key] = value
+
+    result = (head_to_head or {}, current_form)
+    if use_cache:
+        # Compute an mtime summary for cache invalidation.
+        mtime_sum = 0.0
+        for p in (os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json"),
+                  os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json")):
+            try:
+                mtime_sum += os.path.getmtime(p)
+            except Exception:
+                pass
+        _h2h_form_cache[cache_key] = (mtime_sum, result)
+    return result
+
+def _load_context(pm_mod):
+    """Load cached model bundle and supporting team data for one predictor mode."""
+    matches, season_files = pm_mod.load_training_matches(pm_mod.PROCESSED_DIR)
+
+    if not os.path.exists(pm_mod.MODEL_CACHE):
+        raise FileNotFoundError(
+            f"Model cache not found at {pm_mod.MODEL_CACHE}. Run Predict_Match.py once first."
+        )
+
+    bundle = joblib.load(pm_mod.MODEL_CACHE)
+    fingerprint = pm_mod.data_fingerprint(season_files)
+    if bundle.get("fingerprint") != fingerprint:
+        bt = bundle.get("build_time")
+        if bt is None or (time.time() - bt) >= 604800:
+            raise RuntimeError(
+                "Model cache is stale for current processed data. Rebuild by running Predict_Match.py."
+            )
+
+    overall_teams = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "overall_teams.json"))
+    season_teams = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "season_teams.json"))
+    head_to_head = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json"))
+    current_form = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json"))
+    league_strength = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "league_strength.json")) or {}
+    market_value_data = pm_mod.load_json_if_exists(
+        os.path.join(pm_mod.TEAM_DATA_DIR, "mls_squad_values.json")
+    ) or {}
+    dynamic_form = pm_mod.build_dynamic_form_from_matches(matches)
+
+    if (
+        overall_teams is None
+        or season_teams is None
+        or head_to_head is None
+        or current_form is None
+        or not isinstance(overall_teams, dict)
+        or len(overall_teams) == 0
+    ):
+        overall_teams, season_teams, head_to_head, current_form = pm_mod.build_fallback_data(matches, season_files)
+
+    overall_teams = pm_mod.replace_nan_with_sentinel(overall_teams)
+    season_teams = pm_mod.replace_nan_with_sentinel(season_teams)
+    head_to_head = pm_mod.replace_nan_with_sentinel(head_to_head)
+    current_form = pm_mod.replace_nan_with_sentinel(current_form)
+    league_strength = pm_mod.replace_nan_with_sentinel(league_strength)
+
+    if not isinstance(current_form, dict):
+        current_form = {"teams": {}}
+    if "teams" not in current_form or not isinstance(current_form["teams"], dict):
+        current_form["teams"] = {}
+    current_form_teams = current_form["teams"]
+    for team, stats in dynamic_form.items():
+        if team not in current_form_teams or not isinstance(current_form_teams.get(team), dict):
+            current_form_teams[team] = stats
+            continue
+        existing = current_form_teams[team]
+        for key, value in stats.items():
+            if key not in existing or existing.get(key) in (None, "", 0, 0.0):
+                existing[key] = value
+
+    team_competition_map = {}
+    for _, row in matches.iterrows():
+        team_competition_map[row["HomeTeam"]] = row["competition"]
+        team_competition_map[row["AwayTeam"]] = row["competition"]
+
+    latest_season = season_files[-1].replace(".csv", "")
+    latest_start_year = max(pm_mod.parse_start_year_from_key(key) for key in season_teams.keys())
+    available_teams = sorted(set(matches["HomeTeam"].dropna()) | set(matches["AwayTeam"].dropna()))
+
+    return PredictorContext(
+        pm=pm_mod,
+        clf=bundle["clf"],
+        result_label_encoder=bundle["result_label_encoder"],
+        home_goal_reg=bundle["home_goal_reg"],
+        away_goal_reg=bundle["away_goal_reg"],
+        home_shot_reg=bundle["home_shot_reg"],
+        away_shot_reg=bundle["away_shot_reg"],
+        home_sot_reg=bundle["home_sot_reg"],
+        away_sot_reg=bundle["away_sot_reg"],
+        train_columns=bundle["train_columns"],
+        overall_teams=overall_teams,
+        season_teams=season_teams,
+        head_to_head=head_to_head,
+        current_form=current_form,
+        league_strength=league_strength,
+        latest_season=latest_season,
+        latest_start_year=latest_start_year,
+        team_competition_map=team_competition_map,
+        available_teams=available_teams,
+        market_value_data=market_value_data,
+    )
+
+
+def _latest_season_for_competition(season_teams, competition, fallback, parse_start_year):
+    """Return latest season key for competition or fallback when unknown."""
+    competition = str(competition or "").strip()
+    if not competition:
+        return fallback
+    best_key = None
+    best_year = -1
+    prefix = f"{competition}/"
+    for season_key in season_teams.keys():
+        if not str(season_key).startswith(prefix):
+            continue
+        year = parse_start_year(season_key)
+        if year > best_year:
+            best_year = year
+            best_key = season_key
+    return best_key or fallback
+
+
+def _utc_to_et(utc_str):
+    """Convert a UTC datetime string to ET; return empty string on failure."""
+    try:
+        if not utc_str:
+            return ""
+        dt = pd.to_datetime(str(utc_str), utc=True)
+        if pd.isna(dt):
+            return ""
+        return dt.tz_convert(ZoneInfo("America/New_York")).strftime("%Y-%m-%dT%H:%M:%S%z")
+    except Exception:
+        return ""
+
+
+# ── Live Score Poller ───────────────────────────────────────────
+
+LIVE_SCORE_FETCH_TIMEOUT = 15
+
+
+def _parse_espn_live_event(event):
+    """Parse a single ESPN event dict into a minimal live-score payload."""
+    try:
+        comp = event.get("competitions") or [{}]
+        comp_data = comp[0] if comp else {}
+        competitors = comp_data.get("competitors") or []
+        if len(competitors) < 2:
+            return None
+        home = competitors[0] if competitors[0].get("homeAway") == "home" else competitors[1]
+        away = competitors[1] if competitors[0].get("homeAway") == "home" else competitors[0]
+        status = comp_data.get("status") or {}
+        type_detail = status.get("type") or {}
+        state = type_detail.get("state", "pre")
+        detail = type_detail.get("detail", "")
+        clock = comp_data.get("clock") or ""
+        display_clock = f"{clock} {detail}" if clock else detail
+
+        home_team_name = str(home.get("team", {}).get("displayName", ""))
+        away_team_name = str(away.get("team", {}).get("displayName", ""))
+
+        goalscorers = []
+        red_cards = []
+        details = comp_data.get("details") or []
+        home_team_id = str(home.get("id", ""))
+        away_team_id = str(away.get("id", ""))
+        for d in details:
+            side = "home" if str(d.get("team", {}).get("id", "")) == home_team_id else "away"
+            if d.get("scoringPlay"):
+                athletes = d.get("athletesInvolved") or [{}]
+                athlete = athletes[0] if athletes else {}
+                goalscorers.append({
+                    "team": side,
+                    "scorer": str(athlete.get("displayName", d.get("text", ""))),
+                    "minute": str(d.get("clock", {}).get("displayValue", "")),
+                    "type": str(d.get("type", {}).get("text", "")),
+                })
+            elif d.get("redCard"):
+                athletes = d.get("athletesInvolved") or [{}]
+                athlete = athletes[0] if athletes else {}
+                red_cards.append({
+                    "team": side,
+                    "player": str(athlete.get("displayName", "")),
+                    "minute": str(d.get("clock", {}).get("displayValue", "")),
+                })
+
+        # ── Bracket / round info from ESPN tournament data ────
+        tournament_info = comp_data.get("tournament") or {}
+        round_info = comp_data.get("round") or {}
+        round_name = str(round_info.get("name", "")) or str(tournament_info.get("round", ""))
+        bracket_slot = _to_int(round_info.get("number", round_info.get("position", 0)))
+
+        # ── Game statistics ────────────────────────────────
+        EXCLUDED_STATS = {"shotAssists", "goalAssists", "appearances"}
+        home_stats = {}
+        for s in (home.get("statistics") or []):
+            if s.get("name") not in EXCLUDED_STATS:
+                home_stats[s["name"]] = s.get("displayValue", "")
+        away_stats = {}
+        for s in (away.get("statistics") or []):
+            if s.get("name") not in EXCLUDED_STATS:
+                away_stats[s["name"]] = s.get("displayValue", "")
+
+        raw_date = event.get("date", "")
+        parsed_dt = pd.to_datetime(raw_date, utc=True, errors="coerce")
+        match_date_str = ""
+        if pd.notna(parsed_dt):
+            try:
+                match_date_str = parsed_dt.tz_convert(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+            except Exception:
+                match_date_str = raw_date[:10] if len(raw_date) >= 10 else ""
+
+        result = {
+            "match_id": str(event.get("id", "")),
+            "home_team": home_team_name,
+            "away_team": away_team_name,
+            "home_team_id": home_team_id,
+            "away_team_id": away_team_id,
+            "home_score": _to_int(home.get("score")),
+            "away_score": _to_int(away.get("score")),
+            "status": state,
+            "period": detail,
+            "clock": display_clock.strip(),
+            "kickoff_utc": _utc_to_et(raw_date),
+            "match_date": match_date_str,
+            "goalscorers": goalscorers,
+            "red_cards": red_cards,
+        }
+        if home_stats:
+            result["home_stats"] = home_stats
+        if away_stats:
+            result["away_stats"] = away_stats
+        if round_name:
+            result["round"] = round_name
+            result["round_order"] = bracket_slot
+        return result
+    except Exception:
+        return None
+
+
+def _load_live_score_history():
+    if not os.path.exists(LIVE_SCORE_HISTORY_FILE):
+        return []
+    try:
+        with open(LIVE_SCORE_HISTORY_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _save_live_score_history(games):
+    os.makedirs(os.path.dirname(LIVE_SCORE_HISTORY_FILE), exist_ok=True)
+    with open(LIVE_SCORE_HISTORY_FILE, "w") as f:
+        json.dump(games, f, indent=2)
+
+
+def _merge_completed_to_history():
+    """Move finished games from _live_scores into persistent history file.
+
+    Stores all game data including summary fields (lineups, h2h, key events,
+    boxscore stats) that were merged onto game objects from ``_live_summary_cache``.
+    """
+    history = _load_live_score_history()
+    historic_ids = {g["match_id"] for g in history if g.get("match_id")}
+    new_games = []
+    cleared_standings = set()
+    with _live_scores_lock:
+        for comp_name, comp_data in _live_scores.items():
+            for g in comp_data.get("games", []):
+                if g.get("status") == "post" and g.get("match_id") not in historic_ids:
+                    entry = dict(g)
+                    entry.setdefault("competition", comp_name)
+                    entry.setdefault("completed_at", datetime.now(timezone.utc).isoformat())
+                    new_games.append(entry)
+                    historic_ids.add(entry["match_id"])
+                    cleared_standings.add(comp_name)
+    for comp in cleared_standings:
+        _clear_standings_cache(comp)
+        _clear_leaders_cache(comp)
+    if new_games:
+        history.extend(new_games)
+        history.sort(key=lambda x: x.get("kickoff_utc", ""), reverse=True)
+        _save_live_score_history(history)
+    # Track predictions for newly completed games against our CSV predictions.
+    if new_games:
+        _track_prediction_results(new_games)
+
+
+# ── Prediction Tracking ──────────────────────────────────────
+
+_UEFA_COMPETITIONS = {
+    "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+    "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
+}
+
+_UPCOMING_CSV_MODE_MAP = {
+    "England/Premier League": "global",
+    "England/Championship": "global",
+    "Spain/La Liga": "global",
+    "Spain/La Liga 2": "global",
+    "Italy/Serie A": "global",
+    "Italy/Serie B": "global",
+    "Germany/Bundesliga": "global",
+    "Germany/Bundesliga 2": "global",
+    "France/Ligue 1": "global",
+    "France/Ligue 2": "global",
+    "Portugal/Liga Portugal": "global",
+    "Netherlands/Eredivisie": "global",
+    "England/FA Cup": "cups",
+    "England/League Cup": "cups",
+    "UEFA/Champions League": "cups",
+    "UEFA/Europa League": "cups",
+    "UEFA/Conference League": "cups",
+    "Europe/Champions League": "cups",
+    "Europe/Europa League": "cups",
+    "Europe/Conference League": "cups",
+    "Italy/Coppa Italia": "cups",
+    "Spain/Copa del Rey": "cups",
+    "Germany/DFB-Pokal": "cups",
+    "France/Coupe de France": "cups",
+    "United States/US Open Cup": "cups",
+    "FIFA/World Cup": "national",
+    "FIFA/World Cup Qualifying - UEFA": "national",
+    "FIFA/World Cup Qualifying - CONMEBOL": "national",
+    "FIFA/World Cup Qualifying - CONCACAF": "national",
+    "FIFA/World Cup Qualifying - AFC": "national",
+    "FIFA/Friendly": "national",
+    "UEFA/European Championship": "national",
+    "UEFA/Nations League": "national",
+    "CONMEBOL/Copa America": "national",
+    "CONCACAF/Gold Cup": "national",
+    "CAF/Africa Cup of Nations": "national",
+    "AFC/Asian Cup": "national",
+    "United States/MLS": "mls",
+    "Belgium/First Division A": "extra",
+    "Scotland/Premiership": "extra",
+    "Turkey/Super Lig": "extra",
+    "Austria/Bundesliga": "extra",
+    "Switzerland/Super League": "extra",
+    "Greece/Super League": "extra",
+    "Denmark/Superliga": "extra",
+    "Ukraine/Premier League": "extra",
+    "Norway/Eliteserien": "extra",
+    "Croatia/HNL": "extra",
+    "Romania/Liga I": "extra",
+    "Sweden/Allsvenskan": "extra",
+    "Hungary/NB I": "extra",
+    "Israel/Premier League": "extra",
+    "Czech Republic/First League": "extra",
+    "Poland/Ekstraklasa": "extra",
+    "Serbia/SuperLiga": "extra",
+    "Cyprus/First Division": "extra",
+    "Slovakia/Super Liga": "extra",
+    "Slovenia/PrvaLiga": "extra",
+    "Bulgaria/First League": "extra",
+    "Azerbaijan/Premier League": "extra",
+    "Kazakhstan/Premier League": "extra",
+    "Belarus/Premier League": "extra",
+    "Moldova/Super Liga": "extra",
+}
+
+
+def _get_week_start(dt, competition):
+    """Return the start of the current prediction week for a competition.
+
+    Most leagues: Thursday through Wednesday (matches on weekends).
+    UEFA competitions: Monday through Friday (UCL/UEL/UECL midweek).
+    """
+    if competition in _UEFA_COMPETITIONS:
+        return dt - timedelta(days=dt.weekday())  # Monday = 0
+    days_since_thursday = (dt.weekday() - 3) % 7
+    return dt - timedelta(days=days_since_thursday)
+
+
+def _load_prediction_tracking():
+    if not os.path.exists(PREDICTION_TRACKING_FILE):
+        return {"all_time": {"total": {"correct": 0, "incorrect": 0}, "by_league": {}},
+                "weekly": {}, "per_team": {}}
+    try:
+        with open(PREDICTION_TRACKING_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {"all_time": {"total": {"correct": 0, "incorrect": 0}, "by_league": {}},
+                "weekly": {}, "per_team": {}}
+
+
+def _save_prediction_tracking(data):
+    os.makedirs(os.path.dirname(PREDICTION_TRACKING_FILE), exist_ok=True)
+    with open(PREDICTION_TRACKING_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _load_predictions_for_competition(comp_name):
+    """Load upcoming prediction rows from the CSV matching *comp_name*."""
+    mode = _UPCOMING_CSV_MODE_MAP.get(comp_name)
+    if not mode:
+        return []
+    csv_path = _UPCOMING_CSV_FILES.get(mode)
+    if not csv_path or not os.path.exists(csv_path):
+        return []
+    try:
+        df = pd.read_csv(csv_path, dtype=str)
+    except Exception:
+        return []
+    rows = []
+    for _, row in df.iterrows():
+        comp = str(row.get("competition", "") or "").strip()
+        if comp != comp_name:
+            continue
+        rows.append({
+            "home_team": str(row.get("home_team", "") or "").strip(),
+            "away_team": str(row.get("away_team", "") or "").strip(),
+            "match_datetime_utc": _utc_to_et(str(row.get("match_datetime_utc", "") or "").strip()),
+            "predicted_result": str(row.get("predicted_result", "") or "").strip(),
+            "prob_home": str(row.get("prob_home", "") or "").strip(),
+            "prob_draw": str(row.get("prob_draw", "") or "").strip(),
+            "prob_away": str(row.get("prob_away", "") or "").strip(),
+        })
+    return rows
+
+
+def _compute_actual_result(home_score, away_score):
+    if home_score is None or away_score is None:
+        return None
+    if home_score > away_score:
+        return "H"
+    if away_score > home_score:
+        return "A"
+    return "D"
+
+
+def _ensure(d, *keys):
+    for k in keys:
+        d = d.setdefault(k, {"correct": 0, "incorrect": 0})
+    return d
+
+
+def _track_prediction_results(completed_games):
+    """Match completed ESPN games against our CSV predictions and update tracking."""
+    tracking = _load_prediction_tracking()
+    now = datetime.now()
+    for g in completed_games:
+        comp = g.get("competition", "")
+        home = g.get("home_team", "").strip().lower()
+        away = g.get("away_team", "").strip().lower()
+        hs = g.get("home_score")
+        aws = g.get("away_score")
+        actual = _compute_actual_result(hs, aws)
+        if not actual:
+            continue
+
+        # Find matching prediction row
+        predictions = _load_predictions_for_competition(comp)
+        matched = None
+        for p in predictions:
+            if p["home_team"].strip().lower() == home and p["away_team"].strip().lower() == away:
+                matched = p
+                break
+            # Try reversed (home/away might be swapped in CSV)
+            if p["home_team"].strip().lower() == away and p["away_team"].strip().lower() == home:
+                matched = p
+                actual = {"H": "A", "A": "H", "D": "D"}[actual]
+                break
+
+        if not matched:
+            continue
+
+        pred = matched["predicted_result"]
+        correct = pred == actual
+
+        # -- All-time --
+        _ensure(tracking, "all_time", "total")
+        if correct:
+            tracking["all_time"]["total"]["correct"] += 1
+        else:
+            tracking["all_time"]["total"]["incorrect"] += 1
+
+        _ensure(tracking, "all_time", "by_league", comp)
+        if correct:
+            tracking["all_time"]["by_league"][comp]["correct"] += 1
+        else:
+            tracking["all_time"]["by_league"][comp]["incorrect"] += 1
+
+        # -- Weekly --
+        week_start = _get_week_start(now, comp)
+        week_key = week_start.isoformat()
+        weekly = tracking.setdefault("weekly", {})
+        current_week = weekly.setdefault(week_key, {"week_start": week_key, "by_league": {}})
+        wl = current_week["by_league"].setdefault(comp, {"correct": 0, "incorrect": 0})
+        if correct:
+            wl["correct"] += 1
+        else:
+            wl["incorrect"] += 1
+
+        # -- Per-team tracking (last 10) --
+        teams_to_update = [
+            (g.get("home_team", "").strip(), g.get("away_team", "").strip()),
+            (g.get("away_team", "").strip(), g.get("home_team", "").strip()),
+        ]
+        for team_name, opponent in teams_to_update:
+            if not team_name:
+                continue
+            pentry = {
+                "match_id": g.get("match_id", ""),
+                "opponent": opponent,
+                "competition": comp,
+                "prediction": pred,
+                "prob_home": matched.get("prob_home", ""),
+                "prob_draw": matched.get("prob_draw", ""),
+                "prob_away": matched.get("prob_away", ""),
+                "actual_result": actual,
+                "correct": correct,
+                "kickoff_utc": _utc_to_et(g.get("kickoff_utc", "")),
+            }
+            pt = tracking.setdefault("per_team", {})
+            tdata = pt.setdefault(team_name, {"predictions": []})
+            tdata["predictions"].insert(0, pentry)
+            tdata["predictions"] = tdata["predictions"][:10]
+            total = len(tdata["predictions"])
+            tdata["total"] = total
+            tdata["accuracy"] = round(sum(1 for x in tdata["predictions"] if x["correct"]) / total, 3) if total else 0
+
+    _save_prediction_tracking(tracking)
+
+
+def _fetch_competition_scores(comp_name, espn_id, today_str):
+    """Fetch ESPN scoreboard for one competition/date, return parsed games."""
+    url = f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard?dates={today_str}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception:
+        return []
+    events = data.get("events") or []
+    games = []
+    for ev in events:
+        parsed = _parse_espn_live_event(ev)
+        if parsed:
+            parsed["competition"] = comp_name
+            games.append(parsed)
+    return games
+
+
+# ── ESPN data-fetch helpers (schedule, teams, roster) ────────
+
+_TEAMS_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_ROSTER_CACHE: dict[str, tuple[float, dict]] = {}
+_SCHEDULE_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_ESPN_CACHE_TTL = 600  # 10 minutes for stable data (teams, rosters)
+
+
+def _fetch_espn_json(url):
+    """Fetch and parse JSON from an ESPN API URL. Returns None on failure."""
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
+            return json.loads(resp.read().decode())
+    except Exception:
+        return None
+
+
+def _fetch_competition_teams(comp_name, espn_id):
+    """Return list of teams in a competition from ESPN."""
+    cache_key = f"teams_{comp_name}"
+    now = time.time()
+    cached = _TEAMS_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _ESPN_CACHE_TTL:
+        return cached[1]
+    data = _fetch_espn_json(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/teams")
+    if data is None:
+        return None
+    teams = []
+    for team in (data.get("sports") or [{}])[0].get("leagues") or [{}]:
+        for t in team.get("teams") or []:
+            entry = t.get("team", t)
+            teams.append({
+                "id": str(entry.get("id", "")),
+                "abbreviation": str(entry.get("abbreviation", "")),
+                "display_name": str(entry.get("displayName", "")),
+                "short_name": str(entry.get("shortDisplayName", "")),
+                "logo": str(entry.get("logo", "")),
+            })
+    _TEAMS_CACHE[cache_key] = (now, teams)
+    return teams
+
+
+def _fetch_team_info(comp_name, espn_id, team_id):
+    """Return full team info including roster from ESPN."""
+    cache_key = f"roster_{comp_name}_{team_id}"
+    now = time.time()
+    cached = _ROSTER_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _ESPN_CACHE_TTL:
+        return cached[1]
+    data = _fetch_espn_json(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/teams/{team_id}")
+    if data is None:
+        return None
+    team = data.get("team", data)
+    result = {
+        "id": str(team.get("id", "")),
+        "display_name": str(team.get("displayName", "")),
+        "abbreviation": str(team.get("abbreviation", "")),
+        "location": str(team.get("location", "")),
+        "logo": str(team.get("logo", "")),
+        "color": str(team.get("color", "")),
+        "record": _parse_espn_team_record(team),
+    }
+    # Athletes / roster
+    athletes = []
+    for entry in team.get("athletes") or []:
+        for a in (entry if isinstance(entry, list) else [entry]):
+            athlete = a.get("athlete", a) if isinstance(a, dict) else a
+            athletes.append({
+                "id": str(athlete.get("id", "")),
+                "full_name": str(athlete.get("fullName", "")),
+                "short_name": str(athlete.get("shortName", "")),
+                "jersey": str(athlete.get("jersey", "")),
+                "position": str(athlete.get("position", {}).get("abbreviation", "")),
+                "position_name": str(athlete.get("position", {}).get("displayName", "")),
+                "age": athlete.get("age"),
+                "height": str(athlete.get("height", "")),
+                "weight": str(athlete.get("weight", "")),
+                "birth_place": str(athlete.get("birthPlace", {}).get("city", "")),
+                "nationality": str(athlete.get("nationality", "")),
+                "headshot": str(athlete.get("headshot", {}).get("href", "")),
+            })
+    if athletes:
+        result["roster"] = athletes
+
+    # Season stats
+    stats = []
+    for s in (team.get("seasonStats") or []):
+        stats.append({
+            "name": str(s.get("name", "")),
+            "display_name": str(s.get("displayName", "")),
+            "value": s.get("displayValue", ""),
+        })
+    if stats:
+        result["season_stats"] = stats
+
+    _ROSTER_CACHE[cache_key] = (now, result)
+    return result
+
+
+def _parse_espn_team_record(team):
+    """Extract win/loss/draw record from an ESPN team response."""
+    record_summary = str(team.get("recordSummary", ""))
+    record_data = {}
+    records = team.get("record") or []
+    for r in records:
+        rtype = str(r.get("type", ""))
+        stats = r.get("stats") or []
+        for s in stats:
+            record_data[rtype] = record_data.get(rtype, {})
+            record_data[rtype][str(s.get("name", ""))] = s.get("value", s.get("displayValue", ""))
+    return {
+        "summary": record_summary,
+        "details": record_data,
+    }
+
+
+def _fetch_competition_schedule(comp_name, espn_id, days_forward=90):
+    """Fetch full schedule for a competition from today to *days_forward* out."""
+    cache_key = f"sched_{comp_name}"
+    now = time.time()
+    cached = _SCHEDULE_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _ESPN_CACHE_TTL:
+        return cached[1]
+    today_str = date.today().strftime("%Y%m%d")
+    end = (date.today() + timedelta(days=days_forward)).strftime("%Y%m%d")
+    data = _fetch_espn_json(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard?dates={today_str}-{end}")
+    if data is None:
+        return None
+    games = []
+    for ev in (data.get("events") or []):
+        parsed = _parse_espn_live_event(ev)
+        if parsed:
+            parsed["competition"] = comp_name
+            games.append(parsed)
+    _SCHEDULE_CACHE[cache_key] = (now, games)
+    return games
+
+
+_STANDINGS_STAT_NAMES = {
+    "points": "points",
+    "rank": "rank",
+    "gamesPlayed": "played",
+    "wins": "wins",
+    "losses": "losses",
+    "ties": "draws",
+    "goalsFor": "goals_for",
+    "goalsAgainst": "goals_against",
+    "goalDifference": "goal_difference",
+    "form": "form",
+    "winPct": "win_pct",
+    "gamesBehind": "gb",
+    "streak": "streak",
+}
+
+
+def _parse_standings_entry(entry):
+    """Parse a single ESPN standings entry into a normalized dict."""
+    team = entry.get("team") or {}
+    stats_raw = {s["name"]: s["value"] for s in (entry.get("stats") or []) if s.get("name") is not None}
+    result = {"team": str(team.get("displayName", "")), "team_id": str(team.get("id", ""))}
+    for espn_name, our_name in _STANDINGS_STAT_NAMES.items():
+        val = stats_raw.get(espn_name)
+        if val is not None:
+            try:
+                result[our_name] = int(float(val))
+            except (ValueError, TypeError):
+                result[our_name] = str(val)
+    return result
+
+
+def _fetch_standings(comp_name, espn_id):
+    """Fetch and parse ESPN standings for a competition.
+
+    Tries the basic URL first, then falls back to season-specific URLs
+    to handle competitions whose season has ended (European leagues in June,
+    etc.).  Returns a normalized dict or None.
+    """
+    now = datetime.now()
+    # Derive candidate season years: current year, then the most recent
+    # European season start (current_year-1 if before August, else current_year).
+    candidate_seasons = [str(now.year)]
+    if now.month < 8:
+        candidate_seasons.append(str(now.year - 1))
+    else:
+        candidate_seasons.append(str(now.year))
+    candidate_urls = [f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/standings"]
+    for s in candidate_seasons:
+        candidate_urls.append(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/standings?season={s}")
+
+    data = None
+    for url in candidate_urls:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
+                data = json.loads(resp.read().decode())
+            if data.get("standings"):
+                break
+        except Exception:
+            continue
+
+    if data is None:
+        return None
+
+    standings_list = data.get("standings") or []
+    if not standings_list:
+        return None
+
+    # Find the "total" or "overall" standing type (ignore home/away splits).
+    primary = standings_list[0]
+    for s in standings_list:
+        if s.get("type") in ("total", "overall"):
+            primary = s
+            break
+
+    groups = []
+    children = primary.get("children")
+    if children:
+        # Group/tournament format (World Cup groups, UCL groups, etc.)
+        for child in children:
+            group_name = str(child.get("name", "")) or str(child.get("abbreviation", ""))
+            entries = [_parse_standings_entry(e) for e in (child.get("entries") or [])]
+            entries.sort(key=lambda x: x.get("rank", 999))
+            groups.append({"name": group_name, "entries": entries})
+    else:
+        # Single league table format
+        entries = [_parse_standings_entry(e) for e in (primary.get("entries") or [])]
+        entries.sort(key=lambda x: x.get("rank", 999))
+        groups.append({"name": str(primary.get("name", "Overall")), "entries": entries})
+
+    if not groups:
+        return None
+
+    return {
+        "competition": comp_name,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "groups": groups,
+    }
+
+
+# ── Computed standings from live-score history ────────────────
+
+# ── MLS conference helpers ───────────────────────────────────
+MLS_EASTERN_CONFERENCE_TEAMS = frozenset({
+    "Atlanta Utd", "CF Montreal", "Charlotte", "Chicago Fire", "Columbus Crew",
+    "DC United", "FC Cincinnati", "Inter Miami", "Nashville SC", "New England Revolution",
+    "New York City", "New York Red Bulls", "Orlando City", "Philadelphia Union", "Toronto FC",
+})
+
+MLS_WESTERN_CONFERENCE_TEAMS = frozenset({
+    "Austin FC", "Colorado Rapids", "FC Dallas", "Houston Dynamo", "Los Angeles Galaxy",
+    "Los Angeles FC", "Minnesota United", "Portland Timbers", "Real Salt Lake", "San Diego FC",
+    "San Jose Earthquakes", "Seattle Sounders", "Sporting Kansas City", "St. Louis City",
+    "Vancouver Whitecaps",
+})
+
+def _mls_conference(team_name):
+    n = str(team_name).replace(" FC", "").replace("United", "United").strip().lower()
+    for t in MLS_EASTERN_CONFERENCE_TEAMS:
+        if t.lower() in n or n in t.lower():
+            return "east"
+    for t in MLS_WESTERN_CONFERENCE_TEAMS:
+        if t.lower() in n or n in t.lower():
+            return "west"
+    return None
+
+
+# ── Belgian 2-phase constants ────────────────────────────────
+BELGIAN_REGULAR_LIMIT = 30  # 16 teams × 2 rounds
+
+
+def _compute_standings_from_history(comp_name):
+    """Compute league / group standings purely from completed live-score results.
+
+    Handles:
+      - single-table (standard league)
+      - group-stage (World Cup, UCL groups)
+      - MLS conferences (east / west split)
+      - Belgian Pro League 2-phase detection (regular table until phase 2 starts)
+      - Scottish Premiership split (top 6 / bottom 6 after 33 games)
+      - UEFA league-phase format (single table, then knockout)
+    Applies correct tiebreakers per league (GD-first vs H2H-first).
+    Returns ``None`` if no completed games are available.
+    """
+    history = _load_live_score_history()
+    # Also include any post games still in _live_scores (not yet merged)
+    with _live_scores_lock:
+        for comp_data in _live_scores.values():
+            for g in comp_data.get("games", []):
+                if g.get("status") == "post":
+                    entry = dict(g)
+                    entry.setdefault("competition", next(
+                        (k for k, v in _live_scores.items() if v is comp_data), comp_name,
+                    ))
+                    history.append(entry)
+
+    comp_games = [g for g in history
+                  if g.get("competition") == comp_name and g.get("status") == "post"
+                  and g.get("home_score") is not None and g.get("away_score") is not None]
+    if not comp_games:
+        return None
+
+    # Detect group format: any game with "group" in round name
+    has_groups = any("group" in str(g.get("round", "")).lower() for g in comp_games)
+
+    def _extract_group(round_name):
+        """Extract group label from ESPN round name e.g. 'Group Stage - Group A' → 'A'."""
+        m = re.search(r'Group\s+([A-Z0-9]+)', round_name)
+        if m:
+            return m.group(1)
+        parts = round_name.replace("Group Stage", "").replace("-", "").split()
+        for p in parts:
+            if p.strip():
+                return p.strip()[:3]
+        return ""
+
+    def _h2h_scores(tied_teams, all_matches):
+        """Head-to-head points, GD, GF among a set of tied teams."""
+        scores = {t: {"pts": 0, "gd": 0, "gf": 0} for t in tied_teams}
+        ts = set(tied_teams)
+        for home, away, hg, ag in all_matches:
+            if home in ts and away in ts:
+                if hg > ag:
+                    scores[home]["pts"] += 3
+                elif ag > hg:
+                    scores[away]["pts"] += 3
+                else:
+                    scores[home]["pts"] += 1
+                    scores[away]["pts"] += 1
+                scores[home]["gd"] += hg - ag
+                scores[home]["gf"] += hg
+                scores[away]["gd"] += ag - hg
+                scores[away]["gf"] += ag
+        return scores
+
+    def _init_table(teams):
+        table = {}
+        for t in sorted(teams):
+            table[t] = {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0}
+        return table
+
+    def _apply_result(table, home, away, hg, ag):
+        hs = table.setdefault(home, {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0})
+        at = table.setdefault(away, {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0})
+        hs["P"] += 1; at["P"] += 1
+        hs["GF"] += int(hg); hs["GA"] += int(ag)
+        at["GF"] += int(ag); at["GA"] += int(hg)
+        hs["GD"] = hs["GF"] - hs["GA"]
+        at["GD"] = at["GF"] - at["GA"]
+        if hg > ag:
+            hs["W"] += 1; at["L"] += 1; hs["Pts"] += 3
+        elif ag > hg:
+            at["W"] += 1; hs["L"] += 1; at["Pts"] += 3
+        else:
+            hs["D"] += 1; at["D"] += 1; hs["Pts"] += 1; at["Pts"] += 1
+
+    def _rank_table(table, all_matches=None):
+        use_h2h = comp_name in H2H_LEAGUES and all_matches is not None
+        if not use_h2h:
+            return sorted(table.items(), key=lambda kv: (-kv[1]["Pts"], -kv[1]["GD"], -kv[1]["GF"], kv[0]))
+        from collections import defaultdict
+        pts_groups = defaultdict(list)
+        for team in table:
+            pts_groups[table[team]["Pts"]].append(team)
+        result = []
+        for pts in sorted(pts_groups, reverse=True):
+            tied = pts_groups[pts]
+            if len(tied) == 1:
+                result.append((tied[0], table[tied[0]]))
+            else:
+                h2h = _h2h_scores(tied, all_matches)
+                sorted_tied = sorted(
+                    tied,
+                    key=lambda t: (
+                        -h2h[t]["pts"], -h2h[t]["gd"], -h2h[t]["gf"],
+                        -table[t]["GD"], -table[t]["GF"], t,
+                    ),
+                )
+                for team in sorted_tied:
+                    result.append((team, table[team]))
+        return result
+
+    # ── League-phase format (UCL/UEL/UECL) ──────────────────────
+    is_league_phase = comp_name in _UEFA_COMPETITIONS and not has_groups
+    is_mls = comp_name == "United States/MLS"
+    is_belgian = "belgium" in comp_name.lower() or "belgian" in comp_name.lower()
+    is_scottish = "scotland" in comp_name.lower() or "scottish" in comp_name.lower()
+
+    if is_league_phase:
+        # UCL/UEL/UECL league phase: single table with all teams
+        teams = set()
+        match_records = []
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            if ht and at:
+                teams.add(ht)
+                teams.add(at)
+        if not teams:
+            return None
+        table = _init_table(teams)
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht and at:
+                _apply_result(table, ht, at, hs, as_)
+                match_records.append((ht, at, hs, as_))
+        ranked = _rank_table(table, match_records)
+        entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+        knockout_rounds = _build_knockout_framework(comp_name)
+        groups = [{"name": "League Phase", "entries": entries}]
+        response = {
+            "competition": comp_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "groups": groups,
+            "source": "computed",
+        }
+        if knockout_rounds:
+            response["knockout_rounds"] = knockout_rounds
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+    if has_groups:
+        groups_data = {}
+        group_games_map = {}
+        for g in comp_games:
+            group = _extract_group(str(g.get("round", "")))
+            if not group:
+                continue
+            group_games_map.setdefault(group, []).append(g)
+
+        for group_name in sorted(group_games_map):
+            games = group_games_map[group_name]
+            teams = set()
+            for g in games:
+                teams.add(str(g.get("home_team", "")))
+                teams.add(str(g.get("away_team", "")))
+            teams.discard("")
+            if not teams:
+                continue
+            table = _init_table(teams)
+            match_records = []
+            for g in games:
+                ht = str(g.get("home_team", ""))
+                at = str(g.get("away_team", ""))
+                hs = int(g.get("home_score", 0))
+                as_ = int(g.get("away_score", 0))
+                if ht and at:
+                    _apply_result(table, ht, at, hs, as_)
+                    match_records.append((ht, at, hs, as_))
+            ranked = _rank_table(table, match_records if comp_name in H2H_LEAGUES else None)
+            entries = []
+            for pos, (team, stats) in enumerate(ranked, 1):
+                entries.append({"team": team, "rank": pos, **stats})
+            groups_data[group_name] = {"name": group_name, "entries": entries}
+
+        if not groups_data:
+            return None
+        groups = [{"name": gn, "entries": gd["entries"]} for gn, gd in sorted(groups_data.items())]
+
+        # Add knockout framework for UEFA group-stage competitions
+        response = {
+            "competition": comp_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "groups": groups,
+            "source": "computed",
+        }
+        if comp_name in _UEFA_COMPETITIONS:
+            ko = _build_knockout_framework(comp_name)
+            if ko:
+                response["knockout_rounds"] = ko
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+    # ── MLS conference split ─────────────────────────────────
+    if is_mls:
+        teams = set()
+        match_records = []
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            if ht and at:
+                teams.add(ht)
+                teams.add(at)
+        if not teams:
+            return None
+        # Build full MLS table
+        full_table = _init_table(teams)
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht and at:
+                full_table[ht] = full_table.get(ht, _init_table([ht])[ht])
+                full_table[at] = full_table.get(at, _init_table([at])[at])
+                _apply_result(full_table, ht, at, hs, as_)
+                match_records.append((ht, at, hs, as_))
+        ranked = _rank_table(full_table, match_records)
+        all_entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+
+        # Split into conferences
+        east_teams = [t for t in teams if _mls_conference(t) == "east"]
+        west_teams = [t for t in teams if _mls_conference(t) == "west"]
+        east_table = _init_table(east_teams)
+        west_table = _init_table(west_teams)
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht in east_teams and at in east_teams:
+                _apply_result(east_table, ht, at, hs, as_)
+            if ht in west_teams and at in west_teams:
+                _apply_result(west_table, ht, at, hs, as_)
+
+        east_ranked = _rank_table(east_table)
+        west_ranked = _rank_table(west_table)
+
+        groups = [
+            {"name": "Supporters Shield", "entries": all_entries},
+            {"name": "Eastern Conference", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(east_ranked)]},
+            {"name": "Western Conference", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(west_ranked)]},
+        ]
+        response = {
+            "competition": comp_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "groups": groups,
+            "source": "computed",
+        }
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+    # ── Scottish Premiership split ───────────────────────────
+    if is_scottish:
+        teams = set()
+        match_records = []
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            if ht and at:
+                teams.add(ht)
+                teams.add(at)
+        if not teams:
+            return None
+        table = _init_table(teams)
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht and at:
+                _apply_result(table, ht, at, hs, as_)
+                match_records.append((ht, at, hs, as_))
+        ranked = _rank_table(table, match_records if comp_name in H2H_LEAGUES else None)
+        total_games = sum(1 for t, s in ranked if s["P"] > 0) and max(s["P"] for _, s in ranked) if ranked else 0
+        # Split into top 6 / bottom 6 after 33 games
+        if total_games >= 33:
+            top6 = [t for t, s in ranked[:6]]
+            bottom6 = [t for t, s in ranked[6:]]
+            top_table = {t: table[t] for t in top6 if t in table}
+            bottom_table = {t: table[t] for t in bottom6 if t in table}
+            top_ranked = _rank_table(top_table)
+            bottom_ranked = _rank_table(bottom_table)
+            groups = [
+                {"name": "Championship Group", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(top_ranked)]},
+                {"name": "Relegation Group", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(bottom_ranked)]},
+            ]
+        else:
+            entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+            groups = [{"name": "Overall", "entries": entries}]
+
+        response = {
+            "competition": comp_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "groups": groups,
+            "source": "computed",
+        }
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+    # ── Belgian Pro League (2-phase detection) ───────────────
+    if is_belgian:
+        teams = set()
+        match_records = []
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            if ht and at:
+                teams.add(ht)
+                teams.add(at)
+        if not teams:
+            return None
+        table = _init_table(teams)
+        for g in comp_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht and at:
+                _apply_result(table, ht, at, hs, as_)
+                match_records.append((ht, at, hs, as_))
+        ranked = _rank_table(table, match_records if comp_name in H2H_LEAGUES else None)
+        max_gp = max(s["P"] for _, s in ranked) if ranked else 0
+        entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+
+        if max_gp >= BELGIAN_REGULAR_LIMIT:
+            # Phase 2: split into championship / europe / relegation groups
+            championship = entries[:6]
+            europe = entries[6:12]
+            relegation = entries[12:]
+            groups = [
+                {"name": "Championship Play-off", "entries": championship},
+                {"name": "Europe Play-off", "entries": europe},
+                {"name": "Relegation Play-off", "entries": relegation},
+            ]
+        else:
+            groups = [{"name": "Regular Season", "entries": entries}]
+
+        response = {
+            "competition": comp_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "groups": groups,
+            "source": "computed",
+        }
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+    # ── Standard single table ────────────────────────────────
+    teams = set()
+    match_records = []
+    for g in comp_games:
+        ht = str(g.get("home_team", ""))
+        at = str(g.get("away_team", ""))
+        if ht and at:
+            teams.add(ht)
+            teams.add(at)
+    if not teams:
+        return None
+    table = _init_table(teams)
+    for g in comp_games:
+        ht = str(g.get("home_team", ""))
+        at = str(g.get("away_team", ""))
+        hs = int(g.get("home_score", 0))
+        as_ = int(g.get("away_score", 0))
+        if ht and at:
+            _apply_result(table, ht, at, hs, as_)
+            match_records.append((ht, at, hs, as_))
+    ranked = _rank_table(table, match_records if comp_name in H2H_LEAGUES else None)
+    entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+    groups = [{"name": "Overall", "entries": entries}]
+
+    response = {
+        "competition": comp_name,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "groups": groups,
+        "source": "computed",
+    }
+    with _real_tables_lock:
+        _real_tables[comp_name] = response
+    _persist_real_tables()
+    return response
+
+
+def _build_knockout_framework(comp_name):
+    """Return bracket topology for knockout competitions.
+
+    Returns a dict with ``knockout_rounds`` (round descriptors with match
+    slots and feeding information) and optionally ``bracket_map`` (how
+    round slots connect to subsequent rounds), or an empty dict for
+    unknown competitions.
+
+    The ``feeds_to`` field in round-level matchups tells the frontend
+    which round-name + slot the winners feed into, enabling bracket
+    rendering without hardcoded knowledge of the competition format.
+    """
+    uefa_rounds = {
+        "UEFA/Champions League": [
+            {"name": "Knockout Round Play-offs", "order": 1, "matches_count": 8},
+            {"name": "Round of 16", "order": 2, "matches_count": 8},
+            {"name": "Quarter-finals", "order": 3, "matches_count": 4,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 3, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+                 {"slot": 4, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+             ]},
+            {"name": "Semi-finals", "order": 4, "matches_count": 2},
+            {"name": "Final", "order": 5, "matches_count": 1},
+        ],
+        "UEFA/Europa League": [
+            {"name": "Knockout Round Play-offs", "order": 1, "matches_count": 8},
+            {"name": "Round of 16", "order": 2, "matches_count": 8},
+            {"name": "Quarter-finals", "order": 3, "matches_count": 4,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 3, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+                 {"slot": 4, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+             ]},
+            {"name": "Semi-finals", "order": 4, "matches_count": 2},
+            {"name": "Final", "order": 5, "matches_count": 1},
+        ],
+        "UEFA/Conference League": [
+            {"name": "Knockout Round Play-offs", "order": 1, "matches_count": 8},
+            {"name": "Round of 16", "order": 2, "matches_count": 8},
+            {"name": "Quarter-finals", "order": 3, "matches_count": 4,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 3, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+                 {"slot": 4, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+             ]},
+            {"name": "Semi-finals", "order": 4, "matches_count": 2},
+            {"name": "Final", "order": 5, "matches_count": 1},
+        ],
+        "FIFA/World Cup": [
+            {"name": "Round of 32", "order": 1, "matches_count": 16},
+            {"name": "Round of 16", "order": 2, "matches_count": 8},
+            {"name": "Quarter-finals", "order": 3, "matches_count": 4,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 3, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+                 {"slot": 4, "feeds_to": {"round": "Semi-finals", "slot": 2}},
+             ]},
+            {"name": "Semi-finals", "order": 4, "matches_count": 2},
+            {"name": "Third Place", "order": 5, "matches_count": 1},
+            {"name": "Final", "order": 6, "matches_count": 1},
+        ],
+    }
+    frameworks = {}
+    for c in ("UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+              "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
+              "FIFA/World Cup"):
+        if c in uefa_rounds:
+            frameworks[c] = uefa_rounds[c]
+        elif c.startswith("Europe/"):
+            uefa_key = "UEFA/" + c.split("/", 1)[1]
+            if uefa_key in uefa_rounds:
+                frameworks[c] = uefa_rounds[uefa_key]
+    return frameworks.get(comp_name, [])
+
+
+_RN_RE = re.compile(r"[^a-z0-9]+")
+
+# Canonical knockout JSON keys shared by World Cup projection, cup APIs,
+# mobile feed, and the iOS app (underscore form, no hyphenated round keys).
+_KNOCKOUT_STAGE_KEY_ALIASES = {
+    "round-of-32": "round_of_32",
+    "round-of-16": "round_of_16",
+    "quarter-finals": "quarterfinals",
+    "quarterfinals": "quarterfinals",
+    "semi-finals": "semifinals",
+    "semifinals": "semifinals",
+    "third-place": "third_place",
+    "knockout-round-play-offs": "knockout_round_playoffs",
+    "knockout-round-playoff": "knockout_round_playoffs",
+    "first-round-playoff": "knockout_round_playoffs",
+    "final": "final",
+}
+
+
+def _normalize_round_label(round_name):
+    """Return a safe string round label for knockout grouping."""
+    if round_name is None:
+        return "Match"
+    label = str(round_name).strip()
+    return label or "Match"
+
+
+def _round_to_stage_key(round_name):
+    """Convert a round label to the canonical underscore knockout JSON key."""
+    label = _normalize_round_label(round_name)
+    slug = _RN_RE.sub("-", label.lower()).strip("-")
+    if not slug:
+        return "match"
+    if slug in _KNOCKOUT_STAGE_KEY_ALIASES:
+        return _KNOCKOUT_STAGE_KEY_ALIASES[slug]
+    return slug.replace("-", "_")
+
+
+def _normalize_round_token(name):
+    return _RN_RE.sub("-", str(name or "").strip().lower()).strip("-")
+
+
+def _expand_two_leg_knockout(knockout_dict, two_leg_rounds):
+    """Expand two-legged knockout rounds into separate Leg 1 / Leg 2 match entries."""
+    if not knockout_dict or not two_leg_rounds:
+        return knockout_dict
+    two_leg_keys = {_normalize_round_token(r) for r in two_leg_rounds}
+    expanded = {}
+    for stage_key, matches in knockout_dict.items():
+        round_name = str(matches[0].get("round", "") or "") if matches else ""
+        stage_norm = _normalize_round_token(stage_key)
+        round_norm = _normalize_round_token(round_name)
+        is_two_leg = (
+            stage_norm in two_leg_keys
+            or round_norm in two_leg_keys
+            or any(tl in stage_norm or tl in round_norm for tl in two_leg_keys)
+        )
+        if not is_two_leg:
+            expanded[stage_key] = matches
+            continue
+        new_matches = []
+        for idx, m in enumerate(matches, start=1):
+            tie_id = m.get("slot") or m.get("tie_id") or idx
+            rnd_label = round_name or stage_key.replace("-", " ").title()
+            leg1 = dict(m)
+            leg1["leg"] = 1
+            leg1["tie_id"] = tie_id
+            leg1["label"] = f"{rnd_label} — Leg 1"
+            new_matches.append(leg1)
+            leg2 = dict(m)
+            leg2["leg"] = 2
+            leg2["tie_id"] = tie_id
+            leg2["home_team"] = m.get("away_team", "")
+            leg2["away_team"] = m.get("home_team", "")
+            leg2["label"] = f"{rnd_label} — Leg 2"
+            leg2["prob_home"] = m.get("prob_away")
+            leg2["prob_away"] = m.get("prob_home")
+            new_matches.append(leg2)
+        expanded[stage_key] = new_matches
+    return expanded
+
+
+def _gather_competition_cup_matches(comp):
+    """Collect completed, live, and projected cup matches for knockout building."""
+    matches = []
+    seen_ids = set()
+
+    history = _load_live_score_history()
+    for g in history:
+        if g.get("competition") == comp:
+            mid = g.get("match_id", "")
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    with _live_scores_lock:
+        current = _live_scores.get(comp, {}).get("games", [])
+    for g in current:
+        mid = g.get("match_id", "")
+        if mid not in seen_ids:
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket_data, dict):
+        comps = bracket_data.get("competitions", bracket_data)
+        if isinstance(comps, dict) and comp in comps:
+            entry = comps[comp]
+            if isinstance(entry, dict):
+                for rnd in entry.get("rounds") or []:
+                    rnd_name = rnd.get("name", "")
+                    for m in rnd.get("matches", []):
+                        hm = str(m.get("home_team", "") or "")
+                        aw = str(m.get("away_team", "") or "")
+                        if not hm or not aw:
+                            continue
+                        matches.append({
+                            "home_team": hm,
+                            "away_team": aw,
+                            "home_score": m.get("actual_home_goals"),
+                            "away_score": m.get("actual_away_goals"),
+                            "status": "post" if str(m.get("status", "")).lower() in ("completed", "post") else "pre",
+                            "kickoff_utc": _utc_to_et(str(m.get("match_datetime_utc", "") or "")),
+                            "round": rnd_name,
+                            "competition": comp,
+                            "match_id": str(m.get("match_id", "") or ""),
+                            "pred_home_goals": m.get("pred_home_goals"),
+                            "pred_away_goals": m.get("pred_away_goals"),
+                            "prob_home": m.get("prob_home"),
+                            "prob_draw": m.get("prob_draw"),
+                            "prob_away": m.get("prob_away"),
+                        })
+
+    odds_index = {}
+    try:
+        odds_df = pd.read_csv(CUP_UPCOMING_FILE)
+        if not odds_df.empty and all(c in odds_df.columns for c in ("home_team", "away_team", "prob_home", "prob_draw", "prob_away")):
+            for _, row in odds_df.iterrows():
+                key = (str(row["home_team"]).strip().lower(), str(row["away_team"]).strip().lower())
+                odds_index[key] = {
+                    "prob_home": _safe_float(row["prob_home"], None),
+                    "prob_draw": _safe_float(row["prob_draw"], None),
+                    "prob_away": _safe_float(row["prob_away"], None),
+                }
+    except Exception:
+        pass
+
+    for g in matches:
+        rnd = g.get("round", "") or "Match"
+        order = g.get("round_order", 0)
+        if not isinstance(order, (int, float)):
+            try:
+                order = int(order)
+            except (ValueError, TypeError):
+                order = 0
+        g["round_order"] = order
+        g["round"] = rnd
+
+        if g.get("status") == "post":
+            hs = g.get("home_score")
+            aws = g.get("away_score")
+            if hs is not None and aws is not None:
+                if hs > aws:
+                    g["winner"] = g.get("home_team", "")
+                elif aws > hs:
+                    g["winner"] = g.get("away_team", "")
+
+        if g.get("prob_home") is None:
+            hm_name = str(g.get("home_team", "")).strip().lower()
+            aw_name = str(g.get("away_team", "")).strip().lower()
+            odds = odds_index.get((hm_name, aw_name)) or odds_index.get((aw_name, hm_name), {})
+            g["prob_home"] = odds.get("prob_home")
+            g["prob_draw"] = odds.get("prob_draw")
+            g["prob_away"] = odds.get("prob_away")
+
+    return matches
+
+
+def _enrich_league_data_cup_fields(comp, payload):
+    """Add tournament winner odds and knockout bracket data for cup competitions."""
+    cup_format = _CUP_FORMATS.get(comp)
+    is_cup = comp in _CUP_FORMATS or comp in _UEFA_COMPETITIONS
+    if not is_cup:
+        return payload
+
+    if cup_format:
+        payload["cup_format"] = cup_format
+
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket_data, dict):
+        comps = bracket_data.get("competitions", bracket_data)
+        if isinstance(comps, dict) and comp in comps:
+            entry = comps[comp]
+            if isinstance(entry, dict):
+                for key in ("champion", "simulations_run", "winner_probabilities"):
+                    if key in entry:
+                        payload[key] = entry[key]
+                probs = entry.get("winner_probabilities") or {}
+                if probs:
+                    winners = []
+                    for team, pct in sorted(probs.items(), key=lambda x: -(x[1] or 0)):
+                        pct_f = float(pct or 0)
+                        display_pct = round(pct_f * 100, 2) if pct_f <= 1 else round(pct_f, 2)
+                        winners.append({
+                            "team": team,
+                            "win_league_pct": display_pct,
+                            "top4_pct": None,
+                            "bottom3_pct": None,
+                            "most_likely_position": None,
+                            "most_likely_position_pct": None,
+                        })
+                    payload["winners_odds"] = winners
+
+    matches = _gather_competition_cup_matches(comp)
+    if matches:
+        knockout, odds_knockout, real_knockout = _build_knockout_wc_format(matches)
+        if cup_format and cup_format.get("two_leg_rounds"):
+            knockout = _expand_two_leg_knockout(knockout, cup_format["two_leg_rounds"])
+            odds_knockout = _expand_two_leg_knockout(odds_knockout, cup_format["two_leg_rounds"])
+            real_knockout = _expand_two_leg_knockout(real_knockout, cup_format["two_leg_rounds"])
+        payload["knockout"] = knockout
+        payload["odds_knockout"] = odds_knockout
+        payload["real_knockout"] = real_knockout
+
+    return payload
+
+
+def _compute_odds_bracket():
+    """Build odds-weighted bracket for all cup competitions.
+
+    For each match in the projected cup bracket JSON, picks the winner
+    with the higher win probability from the cup predictions CSV.
+    Returns ``{competition_name: {round_name: [match_dict, …], …}, …}``.
+    """
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    if not isinstance(bracket_data, dict):
+        return {}
+    comps = bracket_data.get("competitions", bracket_data)
+    if not isinstance(comps, dict):
+        return {}
+
+    # Build odds index from cup predictions CSV
+    odds_index = {}
+    try:
+        odds_df = pd.read_csv(CUP_UPCOMING_FILE)
+        if not odds_df.empty and all(c in odds_df.columns for c in ("home_team", "away_team", "prob_home")):
+            for _, row in odds_df.iterrows():
+                key = (str(row["home_team"]).strip().lower(), str(row["away_team"]).strip().lower())
+                odds_index[key] = _safe_float(row["prob_home"], 0)
+    except Exception:
+        pass
+
+    result = {}
+    for comp_name, entry in comps.items():
+        if not isinstance(entry, dict):
+            continue
+        rounds = entry.get("rounds") or []
+        comp_result = {}
+        for rnd in rounds:
+            rname = rnd.get("name", "")
+            matches = rnd.get("matches") or []
+            rnd_matches = []
+            for m in matches:
+                hm = str(m.get("home_team", "")).strip()
+                aw = str(m.get("away_team", "")).strip()
+                if not hm or not aw:
+                    continue
+                key = (hm.lower(), aw.lower())
+                ph = odds_index.get(key, 0)
+                pa = odds_index.get((aw.lower(), hm.lower()), 0)
+                winner = hm if ph > pa else (aw if pa > ph else "")
+                rnd_matches.append({
+                    "home_team": hm,
+                    "away_team": aw,
+                    "prob_home": ph,
+                    "prob_away": pa,
+                    "winner": winner,
+                    "slot": m.get("slot", 0),
+                    "stage": rname,
+                })
+            if rnd_matches:
+                comp_result[rname] = rnd_matches
+        if comp_result:
+            result[comp_name] = comp_result
+    return result
+
+
+def _build_knockout_wc_format(matches):
+    """Convert a flat list of cup matches into WC-style knockout/odds_knockout/real_knockout.
+
+    Returns ``(knockout, odds_knockout, real_knockout)`` where each is a
+    ``{stage_key: [match_dict, ...]}`` object.
+    """
+    by_round = {}
+    round_orders = {}
+    for g in matches:
+        rnd = _normalize_round_label(g.get("round"))
+        by_round.setdefault(rnd, []).append(g)
+        order = g.get("round_order", 999)
+        try:
+            order = int(order)
+        except (ValueError, TypeError):
+            order = 999
+        if rnd not in round_orders or order < round_orders[rnd]:
+            round_orders[rnd] = order
+
+    knockout = {}
+    odds_knockout = {}
+    real_knockout = {}
+
+    for rnd_name in sorted(by_round.keys(), key=lambda r: (round_orders.get(r, 999), r)):
+        stage_key = _round_to_stage_key(rnd_name)
+        round_matches = sorted(by_round[rnd_name], key=lambda m: m.get("kickoff_utc", "") or "")
+
+        ko_list, odds_list, real_list = [], [], []
+        for idx, g in enumerate(round_matches, start=1):
+            dt_utc = g.get("kickoff_utc", "") or ""
+            match_date = ""
+            try:
+                mdt = pd.to_datetime(dt_utc, utc=True)
+                match_date = mdt.strftime("%Y-%m-%d")
+            except Exception:
+                pass
+
+            winner = None
+            if g.get("status") == "post":
+                hs, aws = g.get("home_score"), g.get("away_score")
+                if hs is not None and aws is not None:
+                    winner = g.get("home_team", "") if hs > aws else (g.get("away_team", "") if aws > hs else None)
+
+            prob_home = g.get("prob_home")
+            prob_draw = g.get("prob_draw")
+            prob_away = g.get("prob_away")
+
+            base = {
+                "label": f"{rnd_name} {idx}",
+                "stage": stage_key,
+                "round": rnd_name,
+                "match_date": match_date,
+                "match_datetime_utc": dt_utc,
+                "home_team": g.get("home_team", ""),
+                "away_team": g.get("away_team", ""),
+                "home_score": g.get("home_score"),
+                "away_score": g.get("away_score"),
+                "status": g.get("status", "pre"),
+                "winner": winner,
+                "slot": idx,
+                "match_id": g.get("match_id", ""),
+                "prob_home": prob_home,
+                "prob_draw": prob_draw,
+                "prob_away": prob_away,
+                "pred_home_goals": g.get("pred_home_goals"),
+                "pred_away_goals": g.get("pred_away_goals"),
+                "venue": g.get("venue", ""),
+            }
+            ko_list.append(base)
+
+            odds_entry = dict(base)
+            ph = _safe_float(prob_home, 0)
+            pa = _safe_float(prob_away, 0)
+            hm = str(base["home_team"]).strip()
+            aw = str(base["away_team"]).strip()
+            if ph > pa and hm:
+                odds_entry["winner"] = hm
+            elif pa > ph and aw:
+                odds_entry["winner"] = aw
+            odds_entry["odds_weighted"] = True
+            odds_list.append(odds_entry)
+
+            real_entry = dict(base)
+            if g.get("status") != "post":
+                real_entry["winner"] = None
+            real_entry["from_live"] = g.get("status") in ("post", "in")
+            real_list.append(real_entry)
+
+        knockout.setdefault(stage_key, []).extend(ko_list)
+        odds_knockout.setdefault(stage_key, []).extend(odds_list)
+        real_knockout.setdefault(stage_key, []).extend(real_list)
+
+    return knockout, odds_knockout, real_knockout
+
+
+def _get_or_fetch_standings(comp_name, computed=True):
+    """Return cached standings for *comp_name*.
+
+    Defaults to *computed* (from ``live_score_history.json``).
+    Set *computed* = ``False`` to fetch from ESPN instead (legacy).
+    """
+    if not computed:
+        espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
+        if espn_id:
+            now = datetime.now()
+            with _real_tables_lock:
+                cached = _real_tables.get(comp_name)
+                if cached:
+                    updated = cached.get("updated_at", "")
+                    try:
+                        age = (now - datetime.fromisoformat(updated)).total_seconds()
+                    except Exception:
+                        age = REAL_TABLES_CACHE_TTL + 1
+                    if age < REAL_TABLES_CACHE_TTL:
+                        return cached
+            data = _fetch_standings(comp_name, espn_id)
+            if data:
+                with _real_tables_lock:
+                    _real_tables[comp_name] = data
+                _persist_real_tables()
+            return data
+    return _compute_standings_from_history(comp_name)
+
+
+def _clear_standings_cache(comp_name):
+    """Force next fetch of *comp_name* standings to hit ESPN."""
+    with _real_tables_lock:
+        _real_tables.pop(comp_name, None)
+
+
+# ── Individual Leaders (goals, assists, cards) ─────────────────
+
+_real_leaders: dict[str, dict] = {}
+_real_leaders_lock = threading.Lock()
+REAL_LEADERS_CACHE_TTL = 600  # 10 minutes (changes less frequently than tables)
+
+LEADER_CATEGORY_LABELS = {
+    "goals": "Goals",
+    "assists": "Assists",
+    "yellowCards": "Yellow Cards",
+    "yellowCard": "Yellow Cards",
+    "redCards": "Red Cards",
+    "redCard": "Red Cards",
+    "shotsOnGoal": "Shots on Goal",
+    "shotsOnGoalPerGame": "Shots/Game",
+    "passes": "Passes",
+    "passAccuracy": "Pass Accuracy",
+    "tackles": "Tackles",
+    "interceptions": "Interceptions",
+    "fouls": "Fouls",
+    "offsides": "Offsides",
+    "saves": "Saves",
+    "cleanSheet": "Clean Sheets",
+    "cleanSheets": "Clean Sheets",
+    "minutesPlayed": "Minutes",
+    "appearances": "Appearances",
+    "gameStarted": "Starts",
+    "gameWinningGoals": "GWG",
+    "hatTricks": "Hat Tricks",
+    "penaltyKickGoals": "PK Goals",
+    "penaltyKickAttempts": "PK Att",
+    "ownGoals": "Own Goals",
+    "crosses": "Crosses",
+    "corners": "Corners",
+    "blocks": "Blocks",
+    "clearances": "Clearances",
+    "aerialsWon": "Aerials Won",
+    "duelsWon": "Duels Won",
+}
+
+
+def _fetch_leaders(comp_name, espn_id):
+    """Fetch ESPN statistical leaders for a competition.
+
+    Returns a normalized dict with:
+        competition, updated_at, categories: {category_key: [{rank, player, team, value}]}
+    Returns None if no leaders data is available.
+    """
+    now = datetime.now()
+    candidate_seasons = [str(now.year)]
+    if now.month < 8:
+        candidate_seasons.append(str(now.year - 1))
+    else:
+        candidate_seasons.append(str(now.year))
+    candidate_urls = [f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/statistics/leaders"]
+    for s in candidate_seasons:
+        candidate_urls.append(f"{LIVE_SCORE_ESPN_BASE}/{espn_id}/statistics/leaders?season={s}")
+
+    data = None
+    for url in candidate_urls:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
+                data = json.loads(resp.read().decode())
+            if data.get("leaders"):
+                break
+        except Exception:
+            continue
+
+    if data is None:
+        return None
+
+    leaders_list = data.get("leaders") or []
+    if not leaders_list:
+        return None
+
+    categories = {}
+    for cat in leaders_list:
+        abbr = cat.get("abbreviation", "") or cat.get("shortDisplayName", "")
+        if not abbr:
+            continue
+        entries = cat.get("leaders") or []
+        parsed_entries = []
+        for rank_idx, entry in enumerate(entries, 1):
+            athlete = entry.get("athlete") or {}
+            team_info = athlete.get("team") or {}
+            player_name = str(athlete.get("displayName", "") or athlete.get("shortName", ""))
+            team_name = str(team_info.get("displayName", "") or "")
+            raw_val = entry.get("value", entry.get("displayValue", ""))
+            try:
+                val = int(float(raw_val))
+            except (ValueError, TypeError):
+                val = raw_val
+            if player_name:
+                parsed_entries.append({
+                    "rank": rank_idx,
+                    "player": player_name,
+                    "team": team_name,
+                    "value": val,
+                })
+        if parsed_entries:
+            label = LEADER_CATEGORY_LABELS.get(abbr, abbr)
+            categories[abbr] = {
+                "label": label,
+                "entries": parsed_entries,
+            }
+
+    if not categories:
+        return None
+
+    return {
+        "competition": comp_name,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "categories": categories,
+    }
+
+
+def _get_or_fetch_leaders(comp_name):
+    """Return cached leaders for *comp_name*, or fetch+store if stale/missing."""
+    espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
+    if not espn_id:
+        return None
+    now = datetime.now()
+    with _real_leaders_lock:
+        cached = _real_leaders.get(comp_name)
+        if cached:
+            updated = cached.get("updated_at", "")
+            try:
+                age = (now - datetime.fromisoformat(updated)).total_seconds()
+            except Exception:
+                age = REAL_LEADERS_CACHE_TTL + 1
+            if age < REAL_LEADERS_CACHE_TTL:
+                return cached
+    data = _fetch_leaders(comp_name, espn_id)
+    if data:
+        with _real_leaders_lock:
+            _real_leaders[comp_name] = data
+    return data
+
+
+def _clear_leaders_cache(comp_name):
+    """Force next fetch of *comp_name* leaders to hit ESPN."""
+    with _real_leaders_lock:
+        _real_leaders.pop(comp_name, None)
+
+
+BREAK_PERIODS = {"Halftime", "HT", "Half Time"}
+
+
+def _effective_poller_date():
+    """Return the effective date for live-score polling.
+
+    Before 2am ET the previous day's games are still active, so we return
+    yesterday's date.  After 2am ET we switch to today's date.
+    """
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    if now_et.hour < 2:
+        return (now_et - timedelta(days=1)).date()
+    return now_et.date()
+
+
+def _get_todays_competitions(today_date=None):
+    """Return {competition: [kickoff_et, ...]} for competitions with games today.
+
+    Checks all available data sources:
+      1. Upcoming predictions CSVs (club, MLS, extra, cups, national team)
+      2. World Cup projection JSON (group_fixtures + knockout rounds)
+      3. Cup bracket JSON (knockout fixtures)
+
+    Args:
+        today_date: date override (defaults to ``date.today()``).
+    """
+    if today_date is None:
+        today_date = date.today()
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    todays = defaultdict(list)
+
+    # ── Source 1: upcoming predictions CSVs ──────────────────────
+    for csv_path in _UPCOMING_CSV_FILES.values():
+        if not os.path.exists(csv_path):
+            continue
+        try:
+            frame = pd.read_csv(csv_path, dtype=str)
+        except Exception:
+            continue
+        for _, row in frame.iterrows():
+            comp = str(row.get("competition", "") or "").strip()
+            if comp not in LIVE_SCORE_COMPETITIONS:
+                continue
+            # Use match_datetime_utc converted to ET to determine if the
+            # game falls on today in the LOCAL timezone (not UTC date).
+            kickoff_utc_str = str(row.get("match_datetime_utc", "") or "").strip()
+            if kickoff_utc_str:
+                try:
+                    dt_utc = pd.to_datetime(kickoff_utc_str, errors="coerce")
+                    if pd.isna(dt_utc):
+                        continue
+                    if dt_utc.tz is None:
+                        dt_utc = dt_utc.tz_localize("UTC")
+                    kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
+                    if kickoff_et.date() != today_date:
+                        continue
+                except Exception:
+                    continue
+            else:
+                # Fallback to match_date column if no datetime available
+                md = str(row.get("match_date", "") or "").strip()
+                if not md:
+                    continue
+                try:
+                    dt = pd.to_datetime(md, errors="coerce", dayfirst=False)
+                    if pd.isna(dt):
+                        continue
+                    if dt.tz is None:
+                        kickoff_et = dt.tz_localize(ZoneInfo("America/New_York"))
+                    else:
+                        kickoff_et = dt.tz_convert(ZoneInfo("America/New_York"))
+                    if kickoff_et.date() != today_date:
+                        continue
+                except Exception:
+                    continue
+            todays[comp].append(kickoff_et)
+
+    # ── Source 2: World Cup projection JSON ──────────────────────
+    if "FIFA/World Cup" not in todays and os.path.exists(WORLD_CUP_PROJECTION_FILE):
+        try:
+            with open(WORLD_CUP_PROJECTION_FILE, "r", encoding="utf-8") as fh:
+                wc_data = json.load(fh)
+        except Exception:
+            wc_data = {}
+
+        # group_fixtures — list of dicts with match_date, match_datetime_utc etc.
+        for fixture in wc_data.get("group_fixtures") or []:
+            if isinstance(fixture, dict):
+                _add_if_today(fixture, "FIFA/World Cup", today_date, now_et, todays)
+
+        # knockout rounds
+        for round_list in (wc_data.get("knockout") or {}).values():
+            if isinstance(round_list, list):
+                for match in round_list:
+                    if isinstance(match, dict):
+                        _add_if_today(match, "FIFA/World Cup", today_date, now_et, todays)
+
+    # ── Source 3: cup bracket JSON ───────────────────────────────
+    if os.path.exists(CUP_PROJECTED_BRACKET_FILE):
+        try:
+            with open(CUP_PROJECTED_BRACKET_FILE, "r", encoding="utf-8") as fh:
+                cup_data = json.load(fh)
+        except Exception:
+            cup_data = {}
+
+        if isinstance(cup_data, dict):
+            for comp_name in list(LIVE_SCORE_COMPETITIONS.keys()):
+                if comp_name in todays:
+                    continue
+                # Cup bracket has entries like {"England/FA Cup": {round_name: [...]}}
+                comp_entry = cup_data.get(comp_name)
+                if isinstance(comp_entry, dict):
+                    for round_name, matches in comp_entry.items():
+                        if isinstance(matches, list):
+                            for match in matches:
+                                if isinstance(match, dict):
+                                    _add_if_today(match, comp_name, today_date, now_et, todays)
+
+    return {k: sorted(v) for k, v in todays.items()}
+
+
+def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
+    """If *entry* has a date field matching today in ET, add its kickoff."""
+    # Prefer match_datetime_utc — the most reliable source for date-in-ET.
+    dt_utc_str = str(entry.get("match_datetime_utc", "") or "").strip()
+    if dt_utc_str and dt_utc_str not in ("", "nan", "None", "NaT"):
+        try:
+            dt_utc = pd.to_datetime(dt_utc_str, errors="coerce")
+            if not pd.isna(dt_utc):
+                if dt_utc.tz is None:
+                    dt_utc = dt_utc.tz_localize("UTC")
+                kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
+                if kickoff_et.date() == today_date:
+                    out_dict[comp_name].append(kickoff_et)
+                return
+        except Exception:
+            pass
+    # Fallback to match_date / date / kickoff (naive date — assume ET).
+    raw = str(entry.get("match_date") or entry.get("date") or entry.get("kickoff") or "")
+    if not raw or raw in ("", "nan", "None", "NaT"):
+        return
+    try:
+        dt = pd.to_datetime(raw, errors="coerce", dayfirst=False)
+        if pd.isna(dt):
+            return
+        if dt.tz is None:
+            dt = dt.tz_localize(ZoneInfo("America/New_York"))
+        else:
+            dt = dt.tz_convert(ZoneInfo("America/New_York"))
+        if dt.date() != today_date:
+            return
+        out_dict[comp_name].append(dt)
+    except Exception:
+        pass
+
+
+def _compute_poll_interval(now, results, active_comps, todays_comps):
+    """Return the sleep interval in seconds before the next poll cycle.
+
+    - 60 seconds  if any game is in-progress or just kicked off (past 90 min),
+                  or within 3 minutes of a scheduled kickoff (catches pre→in
+                  transition within seconds).
+    - 900 seconds (15 min) when a game kicks off within the next 60 minutes
+    - wakes up at nearest_future − 1h when games are 1-2h away (drops to
+      15-min pre-match polling mode at the 1h mark)
+    - 1800 seconds otherwise (no games or all finished)
+    """
+    # Check live results for in-progress games
+    for comp_data in results.values():
+        for g in comp_data.get("games", []):
+            if g.get("status") == "in":
+                return 60
+
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    nearest_future = None
+
+    for comp_name, kickoffs in todays_comps.items():
+        for kt in kickoffs:
+            try:
+                if isinstance(kt, datetime):
+                    diff = (kt - now_et).total_seconds()
+                    # Game started within last 90 min -> poll at 60s
+                    if -5400 <= diff <= 0:
+                        return 60
+                    # Within 3 minutes of kickoff -> poll every 60s so we catch
+                    # the pre→in transition within seconds.
+                    if 0 < diff <= 180:
+                        return 60
+                    # Future kickoff within 60 min -> poll every 15 min
+                    if 0 < diff <= 3600:
+                        return 900
+                    # Future kickoff — track the nearest one
+                    if diff > 0 and (nearest_future is None or diff < nearest_future):
+                        nearest_future = diff
+            except Exception:
+                continue
+
+    # Wake up at nearest future − 1h so pre-match 15-min polling starts on time.
+    # If the nearest kickoff is within 3 min, we'd already have returned 60 above.
+    if nearest_future is not None and nearest_future < 7200:
+        wake_at = nearest_future - 3600
+        return max(10, wake_at)
+
+    return 1800
+
+
+def _fetch_event_summary(comp_name, espn_id, event_id):
+    """Fetch ESPN summary for a single event to get lineups."""
+    url = "%s/%s/summary?event=%s" % (LIVE_SCORE_ESPN_BASE, espn_id, event_id)
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
+            return json.loads(resp.read().decode())
+    except Exception:
+        return None
+
+
+def _parse_espn_lineups(summary_data):
+    """Extract lineups from ESPN summary endpoint rosters.
+
+    Returns a dict mapping "home" / "away" to:
+        {
+            "formation": "4-2-3-1",
+            "startXI": [{ "name": "...", "number": ..., "position": "...", "grid": "..." }],
+            "substitutes": [{ "name": "...", "number": ..., "position": "..." }],
+        }
+    or empty dict if rosters not available.
+    """
+    rosters = summary_data.get("rosters") or []
+    if not rosters or len(rosters) < 2:
+        return {}
+    result = {}
+    has_lineup_data = False
+    for r in rosters:
+        side = "home" if r.get("homeAway") == "home" else "away"
+        formation = r.get("formation") or ""
+        roster = r.get("roster") or []
+        startXI = []
+        substitutes = []
+        for entry in roster:
+            athlete = entry.get("athlete") or {}
+            position = entry.get("position") or {}
+            name = str(athlete.get("displayName") or athlete.get("fullName") or "")
+            number = entry.get("jersey")
+            if number is not None:
+                try:
+                    number = int(number)
+                except (ValueError, TypeError):
+                    number = None
+            pos_abbr = str(position.get("abbreviation") or "")
+            grid = entry.get("formationPlace") or ""
+            player = {"name": name}
+            if number is not None:
+                player["number"] = number
+            if pos_abbr:
+                player["position"] = pos_abbr
+            if entry.get("starter") and grid:
+                player["grid"] = grid
+                startXI.append(player)
+            else:
+                substitutes.append(player)
+        result[side] = {
+            "formation": formation,
+            "startXI": startXI,
+            "substitutes": substitutes,
+        }
+        if startXI:
+            has_lineup_data = True
+    return result if has_lineup_data else {}
+
+
+def _parse_espn_head_to_head(summary_data):
+    """Extract head-to-head history from summary.
+
+    Returns list of past match results between the two teams, or [] if unavailable.
+    """
+    h2h = summary_data.get("headToHeadGames") or []
+    results = []
+    for entry in h2h:
+        events = entry.get("events") or []
+        for ev in events:
+            comps = ev.get("competitions") or []
+            for c in comps:
+                comps_list = c.get("competitors") or []
+                if len(comps_list) < 2:
+                    continue
+                teams = {}
+                for comp in comps_list:
+                    side = "home" if comp.get("homeAway") == "home" else "away"
+                    teams[side] = comp.get("team", {}).get("displayName", "")
+                results.append({
+                    "date": ev.get("date", "")[:10],
+                    "home_team": teams.get("home", ""),
+                    "away_team": teams.get("away", ""),
+                    "home_score": comps_list[0].get("score"),
+                    "away_score": comps_list[1].get("score"),
+                    "winner": "home" if any(c.get("winner") for c in comps_list if c.get("homeAway") == "home") else "away" if any(c.get("winner") for c in comps_list if c.get("homeAway") == "away") else "draw",
+                })
+    return results
+
+
+def _parse_espn_last_five(summary_data):
+    """Extract last 5 games for each team from summary.
+
+    Returns dict mapping team name to list of recent results.
+    """
+    last5 = summary_data.get("lastFiveGames") or []
+    result = {}
+    for entry in last5:
+        team = entry.get("team", {}).get("displayName", "")
+        events = entry.get("events") or []
+        team_results = []
+        for ev in events:
+            comps = ev.get("competitions") or []
+            for c in comps:
+                comps_list = c.get("competitors") or []
+                if len(comps_list) < 2:
+                    continue
+                teams = {}
+                for comp in comps_list:
+                    side = "home" if comp.get("homeAway") == "home" else "away"
+                    teams[side] = comp.get("team", {}).get("displayName", "")
+                team_results.append({
+                    "date": ev.get("date", "")[:10],
+                    "home_team": teams.get("home", ""),
+                    "away_team": teams.get("away", ""),
+                    "home_score": comps_list[0].get("score"),
+                    "away_score": comps_list[1].get("score"),
+                    "result": "W" if any(c.get("winner") and c.get("homeAway") == "home" and teams.get("home") == team for c in comps_list) or any(c.get("winner") and c.get("homeAway") == "away" and teams.get("away") == team for c in comps_list) else "L" if any(c.get("winner") for c in comps_list) else "D",
+                })
+        if team:
+            result[team] = team_results
+    return result
+
+
+def _parse_espn_key_events(summary_data):
+    """Extract key match events from summary.
+
+    Returns list of event dicts with type, text, period, clock, team.
+    """
+    events = summary_data.get("keyEvents") or []
+    result = []
+    for ev in events:
+        entry = {
+            "type": str(ev.get("type", {}).get("text", "")),
+            "text": str(ev.get("text", "")),
+            "short_text": str(ev.get("shortText", "")),
+            "period": ev.get("period", {}).get("number"),
+            "clock": str(ev.get("clock", {}).get("displayValue", "")),
+            "scoring_play": bool(ev.get("scoringPlay")),
+        }
+        team = ev.get("team") or {}
+        if team.get("id"):
+            entry["team_id"] = str(team["id"])
+        athlete = ev.get("athlete") or {}
+        if athlete.get("id"):
+            entry["athlete_id"] = str(athlete["id"])
+            entry["athlete_name"] = str(athlete.get("displayName", ""))
+        result.append(entry)
+    return result
+
+
+def _parse_espn_boxscore_stats(summary_data):
+    """Extract per-team boxscore statistics from summary.
+
+    Returns dict mapping "home" / "away" to list of stat objects
+    {name, displayName, displayValue}, or empty dict.
+    """
+    boxscore = summary_data.get("boxscore") or {}
+    teams = boxscore.get("teams") or []
+    if not teams or len(teams) < 2:
+        return {}
+    result = {}
+    for t in teams:
+        side = "home" if t.get("homeAway") == "home" else "away"
+        stats = t.get("statistics") or []
+        result[side] = [{
+            "name": s.get("name", ""),
+            "display_name": s.get("displayName", ""),
+            "value": s.get("displayValue", ""),
+        } for s in stats if s.get("name")]
+    return result
+
+
+def _parse_elapsed_minutes(clock_str, period_str):
+    """Parse elapsed match minutes from ESPN clock/period strings."""
+    clock_str = str(clock_str or "0'").strip()
+    period_str = str(period_str or "").strip().lower()
+    if "halftime" in period_str or ("half" in period_str and "1st" in period_str):
+        return 45
+    nums = re.findall(r"\d+", clock_str.split("+")[0])
+    if not nums:
+        return 0
+    base = int(nums[0])
+    if "+" in clock_str:
+        extra = re.findall(r"\d+", clock_str.split("+")[1] if "+" in clock_str else "")
+        if extra:
+            base += int(extra[0])
+    if "2nd" in period_str or "second" in period_str:
+        return min(45 + max(0, base), 99)
+    return min(base, 50)
+
+
+def _poisson_match_probs(lambda_h, lambda_a):
+    """Compute P(H), P(D), P(A) from Poisson final-score distribution."""
+    max_g = 10
+    home_pmf = [math.exp(-lambda_h) * (lambda_h ** h) / math.factorial(h) for h in range(max_g + 1)]
+    away_pmf = [math.exp(-lambda_a) * (lambda_a ** a) / math.factorial(a) for a in range(max_g + 1)]
+    p_h = p_d = p_a = 0.0
+    for h in range(max_g + 1):
+        for a in range(max_g + 1):
+            prob = home_pmf[h] * away_pmf[a]
+            if h > a:
+                p_h += prob
+            elif h == a:
+                p_d += prob
+            else:
+                p_a += prob
+    total = p_h + p_d + p_a
+    if total > 0:
+        return {"prob_home": round(p_h / total, 4), "prob_draw": round(p_d / total, 4), "prob_away": round(p_a / total, 4)}
+    return {"prob_home": 0.34, "prob_draw": 0.33, "prob_away": 0.33}
+
+
+def _normalize_team_for_live(name):
+    """Normalize team name for matching between ESPN API and prediction CSV."""
+    n = str(name or "").strip().lower()
+    n = re.sub(r"\s+", " ", n)
+    n = n.replace("&", "and")
+    n = re.sub(r"[^a-z0-9 ]", "", n)
+    return n.strip()
+
+
+def _build_live_prematch_index():
+    """Build {(norm_home, norm_away, comp): record} from today's upcoming CSVs.
+
+    Stores both expected goals and pre-match win/draw/away probabilities
+    so ``_compute_live_prediction`` can blend them with live Poisson odds.
+    """
+    index = {}
+    for csv_path in _UPCOMING_CSV_FILES.values():
+        if not os.path.exists(csv_path):
+            continue
+        try:
+            frame = pd.read_csv(csv_path, dtype=str)
+        except Exception:
+            continue
+        for _, row in frame.iterrows():
+            comp = str(row.get("competition", "")).strip()
+            home = str(row.get("home_team", "")).strip()
+            away = str(row.get("away_team", "")).strip()
+            if not comp or not home or not away:
+                continue
+            key = (_normalize_team_for_live(home), _normalize_team_for_live(away), comp)
+            try:
+                fhg = float(row.get("pred_home_goals", 0))
+                fag = float(row.get("pred_away_goals", 0))
+            except Exception:
+                fhg, fag = 1.4, 1.2
+            try:
+                ph = float(row.get("prob_home", 0))
+                pd_ = float(row.get("prob_draw", 0))
+                pa = float(row.get("prob_away", 0))
+            except Exception:
+                ph = pd_ = pa = 0.0
+            total = ph + pd_ + pa
+            if total > 0:
+                ph /= total
+                pd_ /= total
+                pa /= total
+            index[key] = {
+                "pred_home_goals": max(0.1, fhg),
+                "pred_away_goals": max(0.1, fag),
+                "predicted_result": str(row.get("predicted_result", "")).strip(),
+                "prob_home": ph,
+                "prob_draw": pd_,
+                "prob_away": pa,
+            }
+    return index
+
+
+def _match_prematch_record(home_team, away_team, comp_name, prematch_index):
+    """Try to find a matching pre-match record using multiple strategies."""
+    nh = _normalize_team_for_live(home_team)
+    na = _normalize_team_for_live(away_team)
+    key = (nh, na, comp_name)
+    rec = prematch_index.get(key)
+    if rec is not None:
+        return rec
+    db_home = _team_name_for_db(home_team)
+    db_away = _team_name_for_db(away_team)
+    if db_home != home_team or db_away != away_team:
+        key2 = (_normalize_team_for_live(db_home), _normalize_team_for_live(db_away), comp_name)
+        rec = prematch_index.get(key2)
+        if rec is not None:
+            return rec
+    for csv_key, csv_rec in prematch_index.items():
+        csv_nh, csv_na, csv_comp = csv_key
+        if csv_comp != comp_name:
+            continue
+        if (nh in csv_nh or csv_nh in nh) and (na in csv_na or csv_na in na):
+            return csv_rec
+    return None
+
+
+# ── Live advanced prediction helpers ──────────────────────────
+
+def _compute_live_next_to_score(game, effective_gd, home_stats, away_stats, time_frac):
+    """Probability the next goal is scored by home, away, or no more goals.
+
+    Uses effective GD, stat imbalance, and time remaining to estimate.
+    """
+    if time_frac <= 0.05:
+        return {"home": 0.02, "away": 0.02, "none": 0.96}
+    shots_h = _to_float_or_none(home_stats.get("totalShots")) or 0
+    shots_a = _to_float_or_none(away_stats.get("totalShots")) or 0
+    sot_h = _to_float_or_none(home_stats.get("shotsOnTarget")) or 0
+    sot_a = _to_float_or_none(away_stats.get("shotsOnTarget")) or 0
+    corners_h = _to_float_or_none(home_stats.get("corners")) or 0
+    corners_a = _to_float_or_none(away_stats.get("corners")) or 0
+    total_shots = max(shots_h + shots_a, 1)
+    total_sot = max(sot_h + sot_a, 1)
+    total_corners = max(corners_h + corners_a, 1)
+
+    # Base threat from stats
+    home_edge = 0.15 * (shots_h - shots_a) / total_shots + 0.25 * (sot_h - sot_a) / total_sot + 0.10 * (corners_h - corners_a) / total_corners
+    home_edge = max(-0.5, min(0.5, home_edge))
+
+    # Effective GD shifts threat: trailing team pushes harder
+    gd_shift = -effective_gd * 0.15
+    home_threat = 0.5 + home_edge + gd_shift
+    home_threat = max(0.1, min(0.9, home_threat))
+
+    p_any_goal = 0.55 * time_frac + 0.10
+    p_any_goal = max(0.02, min(0.90, p_any_goal))
+    p_home_next = home_threat * p_any_goal
+    p_away_next = (1.0 - home_threat) * p_any_goal
+    p_none = 1.0 - p_home_next - p_away_next
+
+    return {
+        "home": round(p_home_next, 4),
+        "away": round(p_away_next, 4),
+        "none": round(p_none, 4),
+    }
+
+
+def _compute_live_comeback_prob(live_probs, home_score, away_score):
+    """Probability the trailing team avoids defeat (draws or wins).
+
+    Returns 0 when tied; otherwise the draw + trailing-team-win probability.
+    """
+    if home_score == away_score:
+        return 0.0
+    if home_score < away_score:
+        return round(live_probs.get("prob_home", 0) + live_probs.get("prob_draw", 0), 4)
+    return round(live_probs.get("prob_away", 0) + live_probs.get("prob_draw", 0), 4)
+
+
+def _compute_live_momentum(game, elapsed):
+    """Momentum indicator from recent key events (last 15 min of game time).
+
+    Returns dict with ``"trend"`` (-1 to 1, positive = home), ``"label"`` str,
+    and ``"events_recent"`` int.
+    """
+    key_events = game.get("key_events") or []
+    if not key_events:
+        return {"trend": 0.0, "label": "neutral", "events_recent": 0}
+    cutoff_min = max(0, elapsed - 15)
+    recent = []
+    for ev in key_events:
+        try:
+            clock_str = str(ev.get("clock", "0"))
+            nums = re.findall(r"\d+", clock_str)
+            ev_min = int(nums[0]) if nums else 0
+            ev_period = ev.get("period", 1) or 1
+            total_min = ev_min + (ev_period - 1) * 45
+        except (ValueError, IndexError):
+            total_min = elapsed
+        if total_min >= cutoff_min and total_min <= elapsed:
+            recent.append(ev)
+    weights = {"goal": 3.0, "yellow card": 0.5, "red card": 2.0, "substitution": 0.3, "missed penalty": 0.8, "penalty": 1.5, "own goal": 2.5}
+    score = 0.0
+    for ev in recent:
+        ev_type = str(ev.get("type", ev.get("short_text", ev.get("text", "")))).lower()
+        w = 1.0
+        for kw, weight in weights.items():
+            if kw in ev_type:
+                w = weight
+                break
+        scoring = ev.get("scoring_play", False)
+        if scoring and w == 1.0:
+            w = 3.0
+        team_id = ev.get("team_id", "")
+        if not team_id:
+            continue
+        is_home = team_id == str(game.get("home_team_id", ""))
+        score += w if is_home else -w
+
+    max_score = max(1.0, sum(weights.values()) * 2)
+    trend = max(-1.0, min(1.0, score / max_score))
+    label = "home" if trend > 0.15 else ("away" if trend < -0.15 else "neutral")
+    return {"trend": round(trend, 3), "label": label, "events_recent": len(recent)}
+
+
+# ── Passive extraction & cumulative momentum ──────────────────
+
+
+def _extract_passes_to_stats(game):
+    """Promote passes data from ``boxscore_stats`` into ``home_stats`` / ``away_stats``.
+
+    ESPN often provides detailed passes at the boxscore level but not in the
+    scoreboard competitor-statistics block.  This copies them up so they are
+    available at the top-level ``home_stats``/``away_stats`` dict.
+    """
+    boxscore = game.get("boxscore_stats")
+    if not boxscore or not isinstance(boxscore, dict):
+        return
+    for side in ("home", "away"):
+        team_box = boxscore.get(side)
+        if not team_box or not isinstance(team_box, list):
+            continue
+        stats_dict = game.get(f"{side}_stats")
+        if stats_dict is None:
+            stats_dict = {}
+            game[f"{side}_stats"] = stats_dict
+        for stat in team_box:
+            name = stat.get("name", "")
+            if name in ("passes", "totalPasses", "accuratePasses", "passAccuracy", "longPasses", "crosses"):
+                if name not in stats_dict or not stats_dict[name]:
+                    stats_dict[name] = str(stat.get("value", ""))
+
+
+def _promote_team_stats_to_home_away(game):
+    """Promote granular stats from ``team_stats`` into ``home_stats``/``away_stats``.
+
+    The ``teamStats`` block contains richer categories (offensive, defensive,
+    passing) than the scoreboard-level ``statistics``.  This flattens them
+    so fields like shotsInsideBox, interceptions, aerialsWon, etc. are
+    accessible at the top level.
+    """
+    ts = game.get("team_stats")
+    if not ts or not isinstance(ts, dict):
+        return
+    for side in ("home", "away"):
+        side_data = ts.get(side)
+        if not isinstance(side_data, dict):
+            continue
+        stats_dict = game.get(f"{side}_stats")
+        if stats_dict is None:
+            stats_dict = {}
+            game[f"{side}_stats"] = stats_dict
+        for cat_name, cat_stats in side_data.items():
+            if not isinstance(cat_stats, list):
+                continue
+            for s in cat_stats:
+                name = s.get("name", "")
+                if not name:
+                    continue
+                value = s.get("value", "")
+                if name not in stats_dict or not stats_dict.get(name):
+                    stats_dict[name] = value
+def _update_cumulative_momentum(game):
+    """Update per-match momentum history (-100 … +100).
+
+    Scale:
+        -100  = home team has had all momentum
+           0  = perfectly balanced
+        +100  = away team has had all momentum
+
+    Uses **per-cycle** deltas (new shots/SOT/corners since the last poll)
+    so a few minutes of sustained pressure — even after being dominated —
+    swings the bar heavily.  Possession from the ``situation`` block is
+    also factored in.
+
+    At halftime a sentinel value of ``888`` is appended to signal the
+    break on the chart.  The initial momentum value is computed from the
+    first poll's cumulative stats so momentum is present from kick-off.
+    Stores ``momentum_history`` (growing array of per-cycle values) on
+    the game dict for a frontend chart.
+    """
+    # ── Halftime sentinel (888) ──────────────────────────────────
+    period = str(game.get("period", "")).lower().strip()
+    prev_period = game.get("_prev_period", "")
+    # Trigger when transitioning from "1st half" → "halftime"
+    if prev_period and "1st" in prev_period and "halftime" in period:
+        game["_prev_period"] = period
+        history = game.setdefault("momentum_history", [])
+        history.append(888)
+        return
+    game["_prev_period"] = period
+
+    # ── Weightings (per-cycle deltas, not cumulative) ─────────
+    GOAL_WEIGHT = 50.0
+    OWN_GOAL_WEIGHT = 60.0
+    RED_CARD_WEIGHT = 35.0
+    SHOT_WEIGHT = 12.0       # per new shot this cycle
+    SOT_WEIGHT = 18.0        # per new SOT this cycle
+    CORNER_WEIGHT = 8.0      # per new corner this cycle
+    YELLOW_WEIGHT = 4.0      # per new yellow this cycle
+    POSSESSION_WEIGHT = 80.0  # scales with possession% difference
+    PASS_WEIGHT = 1.5        # per completed pass this cycle
+    CROSS_WEIGHT = 6.0       # per cross this cycle
+    KEY_PASS_WEIGHT = 8.0    # per key pass this cycle
+    PASS_ACC_WEIGHT = 20.0   # scales with pass-accuracy % difference
+
+    home_score = game.get("home_score") or 0
+    away_score = game.get("away_score") or 0
+    goal_diff = home_score - away_score
+
+    home_stats = game.get("home_stats") or {}
+    away_stats = game.get("away_stats") or {}
+
+    def _stat(side, key):
+        v = (home_stats if side == "home" else away_stats).get(key)
+        if v is None and game.get("boxscore_stats"):
+            for s in game["boxscore_stats"].get(side, []):
+                if s.get("name") == key:
+                    return s.get("value")
+        return v
+
+    def _f(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    # ── Scoreline delta ───────────────────────────────────────
+    # Worse when trailing than leading is good
+    score_delta = -goal_diff * 10.0
+
+    # ── Per-cycle stat deltas ─────────────────────────────────
+    def _delta(key_h, key_a, prev_key):
+        """New occurrences of a stat since the last poll cycle."""
+        cur_h = _f(_stat("home", key_h))
+        cur_a = _f(_stat("away", key_a))
+        prev_h, prev_a = game.get(f"_prev_{prev_key}", (0.0, 0.0))
+        game[f"_prev_{prev_key}"] = (cur_h, cur_a)
+        return (cur_h - prev_h, cur_a - prev_a)
+
+    def _delta_from_fn(fn_h, fn_a, prev_key):
+        """Same as _delta but uses callables to fetch values."""
+        cur_h = _f(fn_h())
+        cur_a = _f(fn_a())
+        prev_h, prev_a = game.get(f"_prev_{prev_key}", (0.0, 0.0))
+        game[f"_prev_{prev_key}"] = (cur_h, cur_a)
+        return (cur_h - prev_h, cur_a - prev_a)
+
+    dh_shots, da_shots = _delta("totalShots", "totalShots", "shots")
+    dh_sot, da_sot = _delta("shotsOnTarget", "shotsOnTarget", "sot")
+    dh_corners, da_corners = _delta("corners", "corners", "corners")
+    dh_yellows, da_yellows = _delta("yellowCards", "yellowCards", "yellows")
+    dh_reds, da_reds = _delta("redCards", "redCards", "reds")
+
+    shot_delta = (da_shots - dh_shots) * SHOT_WEIGHT      # positive = away
+    sot_delta = (da_sot - dh_sot) * SOT_WEIGHT
+    corner_delta = (da_corners - dh_corners) * CORNER_WEIGHT
+    yellow_delta = (da_yellows - dh_yellows) * YELLOW_WEIGHT
+    red_delta = (da_reds - dh_reds) * RED_CARD_WEIGHT
+
+    # ── Passing deltas ──────────────────────────────────────────
+    def _pass_stat(side):
+        """Try multiple ESPN keys for completed passes."""
+        v = _stat(side, "totalPasses")
+        if v is None:
+            v = _stat(side, "passes")
+        if v is None:
+            v = _stat(side, "passesTotal")
+        if v is None:
+            v = _stat(side, "accuratePasses")
+        if v is None:
+            v = _stat(side, "passesAccurate")
+        return v
+
+    dh_passes, da_passes = _delta_from_fn(_pass_stat, _pass_stat, "passes")
+    dh_crosses, da_crosses = _delta("crosses", "crosses", "crosses")
+    dh_keypass, da_keypass = _delta("keyPasses", "keyPasses", "keypasses")
+
+    passes_delta = (da_passes - dh_passes) * PASS_WEIGHT
+    crosses_delta = (da_crosses - dh_crosses) * CROSS_WEIGHT
+    keypass_delta = (da_keypass - dh_keypass) * KEY_PASS_WEIGHT
+
+    # Pass-accuracy ratio delta (current accuracy balance, not per-cycle)
+    ha_acc = _f(_stat("home", "passAccuracy"))
+    aw_acc = _f(_stat("away", "passAccuracy"))
+    if ha_acc > 0 or aw_acc > 0:
+        total_acc = max(ha_acc + aw_acc, 0.1)
+        acc_ratio = (ha_acc - aw_acc) / total_acc  # negative = home ahead
+        acc_delta = -acc_ratio * PASS_ACC_WEIGHT
+    else:
+        acc_delta = 0.0
+
+    # ── Possession delta ──────────────────────────────────────
+    sit = game.get("situation") or {}
+    poss_zones = sit.get("possession_zones") or {}
+    if poss_zones:
+        last_zone_key = sorted(poss_zones.keys())[-1]
+        zp = poss_zones[last_zone_key]
+        home_poss = _f(zp.get("home_possession") or zp.get("home", 0))
+        away_poss = _f(zp.get("away_possession") or zp.get("away", 0))
+    else:
+        ht = game.get("team_stats") or {}
+        home_poss = _f(ht.get("home", {}).get("possession", sit.get("possession", 50)))
+        away_poss = _f(ht.get("away", {}).get("possession", 100.0 - home_poss)) if home_poss else 50.0
+
+    total_poss = max(home_poss + away_poss, 1.0)
+    poss_ratio = (home_poss - away_poss) / total_poss  # negative = home ahead
+    poss_delta = -poss_ratio * POSSESSION_WEIGHT
+
+    # ── Recent-key-event delta ────────────────────────────────
+    key_events = game.get("key_events") or []
+    prev_count = game.get("_momentum_ev_count", 0)
+    new_events = len(key_events) - prev_count
+    game["_momentum_ev_count"] = len(key_events)
+
+    event_delta = 0.0
+    if new_events > 0:
+        for ev in key_events[-new_events:]:
+            t_id = str(ev.get("team_id", ""))
+            if not t_id:
+                continue
+            ev_type = str(ev.get("type", "")).lower()
+            is_home = t_id == str(game.get("home_team_id", ""))
+            direction = -1.0 if is_home else 1.0
+            if "goal" in ev_type and "own" not in ev_type:
+                event_delta += direction * GOAL_WEIGHT
+            elif "own goal" in ev_type:
+                event_delta += direction * OWN_GOAL_WEIGHT
+            elif "red card" in ev_type:
+                event_delta += direction * RED_CARD_WEIGHT
+            elif "missed penalty" in ev_type:
+                event_delta += direction * 15.0
+            elif "penalty" in ev_type and "missed" not in ev_type:
+                event_delta += direction * 8.0
+
+    # ── Composite delta for this cycle ────────────────────────
+    cycle_delta = (
+        score_delta
+        + shot_delta
+        + sot_delta
+        + corner_delta
+        + yellow_delta
+        + red_delta
+        + poss_delta
+        + passes_delta
+        + crosses_delta
+        + keypass_delta
+        + acc_delta
+        + event_delta
+    )
+
+    # Allow large single-cycle swings (a goal + a red + a few SOT = massive)
+    cycle_delta = max(-100.0, min(100.0, cycle_delta))
+
+    # ── Accumulate ────────────────────────────────────────────
+    prev = game.get("_momentum_value")
+    if prev is None:
+        raw = cycle_delta
+    else:
+        alpha = 0.70  # highly reactive — little smoothing
+        raw = (1.0 - alpha) * float(prev) + alpha * cycle_delta
+
+    val = round(max(-100.0, min(100.0, raw)), 2)
+    game["_momentum_value"] = val
+
+    # Maintain growing array for the frontend chart
+    history = game.setdefault("momentum_history", [])
+    history.append(val)
+
+
+def _compute_live_prediction(game, prematch):
+    """Compute in-play prediction from live game state and pre-match data.
+
+    **Logit scoreline model with pre-match blend**:
+
+    1. A small pre-match nudge (``0.2 × time_frac × prem_xg_diff``) is
+       added to the model's goal-difference estimate so 0-0 games still
+       reflect pre-match strength and avoid the crude tied formula.
+    2. **Pre-match blend** mixes the model's output with the full pre-match
+       probabilities.  The blend decays with both elapsed time and goals
+       scored: ``blend = 1 - (elapsed + 15 × |goal_diff|) / 90``.  Goals
+       accelerate the transition to pure scoreline; a scoreless game lets
+       pre-match weight persist longer.
+    3. A stronger pre-match pull (``0.3 × time_frac × prem_xg_diff``) is
+       added to ``effective_gd`` for ancillary metrics only (``next_to_score``,
+       ``comeback_prob``, ``momentum``).
+    """
+    if game.get("status") != "in":
+        return None
+    home_score = game.get("home_score") or 0
+    away_score = game.get("away_score") or 0
+    goal_diff = home_score - away_score
+    elapsed = _parse_elapsed_minutes(game.get("clock", "0'"), game.get("period", ""))
+    time_frac = max(0.05, min(1.0, (95 - elapsed) / 90.0))
+
+    # ── Pre-match data ─────────────────────────────────────────
+    if prematch:
+        prem_home = prematch.get("prob_home", 0.34)
+        prem_draw = prematch.get("prob_draw", 0.33)
+        prem_away = prematch.get("prob_away", 0.33)
+        prem_xg_diff = prematch.get("pred_home_goals", 1.4) - prematch.get("pred_away_goals", 1.2)
+    else:
+        prem_home = prem_draw = prem_away = 1.0 / 3.0
+        prem_xg_diff = 0.0
+
+    # ── Pre-match pull (affects effective_gd only, not probs) ──
+    prem_pull = prem_xg_diff * time_frac * 0.3
+
+    # ── In-game statistics adjustment ──────────────────────────
+    home_stats = game.get("home_stats", {}) or {}
+    away_stats = game.get("away_stats", {}) or {}
+
+    shots_h = _to_float_or_none(home_stats.get("totalShots")) or 0
+    shots_a = _to_float_or_none(away_stats.get("totalShots")) or 0
+    sot_h = _to_float_or_none(home_stats.get("shotsOnTarget")) or 0
+    sot_a = _to_float_or_none(away_stats.get("shotsOnTarget")) or 0
+    corners_h = _to_float_or_none(home_stats.get("corners")) or 0
+    corners_a = _to_float_or_none(away_stats.get("corners")) or 0
+
+    total_shots = max(shots_h + shots_a, 1)
+    total_sot = max(sot_h + sot_a, 1)
+    total_corners = max(corners_h + corners_a, 1)
+
+    shot_diff = (shots_h - shots_a) / total_shots
+    sot_diff = (sot_h - sot_a) / total_sot
+    corner_diff = (corners_h - corners_a) / total_corners
+
+    stat_adjustment = 0.15 * shot_diff + 0.25 * sot_diff + 0.10 * corner_diff
+
+    # Red cards: each red card against the opponent is worth 0.5 goals
+    reds_h = sum(1 for rc in game.get("red_cards", []) if rc.get("team") == "home")
+    reds_a = sum(1 for rc in game.get("red_cards", []) if rc.get("team") == "away")
+    red_adjustment = (reds_a - reds_h) * 0.5
+
+    # ── Model probabilities ────────────────────────────────────
+    # Small pre-match nudge keeps 0-0 games out of the tied formula
+    # so the model still knows which team is better:
+    prem_nudge = prem_xg_diff * time_frac * 0.2
+    model_gd = goal_diff + stat_adjustment + red_adjustment + prem_nudge
+    abs_model_gd = abs(model_gd)
+    DRAW_RATIO = 0.75
+
+    if abs_model_gd < 0.01:
+        # Effectively tied
+        w = 1.0 - time_frac
+        m_home = max(0.001, 0.33 - 0.28 * w)
+        m_draw = max(0.001, 0.34 + 0.56 * w)
+        m_away = max(0.001, 0.33 - 0.28 * w)
+    else:
+        base_p = min(0.99, 0.50 + abs_model_gd * 0.12)
+        base_logit = math.log(base_p / (1.0 - base_p))
+        logit_boost = abs_model_gd * 2.0 * (1.0 - time_frac)
+        final_logit = base_logit + logit_boost
+        p_lead = 1.0 / (1.0 + math.exp(-final_logit))
+        m_draw = max(0.001, (1.0 - p_lead) * DRAW_RATIO)
+        p_lose = (1.0 - p_lead) - m_draw
+        if model_gd > 0:
+            m_home, m_away = p_lead, p_lose
+        else:
+            m_home, m_away = p_lose, p_lead
+        # Late-game: cap losing team's win probability at 3 %,
+        # redistribute excess to draw (realistic ceiling for a comeback)
+        if time_frac < 0.15:  # last ~13 min
+            if model_gd > 0:
+                if m_away > 0.03:
+                    m_draw += m_away - 0.03
+                    m_away = 0.03
+            else:
+                if m_home > 0.03:
+                    m_draw += m_home - 0.03
+                    m_home = 0.03
+
+    # ── Pre-match blend ────────────────────────────────────────
+    # Blend decays with time AND with goals scored.  Goals are strong
+    # evidence so they accelerate the transition toward the pure model.
+    # At 0-0 the blend decays slowly so pre-match weight persists longer.
+    blend = max(0.0, min(1.0, 1.0 - (elapsed + 15 * abs(goal_diff)) / 90.0))
+
+    p_home = blend * prem_home + (1.0 - blend) * m_home
+    p_draw = blend * prem_draw + (1.0 - blend) * m_draw
+    p_away = blend * prem_away + (1.0 - blend) * m_away
+
+    # Clamp & normalise
+    p_home = max(0.001, min(0.999, p_home))
+    p_draw = max(0.001, min(0.999, p_draw))
+    p_away = max(0.001, min(0.999, p_away))
+    total = p_home + p_draw + p_away
+    live_probs = {
+        "prob_home": round(p_home / total, 4),
+        "prob_draw": round(p_draw / total, 4),
+        "prob_away": round(p_away / total, 4),
+    }
+
+    live_probs["home_score"] = home_score
+    live_probs["away_score"] = away_score
+    live_probs["elapsed"] = elapsed
+    live_probs["time_remaining_frac"] = round(time_frac, 3)
+
+    # ── Effective GD (with pre-match pull) for ancillary metrics ─
+    effective_gd = model_gd + prem_pull
+
+    # ── Next team to score ─────────────────────────────────────
+    live_probs["next_to_score"] = _compute_live_next_to_score(
+        game, effective_gd, home_stats, away_stats, time_frac,
+    )
+
+    # ── Comeback probability ───────────────────────────────────
+    live_probs["comeback_prob"] = _compute_live_comeback_prob(
+        live_probs, home_score, away_score,
+    )
+
+    # ── Momentum ───────────────────────────────────────────────
+    live_probs["momentum"] = _compute_live_momentum(game, elapsed)
+
+    return live_probs
+
+
+def _live_score_poller_loop():
+    """Background thread: poll ESPN for live scores.
+
+    Poll interval adapts dynamically:
+      60s   during live games or games just kicked off (past 90 min),
+      900s (15min) when a game kicks off within 60 minutes (pre-match),
+      wakes at nearest_future - 1h when games are 1-2h away,
+      1800s (30min) otherwise.
+    Summaries (lineups, h2h, key events) fetched every cycle for ALL games.
+    """
+    # Init defaults so a crash in one cycle doesn't leave them undefined.
+    todays_comps = {}
+    active_comps = {}
+    results = {}
+    while True:
+        try:
+            poll_date = _effective_poller_date()
+            today_str = poll_date.strftime("%Y%m%d")
+            todays_comps = _get_todays_competitions(today_date=poll_date)
+            active_comps = {}
+            for comp in todays_comps:
+                eid = LIVE_SCORE_COMPETITIONS.get(comp)
+                if eid:
+                    active_comps[comp] = eid
+
+            results = {}
+            if active_comps:
+                with ThreadPoolExecutor(max_workers=min(8, len(active_comps))) as pool:
+                    ft_to_name = {
+                        pool.submit(_fetch_competition_scores, name, eid, today_str): name
+                        for name, eid in active_comps.items()
+                    }
+                    for ft in as_completed(ft_to_name):
+                        name = ft_to_name[ft]
+                        try:
+                            games = ft.result()
+                            if not games:
+                                continue
+                            results[name] = {
+                                "competition": name,
+                                "games": games,
+                                "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+                            }
+                        except Exception:
+                            import traceback
+                            traceback.print_exc()
+
+            # Snapshot previous game statuses before merging (for detecting new completions).
+            prev_statuses = {}
+            with _live_scores_lock:
+                for comp_name, comp_data in _live_scores.items():
+                    for g in comp_data.get("games", []):
+                        mid = g.get("match_id")
+                        if mid:
+                            prev_statuses[mid] = (comp_name, g.get("status", ""))
+
+            with _live_scores_lock:
+                # Day boundary: save ALL games (not just completed) then clear.
+                _poller_day_str = poll_date.isoformat()
+                if getattr(_live_score_poller_loop, "_poller_date", None) != _poller_day_str:
+                    _merge_completed_to_history()
+                    # Save any in-progress games that started yesterday but
+                    # haven't finished yet so they persist in history.
+                    now_utc = datetime.now(timezone.utc)
+                    for comp_name, comp_data in list(_live_scores.items()):
+                        for g in comp_data.get("games", []):
+                            if g.get("status") not in ("post", "in"):
+                                continue
+                            mid = g.get("match_id")
+                            if not mid:
+                                continue
+                            history = _load_live_score_history()
+                            historic_ids = {h["match_id"] for h in history if h.get("match_id")}
+                            if mid not in historic_ids:
+                                entry = dict(g)
+                                entry.setdefault("competition", comp_name)
+                                entry.setdefault("completed_at", now_utc.isoformat())
+                                history.append(entry)
+                                _save_live_score_history(history)
+                    _live_scores.clear()
+                    with _live_summary_cache_lock:
+                        _live_summary_cache.clear()
+                    _live_score_poller_loop._poller_date = _poller_day_str
+                # Merge new results into existing so finished games persist.
+                for comp_name, comp_data in results.items():
+                    new_games = comp_data.get("games", [])
+                    existing = _live_scores.get(comp_name, {"games": []})
+                    # Guard: if ESPN transiently returns 0 games but we already
+                    # have data, keep the existing games to avoid "no live games"
+                    # flickering across poll cycles.
+                    if not new_games and existing.get("games"):
+                        continue
+                    games_by_id = {g["match_id"]: g for g in existing["games"] if g.get("match_id")}
+                    for g in new_games:
+                        if g.get("match_id"):
+                            g["competition"] = comp_name
+                            mid = g["match_id"]
+                            if mid in games_by_id:
+                                games_by_id[mid].update(g)
+                            else:
+                                games_by_id[mid] = g
+                    _live_scores[comp_name] = {
+                        "competition": comp_name,
+                        "games": list(games_by_id.values()),
+                        "last_polled_utc": comp_data["last_polled_utc"],
+                        "cup_format": _CUP_FORMATS.get(comp_name),
+                    }
+                # Re-apply summary cache to all games so summary data always survives.
+                with _live_summary_cache_lock:
+                    for comp_data in _live_scores.values():
+                        for g in comp_data.get("games", []):
+                            mid = g.get("match_id")
+                            if mid and mid in _live_summary_cache:
+                                g.update(_live_summary_cache[mid])
+            # Persist any newly completed games to history file.
+            _merge_completed_to_history()
+
+            # ── Standings refresh on game completion ────────────────
+            # Detect games that just finished this cycle and fetch fresh
+            # standings for their competition, updating the cache.
+            try:
+                comps_to_refresh = set()
+                with _live_scores_lock:
+                    for comp_name, comp_data in _live_scores.items():
+                        for g in comp_data.get("games", []):
+                            mid = g.get("match_id")
+                            if not mid:
+                                continue
+                            cur_status = g.get("status", "")
+                            prev = prev_statuses.get(mid)
+                            if prev and prev[1] != "post" and cur_status == "post":
+                                comps_to_refresh.add(comp_name)
+                for comp_name in comps_to_refresh:
+                    table = _compute_standings_from_history(comp_name)
+                    if table:
+                        with _real_tables_lock:
+                            _real_tables[comp_name] = table
+            except Exception:
+                import traceback
+                traceback.print_exc()
+
+            # ── Fetch summary data for active games ──────────────────
+            # - pre:   fetch every cycle so lineup/formation changes are picked up
+            # - in:    fetch every cycle (key_events & boxscore change in real time)
+            # - post:  fetch once if cache empty (final data capture)
+            try:
+                games_needing_summary = []
+                for comp_name, comp_data in list(_live_scores.items()):
+                    espn_id = LIVE_SCORE_COMPETITIONS.get(comp_name)
+                    if not espn_id:
+                        continue
+                    for g in comp_data.get("games", []):
+                        mid = g.get("match_id")
+                        if not mid:
+                            continue
+                        status = g.get("status", "")
+                        if status in ("pre", "in"):
+                            games_needing_summary.append((comp_name, espn_id, mid))
+                        elif status == "post" and mid not in _live_summary_cache:
+                            games_needing_summary.append((comp_name, espn_id, mid))
+                if games_needing_summary:
+                    def _fetch_summary(args):
+                        comp_name, espn_id, match_id = args
+                        data = _fetch_event_summary(comp_name, espn_id, match_id)
+                        if not data:
+                            return None
+                        result = {"match_id": match_id, "comp_name": comp_name}
+                        lineups = _parse_espn_lineups(data)
+                        if lineups:
+                            result["lineups"] = lineups
+                        h2h = _parse_espn_head_to_head(data)
+                        if h2h:
+                            result["head_to_head"] = h2h
+                        last5 = _parse_espn_last_five(data)
+                        if last5:
+                            result["last_five"] = last5
+                        key_events = _parse_espn_key_events(data)
+                        if key_events:
+                            result["key_events"] = key_events
+                        boxscore = _parse_espn_boxscore_stats(data)
+                        if boxscore:
+                            result["boxscore_stats"] = boxscore
+                        game_info = _parse_espn_game_info(data)
+                        if game_info:
+                            result["game_info"] = game_info
+                        shot_mapping = _parse_espn_shot_mapping(data)
+                        if shot_mapping:
+                            result["shot_mapping"] = shot_mapping
+                        situation = _parse_espn_situation(data)
+                        if situation:
+                            result["situation"] = situation
+                        injuries = _parse_espn_injuries_availability(data)
+                        if injuries:
+                            result["injuries_availability"] = injuries
+                        team_stats = _parse_espn_team_stats(data)
+                        if team_stats:
+                            result["team_stats"] = team_stats
+                        return result
+                    with ThreadPoolExecutor(max_workers=min(6, len(games_needing_summary))) as pool:
+                        summary_futures = [pool.submit(_fetch_summary, args) for args in games_needing_summary]
+                        for ft in as_completed(summary_futures):
+                            try:
+                                sresult = ft.result()
+                                if not sresult:
+                                    continue
+                                mid = sresult["match_id"]
+                                comp_name = sresult["comp_name"]
+                                with _live_summary_cache_lock:
+                                    cache_entry = _live_summary_cache.get(mid, {})
+                                    if "lineups" in sresult:
+                                        cache_entry["lineups"] = sresult["lineups"]
+                                    if "head_to_head" in sresult:
+                                        cache_entry["head_to_head"] = sresult["head_to_head"]
+                                    if "last_five" in sresult:
+                                        cache_entry["last_five"] = sresult["last_five"]
+                                    if "key_events" in sresult:
+                                        cache_entry["key_events"] = sresult["key_events"]
+                                    if "boxscore_stats" in sresult:
+                                        cache_entry["boxscore_stats"] = sresult["boxscore_stats"]
+                                    if "game_info" in sresult:
+                                        cache_entry["game_info"] = sresult["game_info"]
+                                    if "shot_mapping" in sresult:
+                                        cache_entry["shot_mapping"] = sresult["shot_mapping"]
+                                    if "situation" in sresult:
+                                        cache_entry["situation"] = sresult["situation"]
+                                    if "injuries_availability" in sresult:
+                                        cache_entry["injuries_availability"] = sresult["injuries_availability"]
+                                    if "team_stats" in sresult:
+                                        cache_entry["team_stats"] = sresult["team_stats"]
+                                    _live_summary_cache[mid] = cache_entry
+                                # lineups always re-fetched for pre games on the next cycle
+                            except Exception:
+                                pass
+            except Exception:
+                import traceback
+                traceback.print_exc()
+
+            # Re-apply summary cache to live games so data is available
+            # immediately (not delayed one cycle).
+            with _live_scores_lock, _live_summary_cache_lock:
+                for comp_data in _live_scores.values():
+                    for g in comp_data.get("games", []):
+                        mid = g.get("match_id")
+                        if mid and mid in _live_summary_cache:
+                            g.update(_live_summary_cache[mid])
+                        # Promote passes from boxscore_stats to home_stats/away_stats
+                        _extract_passes_to_stats(g)
+                        # Promote granular team_stats (shotsInsideBox, interceptions,
+                        # aerialsWon, etc.) into home_stats/away_stats.
+                        _promote_team_stats_to_home_away(g)
+                        # Append new shots to persistent arrays so the frontend
+                        # gets an accumulating shot map / goal locations list.
+                        sm = g.get("shot_mapping") or {}
+                        for arr_key in ("shot_origins", "goal_locations"):
+                            batch = sm.get(arr_key) or []
+                            seen = g.get(f"_{arr_key}_len", 0)
+                            if len(batch) > seen:
+                                new_items = batch[seen:]
+                                persistent = g.setdefault(arr_key, [])
+                                persistent.extend(new_items)
+                                g[f"_{arr_key}_len"] = len(batch)
+
+            # Compute live in-play predictions for active games.
+            try:
+                prematch_index = _build_live_prematch_index()
+                for comp_name in list(_live_scores.keys()):
+                    for g in _live_scores[comp_name].get("games", []):
+                        if g.get("status") == "in":
+                            prematch = _match_prematch_record(
+                                g.get("home_team", ""), g.get("away_team", ""),
+                                comp_name, prematch_index,
+                            )
+                            lp = _compute_live_prediction(g, prematch)
+                            if lp is not None:
+                                g["live_prediction"] = lp
+                        # Update cumulative momentum for in-progress games
+                        if g.get("status") == "in":
+                            _update_cumulative_momentum(g)
+            except Exception:
+                pass
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+        now = datetime.now()
+        interval = _compute_poll_interval(now, results, active_comps, todays_comps)
+        time.sleep(interval)
+
+
+def start_live_score_poller() -> None:
+    """Start the live score poller thread if not already running.
+
+    Called by BackendServer on Steam Deck (gunicorn) and by ``__main__``
+    in dev mode.  Safe to call multiple times — the ``_started`` guard
+    ensures only one thread is created.
+    """
+    if not getattr(start_live_score_poller, "_started", False):
+        start_live_score_poller._started = True
+        threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
+        print("[startup] Live score poller started (60s live / 60s 3min pre-kickoff / 15min pre-match / 30min idle).")
+
+
+# ── End Live Score Poller ───────────────────────────────────────
+
+
+def get_context(mode="global"):
+    """Return lazily initialized prediction context for global or MLS mode."""
+    global _ctx_global, _ctx_mls, _ctx_extra
+    if mode == "mls":
+        if _ctx_mls is None:
+            with _ctx_lock:
+                if _ctx_mls is None:
+                    _ctx_mls = _load_context(pm_mls)
+        return _ctx_mls
+    if mode == "extra":
+        if _ctx_extra is None:
+            with _ctx_lock:
+                if _ctx_extra is None:
+                    _ctx_extra = _load_context(pm_extra)
+        return _ctx_extra
+
+    if _ctx_global is None:
+        with _ctx_lock:
+            if _ctx_global is None:
+                _ctx_global = _load_context(pm_global)
+    return _ctx_global
+
+
+def _predict(home_raw, away_raw, mode="global"):
+    """Run a single match prediction and return probabilities plus stat projections."""
+    if STATIC_PREDICTIONS:
+        lookup, _ = _get_static_predictions(mode)
+        key = (_normalize_team_key(home_raw), _normalize_team_key(away_raw))
+        record = lookup.get(key)
+        if not record:
+            raise ValueError("Prediction not available in static data.")
+        prediction = record.get("predicted_result") or ""
+        if prediction not in {"H", "D", "A"}:
+            probs = {"H": record.get("prob_home", 0.0), "D": record.get("prob_draw", 0.0), "A": record.get("prob_away", 0.0)}
+            prediction = max(probs, key=probs.get)
+        home_display = _team_name_for_display(record["home_team"])
+        away_display = _team_name_for_display(record["away_team"])
+        return {
+            "home_team": home_display,
+            "away_team": away_display,
+            "competition": record.get("competition") or "",
+            "predicted_result": prediction,
+            "winner_label": {"H": f"{home_display} win", "D": "Draw", "A": f"{away_display} win"}[prediction],
+            "prob_home": round(_to_float(record.get("prob_home", 0.0)) * 100, 3),
+            "prob_draw": round(_to_float(record.get("prob_draw", 0.0)) * 100, 3),
+            "prob_away": round(_to_float(record.get("prob_away", 0.0)) * 100, 3),
+            "pred_home_goals": int(round(_to_float(record.get("pred_home_goals", 0.0)))),
+            "pred_away_goals": int(round(_to_float(record.get("pred_away_goals", 0.0)))),
+            "pred_home_shots": round(_to_float(record.get("pred_home_shots", 0.0)), 2),
+            "pred_away_shots": round(_to_float(record.get("pred_away_shots", 0.0)), 2),
+            "pred_home_sot": round(_to_float(record.get("pred_home_sot", 0.0)), 2),
+            "pred_away_sot": round(_to_float(record.get("pred_away_sot", 0.0)), 2),
+            "prob_home_goals_0": _get_goal_prob(record, "prob_home_goals_0"),
+            "prob_home_goals_1plus": _get_goal_prob(record, "prob_home_goals_1plus"),
+            "prob_home_goals_2plus": _get_goal_prob(record, "prob_home_goals_2plus"),
+            "prob_away_goals_0": _get_goal_prob(record, "prob_away_goals_0"),
+            "prob_away_goals_1plus": _get_goal_prob(record, "prob_away_goals_1plus"),
+            "prob_away_goals_2plus": _get_goal_prob(record, "prob_away_goals_2plus"),
+            "prob_both_score": _get_goal_prob(record, "prob_both_score"),
+            "prob_over_1_5": _get_goal_prob(record, "prob_over_1_5"),
+            "prob_over_2_5": _get_goal_prob(record, "prob_over_2_5"),
+            "prob_over_3_5": _get_goal_prob(record, "prob_over_3_5"),
+            "correct_score_dist": _compute_correct_score_dist(
+                record.get("pred_home_goals"), record.get("pred_away_goals"),
+            ),
+            "double_chance": _compute_double_chance(
+                _to_float(record.get("prob_home", 0.0)),
+                _to_float(record.get("prob_draw", 0.0)),
+                _to_float(record.get("prob_away", 0.0)),
+            ),
+            "asian_handicap": _compute_asian_handicap(
+                record.get("pred_home_goals"), record.get("pred_away_goals"),
+                prob_home=_to_float(record.get("prob_home", 0.0)),
+                prob_draw=_to_float(record.get("prob_draw", 0.0)),
+                prob_away=_to_float(record.get("prob_away", 0.0)),
+            ),
+        }
+
+    ctx = get_context(mode)
+    pm = ctx.pm
+    home_input = _team_name_for_db(home_raw)
+    away_input = _team_name_for_db(away_raw)
+    home_team = pm.resolve_team_name(home_input, ctx.available_teams)
+    away_team = pm.resolve_team_name(away_input, ctx.available_teams)
+    if not home_team or not away_team:
+        raise ValueError("One or both team names were not recognized.")
+    if home_team == away_team:
+        raise ValueError("Home and away teams must be different.")
+
+    home_comp = str(ctx.team_competition_map.get(home_team, "")).strip()
+    away_comp = str(ctx.team_competition_map.get(away_team, "")).strip()
+    competition_hint = home_comp if home_comp and home_comp == away_comp else (home_comp or away_comp)
+    competition_fallback = _latest_season_for_competition(
+        ctx.season_teams,
+        competition_hint,
+        ctx.latest_season,
+        pm.parse_start_year_from_key,
+    )
+    prediction_season = pm.choose_season_for_teams(home_team, away_team, ctx.season_teams, competition_fallback)
+    competition_key = os.path.dirname(prediction_season).replace("\\", "/") or "Unknown"
+    feature_competition = competition_hint or competition_key
+    prediction_start_year = pm.parse_start_year_from_key(prediction_season)
+    season_coeff = pm.season_recency_coefficient(ctx.latest_start_year, prediction_start_year)
+    home_comp = ctx.team_competition_map.get(home_team, feature_competition)
+    away_comp = ctx.team_competition_map.get(away_team, feature_competition)
+
+    match_input = pm.build_match_input(home_team, away_team)
+    X_match = pm.build_features(
+        match_input,
+        prediction_season,
+        feature_competition,
+        season_coeff,
+        ctx.overall_teams,
+        ctx.season_teams,
+        ctx.head_to_head,
+        ctx.current_form,
+        ctx.league_strength,
+        home_competition_override=home_comp,
+        away_competition_override=away_comp,
+    )
+    X_match = pd.get_dummies(X_match, columns=["competition"], dtype=float)
+    X_match = X_match.reindex(columns=ctx.train_columns, fill_value=0.0)
+
+    probabilities = {"H": 0.0, "D": 0.0, "A": 0.0}
+    proba_values = ctx.clf.predict_proba(X_match)[0]
+    for idx, encoded_label in enumerate(ctx.clf.classes_):
+        label = ctx.result_label_encoder.inverse_transform([encoded_label])[0]
+        probabilities[label] = float(proba_values[idx])
+    if mode == "mls":
+        home_league_strength = float(ctx.league_strength.get(home_comp, 0.85))
+        away_league_strength = float(ctx.league_strength.get(away_comp, 0.85))
+        probabilities, _, _ = pm.apply_league_strength_adjustment(
+            probabilities, home_league_strength, away_league_strength
+        )
+
+        home_adv_shift = pm.mls_home_advantage_shift(home_team, prediction_season, ctx.season_teams)
+        transfer = min(home_adv_shift, probabilities.get("A", 0.0))
+        probabilities["H"] = max(0.0, probabilities.get("H", 0.0) + transfer)
+        probabilities["A"] = max(0.0, probabilities.get("A", 0.0) - transfer)
+        total_prob = probabilities.get("H", 0.0) + probabilities.get("D", 0.0) + probabilities.get("A", 0.0)
+        if total_prob > 0:
+            probabilities["H"] /= total_prob
+            probabilities["D"] /= total_prob
+            probabilities["A"] /= total_prob
+
+        market_shift, _, _ = pm.market_value_probability_shift(
+            home_team, away_team, ctx.market_value_data
+        )
+        if market_shift != 0.0:
+            if market_shift > 0:
+                transfer = min(market_shift, probabilities.get("A", 0.0))
+                probabilities["H"] += transfer
+                probabilities["A"] -= transfer
+            else:
+                transfer = min(abs(market_shift), probabilities.get("H", 0.0))
+                probabilities["A"] += transfer
+                probabilities["H"] -= transfer
+            total_prob = probabilities.get("H", 0.0) + probabilities.get("D", 0.0) + probabilities.get("A", 0.0)
+            if total_prob > 0:
+                probabilities["H"] /= total_prob
+                probabilities["D"] /= total_prob
+                probabilities["A"] /= total_prob
+
+        probabilities = pm.apply_home_advantage_boost(probabilities)
+        probabilities = pm.reduce_draw_probability(probabilities)
+        seed = pm.prediction_randomizer_seed(home_team, away_team, feature_competition, prediction_season)
+        probabilities = pm.apply_probability_randomizer(
+            probabilities,
+            pm.MLS_RANDOMIZER_MAX_DELTA,
+            seed=seed,
+        )
+    else:
+        probabilities = pm.reduce_draw_probability(probabilities)
+        seed = pm.prediction_randomizer_seed(home_team, away_team, feature_competition, prediction_season)
+        max_delta = getattr(pm, "EU_RANDOMIZER_MAX_DELTA", None)
+        if max_delta is None:
+            max_delta = getattr(pm, "MLS_RANDOMIZER_MAX_DELTA", 0.12)
+        probabilities = pm.apply_probability_randomizer(
+            probabilities,
+            max_delta,
+            seed=seed,
+        )
+
+    prediction = max(probabilities, key=probabilities.get)
+    home_goals = max(0.0, float(ctx.home_goal_reg.predict(X_match)[0]))
+    away_goals = max(0.0, float(ctx.away_goal_reg.predict(X_match)[0]))
+    home_shots = max(0.0, float(ctx.home_shot_reg.predict(X_match)[0]))
+    away_shots = max(0.0, float(ctx.away_shot_reg.predict(X_match)[0]))
+    home_sot = max(0.0, float(ctx.home_sot_reg.predict(X_match)[0]))
+    away_sot = max(0.0, float(ctx.away_sot_reg.predict(X_match)[0]))
+
+    home_display = _team_name_for_display(home_team)
+    away_display = _team_name_for_display(away_team)
+
+    goal_probs = pm.compute_goal_probabilities(home_goals, away_goals)
+    aligned_home, aligned_away = pm.align_predicted_score(home_goals, away_goals, prediction)
+
+    return {
+        "home_team": home_display,
+        "away_team": away_display,
+        "competition": home_comp if home_comp == away_comp else f"{home_comp} vs {away_comp}",
+        "predicted_result": prediction,
+        "winner_label": {"H": f"{home_display} win", "D": "Draw", "A": f"{away_display} win"}[prediction],
+        "prob_home": round(probabilities["H"] * 100, 3),
+        "prob_draw": round(probabilities["D"] * 100, 3),
+        "prob_away": round(probabilities["A"] * 100, 3),
+        "pred_home_goals": int(round(home_goals)),
+        "pred_away_goals": int(round(away_goals)),
+        "pred_home_shots": round(home_shots, 2),
+        "pred_away_shots": round(away_shots, 2),
+        "pred_home_sot": round(home_sot, 2),
+        "pred_away_sot": round(away_sot, 2),
+        "prob_home_goals_0": round(goal_probs.get("prob_home_goals_0", 0), 6),
+        "prob_home_goals_1plus": round(goal_probs.get("prob_home_goals_1plus", 0), 6),
+        "prob_home_goals_2plus": round(goal_probs.get("prob_home_goals_2plus", 0), 6),
+        "prob_away_goals_0": round(goal_probs.get("prob_away_goals_0", 0), 6),
+        "prob_away_goals_1plus": round(goal_probs.get("prob_away_goals_1plus", 0), 6),
+        "prob_away_goals_2plus": round(goal_probs.get("prob_away_goals_2plus", 0), 6),
+        "prob_both_score": round(goal_probs.get("prob_both_score", 0), 6),
+        "prob_over_1_5": round(goal_probs.get("prob_over_1_5", 0), 6),
+        "prob_over_2_5": round(goal_probs.get("prob_over_2_5", 0), 6),
+        "prob_over_3_5": round(goal_probs.get("prob_over_3_5", 0), 6),
+        "correct_score_dist": _compute_correct_score_dist(home_goals, away_goals),
+        "double_chance": _compute_double_chance(
+            probabilities.get("H", 0), probabilities.get("D", 0), probabilities.get("A", 0),
+        ),
+        "asian_handicap": _compute_asian_handicap(
+            home_goals, away_goals,
+            prob_home=probabilities.get("H", 0),
+            prob_draw=probabilities.get("D", 0),
+            prob_away=probabilities.get("A", 0),
+        ),
+    }
+
+
+def _winner_label(code, home_team, away_team):
+    """Convert H/D/A code to a display winner label."""
+    code = str(code).strip().upper()
+    if code == "H":
+        return f"{home_team}"
+    if code == "A":
+        return f"{away_team}"
+    return "Draw"
+
+
+def _format_percent_value(value):
+    """Format percent values and clamp tiny non-zero values to '<1'."""
+    try:
+        v = float(value)
+    except Exception:
+        return "0"
+    if 0.0 < v < 1.0:
+        return "<1"
+    return f"{v:.1f}"
+
+
+def _compute_accuracy_stats(frame):
+    """Compute aggregate accuracy counters from a predictions dataframe."""
+    if frame.empty:
+        return {
+            "total_predictions": 0,
+            "settled_total": 0,
+            "correct_total": 0,
+            "pending_total": 0,
+            "accuracy_pct": 0.0,
+        }
+
+    if "actual_result" in frame.columns:
+        settled_mask = frame["actual_result"].astype(str).str.strip().isin({"H", "D", "A"})
+    else:
+        settled_mask = pd.Series([False] * len(frame), index=frame.index)
+    settled = frame[settled_mask].copy()
+    if settled.empty:
+        return {
+            "total_predictions": int(len(frame)),
+            "settled_total": 0,
+            "correct_total": 0,
+            "pending_total": int(len(frame)),
+            "accuracy_pct": 0.0,
+        }
+
+    correct = (
+        settled["predicted_result"].astype(str).str.strip().str.upper()
+        == settled["actual_result"].astype(str).str.strip().str.upper()
+    ).sum()
+
+    settled_total = int(len(settled))
+    correct_total = int(correct)
+    accuracy = round((100.0 * correct_total / settled_total), 1) if settled_total else 0.0
+    return {
+        "total_predictions": int(len(frame)),
+        "settled_total": settled_total,
+        "correct_total": correct_total,
+        "pending_total": int(len(frame) - settled_total),
+        "accuracy_pct": accuracy,
+    }
+
+
+def _compute_league_accuracy_stats(frame):
+    """Compute accuracy counters grouped by competition."""
+    if frame.empty or "competition" not in frame.columns:
+        return []
+
+    rows = []
+    grouped = frame.groupby("competition", dropna=False)
+    for competition, comp_frame in grouped:
+        stats = _compute_accuracy_stats(comp_frame)
+        rows.append(
+            {
+                "competition": str(competition),
+                "correct_total": stats["correct_total"],
+                "settled_total": stats["settled_total"],
+                "pending_total": stats["pending_total"],
+                "total_predictions": stats["total_predictions"],
+                "accuracy_pct": stats["accuracy_pct"],
+            }
+        )
+    rows.sort(key=lambda item: item["competition"].lower())
+    return rows
+
+
+def _load_accuracy_totals():
+    """Load persistent all-time accuracy totals written by the live updater."""
+    payload = _load_json_payload(ACCURACY_TOTALS_FILE)
+    if not isinstance(payload, dict):
+        return {"overall": {}, "by_league": {}}
+    overall = payload.get("overall")
+    by_league = payload.get("by_league")
+    if not isinstance(overall, dict):
+        overall = {}
+    if not isinstance(by_league, dict):
+        by_league = {}
+    return {"overall": overall, "by_league": by_league}
+
+
+def _build_persistent_accuracy_stats(mode, rows):
+    """Build response stats by combining persistent settled totals with current pending rows."""
+    totals = _load_accuracy_totals()
+    by_league_all = totals.get("by_league", {})
+    if mode == "mls":
+        filtered = {
+            str(k): v for k, v in by_league_all.items()
+            if str(k).strip() == MLS_COMPETITION
+        }
+    elif mode == "extra":
+        filtered = {}
+    elif mode == "national":
+        filtered = {}
+    elif mode == "cups":
+        filtered = {
+            str(k): v for k, v in by_league_all.items()
+            if str(k).strip() in CUP_COMPETITIONS
+        }
+    else:
+        filtered = {
+            str(k): v for k, v in by_league_all.items()
+            if str(k).strip() != MLS_COMPETITION and str(k).strip() not in CUP_COMPETITIONS
+        }
+
+    pending_by_league = {}
+    for row in rows:
+        comp = str(row.get("competition", "")).strip() or "Unknown"
+        pending_by_league[comp] = pending_by_league.get(comp, 0) + 1
+
+    league_stats = []
+    comps = sorted(set(filtered.keys()) | set(pending_by_league.keys()), key=lambda name: name.lower())
+    correct_sum = 0
+    settled_sum = 0
+    for comp in comps:
+        league_payload = filtered.get(comp, {}) if isinstance(filtered.get(comp), dict) else {}
+        correct_total = int(league_payload.get("correct_total", 0) or 0)
+        settled_total = int(league_payload.get("total_predictions", 0) or 0)
+        pending_total = int(pending_by_league.get(comp, 0))
+        accuracy_pct = round((100.0 * correct_total / settled_total), 1) if settled_total else 0.0
+        league_stats.append(
+            {
+                "competition": comp,
+                "correct_total": correct_total,
+                "settled_total": settled_total,
+                "pending_total": pending_total,
+                "total_predictions": settled_total,
+                "accuracy_pct": accuracy_pct,
+            }
+        )
+        correct_sum += correct_total
+        settled_sum += settled_total
+
+    stats = {
+        "total_predictions": settled_sum,
+        "settled_total": settled_sum,
+        "correct_total": correct_sum,
+        "pending_total": int(len(rows)),
+        "accuracy_pct": round((100.0 * correct_sum / settled_sum), 1) if settled_sum else 0.0,
+    }
+    return stats, league_stats
+
+
+def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
+    """Load prediction rows from CSV filtered by date range.
+    
+    Args:
+        csv_path: Path to the prediction CSV.
+        mode: Source mode ("global", "mls", "extra", "cups", "national").
+        date_range: ``"upcoming"`` — today to 21 days out (default).
+                    ``"completed"`` — previous full prediction week to yesterday.
+    """
+    if not os.path.exists(csv_path):
+        empty = pd.DataFrame()
+        target_mode = mode or "global"
+        return [], _compute_accuracy_stats(empty), _compute_league_accuracy_stats(empty)
+    try:
+        if LOW_MEMORY_STATIC:
+            allowed = {
+                "match_date",
+                "competition",
+                "home_team",
+                "away_team",
+                "display_home_team",
+                "display_away_team",
+                "predicted_result",
+                "prob_home",
+                "prob_draw",
+                "prob_away",
+                "pred_home_goals",
+                "pred_away_goals",
+                "pred_home_shots",
+                "pred_away_shots",
+                "pred_home_sot",
+                "pred_away_sot",
+                "probability_reasoning",
+                "prob_home_goals_0",
+                "prob_home_goals_1plus",
+                "prob_home_goals_2plus",
+                "prob_away_goals_0",
+                "prob_away_goals_1plus",
+                "prob_away_goals_2plus",
+                "prob_both_score",
+                "prob_over_1_5",
+                "prob_over_2_5",
+                "prob_over_3_5",
+                "actual_result",
+                "match_datetime_utc",
+                "match_datetime_et",
+            }
+            frame = pd.read_csv(
+                csv_path,
+                usecols=lambda c: c in allowed,
+                dtype={
+                    "match_date": "string",
+                    "competition": "string",
+                    "home_team": "string",
+                    "away_team": "string",
+                    "display_home_team": "string",
+                    "display_away_team": "string",
+                    "predicted_result": "string",
+                    "probability_reasoning": "string",
+                    "actual_result": "string",
+                    "match_datetime_utc": "string",
+                    "match_datetime_et": "string",
+                },
+            )
+        else:
+            frame = pd.read_csv(csv_path)
+    except Exception:
+        empty = pd.DataFrame()
+        target_mode = mode or "global"
+        return [], _compute_accuracy_stats(empty), _compute_league_accuracy_stats(empty)
+    if frame.empty:
+        target_mode = mode or "global"
+        return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
+
+    required = ["match_date", "competition", "home_team", "away_team", "predicted_result", "prob_home", "prob_draw", "prob_away"]
+    for col in required:
+        if col not in frame.columns:
+            return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
+
+    # Drop past fixtures so stale upcoming rows never show on the website.
+    # CRITICAL: Must reset index after each filter to avoid index alignment issues
+    frame = frame.copy()
+    frame["parsed_date"] = pd.to_datetime(frame["match_date"], errors="coerce").dt.normalize()
+    frame = frame[frame["parsed_date"].notna()].reset_index(drop=True)
+    
+    if frame.empty:
+        return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
+    
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    if date_range == "completed":
+        # Previous full prediction week → today
+        prev_thursday = today_et - timedelta(days=(today_et.weekday() - 3) % 7 + 7)
+        lo = pd.Timestamp(prev_thursday)
+        hi = pd.Timestamp(today_et + timedelta(days=1))
+        frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] < hi)].reset_index(drop=True)
+    elif date_range == "all":
+        # All available rows (no date filter)
+        pass
+    else:
+        # Upcoming: today → 21 days out (today + rest of current week + 2 full weeks)
+        lo = pd.Timestamp(today_et)
+        hi = pd.Timestamp(today_et + timedelta(days=21))
+        frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] <= hi)].reset_index(drop=True)
+    
+    if frame.empty:
+        return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
+    
+    # Now safely convert dates for display
+    frame["match_date"] = frame["parsed_date"].dt.strftime("%Y-%m-%d")
+    frame = frame.drop(columns=["parsed_date"])
+
+    frame = frame.sort_values(["match_date", "competition", "match_datetime_utc", "home_team", "away_team"])
+    target_mode = mode or ("mls" if os.path.normpath(csv_path) == os.path.normpath(MLS_UPCOMING_FILE) else "global")
+    is_mls_file = target_mode == "mls"
+
+    # Pre-build form & strength indices (only for modes that have processed data)
+    form_index = _build_last5_form_index(target_mode) if target_mode in ("global", "mls", "extra") else {}
+    strength_index = _build_strength_index(target_mode) if target_mode in ("global", "mls", "extra") else {}
+
+    rows = []
+    for _, row in frame.iterrows():
+        # Prefer display labels so provisional cup teams can be marked without affecting tracking keys.
+        home = _team_name_for_display(str(row.get("display_home_team", row["home_team"])).strip())
+        away = _team_name_for_display(str(row.get("display_away_team", row["away_team"])).strip())
+        raw_date = str(row["match_date"])
+        time_label = ""
+        mls_dt_raw = str(row.get("match_datetime_et", "")).strip() if "match_datetime_et" in frame.columns else ""
+        utc_dt_raw = str(row.get("match_datetime_utc", "")).strip() if "match_datetime_utc" in frame.columns else ""
+        match_dt_et = ""
+
+        # Convert match_datetime_utc to Eastern time for display and as match_dt_et
+        if utc_dt_raw:
+            date_val = pd.to_datetime(utc_dt_raw, utc=True, errors="coerce")
+            if pd.notna(date_val):
+                try:
+                    date_val = date_val.tz_convert("America/New_York")
+                    time_label = date_val.strftime("%I:%M %p ET").lstrip("0")
+                    match_dt_et = date_val.strftime("%Y-%m-%dT%H:%M:%S%z")
+                except Exception:
+                    pass
+        elif is_mls_file and mls_dt_raw:
+            date_val = pd.to_datetime(mls_dt_raw, utc=True, errors="coerce")
+            if pd.notna(date_val):
+                try:
+                    date_val = date_val.tz_convert("America/New_York")
+                    time_label = date_val.strftime("%I:%M %p ET").lstrip("0")
+                    match_dt_et = date_val.strftime("%Y-%m-%dT%H:%M:%S%z")
+                except Exception:
+                    pass
+        elif is_mls_file and len(raw_date) == 10 and raw_date.count("-") == 2:
+            date_val = pd.to_datetime(raw_date, errors="coerce")
+        else:
+            date_val = pd.to_datetime(raw_date, utc=True, errors="coerce")
+            if pd.notna(date_val):
+                try:
+                    date_val = date_val.tz_convert("America/New_York")
+                    match_dt_et = date_val.strftime("%Y-%m-%dT%H:%M:%S%z")
+                except Exception:
+                    pass
+        if pd.isna(date_val):
+            weekday = ""
+            date_label = str(row["match_date"])
+        else:
+            weekday = date_val.strftime("%A")
+            date_label = date_val.strftime("%B %d, %Y")
+        try:
+            ph_raw = float(row["prob_home"]) * 100
+            pdv_raw = float(row["prob_draw"]) * 100
+            pa_raw = float(row["prob_away"]) * 100
+            ph = round(ph_raw, 3)
+            pdv = round(pdv_raw, 3)
+            pa = round(pa_raw, 3)
+        except Exception:
+            ph_raw, pdv_raw, pa_raw = 0.0, 0.0, 0.0
+            ph, pdv, pa = 0.0, 0.0, 0.0
+        rows.append(
+            {
+                "match_date": date_label if is_mls_file else str(row["match_date"]),
+                "match_datetime_et": match_dt_et,
+                "weekday": weekday,
+                "date_label": date_label,
+                "time_label": time_label,
+                "competition": str(row["competition"]),
+                "home_team": home,
+                "away_team": away,
+                "winner_label": _winner_label(row["predicted_result"], home, away),
+                "prob_home": ph,
+                "prob_draw": pdv,
+                "prob_away": pa,
+                "prob_home_text": _format_percent_value(ph_raw),
+                "prob_draw_text": _format_percent_value(pdv_raw),
+                "prob_away_text": _format_percent_value(pa_raw),
+                "pred_home_goals": int(pd.to_numeric(row.get("pred_home_goals"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("pred_home_goals"), errors="coerce")) else None,
+                "pred_away_goals": int(pd.to_numeric(row.get("pred_away_goals"), errors="coerce")) if pd.notna(pd.to_numeric(row.get("pred_away_goals"), errors="coerce")) else None,
+                "prob_home_goals_0": _get_goal_prob(row, "prob_home_goals_0"),
+                "prob_home_goals_1plus": _get_goal_prob(row, "prob_home_goals_1plus"),
+                "prob_home_goals_2plus": _get_goal_prob(row, "prob_home_goals_2plus"),
+                "prob_away_goals_0": _get_goal_prob(row, "prob_away_goals_0"),
+                "prob_away_goals_1plus": _get_goal_prob(row, "prob_away_goals_1plus"),
+                "prob_away_goals_2plus": _get_goal_prob(row, "prob_away_goals_2plus"),
+                "prob_both_score": _get_goal_prob(row, "prob_both_score"),
+                "prob_over_1_5": _get_goal_prob(row, "prob_over_1_5"),
+                "prob_over_2_5": _get_goal_prob(row, "prob_over_2_5"),
+                "prob_over_3_5": _get_goal_prob(row, "prob_over_3_5"),
+                "correct_score_dist": _compute_correct_score_dist(
+                    row.get("pred_home_goals"), row.get("pred_away_goals"),
+                ),
+                "double_chance": _compute_double_chance(
+                    ph_raw / 100.0 if ph_raw else 0,
+                    pdv_raw / 100.0 if pdv_raw else 0,
+                    pa_raw / 100.0 if pa_raw else 0,
+                ),
+                "asian_handicap": _compute_asian_handicap(
+                    row.get("pred_home_goals"), row.get("pred_away_goals"),
+                    prob_home=ph_raw / 100.0 if ph_raw else None,
+                    prob_draw=pdv_raw / 100.0 if pdv_raw else None,
+                    prob_away=pa_raw / 100.0 if pa_raw else None,
+                ),
+                # Last-5 form with opponent details
+                "last_5_home": form_index.get(home, []),
+                "last_5_away": form_index.get(away, []),
+                # Attack / defence strength ratings (relative to league avg)
+                "home_attack_rating": strength_index.get(home, {}).get("attack_rating"),
+                "home_defence_rating": strength_index.get(home, {}).get("defence_rating"),
+                "away_attack_rating": strength_index.get(away, {}).get("attack_rating"),
+                "away_defence_rating": strength_index.get(away, {}).get("defence_rating"),
+                # Additional Poisson-derived markets
+                "total_goals_dist": _compute_total_goals_dist(
+                    row.get("pred_home_goals"), row.get("pred_away_goals"),
+                ),
+                "first_to_score": _compute_first_to_score(
+                    row.get("pred_home_goals"), row.get("pred_away_goals"),
+                ),
+                "clean_sheet": _compute_clean_sheet(
+                    row.get("pred_home_goals"), row.get("pred_away_goals"),
+                ),
+                "reasoning": str(row.get("probability_reasoning", "")).strip(),
+                "actual_result": str(row.get("actual_result", "")).strip(),
+                "is_correct": (
+                    "1"
+                    if str(row.get("actual_result", "")).strip().upper() in {"H", "D", "A"}
+                    and str(row.get("predicted_result", "")).strip().upper()
+                    == str(row.get("actual_result", "")).strip().upper()
+                    else (
+                        "0"
+                        if str(row.get("actual_result", "")).strip().upper() in {"H", "D", "A"}
+                        else ""
+                    )
+                ),
+            }
+        )
+    persistent_stats, persistent_league_stats = _build_persistent_accuracy_stats(target_mode, rows)
+    return rows, persistent_stats, persistent_league_stats
+
+
+def _load_all_fixtures_by_competition(csv_path):
+    """Load all fixtures from a predictions CSV grouped by competition.
+
+    Returns a dict ``{competition_name: [row_dict, …]}`` where each row
+    has the same enriched format as ``_load_upcoming_rows()`` output.
+    """
+    rows, _st, _ls = _load_upcoming_rows(csv_path, date_range="all")
+    grouped = {}
+    for r in rows:
+        comp = str(r.get("competition", "")).strip()
+        if not comp:
+            continue
+        grouped.setdefault(comp, []).append(r)
+    return grouped
+
 
 @app.after_request
 def _add_cache_headers(response):
@@ -490,6 +5269,7 @@ def api_help():
         ("/api/upcoming/<mode>", "GET", "Upcoming prediction rows (mode=global|mls|extra|cups|world-cup)"),
         ("/api/past-games", "GET", "Completed games with predictions, optional ?competition= filter"),
         ("/api/world-cup", "GET", "World Cup standings + knockout brackets (odds + real)"),
+        ("/api/tournament/<key>", "GET", "Tournament projection in World Cup format (champions-league, fa-cup, etc.)"),
         ("/api/cup-bracket", "GET", "Domestic cup projected brackets (?competition=)"),
         ("/api/real-cup-data", "GET", "Domestic cup real-life brackets (?competition=)"),
         ("/api/competition-data", "GET", "Unified WC-format data for any competition (?competition=)"),
@@ -709,6 +5489,84 @@ def api_world_cup():
         return jsonify(data)
     except Exception:
         return jsonify({"ok": False, "error": "Could not load World Cup projection"}), 500
+
+
+def _enrich_tournament_payload(comp_name, data):
+    """Add projected tables and fixtures so cup pages match World Cup format."""
+    if not isinstance(data, dict):
+        return data
+
+    projected = _load_projected_tables(CUP_PROJECTED_TABLE_FILE)
+    rows = (projected.get("tables") or {}).get(comp_name) or []
+    if rows and not data.get("group_tables"):
+        data["group_tables"] = [{
+            "group": "League Phase",
+            "teams": [{
+                "team": row.get("team"),
+                "P": row.get("P"),
+                "W": row.get("W"),
+                "D": row.get("D"),
+                "L": row.get("L"),
+                "GF": row.get("GF"),
+                "GA": row.get("GA"),
+                "GD": row.get("GD"),
+                "Pts": row.get("Pts"),
+                "position": row.get("position"),
+                "PlayedPred": row.get("PlayedPred"),
+                "PlayedReal": row.get("PlayedReal"),
+            } for row in rows if row.get("team")],
+        }]
+
+    fixtures_by_comp = _load_all_fixtures_by_competition(CUP_UPCOMING_FILE)
+    comp_fixtures = fixtures_by_comp.get(comp_name) or []
+    if comp_fixtures and not data.get("group_fixtures"):
+        data["group_fixtures"] = comp_fixtures
+
+    if rows:
+        pos_probs = {}
+        for row in rows:
+            team = row.get("team")
+            if not team:
+                continue
+            odds = {}
+            raw_odds = row.get("position_odds_json")
+            if raw_odds:
+                try:
+                    odds = json.loads(raw_odds) if isinstance(raw_odds, str) else raw_odds
+                except Exception:
+                    odds = {}
+            if odds:
+                pos_probs[team] = {
+                    f"group_position_{key}": value
+                    for key, value in odds.items()
+                }
+        if pos_probs:
+            simulations = data.get("simulations") or {}
+            simulations.setdefault("position_probabilities", pos_probs)
+            data["simulations"] = simulations
+
+    return data
+
+
+@app.get("/api/tournament/<key>")
+@_cached_response(ttl=CACHE_TTL_DEFAULT)
+def api_tournament(key):
+    """Return tournament projection data in World Cup format for the mobile app.
+
+    ``key`` is a short slug such as ``champions-league`` or ``fa-cup``.
+    """
+    comp_name = TOURNAMENT_KEY_MAP.get(str(key or "").strip().lower())
+    if not comp_name:
+        return jsonify({"ok": False, "error": f"Unknown tournament: {key}"}), 404
+    if comp_name == "FIFA/World Cup":
+        return api_world_cup()
+
+    with app.test_request_context(query_string={"competition": comp_name}):
+        response = api_competition_data()
+    data = response.get_json()
+    if not isinstance(data, dict) or data.get("ok") is False:
+        return response
+    return jsonify(_enrich_tournament_payload(comp_name, data))
 
 
 @app.get("/api/last-refresh")
@@ -1392,30 +6250,8 @@ def api_cup_bracket():
             matches.append(g)
 
     # 3. Upcoming games from the projected cup bracket JSON
-    bracket_data = _load_json_payload(config.CUP_PROJECTED_BRACKET_FILE)
-    if isinstance(bracket_data, dict):
-        comp_entry = bracket_data.get(comp)
-        if isinstance(comp_entry, dict):
-            for round_name, round_matches in comp_entry.items():
-                if isinstance(round_matches, list):
-                    for entry in round_matches:
-                        if not isinstance(entry, dict):
-                            continue
-                        hm = str(entry.get("home_team", "") or "")
-                        aw = str(entry.get("away_team", "") or "")
-                        if not hm or not aw:
-                            continue
-                        matches.append({
-                            "home_team": hm,
-                            "away_team": aw,
-                            "home_score": None,
-                            "away_score": None,
-                            "status": "pre",
-                            "kickoff_utc": _utc_to_et(str(entry.get("match_datetime_utc", "") or "")),
-                            "round": round_name,
-                            "competition": comp,
-                            "match_id": str(entry.get("match_id", "") or ""),
-                        })
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    _append_projected_cup_matches(matches, comp, bracket_data)
 
     # 4. Enrich with odds from cup predictions CSV
     odds_index = {}
@@ -1433,7 +6269,7 @@ def api_cup_bracket():
         pass
 
     for g in matches:
-        rnd = g.get("round", "") or "Match"
+        rnd = _normalize_round_label(g.get("round"))
         order = g.get("round_order", 0)
         if not isinstance(order, (int, float)):
             try:
@@ -1540,30 +6376,8 @@ def api_real_cup_data():
             matches.append(g)
 
     # Upcoming matchups from projected cup bracket
-    bracket_data = _load_json_payload(config.CUP_PROJECTED_BRACKET_FILE)
-    if isinstance(bracket_data, dict):
-        comp_entry = bracket_data.get(comp)
-        if isinstance(comp_entry, dict):
-            for round_name, round_matches in comp_entry.items():
-                if isinstance(round_matches, list):
-                    for entry in round_matches:
-                        if not isinstance(entry, dict):
-                            continue
-                        hm = str(entry.get("home_team", "") or "")
-                        aw = str(entry.get("away_team", "") or "")
-                        if not hm or not aw:
-                            continue
-                        matches.append({
-                            "home_team": hm,
-                            "away_team": aw,
-                            "home_score": None,
-                            "away_score": None,
-                            "status": "pre",
-                            "kickoff_utc": _utc_to_et(str(entry.get("match_datetime_utc", "") or "")),
-                            "round": round_name,
-                            "competition": comp,
-                            "match_id": str(entry.get("match_id", "") or ""),
-                        })
+    bracket_data = _load_json_payload(CUP_PROJECTED_BRACKET_FILE)
+    _append_projected_cup_matches(matches, comp, bracket_data)
 
     # 4. Enrich with odds and round metadata
     odds_index = {}
@@ -1581,7 +6395,7 @@ def api_real_cup_data():
         pass
 
     for g in matches:
-        rnd = g.get("round", "") or "Match"
+        rnd = _normalize_round_label(g.get("round"))
         order = g.get("round_order", 0)
         if not isinstance(order, (int, float)):
             try:
@@ -1913,32 +6727,11 @@ def api_competition_data():
             matches.append(g)
 
     # Upcoming from projected cup bracket
-    if isinstance(bracket_data, dict):
-        comps = bracket_data.get("competitions", bracket_data)
-        if isinstance(comps, dict) and comp in comps:
-            entry = comps[comp]
-            if isinstance(entry, dict):
-                rounds_list = entry.get("rounds") or []
-                for rnd in rounds_list:
-                    rnd_name = rnd.get("name", "")
-                    for m in rnd.get("matches", []):
-                        hm = str(m.get("home_team", "") or "")
-                        aw = str(m.get("away_team", "") or "")
-                        if not hm or not aw:
-                            continue
-                        matches.append({
-                            "home_team": hm,
-                            "away_team": aw,
-                            "home_score": None,
-                            "away_score": None,
-                            "status": "pre",
-                            "kickoff_utc": _utc_to_et(str(m.get("match_datetime_utc", "") or "")),
-                            "round": rnd_name,
-                            "competition": comp,
-                            "match_id": str(m.get("match_id", "") or ""),
-                        })
+    _append_projected_cup_matches(matches, comp, bracket_data)
 
     if not matches:
+        if comp in _CUP_FORMATS:
+            result = _enrich_tournament_payload(comp, result)
         return jsonify(result)
 
     # Enrich with odds from cup predictions CSV
@@ -1957,7 +6750,7 @@ def api_competition_data():
         pass
 
     for g in matches:
-        rnd = g.get("round", "") or "Match"
+        rnd = _normalize_round_label(g.get("round"))
         order = g.get("round_order", 0)
         if not isinstance(order, (int, float)):
             try:
@@ -1984,10 +6777,16 @@ def api_competition_data():
         g["prob_away"] = odds.get("prob_away")
 
     knockout, odds_knockout, real_knockout = _build_knockout_wc_format(matches)
+    if cup_format and cup_format.get("two_leg_rounds"):
+        knockout = _expand_two_leg_knockout(knockout, cup_format["two_leg_rounds"])
+        odds_knockout = _expand_two_leg_knockout(odds_knockout, cup_format["two_leg_rounds"])
+        real_knockout = _expand_two_leg_knockout(real_knockout, cup_format["two_leg_rounds"])
     result["knockout"] = knockout
     result["odds_knockout"] = odds_knockout
     result["real_knockout"] = real_knockout
 
+    if comp in _CUP_FORMATS:
+        result = _enrich_tournament_payload(comp, result)
     return jsonify(result)
 
 
@@ -2202,7 +7001,7 @@ def api_league_data(competition):
         except Exception:
             continue
 
-    return jsonify({
+    payload = {
         "ok": True,
         "competition": comp,
         "predicted_table": predicted_table,
@@ -2213,7 +7012,9 @@ def api_league_data(competition):
         "winners_odds": winners_odds,
         "real_table": real_table,
         "fixtures": fixtures,
-    })
+    }
+    payload = _enrich_league_data_cup_fields(comp, payload)
+    return jsonify(payload)
 
 
 @app.get("/api/stats")

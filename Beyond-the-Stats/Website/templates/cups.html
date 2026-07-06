@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026060706') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026070301') }}">
 </head>
 <body class="dark-mode" data-active-page="cups">
   <main class="page">
@@ -39,17 +39,13 @@
     </header>
     <section id="panel-cups" class="{{ '' if active_page == 'cups' else 'hidden' }}">
       <div class="card">
-        <h3>Cup Tables & Brackets</h3>
-        <p class="section-subtitle">League-phase tables and projected knockout paths for supported cup competitions.</p>
+        <h3>Cup Tables &amp; Brackets</h3>
+        <p class="section-subtitle">
+          Projected cup paths below use the same layout as the World Cup page. Knockout brackets reflect a single simulation path; fluky results may occur.
+        </p>
         <div id="cup-projection-tabs" class="tabs" aria-label="Cup competition tabs"></div>
-        <div id="cup-view-tabs" class="tabs" aria-label="Cup table and bracket view tabs">
-          <button id="cup-view-table" class="tab-btn active" type="button">League Table</button>
-          <button id="cup-view-bracket" class="tab-btn" type="button">Bracket</button>
-        </div>
-        <p id="cup-format-note" class="note hidden"></p>
       </div>
-      <div id="cup-table-view" class="card">Loading cup table...</div>
-      <div id="cup-bracket-view" class="card hidden">Loading cup bracket...</div>
+      <div id="cup-projection-view" class="card">Loading cup projection...</div>
     </section>
       <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
@@ -57,13 +53,8 @@
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='shared.js', v='2026060706') }}"></script>
-  <script src="{{ url_for('static', filename='cups.js', v='2026060706') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026070301') }}"></script>
+  <script src="{{ url_for('static', filename='world_cup.js', v='2026070301') }}"></script>
+  <script src="{{ url_for('static', filename='cups.js', v='2026070301') }}"></script>
 </body>
 </html>
-
-
-
-
-
-

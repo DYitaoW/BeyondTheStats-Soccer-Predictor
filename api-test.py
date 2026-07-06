@@ -23,6 +23,8 @@ ENDPOINTS = [
     ("GET", "/api/past-games?league=Premier", "Past games filtered"),
     ("GET", "/api/past-games?page=0&per_page=20", "Past games paginated"),
     ("GET", "/api/world-cup", "World Cup projection"),
+    ("GET", "/api/tournament/champions-league", "Tournament projection (Champions League)"),
+    ("GET", "/api/tournament/fa-cup", "Tournament projection (FA Cup)"),
     ("GET", "/api/cup-bracket", "Cup bracket (no comp)"),
     ("GET", "/api/cup-bracket?competition=FA+Cup", "Cup bracket (FA Cup)"),
     ("GET", "/api/real-cup-data", "Real cup data (no comp)"),
