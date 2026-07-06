@@ -65,3 +65,13 @@ def _to_float(value, default=0.0):
         return float(value)
     except Exception:
         return default
+
+
+def _to_int(value):
+    """Convert value to int, returning None on error."""
+    if value is None:
+        return None
+    try:
+        return int(float(value))
+    except (ValueError, TypeError):
+        return None

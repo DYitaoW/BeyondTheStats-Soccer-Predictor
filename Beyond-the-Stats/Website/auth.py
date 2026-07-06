@@ -154,3 +154,70 @@ def enforce_api_rate_limit(f):
 
         return f()
     return wrapper
+
+
+def register_auth_handlers(app):
+    """Register mutation-auth and rate-limit before_request handlers on the Flask app."""
+
+    @app.before_request
+    def _enforce_mutation_auth():
+        """Block backend-changing API calls unless a valid mutation secret is supplied."""
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+
+        protected_paths = {
+            "/api/notifications",
+            "/api/notifications/register",
+            "/api/feedback",
+            "/api/predict",
+            "/api/predict/mls",
+            "/api/predict/extra",
+            "/api/refresh",
+        }
+        if request.path not in protected_paths:
+            return None
+
+        if _mutation_auth_ok():
+            return None
+
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    @app.before_request
+    def _enforce_api_rate_limit():
+        """Apply a per-IP rolling one-minute cap for all API routes."""
+        if not request.path.startswith("/api/"):
+            return None
+
+        now = time.time()
+        cutoff = now - 60.0
+        ip = _client_ip()
+        limit = max(1, config.API_RATE_LIMIT_PER_MINUTE)
+        retry_after = 60
+
+        with _api_rate_lock:
+            events = _api_rate_events_by_ip.setdefault(ip, deque())
+            while events and events[0] <= cutoff:
+                events.popleft()
+
+            if len(events) >= limit:
+                retry_after = int(max(1, 60 - (now - events[0])))
+                print(
+                    f"[rate-limit] {ip} hit {limit} req/min cap on "
+                    f"{request.path} (retry_after={retry_after}s)"
+                )
+                return jsonify(
+                    {
+                        "ok": False,
+                        "error": "Rate limit exceeded. Try again later.",
+                        "retry_after_seconds": retry_after,
+                        "limit_per_minute": limit,
+                    }
+                ), 429
+
+            events.append(now)
+
+            stale_ips = [key for key, queue in _api_rate_events_by_ip.items() if not queue or queue[-1] <= cutoff]
+            for key in stale_ips:
+                _api_rate_events_by_ip.pop(key, None)
+
+        return None

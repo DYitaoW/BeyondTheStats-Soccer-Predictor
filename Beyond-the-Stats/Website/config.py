@@ -51,6 +51,16 @@ PREDICTION_TRACKING_FILE = os.path.join(PROJECT_DIR, "Data", "prediction_trackin
 REAL_TABLES_PERSIST_FILE = os.path.join(PROJECT_DIR, "Data", "standings_cache.json")
 LEAGUE_TEAMS_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "league_teams.json")
 CURRENT_SEASON_TEAMS_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "current_season_teams.json")
+MOBILE_FEED_FILE = os.path.join(PROJECT_DIR, "Output", "mobile_app_feed.json")
+WORLD_CUP_PROJECTION_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+
+UPCOMING_CSV_FILES = {
+    "global": GLOBAL_UPCOMING_FILE,
+    "mls": MLS_UPCOMING_FILE,
+    "extra": EXTRA_UPCOMING_FILE,
+    "cups": CUP_UPCOMING_FILE,
+    "national": NATIONAL_UPCOMING_FILE,
+}
 
 # ── Cache Configuration ───────────────────────────────────────────
 
