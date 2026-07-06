@@ -3,12 +3,11 @@ import json
 import os
 
 import pandas as pd
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
 
 import config
-from predictions import _load_json_payload
-from team_utils import _normalize_team_key
+from config import CUP_COMPETITIONS, MLS_COMPETITION
+from predictions import _load_json_payload, _utc_to_et
 
 HISTORY_COLUMNS = [
     "prediction_key",

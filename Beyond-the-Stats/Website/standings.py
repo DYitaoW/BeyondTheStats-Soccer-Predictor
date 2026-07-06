@@ -1,6 +1,7 @@
 """League tables and standings computation from live scores."""
 import json
 import os
+import re
 import threading
 from datetime import datetime, timezone
 
