@@ -61,6 +61,12 @@ async function loadHomeWinners() {
 // group tables (from the single sim whose champion matches the highest-odds winner).
 const wcWinnerOddsView = document.getElementById("wc-winner-odds");
 const wcProjectedGroupsView = document.getElementById("wc-projected-groups");
+const homeUpcomingList = document.getElementById("home-upcoming-list");
+const homeDateToggle = document.getElementById("home-date-toggle");
+const homeDatePopover = document.getElementById("home-date-popover");
+const homeStartDate = document.getElementById("home-start-date");
+const homeEndDate = document.getElementById("home-end-date");
+const homeApplyDates = document.getElementById("home-apply-dates");
 
 function renderHomeWcWinnerOdds(data) {
     if (!wcWinnerOddsView) return;
@@ -138,6 +144,93 @@ async function loadHomeWorldCup() {
     }
 }
 
+function isoToday() {
+    // Use the browser's local day to match the date picker and default home view.
+    const now = new Date();
+    const offsetMs = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
+function formatDateButton(start, end) {
+    // Keep the compact button readable for same-day and range selections.
+    const today = isoToday();
+    if (start === today && end === today) return "Today";
+    const dateOptions = { month: "short", day: "numeric" };
+    const startLabel = new Date(`${start}T12:00:00`).toLocaleDateString([], dateOptions);
+    const endLabel = new Date(`${end}T12:00:00`).toLocaleDateString([], dateOptions);
+    return start === end ? startLabel : `${startLabel} - ${endLabel}`;
+}
+
+function renderHomeUpcoming(data) {
+    if (!homeUpcomingList) return;
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    if (!rows.length) {
+        homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">No matches found for this date range.</p>";
+        return;
+    }
+    // Reuse the Upcoming Matches tab renderer so the card format stays identical.
+    renderUpcoming(homeUpcomingList, rows, "", { includePast: true, groupByLeague: true });
+}
+
+async function loadHomeUpcoming(start = isoToday(), end = start) {
+    if (!homeUpcomingList) return;
+    homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">Loading matches...</p>";
+    try {
+        const params = new URLSearchParams({ start, end });
+        const response = await fetch(`/api/home/upcoming?${params.toString()}`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.ok) {
+            homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">Failed to load upcoming matches.</p>";
+            return;
+        }
+        if (homeStartDate && homeEndDate) {
+            homeStartDate.min = data.window_start || "";
+            homeStartDate.max = data.window_end || "";
+            homeEndDate.min = data.window_start || "";
+            homeEndDate.max = data.window_end || "";
+            homeStartDate.value = data.start_date || start;
+            homeEndDate.value = data.end_date || end;
+        }
+        if (homeDateToggle) {
+            homeDateToggle.textContent = formatDateButton(data.start_date || start, data.end_date || end);
+        }
+        renderHomeUpcoming(data);
+    } catch (_error) {
+        homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">Failed to load upcoming matches.</p>";
+    }
+}
+
+function setupHomeDatePicker() {
+    if (!homeDateToggle || !homeDatePopover || !homeApplyDates) return;
+    const today = isoToday();
+    if (homeStartDate) homeStartDate.value = today;
+    if (homeEndDate) homeEndDate.value = today;
+
+    // Toggle the compact popover that holds both date inputs.
+    homeDateToggle.addEventListener("click", () => {
+        const isHidden = homeDatePopover.classList.toggle("hidden");
+        homeDateToggle.setAttribute("aria-expanded", String(!isHidden));
+    });
+
+    homeApplyDates.addEventListener("click", () => {
+        const start = homeStartDate?.value || today;
+        const end = homeEndDate?.value || start;
+        homeDatePopover.classList.add("hidden");
+        homeDateToggle.setAttribute("aria-expanded", "false");
+        loadHomeUpcoming(start, end);
+    });
+}
+
+function setupHomeUpcomingClicks() {
+    if (!homeUpcomingList) return;
+    // Match the Upcoming tab behavior by opening selected games in head-to-head.
+    homeUpcomingList.addEventListener("click", (event) => {
+        const button = event.target.closest(".match-toggle");
+        if (!button || typeof openMatchupInH2H !== "function") return;
+        openMatchupInH2H(button.getAttribute("data-home-team"), button.getAttribute("data-away-team"));
+    });
+}
+
 function formatPct(value) {
     const number = Number(value);
     if (!Number.isFinite(number)) return "0%";
@@ -166,3 +259,6 @@ if (winnerView) {
 }
 
 loadHomeWorldCup();
+setupHomeDatePicker();
+setupHomeUpcomingClicks();
+loadHomeUpcoming();

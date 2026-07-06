@@ -210,7 +210,10 @@ class BackendServer:
             # Start the poller inside the worker (after fork) — threading.Thread
             # objects do not survive os.fork(), so starting it here in the arbiter
             # would leave every worker with an empty _live_scores dict.
-            options["post_worker_init"] = lambda _worker: website_app.start_live_score_poller()
+            options["post_worker_init"] = lambda _worker: (
+                website_app.start_live_score_poller(),
+                website_app.start_apns_worker(),
+            )
             FlaskApp(website_app.app, options).run()
         except Exception as exc:
             LOG.exception("[flask] gunicorn crashed: %s -- falling back to dev", exc)
@@ -387,7 +390,7 @@ class BackendServer:
         # Propagate the finish time to the Flask app so /api/stats returns it.
         try:
             import app as website_app
-            website_app._last_pipeline_run = self._last_run
+            website_app.set_last_pipeline_run(self._last_run)
             website_app._save_last_refresh()
             website_app._save_last_data_refresh()
         except Exception:

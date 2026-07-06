@@ -4,9 +4,11 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --chdir "Soccer Predictor/Website" app:app
+    startCommand: gunicorn --chdir "Beyond-the-Stats/Website" -c gunicorn_config.py app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.6
       - key: API_RATE_LIMIT_PER_MINUTE
         value: 60
+      - key: MUTATION_API_TOKEN
+        value: "change-me-to-a-long-random-secret"

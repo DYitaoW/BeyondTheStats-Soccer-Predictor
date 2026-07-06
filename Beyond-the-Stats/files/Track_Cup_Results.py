@@ -83,6 +83,86 @@ CUP_KNOCKOUT_FEEDS = {
     "Final": {"next_round": None, "feeds_to": lambda slot: None},
 }
 
+# ── Domestic Cup Format Rules ───────────────────────────────────
+# Specifies draw rules, 2-leg info, and team eligibility for each cup
+
+CUP_FORMAT_RULES = {
+    "England/FA Cup": {
+        "format": "domestic_knockout",
+        "description": "Single-elimination. Most rounds single-leg. Replays in some early/quarter-final rounds if drawn.",
+        "typical_rounds": ["First Round", "Second Round", "Third Round", "Fourth Round", "Fifth Round", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],  # Replays exist but treated as separate matches in records
+        "final_neutral": True,
+        "draw_type": "fully_randomized",
+        "allows_lower_league": True,
+    },
+    "England/League Cup": {
+        "format": "domestic_knockout",
+        "description": "Single-elimination. Semi-finals are two-legged. Final at neutral venue.",
+        "typical_rounds": ["First Round", "Second Round", "Third Round", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Semi-finals"],
+        "final_neutral": True,
+        "draw_type": "fully_randomized",
+        "allows_lower_league": True,
+    },
+    "Spain/Copa del Rey": {
+        "format": "domestic_knockout",
+        "description": "Single-elimination knockout. Semi-finals are two-legged. Final at neutral venue.",
+        "typical_rounds": ["Preliminary", "First Round", "Second Round", "Third Round", "Round of 32", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Semi-finals"],
+        "final_neutral": True,
+        "draw_type": "fully_randomized",
+        "allows_lower_league": True,
+    },
+    "Germany/DFB-Pokal": {
+        "format": "domestic_knockout",
+        "description": "Single-elimination knockout. All rounds are single match. Final at neutral venue.",
+        "typical_rounds": ["First Round", "Second Round", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": True,
+        "draw_type": "fully_randomized",
+        "allows_lower_league": True,
+    },
+    "France/Coupe de France": {
+        "format": "domestic_knockout",
+        "description": "Single-elimination knockout. All rounds are single match. Final at neutral venue.",
+        "typical_rounds": ["First Round", "Second Round", "Third Round", "Fourth Round", "Fifth Round", "Sixth Round", "Seventh Round", "Eighth Round", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": True,
+        "draw_type": "fully_randomized",
+        "allows_lower_league": True,
+    },
+    "Italy/Coppa Italia": {
+        "format": "domestic_knockout",
+        "description": "Single-elimination knockout. Semi-finals are two-legged. Final at neutral venue.",
+        "typical_rounds": ["First Round", "Second Round", "Third Round", "Fourth Round", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": ["Semi-finals"],
+        "final_neutral": True,
+        "draw_type": "fully_randomized",
+        "allows_lower_league": True,
+    },
+    "United States/US Open Cup": {
+        "format": "domestic_knockout",
+        "description": "Single-elimination knockout. All rounds are single match.",
+        "typical_rounds": ["First Round", "Second Round", "Third Round", "Fourth Round", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": False,
+        "draw_type": "fully_randomized",
+        "allows_lower_league": True,
+    },
+}
+
+# Update DOMESTIC_BRACKET_COMPETITIONS to reflect all domestic cups with rules
+DOMESTIC_BRACKET_COMPETITIONS = {
+    "England/FA Cup",
+    "England/League Cup",
+    "Spain/Copa del Rey",
+    "Germany/DFB-Pokal",
+    "France/Coupe de France",
+    "Italy/Coppa Italia",
+    "United States/US Open Cup",
+}
+
 CUP_HISTORY_COLUMNS = [
     "prediction_key",
     "created_at_utc",
@@ -614,7 +694,100 @@ def _build_uefa_bracket_from_table(competition, table_rows):
     }
 
 
-def _limited_domestic_rounds(comp_frame):
+def _build_domestic_cup_bracket_with_draws(competition_name, comp_frame, predictions_index):
+    """Build a domestic cup bracket distinguishing real fixtures from projected rounds.
+    
+    - real_knockout: Contains only confirmed/completed matches from ESPN API
+    - projected_knockout: Contains simulated next rounds following draw rules
+    - upcoming_fixtures: Next matches to be played (confirmed from API)
+    """
+    rules = CUP_FORMAT_RULES.get(competition_name, {})
+    
+    # Separate completed vs upcoming matches
+    completed = comp_frame[comp_frame["__status"] == "Completed"] if "__status" in comp_frame.columns else pd.DataFrame()
+    upcoming = comp_frame[comp_frame["__status"] == "Upcoming"] if "__status" in comp_frame.columns else pd.DataFrame()
+    
+    # Build upcoming fixtures round
+    upcoming_matches = []
+    if not upcoming.empty:
+        for _, row in upcoming.iterrows():
+            upcoming_matches.append(_match_payload(row, "Upcoming"))
+    
+    # Build real knockout rounds from completed matches
+    real_rounds = []
+    if not completed.empty:
+        for status_group in ["Completed"]:
+            status_matches = completed[completed.get("__status") == status_group] if "__status" in completed.columns else completed
+            if not status_matches.empty:
+                real_rounds.append({
+                    "name": "Recent Results",
+                    "matches": [_match_payload(row, "Completed") for _, row in status_matches.iterrows()],
+                })
+    
+    # Build projected knockout rounds (TBD for future rounds)
+    num_completed = len(completed) if not completed.empty else 0
+    num_upcoming = len(upcoming) if not upcoming.empty else 0
+    
+    # For now, projected rounds are marked as TBD since we don't have full bracket info
+    projected_rounds = []
+    if rules and num_upcoming > 0:
+        projected_rounds.append({
+            "name": "Next Rounds (Projected)",
+            "matches": [
+                _create_tbd_matchup(f"Round {i}", i, draw_rules=rules)
+                for i in range(1, min(4, num_upcoming + 2))
+            ],
+        })
+    
+    return {
+        "competition": competition_name,
+        "format": "domestic_knockout_with_projections",
+        "format_rules": rules,
+        "real_knockout": real_rounds,
+        "projected_knockout": projected_rounds,
+        "upcoming_fixtures": upcoming_matches,
+        "match_count": {
+            "completed": num_completed,
+            "upcoming": num_upcoming,
+        },
+    }
+
+
+def _build_uefa_bracket_with_draws(competition_name, table_rows, predictions_index):
+    """Build UEFA bracket with draw-aware simulation.
+    
+    - Generates bracket from league phase standings (positions 1-8 auto-qualify, 9-24 play playoff)
+    - Simulates playoff round with seeding constraints
+    - Calculates probabilities for each possible opponent
+    """
+    bracket = _build_uefa_bracket_from_table(competition_name, table_rows)
+    
+    # Run simulation with draw constraints
+    sim_info = _simulate_cup_tournament(
+        competition_name, bracket.get("rounds", []), predictions_index,
+    )
+    
+    if sim_info["simulations_run"] > 0:
+        bracket["champion"] = sim_info["champion"]
+        bracket["simulations_run"] = sim_info["simulations_run"]
+        bracket["winner_probabilities"] = sim_info["winner_probabilities"]
+        bracket["sim_index"] = sim_info["sim_index"]
+        
+        # Add draw constraint info for playoff round
+        if competition_name in ("UEFA/Champions League", "Europe/Champions League"):
+            bracket["draw_constraints"] = {
+                "round": "First Round Playoff",
+                "description": "Seeds 9-16 paired with seeds 17-24. Lower seeds can face seeds 23-24.",
+                "seeding_rules": {
+                    "top_8": "Auto-qualify to Round of 16",
+                    "9_to_24": "Single-leg playoff (lower seed hosts higher seed in first leg equivalent)",
+                }
+            }
+    
+    return bracket
+
+
+
     rounds = []
     completed_rows = comp_frame[comp_frame["__status"] == "Completed"].sort_values(
         ["match_date", "home_team", "away_team"],
@@ -652,6 +825,159 @@ def _limited_domestic_rounds(comp_frame):
 
 
 _MATCH_FIELDS = {"home_team", "away_team", "winner", "prob_home", "prob_draw", "prob_away"}
+
+
+def _normalize_team_key(name):
+    """Normalize a team name for comparison."""
+    return str(name or "").strip().lower()
+
+
+def _get_team_squad_value(team_name, squad_value_data=None):
+    """Retrieve squad value for a team from available data sources."""
+    if squad_value_data is None:
+        squad_value_data = {}
+    
+    normalized = _normalize_team_key(team_name)
+    
+    # Check direct mapping
+    if team_name in squad_value_data:
+        return squad_value_data[team_name]
+    if normalized in squad_value_data:
+        return squad_value_data[normalized]
+    
+    return None
+
+
+def _get_team_league_position(team_name, standings_data=None):
+    """Retrieve team league position for a team from standings data."""
+    if standings_data is None:
+        standings_data = {}
+    
+    normalized = _normalize_team_key(team_name)
+    
+    # Search through standings for this team
+    for competition, table in standings_data.items():
+        if isinstance(table, list):
+            for entry in table:
+                if _normalize_team_key(entry.get("team", "")) == normalized:
+                    return {
+                        "position": entry.get("position"),
+                        "competition": competition,
+                        "points": entry.get("Pts"),
+                        "played": entry.get("P"),
+                    }
+    
+    return None
+
+
+def _enrich_team_data(team_name, squad_values=None, standings=None):
+    """Enrich team data with squad value, league position, and other metrics."""
+    squad_value = _get_team_squad_value(team_name, squad_values)
+    position_info = _get_team_league_position(team_name, standings)
+    
+    return {
+        "team_name": team_name,
+        "squad_value_millions": squad_value,
+        "league_position": position_info.get("position") if position_info else None,
+        "league_competition": position_info.get("competition") if position_info else None,
+        "league_points": position_info.get("points") if position_info else None,
+    }
+
+
+def _detect_two_leg_tie(home_team, away_team, matches_for_pair):
+    """Detect if a matchup has 2 legs (home and away matches)."""
+    if len(matches_for_pair) < 2:
+        return False
+    
+    # Check if we have both home and away legs with same teams
+    home_leg = None
+    away_leg = None
+    
+    for match in matches_for_pair:
+        h = _normalize_team_key(match.get("home_team", ""))
+        a = _normalize_team_key(match.get("away_team", ""))
+        ht = _normalize_team_key(home_team)
+        at = _normalize_team_key(away_team)
+        
+        if h == ht and a == at:
+            home_leg = match
+        elif h == at and a == ht:
+            away_leg = match
+    
+    return home_leg is not None and away_leg is not None
+
+
+def _create_tbd_matchup(round_name, slot, possible_opponents=None, draw_rules=None):
+    """Create a TBD (To Be Determined) matchup placeholder."""
+    matchup = {
+        "slot": slot,
+        "round": round_name,
+        "status": "TBD",
+        "home_team": "TBD",
+        "away_team": "TBD",
+        "is_placeholder": True,
+    }
+    
+    if possible_opponents:
+        matchup["possible_opponents"] = possible_opponents
+    
+    if draw_rules:
+        matchup["draw_info"] = draw_rules
+    
+    return matchup
+
+
+def _create_conditional_matchup(team_or_source, opponent_or_source, round_name, slot, draw_constraints=None):
+    """Create a conditional matchup like 'Winner of Match X vs Team Y'."""
+    return {
+        "slot": slot,
+        "round": round_name,
+        "status": "Conditional",
+        "home_team": team_or_source,
+        "away_team": opponent_or_source,
+        "is_conditional": True,
+        "draw_constraints": draw_constraints or {},
+    }
+
+
+def _generate_possible_opponents_for_slot(competition_name, round_name, slot, bracket_data, predictions_index):
+    """Generate possible opponents for a TBD matchup slot based on draw rules.
+    
+    For example, in Champions League playoff, seed 9 can only face seed 23 or 24.
+    Returns list of (opponent, probability) tuples.
+    """
+    possible_opponents = []
+    
+    # Get draw rules for this competition
+    rules = CUP_FORMAT_RULES.get(competition_name, {})
+    
+    if competition_name in ("UEFA/Champions League", "Europe/Champions League"):
+        # Champions League playoff seeding constraints
+        if round_name == "First Round Playoff":
+            seed_map = {
+                9: [23, 24], 10: [23, 24], 11: [22, 24], 12: [22, 24],
+                13: [21, 24], 14: [21, 24], 15: [20, 24], 16: [20, 24],
+                17: [19, 24], 18: [19, 24], 19: [18, 24], 20: [17, 24],
+                21: [16, 24], 22: [15, 24], 23: [9, 10, 11, 12, 13, 14, 15, 16],
+                24: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22],
+            }
+            # Extract seed number from slot if available
+            slot_seed = slot + 8  # Assuming slot 1-16 maps to seeds 9-24
+            candidates = seed_map.get(slot_seed, [])
+            for seed in candidates:
+                possible_opponents.append({
+                    "name": f"Seed {seed}",
+                    "probability": 1.0 / len(candidates) if candidates else 0.0,
+                })
+    else:
+        # For most domestic cups, draw is fully randomized among remaining teams
+        # Just return "TBD - to be determined in draw"
+        possible_opponents.append({
+            "name": "TBD - to be determined",
+            "probability": 1.0,
+        })
+    
+    return possible_opponents
 
 
 def _simulate_cup_tournament(competition_name, rounds_data, predictions_index, num_sims=CUP_SIMULATION_RUNS):
@@ -800,28 +1126,12 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
             if competition_name not in UEFA_TABLE_COMPETITIONS:
                 continue
             table_rows = comp_table.to_dict("records")
-            bracket = _build_uefa_bracket_from_table(competition_name, table_rows)
-            # Run tournament simulation on this bracket
-            sim_info = _simulate_cup_tournament(
-                competition_name, bracket.get("rounds", []), predictions_index,
-            )
-            if sim_info["simulations_run"] > 0:
-                bracket["champion"] = sim_info["champion"]
-                bracket["simulations_run"] = sim_info["simulations_run"]
-                bracket["winner_probabilities"] = sim_info["winner_probabilities"]
-                bracket["sim_index"] = sim_info["sim_index"]
+            bracket = _build_uefa_bracket_with_draws(competition_name, table_rows, predictions_index)
             payload["competitions"][competition_name] = bracket
+    
     for competition_name in UEFA_PRIMARY_COMPETITIONS:
         if competition_name not in payload["competitions"]:
-            bracket = _build_uefa_bracket_from_table(competition_name, [])
-            sim_info = _simulate_cup_tournament(
-                competition_name, bracket.get("rounds", []), predictions_index,
-            )
-            if sim_info["simulations_run"] > 0:
-                bracket["champion"] = sim_info["champion"]
-                bracket["simulations_run"] = sim_info["simulations_run"]
-                bracket["winner_probabilities"] = sim_info["winner_probabilities"]
-                bracket["sim_index"] = sim_info["sim_index"]
+            bracket = _build_uefa_bracket_with_draws(competition_name, [], predictions_index)
             payload["competitions"][competition_name] = bracket
 
     frames = []
@@ -844,13 +1154,10 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
 
     combined = combined.sort_values(["competition", "match_date", "__status", "home_team", "away_team"], na_position="last")
     for competition, comp_frame in combined.groupby("competition", dropna=False):
-        rounds = _limited_domestic_rounds(comp_frame)
-        payload["competitions"][competition] = {
-            "competition": competition,
-            "format": "domestic_knockout_snapshot",
-            "match_limit_per_section": DOMESTIC_BRACKET_MATCH_LIMIT,
-            "rounds": rounds,
-        }
+        competition_name = str(competition).strip()
+        # Use enhanced bracket with draw awareness
+        bracket = _build_domestic_cup_bracket_with_draws(competition_name, comp_frame, predictions_index)
+        payload["competitions"][competition_name] = bracket
     return payload
 
 

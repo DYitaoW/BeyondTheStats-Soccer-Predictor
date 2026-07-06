@@ -1073,7 +1073,7 @@ renderStats(
 );
 }
 
-function renderUpcoming(target, rows, selectedLeague) {
+function renderUpcoming(target, rows, selectedLeague, options = {}) {
     if (!rows.length) {
         target.innerHTML = "<p>No upcoming predictions found.</p>";
         return;
@@ -1088,8 +1088,8 @@ function renderUpcoming(target, rows, selectedLeague) {
 
     const todayStr = new Date().toISOString().slice(0, 10);
 
-    // Only show games from today onward; hide past games from the UI.
-    const futureRows = visibleRows.filter(r => {
+    // Upcoming tab hides stale fixtures; home can opt into historical date ranges.
+    const futureRows = options.includePast ? visibleRows : visibleRows.filter(r => {
         const d = (r.match_date || "").slice(0, 10);
         return d >= todayStr;
     });
@@ -1099,40 +1099,56 @@ function renderUpcoming(target, rows, selectedLeague) {
         return;
     }
 
-    const byDay = {};
-    for (const r of futureRows) {
-        const key = `${r.weekday || ""} ${r.date_label || ""}`.trim();
-        byDay[key] = byDay[key] || [];
-        byDay[key].push(r);
-    }
-
-    // Sort rows within each day by match_datetime_et (ISO string in ET, sorts chronologically).
-    for (const key of Object.keys(byDay)) {
-        byDay[key].sort((a, b) => {
+    const sortByKickoff = (a, b) => {
             const ta = a.match_datetime_et || "";
             const tb = b.match_datetime_et || "";
             if (ta && tb) return ta < tb ? -1 : ta > tb ? 1 : 0;
             if (ta) return -1;
             if (tb) return 1;
-            return 0;
-        });
-    }
+            return String(a.home_team || "").localeCompare(String(b.home_team || ""));
+    };
 
-    // Sort days chronologically by the earliest match_datetime_et in each day.
-    const days = Object.keys(byDay).sort((a, b) => {
-        const da = byDay[a][0]?.match_datetime_et || "";
-        const db = byDay[b][0]?.match_datetime_et || "";
-        if (da && db) return da < db ? -1 : da > db ? 1 : 0;
-        return 0;
-    });
+    const dayLabelForRow = (row) => `${row.weekday || ""} ${row.date_label || ""}`.trim();
 
-    // Flatten with day separators for pagination
-    const flatItems = [];
-    for (const day of days) {
-        flatItems.push({ type: 'day', label: day });
-        for (const r of byDay[day]) {
-            flatItems.push({ type: 'match', data: r });
+    const appendDayGroups = (flatItems, groupedRows) => {
+        const byDay = {};
+        for (const row of groupedRows) {
+            const key = dayLabelForRow(row);
+            byDay[key] = byDay[key] || [];
+            byDay[key].push(row);
         }
+        for (const key of Object.keys(byDay)) {
+            byDay[key].sort(sortByKickoff);
+        }
+        const days = Object.keys(byDay).sort((a, b) => {
+            const da = byDay[a][0]?.match_datetime_et || byDay[a][0]?.match_date || "";
+            const db = byDay[b][0]?.match_datetime_et || byDay[b][0]?.match_date || "";
+            if (da && db) return da < db ? -1 : da > db ? 1 : 0;
+            return a.localeCompare(b);
+        });
+        for (const day of days) {
+            flatItems.push({ type: "day", label: day });
+            for (const row of byDay[day]) {
+                flatItems.push({ type: "match", data: row });
+            }
+        }
+    };
+
+    // Flatten with group separators for pagination.
+    const flatItems = [];
+    if (options.groupByLeague) {
+        const byLeague = {};
+        for (const row of futureRows) {
+            const league = row.competition || "Other";
+            byLeague[league] = byLeague[league] || [];
+            byLeague[league].push(row);
+        }
+        for (const league of Object.keys(byLeague).sort((a, b) => a.localeCompare(b))) {
+            flatItems.push({ type: "league", label: league });
+            appendDayGroups(flatItems, byLeague[league]);
+        }
+    } else {
+        appendDayGroups(flatItems, futureRows);
     }
     const totalPages = Math.ceil(flatItems.length / PAGE_SIZE);
 
@@ -1140,10 +1156,17 @@ function renderUpcoming(target, rows, selectedLeague) {
         const start = page * PAGE_SIZE;
         const end = Math.min(start + PAGE_SIZE, flatItems.length);
         const fragment = document.createDocumentFragment();
+        let currentGrid = null;
         
         for (let i = start; i < end; i++) {
             const item = flatItems[i];
-            if (item.type === 'day') {
+            if (item.type === 'league') {
+                const div = document.createElement('div');
+                div.className = 'league-title';
+                div.textContent = item.label;
+                fragment.appendChild(div);
+                currentGrid = null;
+            } else if (item.type === 'day') {
                 const div = document.createElement('div');
                 div.className = 'day-title';
                 div.textContent = item.label;
@@ -1151,10 +1174,14 @@ function renderUpcoming(target, rows, selectedLeague) {
                 const grid = document.createElement('div');
                 grid.className = 'kick-card-grid';
                 fragment.appendChild(grid);
+                currentGrid = grid;
             } else {
                 const r = item.data;
-                const grid = fragment.lastElementChild;
-                if (!grid || !grid.classList.contains('kick-card-grid')) continue;
+                if (!currentGrid) {
+                    currentGrid = document.createElement('div');
+                    currentGrid.className = 'kick-card-grid';
+                    fragment.appendChild(currentGrid);
+                }
                 
                 const article = document.createElement('article');
                 const homeGoals = (r.pred_home_goals === null || r.pred_home_goals === undefined) ? "NA" : r.pred_home_goals;
@@ -1200,7 +1227,7 @@ function renderUpcoming(target, rows, selectedLeague) {
                         <div class="match-meta"><strong>Click:</strong> Open head to head</div>
                     </button>
                 `;
-                grid.appendChild(article);
+                currentGrid.appendChild(article);
             }
         }
         
