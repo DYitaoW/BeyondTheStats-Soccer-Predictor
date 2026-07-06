@@ -144,6 +144,17 @@ def _load_last_data_refresh() -> datetime | None:
 # Initialize from persisted file so the timestamp survives server restarts.
 _last_pipeline_run = _load_last_refresh()
 
+
+def get_last_pipeline_run():
+    """Return the in-memory last pipeline run timestamp."""
+    return _last_pipeline_run
+
+
+def set_last_pipeline_run(dt) -> None:
+    """Update the in-memory last pipeline run timestamp (used by BackendServer)."""
+    global _last_pipeline_run
+    _last_pipeline_run = dt
+
 class PredictorContext:
     pm: object
     clf: object
@@ -1490,7 +1501,7 @@ def _run_full_pipeline_once():
     try:
         proc = subprocess.run(
             [sys.executable, config.RUN_ALL_PIPELINE],
-            cwd=PROJECT_DIR,
+            cwd=config.PROJECT_DIR,
             timeout=3600,
             check=False,
         )
@@ -1515,6 +1526,7 @@ def _run_full_pipeline_once():
         _ctx_extra = None
     _static_predictions_cache.clear()
     _static_team_cache.clear()
+    from accuracy_tracker import update_accuracy_history_files
     update_accuracy_history_files()
     if not config.STATIC_PREDICTIONS:
         try:

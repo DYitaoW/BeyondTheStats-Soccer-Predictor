@@ -52,7 +52,6 @@ from predictions import (
     _file_mtime_utc,
     _format_percent_value,
     _get_static_predictions,
-    _last_pipeline_run,
     _load_all_fixtures_by_competition,
     _load_context,
     _load_current_season_tables,
@@ -74,6 +73,8 @@ from predictions import (
     _to_int,
     _winner_label,
     get_context,
+    get_last_pipeline_run,
+    set_last_pipeline_run,
     pm_extra,
     pm_global,
     pm_mls,
@@ -713,7 +714,8 @@ def api_world_cup():
 @app.get("/api/last-refresh")
 def api_last_refresh():
     """Return the timestamp of the last pipeline refresh."""
-    refreshed_at = _last_pipeline_run.isoformat() if _last_pipeline_run else None
+    refreshed_at = get_last_pipeline_run()
+    refreshed_at = refreshed_at.isoformat() if refreshed_at else None
     return jsonify({"ok": True, "last_refresh_utc": refreshed_at})
 
 
@@ -2217,13 +2219,13 @@ def api_league_data(competition):
 @app.get("/api/stats")
 def api_stats():
     """Return overall site stats: accuracy, league count, last refresh time."""
-    global _last_pipeline_run
     try:
         rows, stats, league_stats = _load_upcoming_rows(config.GLOBAL_UPCOMING_FILE, "global")
         accuracy_pct = (stats or {}).get("accuracy_pct", 0.0)
     except Exception:
         accuracy_pct = 0.0
-    refreshed_at = _last_pipeline_run.isoformat() if _last_pipeline_run else None
+    refreshed = get_last_pipeline_run()
+    refreshed_at = refreshed.isoformat() if refreshed else None
     return jsonify({
         "ok": True,
         "accuracy_pct": accuracy_pct,

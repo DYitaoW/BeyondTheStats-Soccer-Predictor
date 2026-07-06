@@ -4,6 +4,8 @@ import os
 import threading
 from datetime import datetime, timezone
 
+import pandas as pd
+
 import config
 from espn_api import _fetch_leaders, _fetch_standings, LIVE_SCORE_FETCH_TIMEOUT
 from team_utils import _to_int
@@ -658,18 +660,18 @@ def _build_fallback_standings(comp_name):
 
     # 2. Upcoming prediction CSVs and projected table CSVs
     csv_sources = [
-        GLOBAL_UPCOMING_FILE,
-        MLS_UPCOMING_FILE,
-        EXTRA_UPCOMING_FILE,
-        CUP_UPCOMING_FILE,
-        NATIONAL_UPCOMING_FILE,
-        os.path.join(PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv"),
-        os.path.join(PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv"),
-        os.path.join(PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv"),
-        GLOBAL_PROJECTED_TABLE_FILE,
-        MLS_PROJECTED_TABLE_FILE,
-        EXTRA_PROJECTED_TABLE_FILE,
-        CUP_PROJECTED_TABLE_FILE,
+        config.GLOBAL_UPCOMING_FILE,
+        config.MLS_UPCOMING_FILE,
+        config.EXTRA_UPCOMING_FILE,
+        config.CUP_UPCOMING_FILE,
+        config.NATIONAL_UPCOMING_FILE,
+        os.path.join(config.PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv"),
+        os.path.join(config.PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv"),
+        os.path.join(config.PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv"),
+        config.GLOBAL_PROJECTED_TABLE_FILE,
+        config.MLS_PROJECTED_TABLE_FILE,
+        config.EXTRA_PROJECTED_TABLE_FILE,
+        config.CUP_PROJECTED_TABLE_FILE,
     ]
     for path in csv_sources:
         if not os.path.exists(path):

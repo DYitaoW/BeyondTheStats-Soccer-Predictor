@@ -176,9 +176,9 @@ def _get_todays_competitions(today_date=None):
                         _add_if_today(match, "FIFA/World Cup", today_date, now_et, todays)
 
     # ── Source 3: cup bracket JSON ───────────────────────────────
-    if os.path.exists(CUP_PROJECTED_BRACKET_FILE):
+    if os.path.exists(config.CUP_PROJECTED_BRACKET_FILE):
         try:
-            with open(CUP_PROJECTED_BRACKET_FILE, "r", encoding="utf-8") as fh:
+            with open(config.CUP_PROJECTED_BRACKET_FILE, "r", encoding="utf-8") as fh:
                 cup_data = json.load(fh)
         except Exception:
             cup_data = {}
