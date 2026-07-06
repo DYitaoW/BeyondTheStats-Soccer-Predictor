@@ -1,13 +1,36 @@
 """Knockout bracket structures (World Cup, playoff formats)."""
+import json
 import re
 
 import pandas as pd
 
 import config
 from math_utils import _safe_float
-from predictions import _load_json_payload
+from predictions import (
+    _load_all_fixtures_by_competition,
+    _load_json_payload,
+    _load_projected_tables,
+    _utc_to_et,
+)
 
 _RN_RE = re.compile(r"[^a-z0-9]+")
+
+# Canonical knockout JSON keys shared by World Cup projection, cup APIs,
+# mobile feed, and the iOS app (underscore form, no hyphenated round keys).
+_KNOCKOUT_STAGE_KEY_ALIASES = {
+    "round-of-32": "round_of_32",
+    "round-of-16": "round_of_16",
+    "quarter-finals": "quarterfinals",
+    "quarterfinals": "quarterfinals",
+    "semi-finals": "semifinals",
+    "semifinals": "semifinals",
+    "third-place": "third_place",
+    "knockout-round-play-offs": "knockout_round_playoffs",
+    "knockout-round-playoff": "knockout_round_playoffs",
+    "first-round-playoff": "knockout_round_playoffs",
+    "final": "final",
+}
+
 
 def _build_knockout_framework(comp_name):
     """Return bracket topology for knockout competitions.
@@ -88,9 +111,351 @@ def _build_knockout_framework(comp_name):
                 frameworks[c] = uefa_rounds[uefa_key]
     return frameworks.get(comp_name, [])
 
+
+def _normalize_round_label(round_name):
+    """Return a safe string round label for knockout grouping."""
+    if round_name is None:
+        return "Match"
+    label = str(round_name).strip()
+    return label or "Match"
+
+
 def _round_to_stage_key(round_name):
-    """Convert 'Quarter-finals' -> 'quarter-finals', 'Round of 16' -> 'round-of-16'."""
-    return _RN_RE.sub("-", round_name.strip().lower()).strip("-")
+    """Convert a round label to the canonical underscore knockout JSON key."""
+    label = _normalize_round_label(round_name)
+    slug = _RN_RE.sub("-", label.lower()).strip("-")
+    if not slug:
+        return "match"
+    if slug in _KNOCKOUT_STAGE_KEY_ALIASES:
+        return _KNOCKOUT_STAGE_KEY_ALIASES[slug]
+    return slug.replace("-", "_")
+
+
+def _normalize_round_token(name):
+    return _RN_RE.sub("-", str(name or "").strip().lower()).strip("-")
+
+
+def _expand_two_leg_knockout(knockout_dict, two_leg_rounds):
+    """Expand two-legged knockout rounds into separate Leg 1 / Leg 2 match entries."""
+    if not knockout_dict or not two_leg_rounds:
+        return knockout_dict
+    two_leg_keys = {_normalize_round_token(r) for r in two_leg_rounds}
+    expanded = {}
+    for stage_key, matches in knockout_dict.items():
+        round_name = str(matches[0].get("round", "") or "") if matches else ""
+        stage_norm = _normalize_round_token(stage_key)
+        round_norm = _normalize_round_token(round_name)
+        is_two_leg = (
+            stage_norm in two_leg_keys
+            or round_norm in two_leg_keys
+            or any(tl in stage_norm or tl in round_norm for tl in two_leg_keys)
+        )
+        if not is_two_leg:
+            expanded[stage_key] = matches
+            continue
+        new_matches = []
+        for idx, m in enumerate(matches, start=1):
+            tie_id = m.get("slot") or m.get("tie_id") or idx
+            rnd_label = round_name or stage_key.replace("-", " ").title()
+            leg1 = dict(m)
+            leg1["leg"] = 1
+            leg1["tie_id"] = tie_id
+            leg1["label"] = f"{rnd_label} — Leg 1"
+            new_matches.append(leg1)
+            leg2 = dict(m)
+            leg2["leg"] = 2
+            leg2["tie_id"] = tie_id
+            leg2["home_team"] = m.get("away_team", "")
+            leg2["away_team"] = m.get("home_team", "")
+            leg2["label"] = f"{rnd_label} — Leg 2"
+            leg2["prob_home"] = m.get("prob_away")
+            leg2["prob_away"] = m.get("prob_home")
+            new_matches.append(leg2)
+        expanded[stage_key] = new_matches
+    return expanded
+
+
+def _append_projected_cup_matches(matches, comp, bracket_data):
+    """Append projected cup bracket matchups for *comp* into *matches*."""
+    if not isinstance(bracket_data, dict):
+        return
+
+    entry = None
+    comps = bracket_data.get("competitions")
+    if isinstance(comps, dict):
+        entry = comps.get(comp)
+
+    # Legacy flat format: {competition: {round_name: [match, ...]}}
+    if entry is None:
+        legacy = bracket_data.get(comp)
+        if isinstance(legacy, dict):
+            if isinstance(legacy.get("rounds"), list):
+                entry = legacy
+            else:
+                for round_name, round_matches in legacy.items():
+                    if not isinstance(round_matches, list):
+                        continue
+                    for m in round_matches:
+                        if not isinstance(m, dict):
+                            continue
+                        hm = str(m.get("home_team", "") or "")
+                        aw = str(m.get("away_team", "") or "")
+                        if not hm or not aw:
+                            continue
+                        matches.append({
+                            "home_team": hm,
+                            "away_team": aw,
+                            "home_score": None,
+                            "away_score": None,
+                            "status": "pre",
+                            "kickoff_utc": _utc_to_et(str(m.get("match_datetime_utc", "") or "")),
+                            "round": _normalize_round_label(round_name),
+                            "competition": comp,
+                            "match_id": str(m.get("match_id", "") or ""),
+                        })
+                return
+
+    if not isinstance(entry, dict):
+        return
+
+    for rnd in entry.get("rounds") or []:
+        if not isinstance(rnd, dict):
+            continue
+        rnd_name = _normalize_round_label(rnd.get("name", ""))
+        for m in rnd.get("matches", []):
+            if not isinstance(m, dict):
+                continue
+            hm = str(m.get("home_team", "") or "")
+            aw = str(m.get("away_team", "") or "")
+            if not hm or not aw:
+                continue
+            matches.append({
+                "home_team": hm,
+                "away_team": aw,
+                "home_score": None,
+                "away_score": None,
+                "status": "pre",
+                "kickoff_utc": _utc_to_et(str(m.get("match_datetime_utc", "") or "")),
+                "round": rnd_name,
+                "competition": comp,
+                "match_id": str(m.get("match_id", "") or ""),
+            })
+
+
+def _gather_competition_cup_matches(comp):
+    """Collect completed, live, and projected cup matches for knockout building."""
+    from live_poller import _live_scores, _live_scores_lock
+    from standings import _load_live_score_history
+
+    matches = []
+    seen_ids = set()
+
+    history = _load_live_score_history()
+    for g in history:
+        if g.get("competition") == comp:
+            mid = g.get("match_id", "")
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    with _live_scores_lock:
+        current = _live_scores.get(comp, {}).get("games", [])
+    for g in current:
+        mid = g.get("match_id", "")
+        if mid not in seen_ids:
+            if mid:
+                seen_ids.add(mid)
+            matches.append(g)
+
+    bracket_data = _load_json_payload(config.CUP_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket_data, dict):
+        comps = bracket_data.get("competitions", bracket_data)
+        if isinstance(comps, dict) and comp in comps:
+            entry = comps[comp]
+            if isinstance(entry, dict):
+                for rnd in entry.get("rounds") or []:
+                    rnd_name = rnd.get("name", "")
+                    for m in rnd.get("matches", []):
+                        hm = str(m.get("home_team", "") or "")
+                        aw = str(m.get("away_team", "") or "")
+                        if not hm or not aw:
+                            continue
+                        matches.append({
+                            "home_team": hm,
+                            "away_team": aw,
+                            "home_score": m.get("actual_home_goals"),
+                            "away_score": m.get("actual_away_goals"),
+                            "status": "post" if str(m.get("status", "")).lower() in ("completed", "post") else "pre",
+                            "kickoff_utc": _utc_to_et(str(m.get("match_datetime_utc", "") or "")),
+                            "round": rnd_name,
+                            "competition": comp,
+                            "match_id": str(m.get("match_id", "") or ""),
+                            "pred_home_goals": m.get("pred_home_goals"),
+                            "pred_away_goals": m.get("pred_away_goals"),
+                            "prob_home": m.get("prob_home"),
+                            "prob_draw": m.get("prob_draw"),
+                            "prob_away": m.get("prob_away"),
+                        })
+
+    odds_index = {}
+    try:
+        odds_df = pd.read_csv(config.CUP_UPCOMING_FILE)
+        if not odds_df.empty and all(c in odds_df.columns for c in ("home_team", "away_team", "prob_home", "prob_draw", "prob_away")):
+            for _, row in odds_df.iterrows():
+                key = (str(row["home_team"]).strip().lower(), str(row["away_team"]).strip().lower())
+                odds_index[key] = {
+                    "prob_home": _safe_float(row["prob_home"], None),
+                    "prob_draw": _safe_float(row["prob_draw"], None),
+                    "prob_away": _safe_float(row["prob_away"], None),
+                }
+    except Exception:
+        pass
+
+    for g in matches:
+        rnd = _normalize_round_label(g.get("round"))
+        order = g.get("round_order", 0)
+        if not isinstance(order, (int, float)):
+            try:
+                order = int(order)
+            except (ValueError, TypeError):
+                order = 0
+        g["round_order"] = order
+        g["round"] = rnd
+
+        if g.get("status") == "post":
+            hs = g.get("home_score")
+            aws = g.get("away_score")
+            if hs is not None and aws is not None:
+                if hs > aws:
+                    g["winner"] = g.get("home_team", "")
+                elif aws > hs:
+                    g["winner"] = g.get("away_team", "")
+
+        if g.get("prob_home") is None:
+            hm_name = str(g.get("home_team", "")).strip().lower()
+            aw_name = str(g.get("away_team", "")).strip().lower()
+            odds = odds_index.get((hm_name, aw_name)) or odds_index.get((aw_name, hm_name), {})
+            g["prob_home"] = odds.get("prob_home")
+            g["prob_draw"] = odds.get("prob_draw")
+            g["prob_away"] = odds.get("prob_away")
+
+    return matches
+
+
+def _build_cup_knockout_payload(matches, comp):
+    """Build knockout / odds_knockout / real_knockout with optional two-leg expansion."""
+    cup_format = config._CUP_FORMATS.get(comp)
+    knockout, odds_knockout, real_knockout = _build_knockout_wc_format(matches)
+    if cup_format and cup_format.get("two_leg_rounds"):
+        knockout = _expand_two_leg_knockout(knockout, cup_format["two_leg_rounds"])
+        odds_knockout = _expand_two_leg_knockout(odds_knockout, cup_format["two_leg_rounds"])
+        real_knockout = _expand_two_leg_knockout(real_knockout, cup_format["two_leg_rounds"])
+    return knockout, odds_knockout, real_knockout
+
+
+def _enrich_league_data_cup_fields(comp, payload):
+    """Add tournament winner odds and knockout bracket data for cup competitions."""
+    from standings import _UEFA_COMPETITIONS
+
+    cup_format = config._CUP_FORMATS.get(comp)
+    is_cup = comp in config._CUP_FORMATS or comp in _UEFA_COMPETITIONS
+    if not is_cup:
+        return payload
+
+    if cup_format:
+        payload["cup_format"] = cup_format
+
+    bracket_data = _load_json_payload(config.CUP_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket_data, dict):
+        comps = bracket_data.get("competitions", bracket_data)
+        if isinstance(comps, dict) and comp in comps:
+            entry = comps[comp]
+            if isinstance(entry, dict):
+                for key in ("champion", "simulations_run", "winner_probabilities"):
+                    if key in entry:
+                        payload[key] = entry[key]
+                probs = entry.get("winner_probabilities") or {}
+                if probs:
+                    winners = []
+                    for team, pct in sorted(probs.items(), key=lambda x: -(x[1] or 0)):
+                        pct_f = float(pct or 0)
+                        display_pct = round(pct_f * 100, 2) if pct_f <= 1 else round(pct_f, 2)
+                        winners.append({
+                            "team": team,
+                            "win_league_pct": display_pct,
+                            "top4_pct": None,
+                            "bottom3_pct": None,
+                            "most_likely_position": None,
+                            "most_likely_position_pct": None,
+                        })
+                    payload["winners_odds"] = winners
+
+    matches = _gather_competition_cup_matches(comp)
+    if matches:
+        knockout, odds_knockout, real_knockout = _build_cup_knockout_payload(matches, comp)
+        payload["knockout"] = knockout
+        payload["odds_knockout"] = odds_knockout
+        payload["real_knockout"] = real_knockout
+
+    return payload
+
+
+def _enrich_tournament_payload(comp_name, data):
+    """Add projected tables and fixtures so cup pages match World Cup format."""
+    if not isinstance(data, dict):
+        return data
+
+    projected = _load_projected_tables(config.CUP_PROJECTED_TABLE_FILE)
+    rows = (projected.get("tables") or {}).get(comp_name) or []
+    if rows and not data.get("group_tables"):
+        data["group_tables"] = [{
+            "group": "League Phase",
+            "teams": [{
+                "team": row.get("team"),
+                "P": row.get("P"),
+                "W": row.get("W"),
+                "D": row.get("D"),
+                "L": row.get("L"),
+                "GF": row.get("GF"),
+                "GA": row.get("GA"),
+                "GD": row.get("GD"),
+                "Pts": row.get("Pts"),
+                "position": row.get("position"),
+                "PlayedPred": row.get("PlayedPred"),
+                "PlayedReal": row.get("PlayedReal"),
+            } for row in rows if row.get("team")],
+        }]
+
+    fixtures_by_comp = _load_all_fixtures_by_competition(config.CUP_UPCOMING_FILE)
+    comp_fixtures = fixtures_by_comp.get(comp_name) or []
+    if comp_fixtures and not data.get("group_fixtures"):
+        data["group_fixtures"] = comp_fixtures
+
+    if rows:
+        pos_probs = {}
+        for row in rows:
+            team = row.get("team")
+            if not team:
+                continue
+            odds = {}
+            raw_odds = row.get("position_odds_json")
+            if raw_odds:
+                try:
+                    odds = json.loads(raw_odds) if isinstance(raw_odds, str) else raw_odds
+                except Exception:
+                    odds = {}
+            if odds:
+                pos_probs[team] = {
+                    f"group_position_{key}": value
+                    for key, value in odds.items()
+                }
+        if pos_probs:
+            simulations = data.get("simulations") or {}
+            simulations.setdefault("position_probabilities", pos_probs)
+            data["simulations"] = simulations
+
+    return data
+
 
 def _compute_odds_bracket():
     """Build odds-weighted bracket for all cup competitions.
@@ -151,6 +516,7 @@ def _compute_odds_bracket():
             result[comp_name] = comp_result
     return result
 
+
 def _build_knockout_wc_format(matches):
     """Convert a flat list of cup matches into WC-style knockout/odds_knockout/real_knockout.
 
@@ -160,7 +526,7 @@ def _build_knockout_wc_format(matches):
     by_round = {}
     round_orders = {}
     for g in matches:
-        rnd = g.get("round", "") or "Match"
+        rnd = _normalize_round_label(g.get("round"))
         by_round.setdefault(rnd, []).append(g)
         order = g.get("round_order", 999)
         try:

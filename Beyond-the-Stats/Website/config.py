@@ -262,6 +262,22 @@ _CUP_FORMATS = {
     },
 }
 
+# Mobile app / website tournament keys → canonical competition names.
+TOURNAMENT_KEY_MAP = {
+    "world-cup": "FIFA/World Cup",
+    "champions-league": "UEFA/Champions League",
+    "europa-league": "UEFA/Europa League",
+    "conference-league": "UEFA/Conference League",
+    "euros": "UEFA/European Championship",
+    "copa-america": "CONMEBOL/Copa America",
+    "fa-cup": "England/FA Cup",
+    "efl-cup": "England/League Cup",
+    "dfb-pokal": "Germany/DFB-Pokal",
+    "coupe-de-france": "France/Coupe de France",
+    "coppa-italia": "Italy/Coppa Italia",
+    "us-open-cup": "United States/US Open Cup",
+}
+
 H2H_LEAGUES = {
     "Spain/La Liga", "Spain/La Liga 2",
     "Italy/Serie A", "Italy/Serie B",
