@@ -126,7 +126,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--window-days",
         type=int,
-        default=3,
+        default=365,
         help="Fixture window days for upcoming-matchweek predictions.",
     )
     parser.add_argument(

@@ -139,7 +139,7 @@ def parse_args():
     parser.add_argument("--skip-mls", action="store_true", help="Skip MLS pipeline steps.")
     parser.add_argument("--skip-extra", action="store_true", help="Skip extra-leagues pipeline steps.")
     parser.add_argument("--skip-global", action="store_true", help="Skip European/global pipeline steps.")
-    parser.add_argument("--window-days", type=int, default=3, help="Fixture window days for upcoming matchweek scripts.")
+    parser.add_argument("--window-days", type=int, default=365, help="Fixture window days for upcoming matchweek scripts.")
     parser.add_argument(
         "--national-window-days",
         type=int,

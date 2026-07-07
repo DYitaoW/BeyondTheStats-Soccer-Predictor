@@ -80,7 +80,7 @@ def parse_args():
     parser.add_argument(
         "--window-days",
         type=int,
-        default=3,
+        default=365,
         help="Fixture window days for upcoming matchweek scripts.",
     )
     parser.add_argument(

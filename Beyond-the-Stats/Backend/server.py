@@ -71,7 +71,7 @@ class BackendConfig:
     weekly_model_refresh_minute: int = DEFAULT_REFRESH_MINUTE
     pipeline_workers: int = 3  # 3 = run global/MLS/extra sub-pipelines in parallel
     pipeline_competition_workers: int = 0  # 0 = auto
-    pipeline_window_days: int = 3
+    pipeline_window_days: int = 365
     pipeline_national_window_days: int = 90
     pipeline_continue_on_error: bool = True
     pipeline_skip_mls: bool = False
@@ -83,7 +83,7 @@ class BackendConfig:
     # Future-games watcher
     enable_watcher: bool = True
     watcher_interval_s: float = DEFAULT_WATCHER_INTERVAL_S
-    watcher_window_days: int = 3  # how far ahead the watcher re-runs
+    watcher_window_days: int = 365  # how far ahead the watcher re-runs
 
     # Resource limits
     memory_limit_gb: float = DEFAULT_MEMORY_LIMIT_GB

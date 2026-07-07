@@ -141,7 +141,7 @@ def parse_args():
     p_refresh.add_argument("--skip-extra", action="store_true")
     p_refresh.add_argument("--skip-global", action="store_true")
     p_refresh.add_argument("--fail-fast", action="store_true", help="Stop on first pipeline error")
-    p_refresh.add_argument("--window-days", type=int, default=3)
+    p_refresh.add_argument("--window-days", type=int, default=365)
     p_refresh.add_argument("--national-window-days", type=int, default=90)
     p_refresh.add_argument("--workers", type=int, default=3)
     p_refresh.add_argument("--competition-workers", type=int, default=2)

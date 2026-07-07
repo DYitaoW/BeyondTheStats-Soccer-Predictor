@@ -214,8 +214,10 @@ _ALL_UPCOMING_SOURCES = [
 def _date_window_bounds():
     """Return the website's stored match window as ISO date bounds."""
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    # Full-season window: from the start of the prior week through one year ahead.
+    season_end = today_et + timedelta(days=365)
     current_week_start = today_et - timedelta(days=today_et.weekday())
-    return current_week_start - timedelta(days=7), current_week_start + timedelta(days=20)
+    return current_week_start - timedelta(days=7), season_end
 
 
 def _parse_query_date(value, fallback):

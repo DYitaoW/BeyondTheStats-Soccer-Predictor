@@ -73,8 +73,8 @@ def parse_args():
     parser.add_argument(
         "--window-days",
         type=int,
-        default=3,
-        help="Minimum lookahead window in days, extended through the next Tuesday when that is farther out.",
+        default=365,
+        help="Lookahead window in days for upcoming fixtures (default: full season). Short windows (<90 days) extend through the next Tuesday.",
     )
     return parser.parse_args()
 
@@ -105,9 +105,14 @@ def parse_date(value):
 def calculate_fixture_window_end(window_days, start_date=None):
     # Anchor the window to today so extra-league pulls reflect the current slate.
     today = pd.Timestamp(start_date or datetime.utcnow().date()).normalize()
-    min_window_end = today + pd.Timedelta(days=max(0, int(window_days)))
+    window_days = max(0, int(window_days))
 
-    # Extend through the next Tuesday when that keeps the Friday-to-Tuesday block together.
+    # Full-season windows include every remaining scheduled fixture.
+    if window_days >= 90:
+        return today + pd.Timedelta(days=window_days)
+
+    min_window_end = today + pd.Timedelta(days=window_days)
+    # Short windows extend through the next Tuesday to keep Friday-to-Tuesday blocks together.
     days_to_tuesday = (1 - today.weekday()) % 7
     if days_to_tuesday == 0:
         days_to_tuesday = 7

@@ -903,7 +903,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
     Args:
         csv_path: Path to the prediction CSV.
         mode: Source mode ("global", "mls", "extra", "cups", "national").
-        date_range: ``"upcoming"`` — today to 21 days out (default).
+        date_range: ``"upcoming"`` — today onward, all future fixtures (default).
                     ``"completed"`` — previous full prediction week to yesterday.
     """
     from accuracy_tracker import _compute_accuracy_stats, _compute_league_accuracy_stats
@@ -998,10 +998,9 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         # All available rows (no date filter)
         pass
     else:
-        # Upcoming: today → 21 days out (today + rest of current week + 2 full weeks)
+        # Upcoming: today onward (full season — no upper date bound)
         lo = pd.Timestamp(today_et)
-        hi = pd.Timestamp(today_et + timedelta(days=21))
-        frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] <= hi)].reset_index(drop=True)
+        frame = frame[frame["parsed_date"] >= lo].reset_index(drop=True)
     
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)

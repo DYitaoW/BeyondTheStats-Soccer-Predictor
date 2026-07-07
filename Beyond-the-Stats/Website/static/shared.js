@@ -108,6 +108,7 @@ const EUROPEAN_CUPS = [
     "England/League Cup",
 ];
 const MLS_LEAGUES = [
+    "United States/MLS",
     "United States/MLS - Supporters Shield Table",
     "United States/MLS - Eastern Conference",
     "United States/MLS - Western Conference",
@@ -1413,7 +1414,12 @@ function populateUpcomingLeagueFilter(selectEl, rows, availableLeagues = []) {
 // Always use the hardcoded per-source list so all supported leagues are
 // available in the dropdown, even if the current data load has no rows for them.
 const source = currentUpcomingSource ? currentUpcomingSource() : "global";
-const leagues = getLeaguesForSource(source);
+let leagues = getLeaguesForSource(source);
+// For MLS, merge API-reported competition names so upcoming rows are filterable.
+if (source === "mls" && availableLeagues.length) {
+    const merged = new Set([...availableLeagues, ...leagues]);
+    leagues = [...merged];
+}
 const priorityLeagues = [
     "England/Premier League",
     "England/Championship"

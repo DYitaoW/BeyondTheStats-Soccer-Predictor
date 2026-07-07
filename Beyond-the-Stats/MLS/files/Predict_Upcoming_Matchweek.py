@@ -111,8 +111,8 @@ def parse_cli_args():
     parser.add_argument(
         "--window-days",
         type=int,
-        default=3,
-        help="Minimum lookahead window in days, extended through the next Tuesday when that is farther out.",
+        default=365,
+        help="Lookahead window in days for upcoming fixtures (default: full season). Short windows (<90 days) extend through the next Tuesday.",
     )
     parser.add_argument(
         "--api-token",
@@ -138,9 +138,14 @@ def calculate_fixture_window_end(window_days, start_date=None):
     # Anchor the window to today so the pull reflects the current MLS slate.
     today = pd.Timestamp(start_date or datetime.now(UTC).date())
     today = today.normalize()
-    min_window_end = today + pd.Timedelta(days=max(0, int(window_days)))
+    window_days = max(0, int(window_days))
 
-    # Extend through the next Tuesday when that keeps the Friday-to-Tuesday block together.
+    # Full-season windows include every remaining scheduled fixture.
+    if window_days >= 90:
+        return today + pd.Timedelta(days=window_days)
+
+    min_window_end = today + pd.Timedelta(days=window_days)
+    # Short windows extend through the next Tuesday to keep Friday-to-Tuesday blocks together.
     days_to_tuesday = (1 - today.weekday()) % 7
     if days_to_tuesday == 0:
         days_to_tuesday = 7
@@ -518,7 +523,7 @@ def load_upcoming_matchweek_fixtures_from_csv_fallback(window_days):
     return fixtures
 
 
-def load_upcoming_matchweek_fixtures_from_espn(window_days, lookahead_days=21):
+def load_upcoming_matchweek_fixtures_from_espn(window_days, lookahead_days=365):
     today = pd.Timestamp(datetime.now(UTC).date())
     rows = []
     seen = set()
@@ -656,16 +661,17 @@ def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
 
 
 def load_upcoming_matchweek_fixtures(api_token, window_days):
-    fixtures = load_upcoming_matchweek_fixtures_from_espn(window_days)
-    if not fixtures.empty:
-        print("Fixture source: ESPN scoreboard API")
-        return fixtures
-
+    # Prefer the API for full-season pulls (single request vs. day-by-day ESPN calls).
     if api_token:
         fixtures = load_upcoming_matchweek_fixtures_from_api(api_token, window_days)
         if not fixtures.empty:
             print("Fixture source: football-data.org API")
             return fixtures
+
+    fixtures = load_upcoming_matchweek_fixtures_from_espn(window_days)
+    if not fixtures.empty:
+        print("Fixture source: ESPN scoreboard API")
+        return fixtures
 
     fixtures = load_upcoming_matchweek_fixtures_from_csv_fallback(window_days)
     if not fixtures.empty:
