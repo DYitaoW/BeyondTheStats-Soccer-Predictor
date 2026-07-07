@@ -92,6 +92,8 @@ LIVE_SCORE_COMPETITIONS = {
     "Portugal/Liga Portugal": "por.1",
     "Netherlands/Eredivisie": "ned.1",
     "United States/MLS": "usa.1",
+    "Mexico/Liga MX": "mex.1",
+    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
     # Domestic cups
     "England/FA Cup": "eng.fa",
     "England/League Cup": "eng.efl",
@@ -108,6 +110,7 @@ LIVE_SCORE_COMPETITIONS = {
     "Germany/DFB-Pokal": "ger.dfb_pokal",
     "France/Coupe de France": "fra.coupe_de_france",
     "United States/US Open Cup": "usa.open_cup",
+    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
     # National team & World Cup
     "FIFA/World Cup": "fifa.world",
     "FIFA/Friendly": "fifa.friendly",
@@ -154,6 +157,7 @@ CUP_COMPETITIONS = {
     "Germany/DFB-Pokal",
     "France/Coupe de France",
     "United States/US Open Cup",
+    "CONCACAF/Leagues Cup",
 }
 
 _CUP_FORMATS = {
@@ -260,6 +264,15 @@ _CUP_FORMATS = {
         "two_leg_rounds": [],
         "final_neutral": False,
     },
+    "CONCACAF/Leagues Cup": {
+        "format": "group_stage_then_knockout",
+        "description": "Group stage (3 matches per team across MLS and Liga MX clubs) followed by single-elimination knockout rounds.",
+        "league_phase_matches": 3,
+        "stages": ["Group Stage", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "knockout_rounds": ["Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": True,
+    },
 }
 
 # Mobile app / website tournament keys → canonical competition names.
@@ -276,6 +289,7 @@ TOURNAMENT_KEY_MAP = {
     "coupe-de-france": "France/Coupe de France",
     "coppa-italia": "Italy/Coppa Italia",
     "us-open-cup": "United States/US Open Cup",
+    "leagues-cup": "CONCACAF/Leagues Cup",
 }
 
 H2H_LEAGUES = {

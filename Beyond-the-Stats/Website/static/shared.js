@@ -58,6 +58,7 @@ const cupPredictionTabs = [
 { key: "all", label: "All Cups", competitions: [] },
 { key: "fa-cup", label: "FA Cup", competitions: ["England/FA Cup"] },
 { key: "league-cup", label: "League Cup", competitions: ["England/League Cup"] },
+{ key: "leagues-cup", label: "Leagues Cup", competitions: ["CONCACAF/Leagues Cup"] },
 { key: "champions-league", label: "Champions League", competitions: ["UEFA/Champions League", "Europe/Champions League"] },
 { key: "europa-league", label: "Europa League", competitions: ["UEFA/Europa League", "Europe/Europa League"] },
 { key: "conference-league", label: "Conference League", competitions: ["UEFA/Conference League", "Europe/Conference League"] },
@@ -68,6 +69,7 @@ const cupProjectionConfigs = [
 { key: "uecl", label: "Conference League", competition: "UEFA/Conference League", aliases: ["UEFA/Conference League", "Europe/Conference League"], hasTable: true, leaguePhaseMatches: 6 },
 { key: "fa-cup", label: "FA Cup", competition: "England/FA Cup", aliases: ["England/FA Cup"], hasTable: false, leaguePhaseMatches: null },
 { key: "league-cup", label: "League Cup", competition: "England/League Cup", aliases: ["England/League Cup"], hasTable: false, leaguePhaseMatches: null },
+{ key: "leagues-cup", label: "Leagues Cup", competition: "CONCACAF/Leagues Cup", aliases: ["CONCACAF/Leagues Cup"], hasTable: true, leaguePhaseMatches: 3 },
 ];
 let activeCupTab = "all";
 const mlsTeamSet = new Set(
@@ -106,6 +108,7 @@ const EUROPEAN_CUPS = [
     "UEFA/Conference League",
     "England/FA Cup",
     "England/League Cup",
+    "CONCACAF/Leagues Cup",
 ];
 const MLS_LEAGUES = [
     "United States/MLS",
@@ -113,7 +116,15 @@ const MLS_LEAGUES = [
     "United States/MLS - Eastern Conference",
     "United States/MLS - Western Conference",
 ];
-const OTHER_LEAGUES = [];
+const OTHER_LEAGUES = [
+    "Mexico/Liga MX",
+    "Argentina/Primera Division",
+    "Brazil/Serie A",
+    "Japan/J1 League",
+    "Austria/Bundesliga",
+    "Romania/Liga I",
+    "Poland/Ekstraklasa",
+];
 const WORLD_CUP_OPTIONS = ["FIFA/World Cup"];
 
 function getLeaguesForSource(source) {
@@ -1415,8 +1426,8 @@ function populateUpcomingLeagueFilter(selectEl, rows, availableLeagues = []) {
 // available in the dropdown, even if the current data load has no rows for them.
 const source = currentUpcomingSource ? currentUpcomingSource() : "global";
 let leagues = getLeaguesForSource(source);
-// For MLS, merge API-reported competition names so upcoming rows are filterable.
-if (source === "mls" && availableLeagues.length) {
+// For MLS/extra, merge API-reported competition names so upcoming rows are filterable.
+if ((source === "mls" || source === "extra") && availableLeagues.length) {
     const merged = new Set([...availableLeagues, ...leagues]);
     leagues = [...merged];
 }

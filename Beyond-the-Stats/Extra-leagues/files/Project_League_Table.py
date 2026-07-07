@@ -1,7 +1,9 @@
 import os
 import json
+import urllib.request
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 import random
 import subprocess
 import sys
@@ -37,6 +39,17 @@ OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
 OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
 RNG = random.Random()
 SIMULATION_RUNS = 2500
+ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
+EASTERN_TZ = ZoneInfo("America/New_York")
+EXTRA_ESPN_COMPETITIONS = {
+    "Mexico/Liga MX": "mex.1",
+    "Argentina/Primera Division": "arg.1",
+    "Brazil/Serie A": "bra.1",
+    "Japan/J1 League": "jpn.1",
+    "Austria/Bundesliga": "aut.1",
+    "Romania/Liga I": "rou.1",
+    "Poland/Ekstraklasa": "pol.1",
+}
 
 
 def rebuild_model_cache_once():
@@ -76,6 +89,103 @@ def latest_raw_file_per_competition(raw_root):
             if current is None or start_year > current[0]:
                 latest[competition] = (start_year, full_path)
     return {comp: path for comp, (_, path) in latest.items()}
+
+
+def fetch_json(url, timeout=30):
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def normalize_raw_df(df):
+    frame = df.copy()
+    if {"HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}.issubset(frame.columns):
+        return frame
+    if {"Home", "Away", "HG", "AG", "Res"}.issubset(frame.columns):
+        out = frame.copy()
+        out["HomeTeam"] = out["Home"].astype(str).str.strip()
+        out["AwayTeam"] = out["Away"].astype(str).str.strip()
+        out["FTHG"] = pd.to_numeric(out["HG"], errors="coerce")
+        out["FTAG"] = pd.to_numeric(out["AG"], errors="coerce")
+        out["FTR"] = out["Res"].astype(str).str.strip().str.upper()
+        if "Date" in out.columns:
+            out["Date"] = out["Date"]
+        return out
+    return frame
+
+
+def load_future_fixtures_from_espn(competition, year=None):
+    espn_id = EXTRA_ESPN_COMPETITIONS.get(competition)
+    if not espn_id:
+        return pd.DataFrame()
+
+    target_year = int(year or datetime.now(UTC).year)
+    start = pd.Timestamp(f"{target_year}-01-01")
+    end = pd.Timestamp(f"{target_year}-12-31")
+    today = pd.Timestamp(datetime.now(UTC).date())
+    rows = []
+    seen = set()
+    day = start
+    while day <= end:
+        url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
+        try:
+            data = fetch_json(url, timeout=20)
+        except Exception:
+            day += pd.Timedelta(days=1)
+            continue
+
+        for event in data.get("events", []) or []:
+            event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
+            if pd.isna(event_date):
+                continue
+            match_date = event_date.tz_convert(EASTERN_TZ).tz_localize(None).normalize()
+            if match_date.year != target_year or match_date < today:
+                continue
+
+            competitions = event.get("competitions", [])
+            if not competitions:
+                continue
+            comp0 = competitions[0] or {}
+            status_state = (
+                ((comp0.get("status") or {}).get("type") or {}).get("state", "")
+            ).strip().lower()
+            if status_state and status_state not in {"pre"}:
+                continue
+
+            home_team = ""
+            away_team = ""
+            for competitor in comp0.get("competitors", []) or []:
+                team_name = ((competitor.get("team") or {}).get("displayName") or "").strip()
+                side = str(competitor.get("homeAway", "")).strip().lower()
+                if side == "home":
+                    home_team = team_name
+                elif side == "away":
+                    away_team = team_name
+            if not home_team or not away_team:
+                continue
+
+            key = (match_date.date().isoformat(), home_team, away_team)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(
+                {
+                    "Date": match_date.date().isoformat(),
+                    "HomeTeam": home_team,
+                    "AwayTeam": away_team,
+                    "FTHG": None,
+                    "FTAG": None,
+                    "FTR": "",
+                }
+            )
+
+        day += pd.Timedelta(days=1)
+
+    if not rows:
+        return pd.DataFrame()
+    frame = pd.DataFrame(rows)
+    frame["DateParsed"] = pd.to_datetime(frame["Date"], errors="coerce")
+    return frame
 
 
 def load_context():
@@ -325,10 +435,36 @@ def predict_match(ctx, home_team, away_team, competition_hint):
 
 
 def project_competition(ctx, competition, raw_file):
-    df = pd.read_csv(raw_file).copy()
+    df = normalize_raw_df(pd.read_csv(raw_file))
     required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
     if not required.issubset(df.columns):
         return [], []
+
+    espn_future = load_future_fixtures_from_espn(competition)
+    if not espn_future.empty:
+        espn_future = espn_future.copy()
+        espn_future["DateParsed"] = pd.to_datetime(espn_future["Date"], errors="coerce")
+        df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
+        played_keys = set()
+        for _, row in df.iterrows():
+            home = str(row.get("HomeTeam", "")).strip()
+            away = str(row.get("AwayTeam", "")).strip()
+            ftr = str(row.get("FTR", "")).strip().upper()
+            hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
+            ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
+            if home and away and ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag):
+                played_keys.add(tuple(sorted([home, away])))
+        supplemental = []
+        for _, row in espn_future.iterrows():
+            home = str(row.get("HomeTeam", "")).strip()
+            away = str(row.get("AwayTeam", "")).strip()
+            if not home or not away:
+                continue
+            if tuple(sorted([home, away])) in played_keys:
+                continue
+            supplemental.append(row)
+        if supplemental:
+            df = pd.concat([df, pd.DataFrame(supplemental)], ignore_index=True, sort=False)
 
     df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
     df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]

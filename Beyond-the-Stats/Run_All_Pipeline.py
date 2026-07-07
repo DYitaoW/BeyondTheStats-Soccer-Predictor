@@ -569,6 +569,7 @@ _REAL_TABLE_COMPETITIONS = {
     "France/Ligue 1", "France/Ligue 2",
     "Portugal/Liga Portugal", "Netherlands/Eredivisie",
     "United States/MLS",
+    "Mexico/Liga MX",
     "Belgium/First Division A", "Scotland/Premiership", "Turkey/Super Lig",
     "Austria/Bundesliga", "Switzerland/Super League",
     "Greece/Super League", "Denmark/Superliga",
@@ -588,6 +589,7 @@ _CUP_COMPETITIONS = {
     "Italy/Coppa Italia", "Spain/Copa del Rey",
     "Germany/DFB-Pokal", "France/Coupe de France",
     "United States/US Open Cup",
+    "CONCACAF/Leagues Cup",
 }
 
 

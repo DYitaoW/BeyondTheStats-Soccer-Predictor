@@ -33,6 +33,8 @@ LEAGUES = {
     "Scotland/Premiership": "sco.1",
     "Turkey/Super Lig": "tur.1",
     "United States/MLS": "usa.1",
+    "Mexico/Liga MX": "mex.1",
+    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
     # Extra leagues (have ESPN IDs but no live polling)
     "Austria/Bundesliga": "aut.1",
     "Switzerland/Super League": "sui.1",
@@ -60,6 +62,7 @@ LEAGUES = {
     "Germany/DFB-Pokal": "ger.dfb_pokal",
     "France/Coupe de France": "fra.coupe_de_france",
     "United States/US Open Cup": "usa.open_cup",
+    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
     # UEFA club competitions
     "UEFA/Champions League": "uefa.champions",
     "UEFA/Europa League": "uefa.europa",
