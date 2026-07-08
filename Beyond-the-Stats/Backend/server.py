@@ -36,11 +36,6 @@ from typing import Callable, Optional
 from .memory import MemoryMonitor, MemoryReading
 from .scheduler import FutureGamesWatcher, next_run_after, seconds_until
 
-# Pipeline log helper lives next to Run_All_Pipeline.py
-if str(SP_DIR) not in sys.path:
-    sys.path.insert(0, str(SP_DIR))
-import pipeline_log  # noqa: E402
-
 LOG = logging.getLogger("backend.server")
 
 DEFAULT_REFRESH_HOUR = 2
@@ -55,6 +50,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SP_DIR = PROJECT_ROOT / "Beyond-the-Stats"
 WEBSITE_DIR = SP_DIR / "Website"
 OUTPUT_DIR = SP_DIR / "Output"
+
+if str(SP_DIR) not in sys.path:
+    sys.path.insert(0, str(SP_DIR))
+import pipeline_log  # noqa: E402
 
 
 @dataclass
