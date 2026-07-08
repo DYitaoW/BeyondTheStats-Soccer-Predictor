@@ -9,6 +9,8 @@ import argparse
 import difflib
 import json
 import os
+import subprocess
+import sys
 import urllib.error
 import urllib.request
 import unicodedata
@@ -24,6 +26,7 @@ import Predict_Match as pm
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MLS_FILES_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_matchweek_predictions.csv")
@@ -40,6 +43,25 @@ REGIONAL_ESPN_COMPETITIONS = {
     "United States/MLS": "usa.1",
     "Mexico/Liga MX": "mex.1",
 }
+
+
+def rebuild_model_cache_once():
+    """Rebuild the MLS model cache in non-interactive mode."""
+    predict_script = os.path.join(MLS_FILES_DIR, "Predict_Match.py")
+    proc = subprocess.run(
+        [sys.executable, predict_script],
+        cwd=BASE_DIR,
+        text=True,
+        input="n\nq\n",
+        capture_output=True,
+        check=False,
+        timeout=3600,
+    )
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        stdout = (proc.stdout or "").strip()
+        message = stderr or stdout or f"exit code {proc.returncode}"
+        raise RuntimeError(f"Auto-rebuild of MLS model cache failed: {message}")
 
 
 class AveragedProbaClassifier:
@@ -768,23 +790,24 @@ def build_prediction_context():
     matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
 
     if not os.path.exists(pm.MODEL_CACHE):
-        raise FileNotFoundError(
-            f"Model cache not found at {pm.MODEL_CACHE}. Run Predict_Match.py once first to build it."
-        )
+        print("[model-cache] cache missing; rebuilding model cache...")
+        rebuild_model_cache_once()
 
     try:
         bundle = joblib.load(pm.MODEL_CACHE)
     except Exception as exc:
-        raise RuntimeError(
-            f"Could not load model cache at {pm.MODEL_CACHE}. Rebuild it by running Predict_Match.py."
-        ) from exc
+        print(f"[model-cache] failed to load cache ({exc.__class__.__name__}); rebuilding...")
+        rebuild_model_cache_once()
+        bundle = joblib.load(pm.MODEL_CACHE)
 
     fingerprint = pm.data_fingerprint(season_files)
     if bundle.get("fingerprint") != fingerprint:
-        bt = bundle.get("build_time")
-        if bt is None or (time.time() - bt) >= 604800:
+        print("[model-cache] fingerprint mismatch; rebuilding model cache...")
+        rebuild_model_cache_once()
+        bundle = joblib.load(pm.MODEL_CACHE)
+        if bundle.get("fingerprint") != fingerprint:
             raise RuntimeError(
-                "Model cache is stale for current processed data. Run Predict_Match.py to rebuild before predicting matchweek."
+                "Model cache is still stale after rebuild. Check Predict_Match.py logs."
             )
 
     required_keys = {

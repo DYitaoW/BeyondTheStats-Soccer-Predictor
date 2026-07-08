@@ -43,10 +43,9 @@ def rebuild_model_cache_once():
     if not os.path.exists(predict_script):
         raise FileNotFoundError(f"Missing predictor script: {predict_script}")
     proc = subprocess.run(
-        [sys.executable, predict_script],
+        [sys.executable, predict_script, "--build-cache-only"],
         cwd=BASE_DIR,
         text=True,
-        input="n\nq\n",
         capture_output=True,
         check=False,
         timeout=3600,
@@ -79,18 +78,21 @@ def latest_raw_file_per_competition(raw_root):
 def load_context():
     matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
     if not os.path.exists(pm.MODEL_CACHE):
-        raise FileNotFoundError(f"Missing model cache: {pm.MODEL_CACHE}. Run Predict_Match.py first.")
+        print("[model-cache] cache missing; rebuilding model cache...")
+        rebuild_model_cache_once()
 
     try:
         bundle = joblib.load(pm.MODEL_CACHE)
     except Exception as exc:
-        print(f"[warn] Failed to load model cache ({exc.__class__.__name__}). Rebuilding cache once...")
+        print(f"[model-cache] failed to load cache ({exc.__class__.__name__}); rebuilding...")
         rebuild_model_cache_once()
         bundle = joblib.load(pm.MODEL_CACHE)
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
-        bt = bundle.get("build_time")
-        if bt is None or (time.time() - bt) >= 604800:
-            raise RuntimeError("Model cache is stale. Rebuild by running Predict_Match.py.")
+        print("[model-cache] fingerprint mismatch; rebuilding model cache...")
+        rebuild_model_cache_once()
+        bundle = joblib.load(pm.MODEL_CACHE)
+        if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
+            raise RuntimeError("Model cache still stale after rebuild.")
 
     overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
     season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))

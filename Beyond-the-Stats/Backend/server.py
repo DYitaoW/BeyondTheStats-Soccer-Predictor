@@ -54,6 +54,7 @@ OUTPUT_DIR = SP_DIR / "Output"
 if str(SP_DIR) not in sys.path:
     sys.path.insert(0, str(SP_DIR))
 import pipeline_log  # noqa: E402
+import model_cache_util  # noqa: E402
 
 
 @dataclass
@@ -129,7 +130,8 @@ class BackendServer:
         if self.config.enable_watcher:
             self._start_watcher()
         if self.config.run_on_start:
-            self._run_pipeline_in_background(trigger="startup")
+            full_retrain = self._any_model_cache_needs_rebuild()
+            self._run_pipeline_in_background(trigger="startup", full_retrain=full_retrain)
 
         self._scheduler_thread = threading.Thread(
             target=self._scheduler_loop, name="daily-scheduler", daemon=True
@@ -428,6 +430,20 @@ class BackendServer:
             self._pipeline_lock.release()
         except RuntimeError:
             pass
+
+    def _any_model_cache_needs_rebuild(self) -> bool:
+        """Return True when any enabled sub-pipeline has a missing or stale model cache."""
+        specs: list[tuple[str, str]] = []
+        if not self.config.pipeline_skip_global:
+            specs.append(("global", str(SP_DIR / "files" / "Predict_Match.py")))
+        if not self.config.pipeline_skip_mls:
+            specs.append(("mls", str(SP_DIR / "MLS" / "files" / "Predict_Match.py")))
+        if not self.config.pipeline_skip_extra:
+            specs.append(("extra", str(SP_DIR / "Extra-leagues" / "files" / "Predict_Match.py")))
+        needs, reasons = model_cache_util.any_pipeline_cache_needs_rebuild(specs)
+        for line in reasons:
+            LOG.info("[pipeline] startup model-cache check: %s", line)
+        return needs
 
     def _build_pipeline_cmd(self, full_retrain: bool = True) -> list[str]:
         cfg = self.config

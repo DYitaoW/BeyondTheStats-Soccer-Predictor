@@ -23,7 +23,8 @@ Scheduled daily pipeline runner — wraps ``Run_All_Pipeline`` in a scheduler lo
 
 Runs continuously on the Steam Deck as a long-lived process.  On Tuesday it
 executes a full retrain (model + data); on other days it runs a light refresh
-(data only, ``--skip-model-train`` / ``--skip-squad-values``).
+(data only, ``--skip-model-train`` / ``--skip-squad-values``), but still
+rebuilds any missing or stale model cache automatically.
 
 Key differences from ``Run_All_Pipeline``:
 - Scheduler loop with configurable window (``--window-days``)
