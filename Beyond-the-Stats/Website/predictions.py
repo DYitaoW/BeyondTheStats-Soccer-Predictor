@@ -943,6 +943,10 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                 "prob_over_2_5",
                 "prob_over_3_5",
                 "actual_result",
+                "actual_home_goals",
+                "actual_away_goals",
+                "schedule_only",
+                "live_tracking",
                 "match_datetime_utc",
                 "match_datetime_et",
             }
@@ -959,6 +963,8 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                     "predicted_result": "string",
                     "probability_reasoning": "string",
                     "actual_result": "string",
+                    "schedule_only": "string",
+                    "live_tracking": "string",
                     "match_datetime_utc": "string",
                     "match_datetime_et": "string",
                 },
@@ -973,10 +979,16 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         target_mode = mode or "global"
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
 
-    required = ["match_date", "competition", "home_team", "away_team", "predicted_result", "prob_home", "prob_draw", "prob_away"]
+    required = ["match_date", "competition", "home_team", "away_team"]
     for col in required:
         if col not in frame.columns:
             return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
+    if "schedule_only" not in frame.columns:
+        frame["schedule_only"] = "0"
+    prediction_required = ["predicted_result", "prob_home", "prob_draw", "prob_away"]
+    for col in prediction_required:
+        if col not in frame.columns:
+            frame[col] = ""
 
     # Drop past fixtures so stale upcoming rows never show on the website.
     # CRITICAL: Must reset index after each filter to avoid index alignment issues
@@ -1011,6 +1023,8 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
 
     frame = frame.sort_values(["match_date", "competition", "match_datetime_utc", "home_team", "away_team"])
     target_mode = mode or ("mls" if os.path.normpath(csv_path) == os.path.normpath(config.MLS_UPCOMING_FILE) else "global")
+    if os.path.normpath(csv_path) == os.path.normpath(config.FRIENDLIES_UPCOMING_FILE):
+        target_mode = "friendlies"
     is_mls_file = target_mode == "mls"
 
     # Pre-build form & strength indices (only for modes that have processed data)
@@ -1073,6 +1087,9 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         except Exception:
             ph_raw, pdv_raw, pa_raw = 0.0, 0.0, 0.0
             ph, pdv, pa = 0.0, 0.0, 0.0
+        schedule_only = str(row.get("schedule_only", "")).strip().lower() in {"1", "true", "yes"}
+        actual_home_goals = pd.to_numeric(row.get("actual_home_goals"), errors="coerce")
+        actual_away_goals = pd.to_numeric(row.get("actual_away_goals"), errors="coerce")
         rows.append(
             {
                 "match_date": date_label if is_mls_file else str(row["match_date"]),
@@ -1084,7 +1101,8 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                 "competition": str(row["competition"]),
                 "home_team": home,
                 "away_team": away,
-                "winner_label": _winner_label(row["predicted_result"], home, away),
+                "schedule_only": schedule_only,
+                "winner_label": _winner_label(row["predicted_result"], home, away) if not schedule_only else "Schedule only",
                 "prob_home": ph,
                 "prob_draw": pdv,
                 "prob_away": pa,
@@ -1136,6 +1154,8 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                     row.get("pred_home_goals"), row.get("pred_away_goals"),
                 ),
                 "reasoning": str(row.get("probability_reasoning", "")).strip(),
+                "actual_home_goals": int(actual_home_goals) if pd.notna(actual_home_goals) else None,
+                "actual_away_goals": int(actual_away_goals) if pd.notna(actual_away_goals) else None,
                 "actual_result": str(row.get("actual_result", "")).strip(),
                 "is_correct": (
                     "1"

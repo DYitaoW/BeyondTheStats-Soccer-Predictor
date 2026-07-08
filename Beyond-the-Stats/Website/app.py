@@ -199,6 +199,7 @@ _UPCOMING_MODE_MAP = {
     "extra": (config.EXTRA_UPCOMING_FILE, "extra"),
     "cups": (config.CUP_UPCOMING_FILE, "cups"),
     "world-cup": (config.NATIONAL_UPCOMING_FILE, "national"),
+    "friendlies": (config.FRIENDLIES_UPCOMING_FILE, "friendlies"),
 }
 
 _ALL_UPCOMING_SOURCES = [
@@ -209,6 +210,12 @@ _ALL_UPCOMING_SOURCES = [
     ("cups", config.CUP_UPCOMING_FILE),
     ("national", config.NATIONAL_UPCOMING_FILE),
 ]
+
+
+def _exclude_upcoming_only_rows(rows):
+    """Drop competitions that have a dedicated upcoming source only."""
+    blocked = config.UPCOMING_ONLY_COMPETITIONS
+    return [r for r in rows if str(r.get("competition", "")).strip() not in blocked]
 
 
 def _date_window_bounds():
@@ -284,7 +291,7 @@ def _render_site_page(template_name, active_page):
         "about": "/about",
     }
     # Template defaults prevent Undefined errors for pages that serialize these values.
-    upcoming_leagues = {"global": [], "mls": [], "extra": [], "cups": []}
+    upcoming_leagues = {"global": [], "mls": [], "extra": [], "cups": [], "friendlies": []}
     table_leagues = {"global": [], "mls": [], "extra": [], "cups": []}
 
     if config.STATIC_PREDICTIONS:
@@ -435,6 +442,8 @@ def api_help_all():
     cups_list = []
 
     for comp_name in sorted(config.LIVE_SCORE_COMPETITIONS, key=str.lower):
+        if comp_name in config.UPCOMING_ONLY_COMPETITIONS:
+            continue
         is_cup = comp_name in config._CUP_FORMATS
         base = {
             "competition": comp_name,
@@ -505,6 +514,8 @@ def api_upcoming(mode):
             if not rows:
                 rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="all")
             for r in rows:
+                if str(r.get("competition", "")).strip() in config.UPCOMING_ONLY_COMPETITIONS:
+                    continue
                 ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
                 if ck and ck not in seen_keys:
                     seen_keys.add(ck)
@@ -585,6 +596,7 @@ def api_home_upcoming():
             seen_keys.add(key)
             all_rows.append(row)
 
+    all_rows = _exclude_upcoming_only_rows(all_rows)
     all_rows.sort(key=lambda row: (
         _row_date_iso(row),
         str(row.get("competition") or ""),

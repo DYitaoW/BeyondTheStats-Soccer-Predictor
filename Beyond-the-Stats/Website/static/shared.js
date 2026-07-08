@@ -47,13 +47,15 @@ let tableViewMode = "standings";
 let tablePositionOddsMode = false;
 let activeCupProjectionCompetition = "UEFA/Champions League";
 let activeCupProjectionView = "table";
-const upcomingCache = { global: [], mls: [], extra: [], cups: [] };
+const upcomingCache = { global: [], mls: [], extra: [], cups: [], friendlies: [] };
 const upcomingStatsCache = {
 global: { stats: null, league_stats: [] },
 mls: { stats: null, league_stats: [] },
 extra: { stats: null, league_stats: [] },
 cups: { stats: null, league_stats: [] },
+friendlies: { stats: null, league_stats: [] },
 };
+const FRIENDLIES_OPTIONS = ["Club Friendlies"];
 const cupPredictionTabs = [
 { key: "all", label: "All Cups", competitions: [] },
 { key: "fa-cup", label: "FA Cup", competitions: ["England/FA Cup"] },
@@ -132,6 +134,7 @@ function getLeaguesForSource(source) {
     if (source === "extra") return [...OTHER_LEAGUES];
     if (source === "cups") return [...EUROPEAN_CUPS];
     if (source === "world-cup") return [...WORLD_CUP_OPTIONS];
+    if (source === "friendlies") return [...FRIENDLIES_OPTIONS];
     return [...EUROPEAN_LEAGUES, ...EUROPEAN_CUPS];
 }
 
@@ -1037,6 +1040,7 @@ if (globalSourceFilter.value === "mls") return "mls";
 if (globalSourceFilter.value === "extra") return "extra";
 if (globalSourceFilter.value === "cups") return "cups";
 if (globalSourceFilter.value === "world-cup") return "world-cup";
+if (globalSourceFilter.value === "friendlies") return "friendlies";
 return "global";
 }
 
@@ -1045,6 +1049,7 @@ if (source === "mls") return "/api/upcoming/mls";
 if (source === "extra") return "/api/upcoming/extra";
 if (source === "cups") return "/api/upcoming/cups";
 if (source === "world-cup") return "/api/upcoming/world-cup";
+if (source === "friendlies") return "/api/upcoming/friendlies";
 return "/api/upcoming/global";
 }
 
@@ -1087,12 +1092,12 @@ renderStats(
 
 function renderUpcoming(target, rows, selectedLeague, options = {}) {
     if (!rows.length) {
-        target.innerHTML = "<p>No upcoming predictions found.</p>";
+        target.innerHTML = "<p>No upcoming matches found.</p>";
         return;
     }
     const visibleRows = rowsForLeagueSelection(rows, selectedLeague);
     if (!visibleRows.length) {
-        target.innerHTML = "<p>No upcoming predictions for this league.</p>";
+        target.innerHTML = "<p>No upcoming matches for this selection.</p>";
         return;
     }
     const PAGE_SIZE = 30;
@@ -1107,7 +1112,7 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
     });
 
     if (!futureRows.length) {
-        target.innerHTML = "<p>No upcoming predictions for this league.</p>";
+        target.innerHTML = "<p>No upcoming matches for this selection.</p>";
         return;
     }
 
@@ -1196,13 +1201,18 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                 }
                 
                 const article = document.createElement('article');
+                const scheduleOnly = Boolean(r.schedule_only);
+                const hasFinalScore = r.actual_home_goals !== null && r.actual_home_goals !== undefined
+                    && r.actual_away_goals !== null && r.actual_away_goals !== undefined;
                 const homeGoals = (r.pred_home_goals === null || r.pred_home_goals === undefined) ? "NA" : r.pred_home_goals;
                 const awayGoals = (r.pred_away_goals === null || r.pred_away_goals === undefined) ? "NA" : r.pred_away_goals;
                 const settled = String(r.actual_result || "").trim().match(/^[HDA]$/i);
                 const isCorrect = String(r.is_correct || "").trim().toLowerCase();
                 let rowClass = "";
-                let statusText = "Pending";
-                if (settled) {
+                let statusText = scheduleOnly
+                    ? (hasFinalScore ? "Final" : "Scheduled")
+                    : "Pending";
+                if (!scheduleOnly && settled) {
                     if (isCorrect === "1" || isCorrect === "true") {
                         rowClass = "match-correct";
                         statusText = "Correct";
@@ -1210,10 +1220,30 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         rowClass = "match-wrong";
                         statusText = "Wrong";
                     }
+                } else if (!scheduleOnly && hasFinalScore) {
+                    statusText = "Final";
                 }
-                const confidence = Math.max(Number(r.prob_home) || 0, Number(r.prob_draw) || 0, Number(r.prob_away) || 0);
                 
                 article.className = `match-row kick-match-card ${rowClass}`;
+                if (scheduleOnly) {
+                    article.innerHTML = `
+                    <button class="match-toggle" type="button"
+                        data-home-team="${escapeHtml(r.home_team)}"
+                        data-away-team="${escapeHtml(r.away_team)}"
+                        aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
+                        <div class="kick-head">
+                            <div class="kick-league">${escapeHtml(r.competition)}</div>
+                            <div class="confidence-pill schedule-pill">Friendly</div>
+                        </div>
+                        <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
+                        ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
+                        ${hasFinalScore
+                            ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
+                            : `<div class="match-meta"><strong>Status:</strong> Scheduled</div>`}
+                        <div class="match-meta"><strong>Click:</strong> Open head to head</div>
+                    </button>
+                `;
+                } else {
                 article.innerHTML = `
                     <button class="match-toggle" type="button"
                         data-home-team="${escapeHtml(r.home_team)}"
@@ -1227,6 +1257,9 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         <div class="match-meta">Prediction: <span class="winner-line">${escapeHtml(r.winner_label)}</span></div>
                         ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
                         <div class="match-meta"><strong>Predicted score:</strong> ${escapeHtml(r.home_team)} ${homeGoals} - ${awayGoals} ${escapeHtml(r.away_team)}</div>
+                        ${hasFinalScore
+                            ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
+                            : ""}
                         <div class="probability-track">
                             <div style="width: ${r.prob_home}%; background-color: #55d37a;" title="${escapeHtml(r.home_team)}"></div>
                             <div style="width: ${r.prob_draw}%; background-color: #93a4b3;" title="Draw"></div>
@@ -1239,6 +1272,7 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         <div class="match-meta"><strong>Click:</strong> Open head to head</div>
                     </button>
                 `;
+                }
                 currentGrid.appendChild(article);
             }
         }
@@ -1466,11 +1500,12 @@ async function loadUpcoming(mode, url, target, statsTarget, filterEl) {
 target.textContent = "Loading...";
 if (statsTarget) statsTarget.innerHTML = "";
 const isCupMode = mode === "cups";
+const isFriendliesMode = mode === "friendlies";
 cupTabs.classList.toggle("hidden", !isCupMode);
 const cupLabel = document.querySelector('label[for="cup-tabs"]');
 if (cupLabel) cupLabel.classList.toggle("hidden", !isCupMode);
-// keep league/cup dropdown visible for all sources, including cups
-globalLeagueFilterCard.classList.remove("hidden");
+globalLeagueFilterCard.classList.toggle("hidden", isFriendliesMode);
+if (statsTarget) statsTarget.classList.toggle("hidden", isFriendliesMode);
 const resp = await fetch(url);
 const data = await resp.json();
 if (!resp.ok || !data.ok) {
@@ -1479,8 +1514,13 @@ if (!resp.ok || !data.ok) {
 }
 const rows = data.rows || [];
 upcomingCache[mode] = rows;
-// use API-provided league list when available to keep dropdown populated on first render
-const selectedLeague = populateUpcomingLeagueFilter(filterEl, rows, data.available_leagues || []);
+upcomingStatsCache[mode] = {
+    stats: data.stats || null,
+    league_stats: data.league_stats || [],
+};
+const selectedLeague = isFriendliesMode
+    ? ""
+    : populateUpcomingLeagueFilter(filterEl, rows, data.available_leagues || []);
 if (isCupMode) {
     renderCupTabs();
 }

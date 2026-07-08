@@ -30,6 +30,7 @@ CUP_COMPLETED_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "completed
 MLS_UPCOMING_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 EXTRA_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Extra-leagues", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 NATIONAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_national_team_predictions.csv")
+FRIENDLIES_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_club_friendlies.csv")
 GLOBAL_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_league_tables.csv")
 CUP_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_tables.csv")
 CUP_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_brackets.json")
@@ -60,6 +61,7 @@ UPCOMING_CSV_FILES = {
     "extra": EXTRA_UPCOMING_FILE,
     "cups": CUP_UPCOMING_FILE,
     "national": NATIONAL_UPCOMING_FILE,
+    "friendlies": FRIENDLIES_UPCOMING_FILE,
 }
 
 # ── Cache Configuration ───────────────────────────────────────────
@@ -76,6 +78,15 @@ STATIC_PREDICTIONS_CACHE = os.environ.get("STATIC_PREDICTIONS_CACHE", "0").strip
 # ── Live Score Polling ────────────────────────────────────────────
 
 LIVE_SCORE_ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+
+CLUB_FRIENDLIES_COMPETITION = "Club Friendlies"
+CLUB_FRIENDLIES_ESPN_ID = "club.friendly"
+
+# Competitions polled for scores but excluded from league-table/help listings.
+UPCOMING_ONLY_COMPETITIONS = {
+    CLUB_FRIENDLIES_COMPETITION,
+    "FIFA/Friendly",
+}
 
 LIVE_SCORE_COMPETITIONS = {
     # Club leagues (top European + MLS)
@@ -111,6 +122,7 @@ LIVE_SCORE_COMPETITIONS = {
     "France/Coupe de France": "fra.coupe_de_france",
     "United States/US Open Cup": "usa.open_cup",
     "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
+    CLUB_FRIENDLIES_COMPETITION: CLUB_FRIENDLIES_ESPN_ID,
     # National team & World Cup
     "FIFA/World Cup": "fifa.world",
     "FIFA/Friendly": "fifa.friendly",

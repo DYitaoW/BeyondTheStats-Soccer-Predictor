@@ -647,11 +647,12 @@ def publish_to_output(output_dir=None):
         if path:
             written[region]["upcoming"] = str(path)
     nat_sources = [PREDICTIONS_DIR / "upcoming_national_team_predictions.csv"]
+    friendlies_sources = [PREDICTIONS_DIR / "upcoming_club_friendlies.csv"]
     path = _publish_upcoming_csv(output_dir, nat_sources, "national")
     if path:
         written["national"]["upcoming"] = str(path)
 
-    combined = _publish_all_upcoming(output_dir, upcoming_sources + nat_sources)
+    combined = _publish_all_upcoming(output_dir, upcoming_sources + nat_sources + friendlies_sources)
     if combined:
         written["combined"]["all_upcoming"] = str(combined)
 

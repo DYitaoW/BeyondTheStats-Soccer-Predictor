@@ -53,6 +53,7 @@ _UPCOMING_CSV_MODE_MAP = {
     "United States/US Open Cup": "cups",
     "FIFA/World Cup": "national",
     "FIFA/Friendly": "national",
+    "Club Friendlies": "friendlies",
     "UEFA/European Championship": "national",
     "UEFA/Nations League": "national",
     "CONMEBOL/Copa America": "national",
@@ -348,6 +349,11 @@ def _build_persistent_accuracy_stats(mode, rows):
         filtered = {
             str(k): v for k, v in by_league_all.items()
             if str(k).strip() in CUP_COMPETITIONS
+        }
+    elif mode == "friendlies":
+        filtered = {
+            str(k): v for k, v in by_league_all.items()
+            if str(k).strip() == config.CLUB_FRIENDLIES_COMPETITION
         }
     else:
         filtered = {

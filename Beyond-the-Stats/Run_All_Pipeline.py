@@ -352,6 +352,11 @@ def _run_shared_post_steps(args, api_token):
         [py, str(FILES_DIR / "Update_Live_Prediction_Results.py")],
         continue_on_error=args.continue_on_error,
     )
+    sub["sync_club_friendlies"] = run_step(
+        "Sync club friendlies schedule and Chelsea predictions",
+        [py, str(FILES_DIR / "Update_Club_Friendlies.py")],
+        continue_on_error=args.continue_on_error,
+    )
     if not args.skip_global:
         sub["track_cup_results"] = run_step(
             "Track completed cup predictions and cup projections",
