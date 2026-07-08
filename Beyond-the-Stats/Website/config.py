@@ -154,6 +154,13 @@ LIVE_SCORE_COMPETITIONS = {
 # ── Competitions ──────────────────────────────────────────────────
 
 MLS_COMPETITION = "United States/MLS"
+MLS_CUP_COMPETITION = "United States/MLS - MLS Cup"
+MLS_WINNER_VIEWS = {
+    "supporters_shield": "United States/MLS - Supporters Shield Table",
+    "eastern_conference": "United States/MLS - Eastern Conference",
+    "western_conference": "United States/MLS - Western Conference",
+    "mls_cup": MLS_CUP_COMPETITION,
+}
 
 CUP_COMPETITIONS = {
     "England/FA Cup",
@@ -335,6 +342,7 @@ MLS_TABLE_VIEW_ALIASES = {
     "United States/MLS - Eastern Conference",
     "United States/MLS - Western Conference",
     "United States/MLS - Supporters Shield Table",
+    MLS_CUP_COMPETITION,
 }
 
 # ── API & Authentication ──────────────────────────────────────────

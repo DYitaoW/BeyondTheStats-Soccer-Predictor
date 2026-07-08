@@ -508,11 +508,12 @@ def coerce_scoreline(pred_result, base_hg, base_ag):
     return hg, ag
 
 
-def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, conference_lookup, runs):
+def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, conference_lookup, runs, ctx=None):
     stat_sums = {team: defaultdict(float) for team in canonical_teams}
     league_pos_counts = {team: defaultdict(int) for team in canonical_teams}
     east_pos_counts = {team: defaultdict(int) for team in canonical_teams}
     west_pos_counts = {team: defaultdict(int) for team in canonical_teams}
+    cup_win_counts = {team: 0 for team in canonical_teams}
 
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
@@ -534,7 +535,27 @@ def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, confere
         for pos, (team, _) in enumerate(west_ranked, start=1):
             west_pos_counts[team][pos] += 1
 
-    return stat_sums, league_pos_counts, east_pos_counts, west_pos_counts
+        if ctx is not None and len(east_ranked) >= 9 and len(west_ranked) >= 9:
+            bracket = simulate_mls_playoff_bracket(ctx, east_ranked, west_ranked)
+            cup_winner = (bracket.get("mls_cup") or {}).get("winner")
+            if cup_winner in cup_win_counts:
+                cup_win_counts[cup_winner] += 1
+
+    return stat_sums, league_pos_counts, east_pos_counts, west_pos_counts, cup_win_counts
+
+
+def build_cup_probability_columns(cup_win_counts, team, total_runs):
+    wins = int(cup_win_counts.get(team, 0))
+    pct = round((wins / max(1, int(total_runs))) * 100.0, 2)
+    return {
+        "win_league_pct": pct,
+        "top4_pct": 0.0,
+        "bottom3_pct": 0.0,
+        "most_likely_position": 1 if wins > 0 else 0,
+        "most_likely_position_pct": pct,
+        "position_odds_json": json.dumps({"1": pct}, separators=(",", ":"), sort_keys=True),
+        "sim_runs": int(total_runs),
+    }
 
 
 def build_probability_columns(position_counts, team, total_teams):
@@ -685,6 +706,12 @@ def predict_best_of_three(ctx, high_seed_team, low_seed_team, competition_hint):
 
 
 def build_mls_playoff_bracket_prediction(ctx, east_ranked, west_ranked):
+    bracket = simulate_mls_playoff_bracket(ctx, east_ranked, west_ranked)
+    bracket["generated_at_utc"] = datetime.utcnow().isoformat() + "Z"
+    return bracket
+
+
+def simulate_mls_playoff_bracket(ctx, east_ranked, west_ranked):
     def seed_at(items, seed_num):
         for pos, (team, _) in enumerate(items, start=1):
             if pos == seed_num:
@@ -732,7 +759,6 @@ def build_mls_playoff_bracket_prediction(ctx, east_ranked, west_ranked):
     cup_winner = predict_single_winner_no_draw(ctx, cup_home, cup_away, "United States/MLS", cup_home)
 
     return {
-        "generated_at_utc": datetime.utcnow().isoformat() + "Z",
         "eastern_seeds": [{"seed": i + 1, "team": team} for i, team in enumerate([e1, e2, e3, e4, e5, e6, e7, e8, e9])],
         "western_seeds": [{"seed": i + 1, "team": team} for i, team in enumerate([w1, w2, w3, w4, w5, w6, w7, w8, w9])],
         "wildcard": {
@@ -879,8 +905,8 @@ def project_competition(ctx, competition, raw_file):
             add_predicted_fixture(home, away, "")
 
     conference_lookup = build_conference_lookup()
-    stat_sums, league_pos_counts, east_pos_counts, west_pos_counts = run_monte_carlo_mls(
-        canonical_teams, table, future_predictions, conference_lookup, SIMULATION_RUNS
+    stat_sums, league_pos_counts, east_pos_counts, west_pos_counts, cup_win_counts = run_monte_carlo_mls(
+        canonical_teams, table, future_predictions, conference_lookup, SIMULATION_RUNS, ctx=ctx
     )
     averaged = {}
     for team in canonical_teams:
@@ -924,9 +950,41 @@ def project_competition(ctx, competition, raw_file):
     if west_ranked:
         out_rows.extend(emit_rows("United States/MLS - Western Conference", west_ranked, west_pos_counts))
 
+    cup_ranked = sorted(
+        [(team, averaged[team]) for team in canonical_teams],
+        key=lambda kv: (
+            -cup_win_counts.get(kv[0], 0),
+            -kv[1]["Pts"],
+            -kv[1]["GD"],
+            -kv[1]["GF"],
+            kv[0],
+        ),
+    )
+    cup_pos_counts = {team: {1: cup_win_counts.get(team, 0)} for team in canonical_teams}
+    cup_rows = []
+    for pos, (team, stats) in enumerate(cup_ranked, start=1):
+        cup_rows.append(
+            {
+                "competition": "United States/MLS - MLS Cup",
+                "position": pos,
+                "team": team,
+                **stats,
+                **build_cup_probability_columns(cup_win_counts, team, SIMULATION_RUNS),
+            }
+        )
+    out_rows.extend(cup_rows)
+
     bracket_payload = None
     if len(east_ranked) >= 9 and len(west_ranked) >= 9:
         bracket_payload = build_mls_playoff_bracket_prediction(ctx, east_ranked, west_ranked)
+        cup_probs = {
+            team: round((count / SIMULATION_RUNS) * 100.0, 2)
+            for team, count in cup_win_counts.items()
+            if count > 0
+        }
+        if cup_probs:
+            bracket_payload["mls_cup_winner_probabilities"] = cup_probs
+            bracket_payload["simulations_run"] = int(SIMULATION_RUNS)
 
     return out_rows, future_rows, bracket_payload
 

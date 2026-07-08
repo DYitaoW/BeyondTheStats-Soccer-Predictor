@@ -76,6 +76,7 @@ from predictions import (
     _load_projected_tables,
     _load_projected_competition_table,
     _build_winner_probability_payload,
+    _build_mls_winners_odds_bundle,
     _load_team_recent_matches,
     _load_teams_from_team_data,
     _load_upcoming_rows,
@@ -1579,14 +1580,40 @@ def _build_mls_api_payload():
         "bracket": _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE),
         "fixtures": _load_all_fixtures_by_competition(config.MLS_UPCOMING_FILE),
         "last_prediction_refresh": last_refresh,
+        "mls_winners_odds": _build_mls_winners_odds_bundle(),
     }
     return payload
 
 
 def _enrich_league_data_mls_fields(comp, payload):
-    """Attach MLS Cup bracket and normalize fixture competition for MLS views."""
+    """Attach MLS Cup bracket, all MLS winner-odds views, and fixtures."""
     if not str(comp or "").startswith("United States/MLS"):
         return payload
+
+    mls_winners = _build_mls_winners_odds_bundle()
+    if mls_winners:
+        payload["mls_winners_odds"] = mls_winners
+
+    from competition_rules import resolve_competition_query
+
+    base_comp, view = resolve_competition_query(comp)
+    view_key_map = {
+        "shield": "supporters_shield",
+        "east": "eastern_conference",
+        "west": "western_conference",
+    }
+    if comp == config.MLS_CUP_COMPETITION:
+        view_key = "mls_cup"
+    elif view:
+        view_key = view_key_map.get(view)
+    else:
+        view_key = None
+
+    if view_key and view_key in mls_winners:
+        view_payload = mls_winners[view_key]
+        for key in ("winner_probabilities", "winners_odds", "champion", "simulations_run"):
+            if view_payload.get(key) is not None:
+                payload[key] = view_payload[key]
 
     bracket = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
     if isinstance(bracket, dict) and bracket:
@@ -1710,6 +1737,12 @@ def api_league_data(competition):
          "winner_probabilities": {team: pct, ...},
          "champion": "...",
          "simulations_run": 200,
+         "mls_winners_odds": {
+           "supporters_shield": {...},
+           "eastern_conference": {...},
+           "western_conference": {...},
+           "mls_cup": {...}
+         },
          "real_table": {"groups": [...], "source": "real"},
          "fixtures": [...]}
     """

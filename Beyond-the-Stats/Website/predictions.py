@@ -1368,6 +1368,50 @@ PROJECTED_WINNER_COMP_ALIASES = {
 }
 
 
+def _build_mls_winners_odds_bundle() -> dict:
+    """Return separate winner odds for Shield, East, West, and MLS Cup."""
+    bundle: dict = {}
+    for key, comp_name in config.MLS_WINNER_VIEWS.items():
+        table = _load_projected_competition_table(comp_name)
+        if table:
+            payload = _build_winner_probability_payload(table)
+            if payload.get("winner_probabilities"):
+                bundle[key] = {
+                    "competition": comp_name,
+                    "winner_probabilities": payload.get("winner_probabilities", {}),
+                    "winners_odds": payload.get("winners_odds", []),
+                    "champion": payload.get("champion"),
+                    "simulations_run": payload.get("simulations_run"),
+                }
+
+    if "mls_cup" not in bundle:
+        bracket = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
+        if isinstance(bracket, dict):
+            cup_probs = bracket.get("mls_cup_winner_probabilities") or {}
+            if cup_probs:
+                winners_odds = [
+                    {
+                        "team": team,
+                        "win_league_pct": round(float(pct), 2),
+                        "top4_pct": None,
+                        "bottom3_pct": None,
+                        "most_likely_position": None,
+                        "most_likely_position_pct": None,
+                    }
+                    for team, pct in sorted(cup_probs.items(), key=lambda x: -float(x[1] or 0))
+                    if float(pct or 0) > 0
+                ]
+                champion = winners_odds[0]["team"] if winners_odds else (bracket.get("mls_cup") or {}).get("winner")
+                bundle["mls_cup"] = {
+                    "competition": config.MLS_CUP_COMPETITION,
+                    "winner_probabilities": {k: round(float(v), 2) for k, v in cup_probs.items() if float(v or 0) > 0},
+                    "winners_odds": winners_odds,
+                    "champion": champion,
+                    "simulations_run": bracket.get("simulations_run"),
+                }
+    return bundle
+
+
 def _load_projected_competition_table(comp_name: str) -> list[dict]:
     """Return projected table rows for a competition from any pipeline CSV."""
     lookup_names = [str(comp_name or "").strip()]
