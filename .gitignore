@@ -101,6 +101,9 @@ old_index_*.html
 # User feedback submissions (runtime data, not source)
 Beyond-the-Stats/Website/files/feedback/feedback.txt
 
+# Latest pipeline terminal capture (served via /api/pipeline/logs)
+Beyond-the-Stats/Data/pipeline_latest.log
+
 # =============================================================================
 # EXCEPTIONS — keep team mappings, FIFA rankings, and pipeline seeds
 # =============================================================================
