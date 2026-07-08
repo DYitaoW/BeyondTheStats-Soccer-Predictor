@@ -8,6 +8,19 @@ from datetime import datetime, timezone
 import pandas as pd
 
 import config
+from competition_rules import (
+    MLS_EASTERN_CONFERENCE_TEAMS,
+    MLS_WESTERN_CONFERENCE_TEAMS,
+    canonical_team_name,
+    classify_match_stage,
+    collect_competition_games,
+    cup_format,
+    current_competition_phase,
+    extract_group_label,
+    load_wc_team_groups,
+    mls_conference,
+    resolve_competition_query,
+)
 from espn_api import _fetch_leaders, _fetch_standings, LIVE_SCORE_FETCH_TIMEOUT
 from team_utils import _to_int
 
@@ -116,19 +129,6 @@ def _save_live_score_history(games):
         json.dump(games, f, indent=2)
 
 
-MLS_EASTERN_CONFERENCE_TEAMS = frozenset({
-    "Atlanta Utd", "CF Montreal", "Charlotte", "Chicago Fire", "Columbus Crew",
-    "DC United", "FC Cincinnati", "Inter Miami", "Nashville SC", "New England Revolution",
-    "New York City", "New York Red Bulls", "Orlando City", "Philadelphia Union", "Toronto FC",
-})
-
-MLS_WESTERN_CONFERENCE_TEAMS = frozenset({
-    "Austin FC", "Colorado Rapids", "FC Dallas", "Houston Dynamo", "Los Angeles Galaxy",
-    "Los Angeles FC", "Minnesota United", "Portland Timbers", "Real Salt Lake", "San Diego FC",
-    "San Jose Earthquakes", "Seattle Sounders", "Sporting Kansas City", "St. Louis City",
-    "Vancouver Whitecaps",
-})
-
 BELGIAN_REGULAR_LIMIT = 30  # 16 teams × 2 rounds
 
 _UEFA_COMPETITIONS = {
@@ -138,14 +138,7 @@ _UEFA_COMPETITIONS = {
 
 
 def _mls_conference(team_name):
-    n = str(team_name).replace(" FC", "").replace("United", "United").strip().lower()
-    for t in MLS_EASTERN_CONFERENCE_TEAMS:
-        if t.lower() in n or n in t.lower():
-            return "east"
-    for t in MLS_WESTERN_CONFERENCE_TEAMS:
-        if t.lower() in n or n in t.lower():
-            return "west"
-    return None
+    return mls_conference(team_name)
 
 def _compute_standings_from_history(comp_name):
     """Compute league / group standings purely from completed live-score results.
@@ -160,33 +153,44 @@ def _compute_standings_from_history(comp_name):
     Applies correct tiebreakers per league (GD-first vs H2H-first).
     Returns ``None`` if no completed games are available.
     """
-    history = _load_live_score_history()
-    # Also include any post games still in _live_scores (not yet merged)
-    from live_poller import _live_scores, _live_scores_lock
-    with _live_scores_lock:
-        for comp_data in _live_scores.values():
-            for g in comp_data.get("games", []):
-                if g.get("status") == "post":
-                    entry = dict(g)
-                    entry.setdefault("competition", next(
-                        (k for k, v in _live_scores.items() if v is comp_data), comp_name,
-                    ))
-                    history.append(entry)
-
-    comp_games = [g for g in history
-                  if g.get("competition") == comp_name and g.get("status") == "post"
-                  and g.get("home_score") is not None and g.get("away_score") is not None]
+    base_comp, mls_view = resolve_competition_query(comp_name)
+    comp_games = collect_competition_games(comp_name)
     if not comp_games:
         return None
 
     def _finalize(response):
+        if mls_view and response.get("groups"):
+            view_map = {
+                "east": "Eastern Conference",
+                "west": "Western Conference",
+                "shield": "Supporters Shield",
+            }
+            target = view_map.get(mls_view)
+            if target:
+                filtered = [g for g in response["groups"] if g.get("name") == target]
+                if filtered:
+                    response = dict(response)
+                    response["groups"] = filtered
         with _real_tables_lock:
             _real_tables[comp_name] = response
         _persist_real_tables()
         return response
 
-    # Detect group format: any game with "group" in round name
-    has_groups = any("group" in str(g.get("round", "")).lower() for g in comp_games)
+    fmt = cup_format(base_comp)
+    team_to_group = load_wc_team_groups(comp_games) if base_comp == "FIFA/World Cup" else {}
+    group_stage_games = [
+        g for g in comp_games
+        if classify_match_stage(g, base_comp, team_to_group) == "group"
+    ]
+    league_games = [
+        g for g in comp_games
+        if classify_match_stage(g, base_comp, team_to_group) == "league"
+    ]
+    has_groups = bool(group_stage_games) or any(
+        "group" in str(g.get("round", "")).lower() for g in comp_games
+    )
+    if fmt and fmt.get("format") in {"group_stage_then_knockout", "league_phase_then_knockout"}:
+        has_groups = bool(group_stage_games)
 
     def _extract_group(round_name):
         """Extract group label from ESPN round name e.g. 'Group Stage - Group A' → 'A'."""
@@ -265,9 +269,79 @@ def _compute_standings_from_history(comp_name):
                     result.append((team, table[team]))
         return result
 
+    # ── World Cup / group-stage cups ─────────────────────────────
+    if base_comp == "FIFA/World Cup" or (
+        fmt and fmt.get("format") == "group_stage_then_knockout" and group_stage_games
+    ):
+        groups_data = {}
+        games_for_groups = group_stage_games or [
+            g for g in comp_games if "group" in str(g.get("round", "")).lower()
+        ]
+        for g in games_for_groups:
+            group = extract_group_label(g, team_to_group)
+            if not group:
+                continue
+            groups_data.setdefault(group, []).append(g)
+
+        groups = []
+        for group_name in sorted(groups_data):
+            games = groups_data[group_name]
+            teams = set()
+            for g in games:
+                teams.add(str(g.get("home_team", "")))
+                teams.add(str(g.get("away_team", "")))
+            teams.discard("")
+            if not teams:
+                continue
+            table = _init_table(teams)
+            match_records = []
+            for g in games:
+                ht = str(g.get("home_team", ""))
+                at = str(g.get("away_team", ""))
+                hs = int(g.get("home_score", 0))
+                as_ = int(g.get("away_score", 0))
+                if ht and at:
+                    _apply_result(table, ht, at, hs, as_)
+                    match_records.append((ht, at, hs, as_))
+            ranked = _rank_table(table, match_records if base_comp in config.H2H_LEAGUES else None)
+            entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+            groups.append({"name": f"Group {group_name}", "entries": entries})
+
+        if groups:
+            from knockout import _build_knockout_framework
+            response = {
+                "competition": comp_name,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "groups": groups,
+                "source": "computed",
+                "format": fmt.get("format") if fmt else "group_stage_then_knockout",
+                "current_phase": current_competition_phase(comp_games, base_comp),
+            }
+            ko = _build_knockout_framework(base_comp)
+            if ko:
+                response["knockout_rounds"] = ko
+            return _finalize(response)
+
+        if base_comp == "FIFA/World Cup" or (
+            fmt and fmt.get("format") == "group_stage_then_knockout"
+        ):
+            from knockout import _build_knockout_framework
+            response = {
+                "competition": comp_name,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "groups": [],
+                "source": "computed",
+                "format": fmt.get("format") if fmt else "group_stage_then_knockout",
+                "current_phase": current_competition_phase(comp_games, base_comp),
+            }
+            ko = _build_knockout_framework(base_comp)
+            if ko:
+                response["knockout_rounds"] = ko
+            return _finalize(response)
+
     # ── League-phase format (UCL/UEL/UECL) ──────────────────────
-    is_league_phase = comp_name in _UEFA_COMPETITIONS and not has_groups
-    is_mls = comp_name == "United States/MLS"
+    is_league_phase = base_comp in _UEFA_COMPETITIONS and not has_groups
+    is_mls = base_comp == "United States/MLS"
     is_belgian = "belgium" in comp_name.lower() or "belgian" in comp_name.lower()
     is_scottish = "scotland" in comp_name.lower() or "scottish" in comp_name.lower()
 
@@ -275,7 +349,8 @@ def _compute_standings_from_history(comp_name):
         # UCL/UEL/UECL league phase: single table with all teams
         teams = set()
         match_records = []
-        for g in comp_games:
+        phase_games = group_stage_games or comp_games
+        for g in phase_games:
             ht = str(g.get("home_team", ""))
             at = str(g.get("away_team", ""))
             if ht and at:
@@ -284,7 +359,7 @@ def _compute_standings_from_history(comp_name):
         if not teams:
             return None
         table = _init_table(teams)
-        for g in comp_games:
+        for g in phase_games:
             ht = str(g.get("home_team", ""))
             at = str(g.get("away_team", ""))
             hs = int(g.get("home_score", 0))
@@ -310,8 +385,11 @@ def _compute_standings_from_history(comp_name):
     if has_groups:
         groups_data = {}
         group_games_map = {}
-        for g in comp_games:
-            group = _extract_group(str(g.get("round", "")))
+        games_for_groups = group_stage_games or comp_games
+        for g in games_for_groups:
+            if classify_match_stage(g, base_comp, team_to_group) == "knockout":
+                continue
+            group = extract_group_label(g, team_to_group) or _extract_group(str(g.get("round", "")))
             if not group:
                 continue
             group_games_map.setdefault(group, []).append(g)
@@ -339,11 +417,11 @@ def _compute_standings_from_history(comp_name):
             entries = []
             for pos, (team, stats) in enumerate(ranked, 1):
                 entries.append({"team": team, "rank": pos, **stats})
-            groups_data[group_name] = {"name": group_name, "entries": entries}
+            groups_data[group_name] = {"name": f"Group {group_name}", "entries": entries}
 
         if not groups_data:
             return None
-        groups = [{"name": gn, "entries": gd["entries"]} for gn, gd in sorted(groups_data.items())]
+        groups = [{"name": gd["name"], "entries": gd["entries"]} for _, gd in sorted(groups_data.items())]
 
         # Add knockout framework for UEFA group-stage competitions
         response = {
@@ -423,7 +501,8 @@ def _compute_standings_from_history(comp_name):
     if is_scottish:
         teams = set()
         match_records = []
-        for g in comp_games:
+        phase_games = group_stage_games or comp_games
+        for g in phase_games:
             ht = str(g.get("home_team", ""))
             at = str(g.get("away_team", ""))
             if ht and at:
@@ -432,7 +511,7 @@ def _compute_standings_from_history(comp_name):
         if not teams:
             return None
         table = _init_table(teams)
-        for g in comp_games:
+        for g in phase_games:
             ht = str(g.get("home_team", ""))
             at = str(g.get("away_team", ""))
             hs = int(g.get("home_score", 0))
@@ -471,7 +550,8 @@ def _compute_standings_from_history(comp_name):
     if is_belgian:
         teams = set()
         match_records = []
-        for g in comp_games:
+        phase_games = group_stage_games or comp_games
+        for g in phase_games:
             ht = str(g.get("home_team", ""))
             at = str(g.get("away_team", ""))
             if ht and at:
@@ -480,7 +560,7 @@ def _compute_standings_from_history(comp_name):
         if not teams:
             return None
         table = _init_table(teams)
-        for g in comp_games:
+        for g in phase_games:
             ht = str(g.get("home_team", ""))
             at = str(g.get("away_team", ""))
             hs = int(g.get("home_score", 0))
@@ -515,9 +595,12 @@ def _compute_standings_from_history(comp_name):
 
 
     # ── Standard single table ────────────────────────────────
+    if fmt and fmt.get("format") == "group_stage_then_knockout":
+        return None
+    table_games = league_games or comp_games
     teams = set()
     match_records = []
-    for g in comp_games:
+    for g in table_games:
         ht = str(g.get("home_team", ""))
         at = str(g.get("away_team", ""))
         if ht and at:
@@ -526,7 +609,7 @@ def _compute_standings_from_history(comp_name):
     if not teams:
         return None
     table = _init_table(teams)
-    for g in comp_games:
+    for g in table_games:
         ht = str(g.get("home_team", ""))
         at = str(g.get("away_team", ""))
         hs = int(g.get("home_score", 0))

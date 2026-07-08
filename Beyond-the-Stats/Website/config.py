@@ -279,9 +279,28 @@ _CUP_FORMATS = {
     "CONCACAF/Leagues Cup": {
         "format": "group_stage_then_knockout",
         "description": "Group stage (3 matches per team across MLS and Liga MX clubs) followed by single-elimination knockout rounds.",
+        "group_count": 4,
+        "group_stage_matches_per_team": 3,
         "league_phase_matches": 3,
         "stages": ["Group Stage", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
         "knockout_rounds": ["Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": True,
+    },
+    "FIFA/World Cup": {
+        "format": "group_stage_then_knockout",
+        "description": "12 groups of 4 teams (3 group matches each). Top two plus eight best third-place teams advance to a fixed Round of 32 knockout bracket.",
+        "group_count": 12,
+        "group_stage_matches_per_team": 3,
+        "group_labels": list("ABCDEFGHIJKL"),
+        "stages": [
+            "Group Stage", "Round of 32", "Round of 16", "Quarter-finals",
+            "Semi-finals", "Third Place", "Final",
+        ],
+        "knockout_rounds": [
+            "Round of 32", "Round of 16", "Quarter-finals",
+            "Semi-finals", "Third Place", "Final",
+        ],
         "two_leg_rounds": [],
         "final_neutral": True,
     },
@@ -310,6 +329,12 @@ H2H_LEAGUES = {
     "Portugal/Liga Portugal",
     "Belgium/First Division A",
     "Turkey/Super Lig",
+}
+
+MLS_TABLE_VIEW_ALIASES = {
+    "United States/MLS - Eastern Conference",
+    "United States/MLS - Western Conference",
+    "United States/MLS - Supporters Shield Table",
 }
 
 # ── API & Authentication ──────────────────────────────────────────

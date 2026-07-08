@@ -599,184 +599,39 @@ _CUP_COMPETITIONS = {
 
 
 def _build_real_standings():
-    """Build real league tables / cup brackets from completed game data.
+    """Build real league tables using competition-aware Website standings logic."""
+    website_dir = SP_DIR / "Website"
+    if str(website_dir) not in sys.path:
+        sys.path.insert(0, str(website_dir))
 
-    Reads all prediction CSVs and ``past_games.json``, extracts games with
-    ``actual_result`` set, computes standings per competition, and writes
-    the result to ``_REAL_STANDINGS_FILE`` so the API can serve them.
+    try:
+        from standings import _build_fallback_standings, _compute_standings_from_history
+        from competition_rules import MLS_TABLE_VIEWS
+    except ImportError as exc:
+        print(f"  [real-standings] Could not import Website standings: {exc}")
+        return False
 
-    Runs BEFORE sub-pipelines so real standings are available as input to
-    the prediction models.
-    """
-    now_utc = datetime.now(UTC).replace(microsecond=0).isoformat()
-    all_games = []
-
-    # 1. Collect completed games from all CSVs
-    csv_paths = [
-        ("global", GLOBAL_UPCOMING_FILE),
-        ("mls", MLS_UPCOMING_FILE),
-        ("extra", EXTRA_UPCOMING_FILE),
-        ("cups", CUP_UPCOMING_FILE),
-        ("national", NATIONAL_UPCOMING_FILE),
-        ("global", SP_DIR / "Output" / "Upcoming" / "all_upcoming.csv"),
-        ("global", SP_DIR / "Output" / "Europe" / "Upcoming" / "europe_upcoming.csv"),
-        ("global", SP_DIR / "Output" / "National" / "Upcoming" / "national_upcoming.csv"),
-    ]
-    for source, path in csv_paths:
-        if not path.exists():
-            continue
-        try:
-            df = pd.read_csv(path, dtype=str)
-        except Exception:
-            continue
-        if df.empty or "actual_result" not in df.columns:
-            continue
-        settled = df[df["actual_result"].astype(str).str.strip().str.upper().isin({"H", "D", "A"})]
-        for _, row in settled.iterrows():
-            comp = str(row.get("competition", "")).strip()
-            home = str(row.get("home_team", "")).strip()
-            away = str(row.get("away_team", "")).strip()
-            try:
-                hs = int(float(row["actual_home_goals"]))
-                aws = int(float(row["actual_away_goals"]))
-            except (ValueError, TypeError):
-                continue
-            if not comp or not home or not away:
-                continue
-            all_games.append({
-                "competition": comp,
-                "home_team": home,
-                "away_team": away,
-                "home_score": hs,
-                "away_score": aws,
-                "status": "post",
-                "round": "",
-                "source": source,
-            })
-
-    # 2. Also collect from past_games.json (older completed games)
-    if PAST_GAMES_FILE.exists():
-        try:
-            past = json.loads(PAST_GAMES_FILE.read_text(encoding="utf-8"))
-            if isinstance(past, list):
-                for g in past:
-                    comp = str(g.get("competition", "")).strip()
-                    home = str(g.get("home_team", "")).strip()
-                    away = str(g.get("away_team", "")).strip()
-                    ahg = g.get("actual_home_goals") or g.get("home_score")
-                    aag = g.get("actual_away_goals") or g.get("away_score")
-                    try:
-                        hs = int(float(ahg))
-                        aws = int(float(aag))
-                    except (ValueError, TypeError):
-                        continue
-                    if not comp or not home or not away:
-                        continue
-                    all_games.append({
-                        "competition": comp,
-                        "home_team": home,
-                        "away_team": away,
-                        "home_score": hs,
-                        "away_score": aws,
-                        "status": "post",
-                        "round": "",
-                        "source": "past_games",
-                    })
-        except Exception:
-            pass
-
-    # 3. Seed team rosters from league_teams.json for competitions with no games
-    league_teams = {}
-    lt_path = SP_DIR / "Data" / "Predictions" / "league_teams.json"
-    if lt_path.exists():
-        try:
-            lt_data = json.loads(lt_path.read_text(encoding="utf-8"))
-            if isinstance(lt_data, dict):
-                league_teams = lt_data
-        except Exception:
-            pass
-
-    # 4. Group by competition and compute standings
-    comp_games: dict[str, list] = {}
-    for g in all_games:
-        comp_games.setdefault(g["competition"], []).append(g)
-
-    known_comps = _REAL_TABLE_COMPETITIONS | _CUP_COMPETITIONS
+    known_comps = sorted(_REAL_TABLE_COMPETITIONS | _CUP_COMPETITIONS | {"FIFA/World Cup"})
     standings: dict[str, dict] = {}
-    for comp_name, games in comp_games.items():
-        if comp_name not in known_comps:
+    for comp_name in known_comps:
+        table = _compute_standings_from_history(comp_name)
+        if table:
+            standings[comp_name] = table
             continue
-        teams = set()
-        for g in games:
-            teams.add(g["home_team"])
-            teams.add(g["away_team"])
-        # Also include teams from league roster (catches offseason / no-game leagues)
-        roster = league_teams.get(comp_name)
-        if roster:
-            teams.update(roster)
-        if not teams:
-            continue
+        fallback = _build_fallback_standings(comp_name)
+        if fallback:
+            standings[comp_name] = fallback
 
-        # Build table
-        table = {t: {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0} for t in sorted(teams)}
-        for g in games:
-            ht, at = g["home_team"], g["away_team"]
-            hs, aws = g["home_score"], g["away_score"]
-            row = table[ht]
-            row["P"] += 1; row["GF"] += hs; row["GA"] += aws
-            row["GD"] = row["GF"] - row["GA"]
-            if hs > aws:
-                row["W"] += 1; row["Pts"] += 3
-            elif aws > hs:
-                row["L"] += 1
-            else:
-                row["D"] += 1; row["Pts"] += 1
-            row2 = table[at]
-            row2["P"] += 1; row2["GF"] += aws; row2["GA"] += hs
-            row2["GD"] = row2["GF"] - row2["GA"]
-            if aws > hs:
-                row2["W"] += 1; row2["Pts"] += 3
-            elif hs > aws:
-                row2["L"] += 1
-            else:
-                row2["D"] += 1; row2["Pts"] += 1
-
-        # Sort by Pts, GD, GF
-        sorted_teams = sorted(table.items(), key=lambda kv: (-kv[1]["Pts"], -kv[1]["GD"], -kv[1]["GF"], kv[0]))
-        entries = []
-        for pos, (team, stats) in enumerate(sorted_teams, start=1):
-            entry = {"team": team, "position": pos, **stats}
-            entries.append(entry)
-
-        standings[comp_name] = {
-            "competition": comp_name,
-            "updated_at": now_utc,
-            "groups": [{"name": "Overall", "entries": entries}],
-            "source": "computed",
-        }
-
-    # 5. Also seed competitions that have team rosters but zero completed games
-    for comp_name in league_teams:
-        if comp_name in standings:
+    for alias in MLS_TABLE_VIEWS:
+        if alias in standings:
             continue
-        if comp_name not in known_comps:
-            continue
-        roster = league_teams.get(comp_name)
-        if not roster:
-            continue
-        entries = []
-        for pos, team in enumerate(sorted(roster), start=1):
-            entries.append({
-                "team": team, "position": pos,
-                "P": 0, "W": 0, "D": 0, "L": 0,
-                "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-            })
-        standings[comp_name] = {
-            "competition": comp_name,
-            "updated_at": now_utc,
-            "groups": [{"name": "Overall", "entries": entries}],
-            "source": "roster",
-        }
+        sub = _compute_standings_from_history(alias)
+        if sub:
+            standings[alias] = sub
+        else:
+            fallback = _build_fallback_standings(alias)
+            if fallback:
+                standings[alias] = fallback
 
     if standings:
         try:

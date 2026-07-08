@@ -244,19 +244,31 @@ def _append_projected_cup_matches(matches, comp, bracket_data):
 
 def _gather_competition_cup_matches(comp):
     """Collect completed, live, and projected cup matches for knockout building."""
+    from competition_rules import collect_competition_games
     from live_poller import _live_scores, _live_scores_lock
     from standings import _load_live_score_history
 
     matches = []
     seen_ids = set()
 
+    for g in collect_competition_games(comp):
+        mid = g.get("match_id", "")
+        if mid and mid in seen_ids:
+            continue
+        if mid:
+            seen_ids.add(mid)
+        matches.append(g)
+
     history = _load_live_score_history()
     for g in history:
-        if g.get("competition") == comp:
-            mid = g.get("match_id", "")
-            if mid:
-                seen_ids.add(mid)
-            matches.append(g)
+        if g.get("competition") != comp:
+            continue
+        mid = g.get("match_id", "")
+        if mid and mid in seen_ids:
+            continue
+        if mid:
+            seen_ids.add(mid)
+        matches.append(g)
 
     with _live_scores_lock:
         current = _live_scores.get(comp, {}).get("games", [])
@@ -311,6 +323,10 @@ def _gather_competition_cup_matches(comp):
     except Exception:
         pass
 
+    from competition_rules import annotate_knockout_rounds
+
+    matches = annotate_knockout_rounds(matches, comp)
+
     for g in matches:
         rnd = _normalize_round_label(g.get("round"))
         order = g.get("round_order", 0)
@@ -325,7 +341,10 @@ def _gather_competition_cup_matches(comp):
         if g.get("status") == "post":
             hs = g.get("home_score")
             aws = g.get("away_score")
-            if hs is not None and aws is not None:
+            winner = str(g.get("winner") or "").strip()
+            if winner:
+                g["winner"] = winner
+            elif hs is not None and aws is not None:
                 if hs > aws:
                     g["winner"] = g.get("home_team", "")
                 elif aws > hs:
@@ -344,12 +363,27 @@ def _gather_competition_cup_matches(comp):
 
 def _build_cup_knockout_payload(matches, comp):
     """Build knockout / odds_knockout / real_knockout with optional two-leg expansion."""
-    cup_format = config._CUP_FORMATS.get(comp)
-    knockout, odds_knockout, real_knockout = _build_knockout_wc_format(matches)
-    if cup_format and cup_format.get("two_leg_rounds"):
-        knockout = _expand_two_leg_knockout(knockout, cup_format["two_leg_rounds"])
-        odds_knockout = _expand_two_leg_knockout(odds_knockout, cup_format["two_leg_rounds"])
-        real_knockout = _expand_two_leg_knockout(real_knockout, cup_format["two_leg_rounds"])
+    from competition_rules import classify_match_stage, cup_format, load_wc_team_groups
+
+    cup_format_meta = cup_format(comp)
+    team_to_group = load_wc_team_groups() if comp == "FIFA/World Cup" else {}
+    bracket_matches = matches
+    if cup_format_meta and cup_format_meta.get("format") in {"group_stage_then_knockout", "league_phase_then_knockout"}:
+        bracket_matches = [
+            g for g in matches
+            if classify_match_stage(g, comp, team_to_group) == "knockout"
+        ]
+    elif cup_format_meta and cup_format_meta.get("format") == "knockout":
+        bracket_matches = [
+            g for g in matches
+            if classify_match_stage(g, comp, team_to_group) in {"knockout", "league"}
+        ]
+
+    knockout, odds_knockout, real_knockout = _build_knockout_wc_format(bracket_matches)
+    if cup_format_meta and cup_format_meta.get("two_leg_rounds"):
+        knockout = _expand_two_leg_knockout(knockout, cup_format_meta["two_leg_rounds"])
+        odds_knockout = _expand_two_leg_knockout(odds_knockout, cup_format_meta["two_leg_rounds"])
+        real_knockout = _expand_two_leg_knockout(real_knockout, cup_format_meta["two_leg_rounds"])
     return knockout, odds_knockout, real_knockout
 
 
@@ -556,9 +590,11 @@ def _build_knockout_wc_format(matches):
 
             winner = None
             if g.get("status") == "post":
-                hs, aws = g.get("home_score"), g.get("away_score")
-                if hs is not None and aws is not None:
-                    winner = g.get("home_team", "") if hs > aws else (g.get("away_team", "") if aws > hs else None)
+                winner = str(g.get("winner") or "").strip() or None
+                if not winner:
+                    hs, aws = g.get("home_score"), g.get("away_score")
+                    if hs is not None and aws is not None:
+                        winner = g.get("home_team", "") if hs > aws else (g.get("away_team", "") if aws > hs else None)
 
             prob_home = g.get("prob_home")
             prob_draw = g.get("prob_draw")

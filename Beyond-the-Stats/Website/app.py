@@ -1355,16 +1355,19 @@ def api_real_tables():
     comp_filter = request.args.get("competition", "").strip()
     force_refresh = request.args.get("refresh", "").strip().lower() in ("1", "true")
 
+    from competition_rules import should_use_persisted_table
+
     if comp_filter:
-        if comp_filter not in config.LIVE_SCORE_COMPETITIONS:
+        if comp_filter not in config.LIVE_SCORE_COMPETITIONS and comp_filter not in config.MLS_TABLE_VIEW_ALIASES:
             return jsonify({"ok": False, "error": f"Unknown competition: {comp_filter}"}), 400
         if force_refresh:
             _clear_standings_cache(comp_filter)
             _clear_leaders_cache(comp_filter)
-        # Try persisted cache first
         persisted = _load_json_payload(config.REAL_TABLES_PERSIST_FILE)
         if isinstance(persisted, dict) and comp_filter in persisted:
-            return jsonify({"ok": True, "table": persisted[comp_filter]})
+            cached = persisted[comp_filter]
+            if should_use_persisted_table(cached, force_refresh):
+                return jsonify({"ok": True, "table": cached})
         table = _compute_standings_from_history(comp_filter)
         if table is not None:
             return jsonify({"ok": True, "table": table})
@@ -1378,7 +1381,7 @@ def api_real_tables():
     if isinstance(persisted, dict):
         for comp_name in config.LIVE_SCORE_COMPETITIONS:
             cached = persisted.get(comp_name)
-            if cached and cached.get("groups"):
+            if should_use_persisted_table(cached, force_refresh):
                 results[comp_name] = cached
                 continue
             if force_refresh:
@@ -1924,27 +1927,22 @@ def api_league_leaders():
         comp = entry["competition"]
         if comp in cup_set:
             continue
-        # MLS real leaders — read from history for East/West conferences
+        # MLS real leaders — read conference groups from the unified MLS table
         if comp == "United States/MLS":
-            east_real = _compute_standings_from_history("United States/MLS - Eastern Conference")
-            west_real = _compute_standings_from_history("United States/MLS - Western Conference")
-            if east_real and isinstance(east_real, dict):
-                for g in (east_real.get("groups") or []):
-                    if g.get("entries"):
-                        entry["east_leader"] = g["entries"][0].get("team", "")
-                        break
-            if west_real and isinstance(west_real, dict):
-                for g in (west_real.get("groups") or []):
-                    if g.get("entries"):
-                        entry["west_leader"] = g["entries"][0].get("team", "")
-                        break
-            overall_real = _compute_standings_from_history("United States/MLS - Supporters Shield Table")
-            if overall_real and isinstance(overall_real, dict):
-                for g in (overall_real.get("groups") or []):
-                    if g.get("entries"):
-                        entry["current_leader"] = g["entries"][0].get("team", "")
+            real = _compute_standings_from_history("United States/MLS")
+            if real and isinstance(real, dict):
+                for g in (real.get("groups") or []):
+                    name = str(g.get("name", "")).strip()
+                    leader = (g.get("entries") or [{}])[0].get("team", "")
+                    if not leader:
+                        continue
+                    if name == "Eastern Conference":
+                        entry["east_leader"] = leader
+                    elif name == "Western Conference":
+                        entry["west_leader"] = leader
+                    elif name == "Supporters Shield":
+                        entry["current_leader"] = leader
                         entry["leader_source"] = "real"
-                        break
             if "leader_source" not in entry:
                 entry["current_leader"] = entry.get("predicted_winner") if entry.get("predicted_winner") and entry["predicted_winner"] != "—" else None
                 entry["leader_source"] = "predicted"

@@ -1455,11 +1455,17 @@ async function preloadHomeData() {
 }
 
 
+function getUpcomingLeaguesForSource(source) {
+    if (source === "mls") return ["United States/MLS"];
+    if (source === "friendlies") return [...FRIENDLIES_OPTIONS];
+    return getLeaguesForSource(source);
+}
+
 function populateUpcomingLeagueFilter(selectEl, rows, availableLeagues = []) {
 // Always use the hardcoded per-source list so all supported leagues are
 // available in the dropdown, even if the current data load has no rows for them.
 const source = currentUpcomingSource ? currentUpcomingSource() : "global";
-let leagues = getLeaguesForSource(source);
+let leagues = getUpcomingLeaguesForSource(source);
 // For MLS/extra, merge API-reported competition names so upcoming rows are filterable.
 if ((source === "mls" || source === "extra") && availableLeagues.length) {
     const merged = new Set([...availableLeagues, ...leagues]);
