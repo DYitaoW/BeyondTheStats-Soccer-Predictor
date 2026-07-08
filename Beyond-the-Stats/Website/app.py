@@ -1583,7 +1583,7 @@ def api_real_tables():
     comp_filter = request.args.get("competition", "").strip()
     force_refresh = request.args.get("refresh", "").strip().lower() in ("1", "true")
 
-    from competition_rules import should_use_persisted_table
+    from competition_rules import normalize_standings_groups, should_use_persisted_table
 
     if comp_filter:
         if comp_filter in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
@@ -1598,7 +1598,7 @@ def api_real_tables():
             _clear_leaders_cache(comp_filter)
         persisted = _load_json_payload(config.REAL_TABLES_PERSIST_FILE)
         if isinstance(persisted, dict) and comp_filter in persisted:
-            cached = persisted[comp_filter]
+            cached = normalize_standings_groups(persisted[comp_filter], comp_filter)
             if should_use_persisted_table(cached, force_refresh):
                 return jsonify({"ok": True, "table": cached})
         table = _compute_standings_from_history(comp_filter)
@@ -1616,6 +1616,8 @@ def api_real_tables():
             if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
                 continue
             cached = persisted.get(comp_name)
+            if cached is not None:
+                cached = normalize_standings_groups(cached, comp_name)
             if should_use_persisted_table(cached, force_refresh):
                 results[comp_name] = cached
                 continue

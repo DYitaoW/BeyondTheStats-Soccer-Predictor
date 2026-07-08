@@ -60,6 +60,11 @@ MLS_TEAM_ALIASES = {
 
 MLS_SEASON_FILE_RE = re.compile(r"^mlsstat(\d{4})\.csv$", re.IGNORECASE)
 
+_UEFA_COMPETITIONS = frozenset({
+    "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+    "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
+})
+
 NATIONAL_MATCHES_CSV = os.path.join(
     config.PROJECT_DIR, "Data", "National_Team_Data", "national_team_recent_matches_raw.csv"
 )
@@ -767,6 +772,148 @@ def annotate_knockout_rounds(matches: list[dict], comp_name: str) -> list[dict]:
     return matches
 
 
+def competition_needs_structured_table(comp_name: str) -> bool:
+    """Return True when a single flat Overall table is the wrong shape."""
+    base_comp, mls_view = resolve_competition_query(comp_name)
+    if base_comp == "United States/MLS" or mls_view:
+        return True
+    if base_comp in _UEFA_COMPETITIONS:
+        return True
+    if "belgium" in base_comp.lower():
+        return True
+    fmt = cup_format(base_comp)
+    if fmt and fmt.get("format") in {"group_stage_then_knockout", "league_phase_then_knockout"}:
+        return True
+    return False
+
+
+def _zero_standing_entry(team: str, rank: int) -> dict:
+    return {
+        "team": team,
+        "rank": rank,
+        "position": rank,
+        "P": 0,
+        "W": 0,
+        "D": 0,
+        "L": 0,
+        "GF": 0,
+        "GA": 0,
+        "GD": 0,
+        "Pts": 0,
+    }
+
+
+def _entries_from_teams(teams: list[str]) -> list[dict]:
+    ordered = sorted({str(t).strip() for t in teams if str(t).strip()})
+    return [_zero_standing_entry(team, idx + 1) for idx, team in enumerate(ordered)]
+
+
+def build_structured_standings_groups(comp_name: str, teams: list[str]) -> list[dict]:
+    """Build competition-appropriate group shells (zero points) for *teams*."""
+    base_comp, mls_view = resolve_competition_query(comp_name)
+    team_list = sorted({str(t).strip() for t in teams if str(t).strip()})
+    if not team_list:
+        return []
+
+    if base_comp == "United States/MLS":
+        east = [t for t in team_list if mls_conference(t) == "east"]
+        west = [t for t in team_list if mls_conference(t) == "west"]
+        if mls_view == "east":
+            return [{"name": "Eastern Conference", "entries": _entries_from_teams(east)}]
+        if mls_view == "west":
+            return [{"name": "Western Conference", "entries": _entries_from_teams(west)}]
+        if mls_view == "shield":
+            return [{"name": "Supporters Shield", "entries": _entries_from_teams(team_list)}]
+        return [
+            {"name": "Supporters Shield", "entries": _entries_from_teams(team_list)},
+            {"name": "Eastern Conference", "entries": _entries_from_teams(east)},
+            {"name": "Western Conference", "entries": _entries_from_teams(west)},
+        ]
+
+    if "belgium" in base_comp.lower():
+        return [{"name": "Regular Season", "entries": _entries_from_teams(team_list)}]
+
+    if "scotland" in base_comp.lower() or "scottish" in base_comp.lower():
+        return [{"name": "Overall", "entries": _entries_from_teams(team_list)}]
+
+    if base_comp in _UEFA_COMPETITIONS:
+        return [{"name": "League Phase", "entries": _entries_from_teams(team_list)}]
+
+    fmt = cup_format(base_comp)
+    if fmt and fmt.get("format") == "league_phase_then_knockout":
+        return [{"name": "League Phase", "entries": _entries_from_teams(team_list)}]
+
+    if base_comp == "FIFA/World Cup":
+        team_to_group = load_wc_team_groups()
+        groups_map: dict[str, list[str]] = defaultdict(list)
+        unassigned: list[str] = []
+        for team in team_list:
+            label = team_group_label(team, team_to_group)
+            if label:
+                groups_map[label].append(team)
+            else:
+                unassigned.append(team)
+        labels = list(fmt.get("group_labels") or "ABCDEFGHIJKL") if fmt else list("ABCDEFGHIJKL")
+        label_idx = 0
+        for team in sorted(unassigned):
+            while label_idx < len(labels) and len(groups_map.get(labels[label_idx], [])) >= 4:
+                label_idx += 1
+            if label_idx >= len(labels):
+                break
+            groups_map[labels[label_idx]].append(team)
+        return [
+            {"name": f"Group {label}", "entries": _entries_from_teams(groups_map[label])}
+            for label in sorted(groups_map)
+            if groups_map[label]
+        ]
+
+    if fmt and fmt.get("format") == "group_stage_then_knockout":
+        group_count = int(fmt.get("group_count") or 0)
+        if group_count > 1:
+            buckets: list[list[str]] = [[] for _ in range(group_count)]
+            for idx, team in enumerate(team_list):
+                buckets[idx % group_count].append(team)
+            labels = list("ABCDEFGHIJKL")[:group_count]
+            return [
+                {"name": f"Group {labels[idx]}", "entries": _entries_from_teams(buckets[idx])}
+                for idx in range(group_count)
+                if buckets[idx]
+            ]
+        # Generic group-stage cups: chunk teams into groups of four when possible.
+        if len(team_list) >= 8:
+            labels = list("ABCDEFGHIJKL")
+            buckets = [[] for _ in range(min(len(labels), max(1, len(team_list) // 4)))]
+            for idx, team in enumerate(team_list):
+                buckets[idx % len(buckets)].append(team)
+            return [
+                {"name": f"Group {labels[idx]}", "entries": _entries_from_teams(buckets[idx])}
+                for idx in range(len(buckets))
+                if buckets[idx]
+            ]
+
+    return [{"name": "Overall", "entries": _entries_from_teams(team_list)}]
+
+
+def normalize_standings_groups(cached: dict, comp_name: str) -> dict:
+    """Reshape a flat Overall table into the competition's expected group layout."""
+    if not isinstance(cached, dict):
+        return cached
+    groups = cached.get("groups") or []
+    if not groups:
+        return cached
+    if len(groups) != 1 or str(groups[0].get("name", "")).strip().lower() != "overall":
+        return cached
+    if not competition_needs_structured_table(comp_name):
+        return cached
+    entries = groups[0].get("entries") or []
+    teams = [str(row.get("team", "")).strip() for row in entries if str(row.get("team", "")).strip()]
+    if not teams:
+        return cached
+    rebuilt = dict(cached)
+    rebuilt["groups"] = build_structured_standings_groups(comp_name, teams)
+    return rebuilt
+
+
 def should_use_persisted_table(cached: dict | None, force_refresh: bool = False) -> bool:
     if force_refresh or not cached or not isinstance(cached, dict):
         return False
@@ -778,10 +925,6 @@ def should_use_persisted_table(cached: dict | None, force_refresh: bool = False)
         return False
     if len(groups) == 1 and str(groups[0].get("name", "")).strip().lower() == "overall":
         competition = str(cached.get("competition", "")).strip()
-        if competition in config._CUP_FORMATS or competition == "FIFA/World Cup":
-            fmt = cup_format(competition)
-            if fmt and fmt.get("format") in {"group_stage_then_knockout", "league_phase_then_knockout"}:
-                return False
-        if competition == "United States/MLS":
+        if competition_needs_structured_table(competition):
             return False
     return True

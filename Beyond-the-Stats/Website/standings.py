@@ -11,6 +11,7 @@ import config
 from competition_rules import (
     MLS_EASTERN_CONFERENCE_TEAMS,
     MLS_WESTERN_CONFERENCE_TEAMS,
+    build_structured_standings_groups,
     canonical_team_name,
     classify_match_stage,
     collect_competition_games,
@@ -20,6 +21,7 @@ from competition_rules import (
     load_wc_team_groups,
     mls_conference,
     resolve_competition_query,
+    resolve_mls_team_name,
 )
 from espn_api import _fetch_leaders, _fetch_standings, LIVE_SCORE_FETCH_TIMEOUT
 from team_utils import _to_int
@@ -146,6 +148,15 @@ _UEFA_COMPETITIONS = {
     "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
     "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
 }
+
+
+def _competition_names_for_lookup(comp_name):
+    """Return competition keys to scan when discovering teams for standings."""
+    base_comp, _view = resolve_competition_query(comp_name)
+    names = [comp_name]
+    if base_comp and base_comp not in names:
+        names.append(base_comp)
+    return names
 
 
 def _mls_conference(team_name):
@@ -743,15 +754,20 @@ def _build_fallback_standings(comp_name):
     Does NOT call ESPN API — teams are discovered from local CSV data only.
 
     Response shape (matches ``_compute_standings_from_history``):
-    ``{"competition": str, "groups": [{"name": "Overall", "entries": [...]}]}``
+    ``{"competition": str, "groups": [{"name": "...", "entries": [...]}, ...]}``
+    where group names follow each competition's real table rules (MLS conferences,
+    Belgian regular season, UEFA league phase, World Cup groups, etc.).
     """
+    base_comp, _view = resolve_competition_query(comp_name)
+    lookup_names = _competition_names_for_lookup(comp_name)
     teams = set()
 
     # 1. Persisted league-team rosters (offseason fallback from fetch_league_teams.py)
     league_teams = _load_league_teams()
-    cached = league_teams.get(comp_name)
-    if cached:
-        teams.update(cached)
+    for lookup_name in lookup_names:
+        cached = league_teams.get(lookup_name)
+        if cached:
+            teams.update(cached)
 
     # 2. Upcoming prediction CSVs and projected table CSVs
     csv_sources = [
@@ -777,7 +793,7 @@ def _build_fallback_standings(comp_name):
             continue
         if "competition" not in df.columns:
             continue
-        mask = df["competition"].astype(str).str.strip() == comp_name
+        mask = df["competition"].astype(str).str.strip().isin(lookup_names)
         sub = df[mask]
         if sub.empty:
             continue
@@ -788,20 +804,19 @@ def _build_fallback_standings(comp_name):
         if "away_team" in sub.columns:
             teams.update(sub["away_team"].dropna().astype(str).str.strip())
 
+    if base_comp == "United States/MLS":
+        teams = {resolve_mls_team_name(team) for team in teams if resolve_mls_team_name(team)}
+
     if not teams:
         return None
 
     now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    entries = []
-    for pos, team in enumerate(sorted(teams), start=1):
-        entries.append({
-            "position": pos, "team": team,
-            "P": 0, "W": 0, "D": 0, "L": 0,
-            "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-        })
+    groups = build_structured_standings_groups(comp_name, sorted(teams))
+    if not groups:
+        return None
     return {
         "competition": comp_name,
         "updated_at": now_utc,
-        "groups": [{"name": "Overall", "entries": entries}],
+        "groups": groups,
         "source": "placeholder",
     }
