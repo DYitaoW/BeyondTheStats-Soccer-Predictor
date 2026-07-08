@@ -215,12 +215,12 @@ _UPCOMING_MODE_MAP = {
 }
 
 _ALL_UPCOMING_SOURCES = [
-    ("global", config.ALL_UPCOMING_FILE),
     ("global", config.GLOBAL_UPCOMING_FILE),
     ("mls", config.MLS_UPCOMING_FILE),
     ("extra", config.EXTRA_UPCOMING_FILE),
     ("cups", config.CUP_UPCOMING_FILE),
     ("national", config.NATIONAL_UPCOMING_FILE),
+    ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
 ]
 
 
@@ -538,17 +538,14 @@ def api_upcoming(mode):
         combined_league_stats = {}
         seen_keys = set()
         for source, csv_path in _ALL_UPCOMING_SOURCES:
-            # For global aggregation, include ALL future dates (no upper bound)
-            # and also include the current prediction week (completed range) so
-            # recently settled games appear until the next pipeline run.
             rows, _st, _ls = _load_upcoming_rows(csv_path, source)
-            # If the standard window returned nothing, try a broader range
-            if not rows:
-                rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="all")
             for r in rows:
                 if str(r.get("competition", "")).strip() in config.UPCOMING_ONLY_COMPETITIONS:
                     continue
-                ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
+                ck = "|".join(
+                    str(r.get(k, "")).strip().lower()
+                    for k in ("match_date_iso", "competition", "home_team", "away_team")
+                )
                 if ck and ck not in seen_keys:
                     seen_keys.add(ck)
                     all_rows.append(r)
@@ -561,7 +558,7 @@ def api_upcoming(mode):
                     combined_league_stats[comp] = ls
         # Re-sort aggregated rows: date → league → time
         all_rows.sort(key=lambda r: (
-            str(r.get("match_date", "")),
+            _row_date_iso(r),
             str(r.get("competition", "")),
             str(r.get("match_datetime_et", "") or r.get("match_datetime_utc", "")),
             str(r.get("home_team", "")),
@@ -606,13 +603,15 @@ def api_home_upcoming():
     start_date = min(max(start_date, window_start), window_end)
     end_date = min(max(end_date, window_start), window_end)
 
-    # Prefer the new combined CSV; fall back to legacy per-source files.
-    source_paths = [("global", config.ALL_UPCOMING_FILE)] if os.path.exists(config.ALL_UPCOMING_FILE) else _ALL_UPCOMING_SOURCES
+    # Aggregate the same sources as /api/upcoming/global so MLS, cups, and
+    # friendlies are not dropped when Output/Upcoming/all_upcoming.csv is stale.
     all_rows = []
     seen_keys = set()
-    for source, csv_path in source_paths:
+    for source, csv_path in _ALL_UPCOMING_SOURCES:
         rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source, date_range="all")
         for row in rows:
+            if str(row.get("competition", "")).strip() in config.UPCOMING_ONLY_COMPETITIONS:
+                continue
             match_date = _row_date_iso(row)
             if not match_date:
                 continue
@@ -622,7 +621,10 @@ def api_home_upcoming():
                 continue
             if parsed_date < start_date or parsed_date > end_date:
                 continue
-            key = "|".join(str(row.get(field, "")).strip().lower() for field in ("match_date_iso", "competition", "home_team", "away_team"))
+            key = "|".join(
+                str(row.get(field, "")).strip().lower()
+                for field in ("match_date_iso", "competition", "home_team", "away_team")
+            )
             if key in seen_keys:
                 continue
             seen_keys.add(key)

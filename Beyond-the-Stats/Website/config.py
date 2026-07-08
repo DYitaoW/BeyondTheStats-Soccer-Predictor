@@ -86,7 +86,6 @@ CLUB_FRIENDLIES_ESPN_ID = "club.friendly"
 
 # Competitions polled for scores but excluded from league-table/help listings.
 UPCOMING_ONLY_COMPETITIONS = {
-    CLUB_FRIENDLIES_COMPETITION,
     "FIFA/Friendly",
 }
 

@@ -118,9 +118,20 @@ def _load_live_score_history():
         return []
     try:
         with open(config.LIVE_SCORE_HISTORY_FILE, "r") as f:
-            return json.load(f)
+            games = json.load(f)
     except Exception:
         return []
+    if not isinstance(games, list):
+        return []
+    filtered = []
+    for game in games:
+        if not isinstance(game, dict):
+            continue
+        match_id = str(game.get("match_id", "")).strip().lower()
+        if match_id.startswith("test-") or "test-past-games" in match_id:
+            continue
+        filtered.append(game)
+    return filtered
 
 
 def _save_live_score_history(games):

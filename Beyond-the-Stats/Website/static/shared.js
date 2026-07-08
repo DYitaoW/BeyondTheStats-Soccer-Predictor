@@ -64,6 +64,10 @@ const cupPredictionTabs = [
 { key: "champions-league", label: "Champions League", competitions: ["UEFA/Champions League", "Europe/Champions League"] },
 { key: "europa-league", label: "Europa League", competitions: ["UEFA/Europa League", "Europe/Europa League"] },
 { key: "conference-league", label: "Conference League", competitions: ["UEFA/Conference League", "Europe/Conference League"] },
+{ key: "dfb-pokal", label: "DFB-Pokal", competitions: ["Germany/DFB-Pokal"] },
+{ key: "coppa-italia", label: "Coppa Italia", competitions: ["Italy/Coppa Italia"] },
+{ key: "copa-del-rey", label: "Copa del Rey", competitions: ["Spain/Copa del Rey"] },
+{ key: "coupe-de-france", label: "Coupe de France", competitions: ["France/Coupe de France"] },
 ];
 const cupProjectionConfigs = [
 { key: "ucl", label: "Champions League", competition: "UEFA/Champions League", aliases: ["UEFA/Champions League", "Europe/Champions League"], hasTable: true, leaguePhaseMatches: 8 },
@@ -72,6 +76,10 @@ const cupProjectionConfigs = [
 { key: "fa-cup", label: "FA Cup", competition: "England/FA Cup", aliases: ["England/FA Cup"], hasTable: false, leaguePhaseMatches: null },
 { key: "league-cup", label: "League Cup", competition: "England/League Cup", aliases: ["England/League Cup"], hasTable: false, leaguePhaseMatches: null },
 { key: "leagues-cup", label: "Leagues Cup", competition: "CONCACAF/Leagues Cup", aliases: ["CONCACAF/Leagues Cup"], hasTable: true, leaguePhaseMatches: 3 },
+{ key: "dfb-pokal", label: "DFB-Pokal", competition: "Germany/DFB-Pokal", aliases: ["Germany/DFB-Pokal"], hasTable: false, leaguePhaseMatches: null },
+{ key: "coppa-italia", label: "Coppa Italia", competition: "Italy/Coppa Italia", aliases: ["Italy/Coppa Italia"], hasTable: false, leaguePhaseMatches: null },
+{ key: "copa-del-rey", label: "Copa del Rey", competition: "Spain/Copa del Rey", aliases: ["Spain/Copa del Rey"], hasTable: false, leaguePhaseMatches: null },
+{ key: "coupe-de-france", label: "Coupe de France", competition: "France/Coupe de France", aliases: ["France/Coupe de France"], hasTable: false, leaguePhaseMatches: null },
 ];
 let activeCupTab = "all";
 const mlsTeamSet = new Set(
@@ -114,6 +122,10 @@ const EUROPEAN_CUPS = [
     "England/FA Cup",
     "England/League Cup",
     "CONCACAF/Leagues Cup",
+    "Germany/DFB-Pokal",
+    "Italy/Coppa Italia",
+    "Spain/Copa del Rey",
+    "France/Coupe de France",
 ];
 const MLS_LEAGUES = [
     "United States/MLS",
@@ -127,6 +139,7 @@ const OTHER_LEAGUES = [
     "Brazil/Serie A",
     "Japan/J1 League",
 ];
+const FRIENDLIES_LEAGUES = ["Club Friendlies"];
 const WORLD_CUP_OPTIONS = ["FIFA/World Cup"];
 
 function getLeaguesForSource(source) {
@@ -135,7 +148,7 @@ function getLeaguesForSource(source) {
     if (source === "cups") return [...EUROPEAN_CUPS];
     if (source === "world-cup") return [...WORLD_CUP_OPTIONS];
     if (source === "friendlies") return [...FRIENDLIES_OPTIONS];
-    return [...EUROPEAN_LEAGUES, ...EUROPEAN_CUPS];
+    return [...EUROPEAN_LEAGUES, ...EUROPEAN_CUPS, ...MLS_LEAGUES, ...OTHER_LEAGUES, ...FRIENDLIES_LEAGUES];
 }
 
 function getLeaguesForDataset(dataset) {
@@ -1090,6 +1103,16 @@ renderStats(
 );
 }
 
+function rowDateIso(row) {
+const raw = String(row?.match_date_iso || row?.match_date || "").trim();
+if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+const parsed = Date.parse(raw);
+if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toISOString().slice(0, 10);
+}
+return "";
+}
+
 function renderUpcoming(target, rows, selectedLeague, options = {}) {
     if (!rows.length) {
         target.innerHTML = "<p>No upcoming matches found.</p>";
@@ -1107,8 +1130,8 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
 
     // Upcoming tab hides stale fixtures; home can opt into historical date ranges.
     const futureRows = options.includePast ? visibleRows : visibleRows.filter(r => {
-        const d = (r.match_date || "").slice(0, 10);
-        return d >= todayStr;
+        const d = rowDateIso(r);
+        return d && d >= todayStr;
     });
 
     if (!futureRows.length) {

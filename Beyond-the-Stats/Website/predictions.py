@@ -1830,6 +1830,8 @@ def _collect_live_past_game_rows(cutoff: str) -> list[dict]:
     def add_game(game: dict, competition: str | None = None) -> None:
         if str(game.get("status", "")).lower() != "post":
             return
+        if str(game.get("match_id", "")).strip().lower().startswith("test-"):
+            return
         row = _live_game_to_past_row(game, competition)
         if not row:
             return
@@ -2066,8 +2068,21 @@ def archive_todays_games_to_past_games_file() -> int:
     return len(all_rows)
 
 
+def _is_test_live_game(r) -> bool:
+    """Return True for synthetic live-score rows that should never surface in the UI."""
+    match_id = str(r.get("match_id", "")).strip().lower()
+    if match_id.startswith("test-") or "test-past-games" in match_id:
+        return True
+    source = str(r.get("source", "")).strip().lower()
+    if source == "test":
+        return True
+    return False
+
+
 def _is_placeholder_game(r):
     """Return True if a game dict is a placeholder (not a real match)."""
+    if _is_test_live_game(r):
+        return True
     for key in ("home_team", "away_team"):
         val = str(r.get(key, "")).lower()
         if "group" in val or "third place" in val or "winner" in val or "runner" in val:
