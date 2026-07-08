@@ -351,6 +351,7 @@ TOURNAMENT_KEY_MAP = {
     "leagues-cup": "CONCACAF/Leagues Cup",
 }
 
+# Leagues using head-to-head as the first tiebreaker (canonical: competition_rules.H2H_TIEBREAKER_COMPETITIONS).
 H2H_LEAGUES = {
     "Spain/La Liga", "Spain/La Liga 2",
     "Italy/Serie A", "Italy/Serie B",

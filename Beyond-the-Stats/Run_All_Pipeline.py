@@ -493,7 +493,7 @@ def _build_real_standings():
 
     try:
         from standings import _build_fallback_standings, _compute_standings_from_history
-        from competition_rules import MLS_TABLE_VIEWS, normalize_standings_groups
+        from competition_rules import MLS_TABLE_VIEWS
     except ImportError as exc:
         print(f"  [real-standings] Could not import Website standings: {exc}")
         return False
@@ -503,22 +503,22 @@ def _build_real_standings():
     for comp_name in known_comps:
         table = _compute_standings_from_history(comp_name)
         if table:
-            standings[comp_name] = normalize_standings_groups(table, comp_name)
+            standings[comp_name] = table
             continue
         fallback = _build_fallback_standings(comp_name)
         if fallback:
-            standings[comp_name] = normalize_standings_groups(fallback, comp_name)
+            standings[comp_name] = fallback
 
     for alias in MLS_TABLE_VIEWS:
         if alias in standings:
             continue
         sub = _compute_standings_from_history(alias)
         if sub:
-            standings[alias] = normalize_standings_groups(sub, alias)
+            standings[alias] = sub
         else:
             fallback = _build_fallback_standings(alias)
             if fallback:
-                standings[alias] = normalize_standings_groups(fallback, alias)
+                standings[alias] = fallback
 
     if standings:
         try:
