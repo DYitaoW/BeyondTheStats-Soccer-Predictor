@@ -295,8 +295,17 @@ def _condense_cup_brackets(path):
 # Mobile feed builder
 # ---------------------------------------------------------------------------
 
-def _condense_mls_real_tables():
-    """Load real MLS standings for the mobile feed snapshot."""
+def _condense_real_league_tables():
+    """Load real standings for all tracked leagues (including MLS views)."""
+    import config as website_config
+
+    website_dir = SP_DIR / "Website"
+    if str(website_dir) not in sys.path:
+        sys.path.insert(0, str(website_dir))
+
+    comp_names = list(website_config.LIVE_SCORE_COMPETITIONS) + sorted(
+        website_config.MLS_TABLE_VIEW_ALIASES
+    )
     standings_file = SP_DIR / "Data" / "standings_cache.json"
     if standings_file.exists():
         try:
@@ -304,21 +313,10 @@ def _condense_mls_real_tables():
         except Exception:
             cache = {}
         if isinstance(cache, dict):
-            tables = {}
-            for comp_name in (
-                "United States/MLS",
-                "United States/MLS - Eastern Conference",
-                "United States/MLS - Western Conference",
-                "United States/MLS - Supporters Shield Table",
-            ):
-                if comp_name in cache:
-                    tables[comp_name] = cache[comp_name]
+            tables = {name: cache[name] for name in comp_names if name in cache}
             if tables:
                 return tables
 
-    website_dir = SP_DIR / "Website"
-    if str(website_dir) not in sys.path:
-        sys.path.insert(0, str(website_dir))
     try:
         from standings import _compute_standings_from_history
     except ImportError as exc:
@@ -326,16 +324,22 @@ def _condense_mls_real_tables():
         return {}
 
     tables = {}
-    for comp_name in (
-        "United States/MLS",
-        "United States/MLS - Eastern Conference",
-        "United States/MLS - Western Conference",
-        "United States/MLS - Supporters Shield Table",
-    ):
+    for comp_name in comp_names:
         table = _compute_standings_from_history(comp_name)
         if table:
             tables[comp_name] = table
     return tables
+
+
+def _merge_projected_brackets(cup_path, mls_path):
+    """Combine domestic-cup and MLS playoff brackets into one object."""
+    brackets = _condense_cup_brackets(cup_path)
+    mls_bracket = _condense_cup_brackets(mls_path)
+    if not isinstance(brackets, dict):
+        brackets = {}
+    if isinstance(mls_bracket, dict) and mls_bracket:
+        brackets["United States/MLS"] = mls_bracket
+    return brackets
 
 
 def build_mobile_app_feed(pipeline_status, step_results, output_path):
@@ -369,17 +373,19 @@ def build_mobile_app_feed(pipeline_status, step_results, output_path):
         "step_results": dict(step_results),
         "sources": {name: str(path) for name, path in sources.items()},
         "data": {
-            "upcoming_fixtures": _condense_fixtures(sources["upcoming_fixtures_global"]),
+            "upcoming_fixtures": _condense_fixtures(sources["upcoming_fixtures_global"])
+            + _condense_fixtures(sources["mls_upcoming_fixtures"]),
             "upcoming_cup_fixtures": _condense_fixtures(sources["upcoming_fixtures_cups"]),
             "upcoming_national_fixtures": _condense_fixtures(sources["upcoming_fixtures_national"]),
-            "projected_league_tables": _condense_tables(sources["projected_league_tables_global"]),
+            "projected_league_tables": _condense_tables(sources["projected_league_tables_global"])
+            + _condense_tables(sources["mls_projected_league_tables"]),
             "projected_cup_tables": _condense_tables(sources["projected_cup_tables"]),
-            "projected_cup_brackets": _condense_cup_brackets(sources["projected_cup_brackets"]),
+            "projected_cup_brackets": _merge_projected_brackets(
+                sources["projected_cup_brackets"],
+                sources["mls_projected_bracket"],
+            ),
             "completed_cup_predictions": _condense_fixtures(sources["completed_cup_predictions"]),
-            "mls_upcoming_fixtures": _condense_fixtures(sources["mls_upcoming_fixtures"]),
-            "mls_projected_league_tables": _condense_tables(sources["mls_projected_league_tables"]),
-            "mls_projected_bracket": _condense_cup_brackets(sources["mls_projected_bracket"]),
-            "mls_real_league_tables": _condense_mls_real_tables(),
+            "real_league_tables": _condense_real_league_tables(),
             "world_cup": _condense_world_cup(sources["world_cup_projection"]),
         },
     }

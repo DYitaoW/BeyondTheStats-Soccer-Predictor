@@ -40,7 +40,6 @@ ENDPOINTS = [
     ("GET", "/api/real-tables?competition=United+States/MLS", "Real tables (MLS)"),
     ("GET", "/api/real-tables?competition=United+States/MLS+-+Eastern+Conference", "Real tables (MLS East)"),
     ("GET", "/api/league-data/United%20States/MLS%20-%20Supporters%20Shield%20Table", "League data (MLS Shield)"),
-    ("GET", "/api/mobile/mls", "Mobile MLS bundle"),
     ("GET", "/api/league-leaders", "League leaders"),
     ("GET", "/api/live-scores", "Live scores"),
     ("GET", "/api/live-score-history", "Live score history"),

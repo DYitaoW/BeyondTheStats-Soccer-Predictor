@@ -424,7 +424,6 @@ def api_help():
         ("/api/notifications", "POST", "Send a test notification"),
         ("/api/notifications/register", "POST", "Register push notification token"),
         ("/api/mobile/feed", "GET", "Mobile home feed"),
-        ("/api/mobile/mls", "GET", "MLS bundle: projected tables, bracket, real standings"),
         ("/api/mobile/widget", "GET", "Mobile widget data"),
         ("/api/feedback", "POST", "Submit user feedback"),
         ("/api/debug/live-score-sources", "GET", "Debug: show live score source files"),
@@ -498,7 +497,7 @@ def api_help_all():
                 "real_table_west": "/api/real-tables?competition=United+States/MLS+-+Western+Conference",
                 "real_table_shield": "/api/real-tables?competition=United+States/MLS+-+Supporters+Shield+Table",
             },
-            "mobile": "/api/mobile/mls",
+            "league_data": "/api/league-data/United%20States/MLS",
             "upcoming": "/api/upcoming/mls",
         },
     })
@@ -688,17 +687,6 @@ def api_mobile_feed():
             return jsonify(json.load(f))
     except Exception:
         return jsonify({"ok": False, "error": "Could not load mobile feed"}), 500
-
-
-@app.get("/api/mobile/mls")
-@_cached_response(ttl=config.CACHE_TTL_LONG)
-def api_mobile_mls():
-    """Return the full MLS bundle for the mobile app.
-
-    Mirrors ``/api/league-tables?mode=mls`` and adds live standings from
-    ``mlsstatYYYY.csv`` for Supporters Shield, both conferences, and aliases.
-    """
-    return jsonify({"ok": True, **_build_mls_api_payload(include_real_tables=True)})
 
 
 @app.get("/api/mobile/widget")
@@ -1450,6 +1438,14 @@ def api_real_tables():
                         "groups": [{"name": "Overall", "entries": []}],
                         "source": "placeholder",
                     }
+    for alias in config.MLS_TABLE_VIEW_ALIASES:
+        if alias in results:
+            continue
+        if force_refresh:
+            _clear_standings_cache(alias)
+        table = _compute_standings_from_history(alias)
+        if table:
+            results[alias] = table
     return jsonify({"ok": True, "tables": results, "total": len(results)})
 
 
@@ -1540,8 +1536,8 @@ def api_competition_data():
     return jsonify(result)
 
 
-def _build_mls_api_payload(include_real_tables=False):
-    """Shared MLS payload for website and mobile clients."""
+def _build_mls_api_payload():
+    """Shared MLS payload for ``/api/league-tables?mode=mls``."""
     season_data = _load_current_season_tables()
     if season_data:
         mls_leagues = [
@@ -1568,13 +1564,6 @@ def _build_mls_api_payload(include_real_tables=False):
         "fixtures": _load_all_fixtures_by_competition(config.MLS_UPCOMING_FILE),
         "last_prediction_refresh": last_refresh,
     }
-    if include_real_tables:
-        real_tables = {}
-        for comp_name in ["United States/MLS", *sorted(config.MLS_TABLE_VIEW_ALIASES)]:
-            table = _compute_standings_from_history(comp_name)
-            if table:
-                real_tables[comp_name] = table
-        payload["real_tables"] = real_tables
     return payload
 
 
@@ -1626,7 +1615,7 @@ def api_league_tables():
     season_data = _load_current_season_tables()
 
     if mode == "mls":
-        data = _build_mls_api_payload(include_real_tables=False)
+        data = _build_mls_api_payload()
         return jsonify({"ok": True, **data})
     if mode == "cups":
         csv_path = config.CUP_PROJECTED_TABLE_FILE
