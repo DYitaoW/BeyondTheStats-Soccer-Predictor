@@ -40,6 +40,26 @@ MLS_WESTERN_CONFERENCE_TEAMS = frozenset({
     "Vancouver Whitecaps",
 })
 
+MLS_TEAM_ALIASES = {
+    "dcunited": "DC United",
+    "newyorkcityfc": "New York City",
+    "newyorkcity": "New York City",
+    "newyorkredbulls": "New York Red Bulls",
+    "lafc": "Los Angeles FC",
+    "lagalaxy": "Los Angeles Galaxy",
+    "stlouiscitysc": "St. Louis City",
+    "stlouiscity": "St. Louis City",
+    "sandiegofc": "San Diego FC",
+    "sandiego": "San Diego FC",
+    "cfmontreal": "CF Montreal",
+    "intermiamicf": "Inter Miami",
+    "intermiami": "Inter Miami",
+    "atlantaunitedfc": "Atlanta Utd",
+    "atlantautd": "Atlanta Utd",
+}
+
+MLS_SEASON_FILE_RE = re.compile(r"^mlsstat(\d{4})\.csv$", re.IGNORECASE)
+
 NATIONAL_MATCHES_CSV = os.path.join(
     config.PROJECT_DIR, "Data", "National_Team_Data", "national_team_recent_matches_raw.csv"
 )
@@ -160,6 +180,106 @@ def _append_game(games: list[dict], seen: set, game: dict) -> None:
     entry["away_score"] = aws_i
     entry.setdefault("status", "post")
     games.append(entry)
+
+
+def resolve_mls_team_name(raw_name: str) -> str:
+    raw = str(raw_name or "").strip()
+    if not raw:
+        return ""
+    mapped = canonical_team_name(raw, "United States/MLS")
+    if mapped:
+        return mapped
+    alias = MLS_TEAM_ALIASES.get(normalize_team_key(raw))
+    if alias:
+        return alias
+    key = normalize_team_key(raw)
+    for team in list(MLS_EASTERN_CONFERENCE_TEAMS) + list(MLS_WESTERN_CONFERENCE_TEAMS):
+        team_key = normalize_team_key(team)
+        if key == team_key or key in team_key or team_key in key:
+            return team
+    return raw
+
+
+def _find_latest_mls_season_file() -> str | None:
+    candidates: list[tuple[int, str]] = []
+    for base in (
+        os.path.join(config.PROJECT_DIR, "MLS", "Data", "Processed_Data"),
+        os.path.join(config.PROJECT_DIR, "MLS", "Data", "Raw_Data"),
+    ):
+        if not os.path.isdir(base):
+            continue
+        for root, _, files in os.walk(base):
+            for name in files:
+                match = MLS_SEASON_FILE_RE.match(name)
+                if not match:
+                    continue
+                candidates.append((int(match.group(1)), os.path.join(root, name)))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def _mls_season_csv_games(comp_name: str) -> list[dict]:
+    """Load completed MLS results from the latest mlsstatYYYY.csv season file."""
+    if comp_name != "United States/MLS":
+        return []
+    path = _find_latest_mls_season_file()
+    if not path:
+        return []
+    try:
+        frame = pd.read_csv(path, dtype=str)
+    except Exception:
+        return []
+    if frame.empty:
+        return []
+
+    rows: list[dict] = []
+    processed = "HomeTeam" in frame.columns and "FTHG" in frame.columns
+    for _, row in frame.iterrows():
+        if processed:
+            home_raw = row.get("HomeTeam")
+            away_raw = row.get("AwayTeam")
+            result = str(row.get("FTR", "")).strip().upper()
+            home_goals = row.get("FTHG")
+            away_goals = row.get("FTAG")
+        else:
+            home_raw = row.get("Home")
+            away_raw = row.get("Away")
+            result = str(row.get("Res", "")).strip().upper()
+            home_goals = row.get("HG")
+            away_goals = row.get("AG")
+
+        if result not in {"H", "D", "A"}:
+            continue
+        try:
+            hs = int(float(home_goals))
+            aws = int(float(away_goals))
+        except (TypeError, ValueError):
+            continue
+
+        home = resolve_mls_team_name(home_raw)
+        away = resolve_mls_team_name(away_raw)
+        if not home or not away:
+            continue
+
+        date_raw = str(row.get("Date", "")).strip()
+        match_date = ""
+        if date_raw:
+            parsed = pd.to_datetime(date_raw, errors="coerce", dayfirst=False)
+            if pd.notna(parsed):
+                match_date = parsed.strftime("%Y-%m-%d")
+
+        rows.append({
+            "competition": comp_name,
+            "home_team": home,
+            "away_team": away,
+            "home_score": hs,
+            "away_score": aws,
+            "status": "post",
+            "match_date": match_date,
+            "source": f"mls_season_csv:{os.path.basename(path)}",
+        })
+    return rows
 
 
 def _csv_settled_games(comp_name: str) -> list[dict]:
@@ -577,14 +697,15 @@ def collect_competition_games(comp_name: str) -> list[dict]:
         _csv_settled_games(base_comp),
         _national_csv_games(base_comp),
         _world_cup_projection_games(base_comp),
+        _mls_season_csv_games(base_comp),
     ):
         for g in source_rows:
             _append_game(games, seen, g)
 
     if base_comp == "United States/MLS":
         for g in games:
-            g["home_team"] = canonical_team_name(g.get("home_team", ""), base_comp)
-            g["away_team"] = canonical_team_name(g.get("away_team", ""), base_comp)
+            g["home_team"] = resolve_mls_team_name(g.get("home_team", ""))
+            g["away_team"] = resolve_mls_team_name(g.get("away_team", ""))
 
     return games
 

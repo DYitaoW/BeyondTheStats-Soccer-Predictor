@@ -424,6 +424,7 @@ def api_help():
         ("/api/notifications", "POST", "Send a test notification"),
         ("/api/notifications/register", "POST", "Register push notification token"),
         ("/api/mobile/feed", "GET", "Mobile home feed"),
+        ("/api/mobile/mls", "GET", "MLS bundle: projected tables, bracket, real standings"),
         ("/api/mobile/widget", "GET", "Mobile widget data"),
         ("/api/feedback", "POST", "Submit user feedback"),
         ("/api/debug/live-score-sources", "GET", "Debug: show live score source files"),
@@ -482,6 +483,24 @@ def api_help_all():
         "total": len(leagues_list) + len(cups_list),
         "leagues": leagues_list,
         "cups": cups_list,
+        "mls": {
+            "competition": "United States/MLS",
+            "projected": {
+                "league_tables": "/api/league-tables?mode=mls",
+                "league_data_shield": "/api/league-data/United%20States/MLS%20-%20Supporters%20Shield%20Table",
+                "league_data_east": "/api/league-data/United%20States/MLS%20-%20Eastern%20Conference",
+                "league_data_west": "/api/league-data/United%20States/MLS%20-%20Western%20Conference",
+                "leaders": "/api/league-leaders",
+            },
+            "real": {
+                "real_table": "/api/real-tables?competition=United+States/MLS",
+                "real_table_east": "/api/real-tables?competition=United+States/MLS+-+Eastern+Conference",
+                "real_table_west": "/api/real-tables?competition=United+States/MLS+-+Western+Conference",
+                "real_table_shield": "/api/real-tables?competition=United+States/MLS+-+Supporters+Shield+Table",
+            },
+            "mobile": "/api/mobile/mls",
+            "upcoming": "/api/upcoming/mls",
+        },
     })
 
 
@@ -669,6 +688,17 @@ def api_mobile_feed():
             return jsonify(json.load(f))
     except Exception:
         return jsonify({"ok": False, "error": "Could not load mobile feed"}), 500
+
+
+@app.get("/api/mobile/mls")
+@_cached_response(ttl=config.CACHE_TTL_LONG)
+def api_mobile_mls():
+    """Return the full MLS bundle for the mobile app.
+
+    Mirrors ``/api/league-tables?mode=mls`` and adds live standings from
+    ``mlsstatYYYY.csv`` for Supporters Shield, both conferences, and aliases.
+    """
+    return jsonify({"ok": True, **_build_mls_api_payload(include_real_tables=True)})
 
 
 @app.get("/api/mobile/widget")
@@ -1510,6 +1540,76 @@ def api_competition_data():
     return jsonify(result)
 
 
+def _build_mls_api_payload(include_real_tables=False):
+    """Shared MLS payload for website and mobile clients."""
+    season_data = _load_current_season_tables()
+    if season_data:
+        mls_leagues = [
+            c for c in season_data.get("leagues", [])
+            if "MLS" in c or "United States" in c
+        ]
+        data = {
+            "leagues": mls_leagues,
+            "tables": {
+                c: season_data["tables"][c]
+                for c in mls_leagues
+                if c in season_data.get("tables", {})
+            },
+        }
+        last_refresh = None
+    else:
+        data = _load_projected_tables(config.MLS_PROJECTED_TABLE_FILE)
+        last_refresh = _file_mtime_utc(config.MLS_PROJECTED_TABLE_FILE)
+
+    payload = {
+        "leagues": data.get("leagues") or [],
+        "tables": data.get("tables") or {},
+        "bracket": _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE),
+        "fixtures": _load_all_fixtures_by_competition(config.MLS_UPCOMING_FILE),
+        "last_prediction_refresh": last_refresh,
+    }
+    if include_real_tables:
+        real_tables = {}
+        for comp_name in ["United States/MLS", *sorted(config.MLS_TABLE_VIEW_ALIASES)]:
+            table = _compute_standings_from_history(comp_name)
+            if table:
+                real_tables[comp_name] = table
+        payload["real_tables"] = real_tables
+    return payload
+
+
+def _enrich_league_data_mls_fields(comp, payload):
+    """Attach MLS Cup bracket and normalize fixture competition for MLS views."""
+    if not str(comp or "").startswith("United States/MLS"):
+        return payload
+
+    bracket = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket, dict) and bracket:
+        payload["bracket"] = bracket
+        cup_data = bracket.get("mls_cup") or {}
+        if cup_data.get("winner"):
+            payload["mls_cup_winner"] = cup_data.get("winner")
+
+    if not payload.get("fixtures"):
+        from competition_rules import resolve_competition_query
+
+        base_comp, _view = resolve_competition_query(comp)
+        fixture_comp = base_comp if base_comp == "United States/MLS" else comp
+        for csv_path in (config.MLS_UPCOMING_FILE, config.GLOBAL_UPCOMING_FILE):
+            try:
+                rows, _, _ = _load_upcoming_rows(csv_path, date_range="all")
+            except Exception:
+                continue
+            comp_fixtures = [
+                r for r in rows
+                if r.get("competition") in (comp, fixture_comp, "United States/MLS")
+            ]
+            if comp_fixtures:
+                payload["fixtures"] = comp_fixtures
+                break
+    return payload
+
+
 @app.get("/api/league-tables")
 @_cached_response(ttl=config.CACHE_TTL_LONG)
 def api_league_tables():
@@ -1526,21 +1626,8 @@ def api_league_tables():
     season_data = _load_current_season_tables()
 
     if mode == "mls":
-        if season_data:
-            mls_leagues = [c for c in season_data.get("leagues", [])
-                           if "MLS" in c or "United States" in c]
-            data = {
-                "leagues": mls_leagues,
-                "tables": {c: season_data["tables"][c]
-                           for c in mls_leagues if c in season_data.get("tables", {})},
-            }
-        else:
-            csv_path = config.MLS_PROJECTED_TABLE_FILE
-            data = _load_projected_tables(csv_path)
-        bracket = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
-        data["last_prediction_refresh"] = _file_mtime_utc(config.MLS_PROJECTED_TABLE_FILE) if not season_data else None
-        fixtures = _load_all_fixtures_by_competition(config.MLS_UPCOMING_FILE)
-        return jsonify({"ok": True, **data, "bracket": bracket, "fixtures": fixtures})
+        data = _build_mls_api_payload(include_real_tables=False)
+        return jsonify({"ok": True, **data})
     if mode == "cups":
         csv_path = config.CUP_PROJECTED_TABLE_FILE
         data = _load_projected_tables(csv_path)
@@ -1704,6 +1791,12 @@ def api_league_data(competition):
     real_table = _compute_standings_from_history(comp)
 
     # ── 3. Upcoming fixtures with prediction odds ────────────────
+    from competition_rules import resolve_competition_query
+
+    base_comp, _mls_view = resolve_competition_query(comp)
+    fixture_comps = {comp}
+    if base_comp == "United States/MLS":
+        fixture_comps.update({"United States/MLS", base_comp})
     upcoming_sources = [
         config.GLOBAL_UPCOMING_FILE,
         config.MLS_UPCOMING_FILE,
@@ -1714,7 +1807,7 @@ def api_league_data(competition):
     for csv_path in upcoming_sources:
         try:
             rows, _, _ = _load_upcoming_rows(csv_path, date_range="all")
-            comp_fixtures = [r for r in rows if r.get("competition") == comp]
+            comp_fixtures = [r for r in rows if r.get("competition") in fixture_comps]
             if comp_fixtures:
                 fixtures = comp_fixtures
                 break
@@ -1734,6 +1827,7 @@ def api_league_data(competition):
         "fixtures": fixtures,
     }
     payload = _enrich_league_data_cup_fields(comp, payload)
+    payload = _enrich_league_data_mls_fields(comp, payload)
     return jsonify(payload)
 
 

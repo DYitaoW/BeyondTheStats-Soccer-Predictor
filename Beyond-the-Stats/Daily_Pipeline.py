@@ -295,6 +295,49 @@ def _condense_cup_brackets(path):
 # Mobile feed builder
 # ---------------------------------------------------------------------------
 
+def _condense_mls_real_tables():
+    """Load real MLS standings for the mobile feed snapshot."""
+    standings_file = SP_DIR / "Data" / "standings_cache.json"
+    if standings_file.exists():
+        try:
+            cache = json.loads(standings_file.read_text(encoding="utf-8"))
+        except Exception:
+            cache = {}
+        if isinstance(cache, dict):
+            tables = {}
+            for comp_name in (
+                "United States/MLS",
+                "United States/MLS - Eastern Conference",
+                "United States/MLS - Western Conference",
+                "United States/MLS - Supporters Shield Table",
+            ):
+                if comp_name in cache:
+                    tables[comp_name] = cache[comp_name]
+            if tables:
+                return tables
+
+    website_dir = SP_DIR / "Website"
+    if str(website_dir) not in sys.path:
+        sys.path.insert(0, str(website_dir))
+    try:
+        from standings import _compute_standings_from_history
+    except ImportError as exc:
+        print(f"[WARN] Could not import standings for mobile feed: {exc}")
+        return {}
+
+    tables = {}
+    for comp_name in (
+        "United States/MLS",
+        "United States/MLS - Eastern Conference",
+        "United States/MLS - Western Conference",
+        "United States/MLS - Supporters Shield Table",
+    ):
+        table = _compute_standings_from_history(comp_name)
+        if table:
+            tables[comp_name] = table
+    return tables
+
+
 def build_mobile_app_feed(pipeline_status, step_results, output_path):
     """Read the latest prediction outputs and write a condensed JSON feed.
 
@@ -316,6 +359,7 @@ def build_mobile_app_feed(pipeline_status, step_results, output_path):
         "world_cup_projection": PREDICTIONS_DIR / "world_cup_projection.json",
         "mls_upcoming_fixtures": MLS_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
         "mls_projected_league_tables": MLS_PREDICTIONS_DIR / "projected_league_tables.csv",
+        "mls_projected_bracket": MLS_PREDICTIONS_DIR / "projected_mls_playoff_bracket.json",
     }
 
     feed = {
@@ -334,6 +378,8 @@ def build_mobile_app_feed(pipeline_status, step_results, output_path):
             "completed_cup_predictions": _condense_fixtures(sources["completed_cup_predictions"]),
             "mls_upcoming_fixtures": _condense_fixtures(sources["mls_upcoming_fixtures"]),
             "mls_projected_league_tables": _condense_tables(sources["mls_projected_league_tables"]),
+            "mls_projected_bracket": _condense_cup_brackets(sources["mls_projected_bracket"]),
+            "mls_real_league_tables": _condense_mls_real_tables(),
             "world_cup": _condense_world_cup(sources["world_cup_projection"]),
         },
     }
@@ -801,6 +847,12 @@ def main():
             traceback.print_exc()
         finally:
             _write_pipeline_status(step_results)
+
+        try:
+            build_mobile_app_feed(pipeline_ok, step_results, DEFAULT_FEED_FILE)
+            publish_to_output()
+        except Exception as exc:
+            print(f"[WARN] Mobile feed generation failed: {exc}")
 
         _write_pipeline_timestamp()
         _iter_elapsed = time.monotonic() - _iter_start
