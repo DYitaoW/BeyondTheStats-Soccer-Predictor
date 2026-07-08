@@ -1762,6 +1762,182 @@ def _enrich_json_past_row(r):
         r["away_score"] = r["actual_away_goals"]
 
 
+def _past_row_date_iso(row: dict) -> str:
+    """Normalize any past-game row to an ISO date (YYYY-MM-DD) in US/Eastern."""
+    for key in ("match_date_iso", "match_date", "kickoff_utc", "match_datetime_utc", "completed_at"):
+        raw = str(row.get(key, "") or "").strip()
+        if not raw:
+            continue
+        if len(raw) >= 10 and _valid_date_iso(raw[:10]):
+            return raw[:10]
+        try:
+            parsed = pd.to_datetime(raw, errors="coerce", utc=True)
+            if pd.notna(parsed):
+                if parsed.tzinfo is None:
+                    parsed = parsed.tz_localize("UTC")
+                return parsed.tz_convert("America/New_York").date().isoformat()
+        except Exception:
+            continue
+    return ""
+
+
+def _live_game_to_past_row(game: dict, competition: str | None = None) -> dict | None:
+    """Convert a completed live-score game into a past-games API row."""
+    from accuracy_tracker import _compute_actual_result
+
+    try:
+        hs = int(float(game.get("home_score")))
+        aws = int(float(game.get("away_score")))
+    except (TypeError, ValueError):
+        return None
+    actual = _compute_actual_result(hs, aws)
+    if not actual:
+        return None
+
+    match_date_iso = _past_row_date_iso(game)
+    if not match_date_iso:
+        return None
+
+    home = str(game.get("home_team", "")).strip()
+    away = str(game.get("away_team", "")).strip()
+    if not home or not away:
+        return None
+
+    row = {
+        "match_date": match_date_iso,
+        "match_date_iso": match_date_iso,
+        "competition": str(competition or game.get("competition", "")).strip(),
+        "home_team": home,
+        "away_team": away,
+        "actual_home_goals": hs,
+        "actual_away_goals": aws,
+        "actual_result": actual,
+        "home_score": hs,
+        "away_score": aws,
+        "match_datetime_utc": str(game.get("kickoff_utc", "") or game.get("match_datetime_utc", "")).strip(),
+        "source": "live_score_history",
+    }
+    _enrich_json_past_row(row)
+    return row
+
+
+def _collect_live_past_game_rows(cutoff: str) -> list[dict]:
+    """Return completed games from persisted and in-memory live scores."""
+    from standings import _load_live_score_history
+
+    rows: list[dict] = []
+    seen: set[str] = set()
+
+    def add_game(game: dict, competition: str | None = None) -> None:
+        if str(game.get("status", "")).lower() != "post":
+            return
+        row = _live_game_to_past_row(game, competition)
+        if not row:
+            return
+        date_iso = _past_row_date_iso(row)
+        if not date_iso or date_iso < cutoff:
+            return
+        if _is_placeholder_game(row):
+            return
+        ck = "|".join(
+            [
+                date_iso,
+                str(row.get("competition", "")).strip().lower(),
+                str(row.get("home_team", "")).strip().lower(),
+                str(row.get("away_team", "")).strip().lower(),
+            ]
+        )
+        if not ck or ck in seen:
+            return
+        seen.add(ck)
+        rows.append(row)
+
+    for game in _load_live_score_history():
+        add_game(game)
+
+    try:
+        from live_poller import _live_scores, _live_scores_lock
+
+        with _live_scores_lock:
+            for comp_name, comp_data in _live_scores.items():
+                for game in comp_data.get("games", []):
+                    add_game(game, comp_name)
+    except Exception:
+        pass
+
+    return rows
+
+
+def _build_past_game_prediction_lookup() -> dict[str, dict]:
+    """Index prediction CSV rows by match key for enriching live results."""
+    lookup: dict[str, dict] = {}
+    for source, csv_path in (
+        ("global", config.GLOBAL_UPCOMING_FILE),
+        ("mls", config.MLS_UPCOMING_FILE),
+        ("extra", config.EXTRA_UPCOMING_FILE),
+        ("cups", config.CUP_UPCOMING_FILE),
+        ("national", config.NATIONAL_UPCOMING_FILE),
+    ):
+        pred_rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
+        for row in pred_rows:
+            date_iso = _past_row_date_iso(row)
+            if not date_iso:
+                continue
+            ck = "|".join(
+                [
+                    date_iso,
+                    str(row.get("competition", "")).strip().lower(),
+                    str(row.get("home_team", "")).strip().lower(),
+                    str(row.get("away_team", "")).strip().lower(),
+                ]
+            )
+            if ck:
+                lookup[ck] = row
+    return lookup
+
+
+def _merge_prediction_onto_past_row(row: dict, lookup: dict[str, dict]) -> dict:
+    """Attach pre-match prediction fields when a CSV row exists for the fixture."""
+    date_iso = _past_row_date_iso(row)
+    if not date_iso:
+        return row
+    ck = "|".join(
+        [
+            date_iso,
+            str(row.get("competition", "")).strip().lower(),
+            str(row.get("home_team", "")).strip().lower(),
+            str(row.get("away_team", "")).strip().lower(),
+        ]
+    )
+    pred = lookup.get(ck)
+    if not pred:
+        return row
+    merged = dict(row)
+    for key in (
+        "predicted_result",
+        "prob_home",
+        "prob_draw",
+        "prob_away",
+        "prob_home_text",
+        "prob_draw_text",
+        "prob_away_text",
+        "pred_home_goals",
+        "pred_away_goals",
+        "winner_label",
+        "schedule_only",
+        "match_datetime_et",
+        "weekday",
+        "date_label",
+        "time_label",
+    ):
+        if pred.get(key) not in (None, ""):
+            merged[key] = pred[key]
+    if not merged.get("match_datetime_utc") and pred.get("match_datetime_utc"):
+        merged["match_datetime_utc"] = pred.get("match_datetime_utc")
+    _enrich_json_past_row(merged)
+    return merged
+
+
 def _is_placeholder_game(r):
     """Return True if a game dict is a placeholder (not a real match)."""
     for key in ("home_team", "away_team"):

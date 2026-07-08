@@ -77,6 +77,10 @@ from predictions import (
     _load_projected_competition_table,
     _build_winner_probability_payload,
     _build_mls_winners_odds_bundle,
+    _build_past_game_prediction_lookup,
+    _collect_live_past_game_rows,
+    _merge_prediction_onto_past_row,
+    _past_row_date_iso,
     _load_team_recent_matches,
     _load_teams_from_team_data,
     _load_upcoming_rows,
@@ -1091,10 +1095,10 @@ def api_past_games():
 
     Response structure matches ``/api/upcoming/global`` per-row format.
 
-    Data is sourced from ``past_games.json`` (the persistent archive) and
-    supplemented with any recently completed rows from the prediction CSVs
-    that haven't been archived yet.  Rows older than the previous full week
-    are excluded.
+    Data is sourced from ``past_games.json`` (the persistent archive),
+    ``live_score_history.json`` / in-memory live scores (includes today's
+    completed games), and prediction CSV rows with settled results.
+    Rows older than the previous full week are excluded.
 
     For full live-score details (lineups, stats, key events, game info),
     use ``/api/live-score-history``.
@@ -1115,22 +1119,44 @@ def api_past_games():
         per_page = 50
 
     cutoff = _week_based_cutoff()
+    prediction_lookup = _build_past_game_prediction_lookup()
 
     # ── 1. Rows from persistent archive ────────────────────────────
     by_key = {}
     archive = _load_json_payload(config.PAST_GAMES_FILE)
     if isinstance(archive, list):
         for r in archive:
-            if str(r.get("match_date", "")).strip() < cutoff:
+            if _past_row_date_iso(r) < cutoff:
                 continue
             if _is_placeholder_game(r):
                 continue
             _enrich_json_past_row(r)
-            ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
-            if ck:
+            ck = "|".join(
+                [
+                    _past_row_date_iso(r),
+                    str(r.get("competition", "")).strip().lower(),
+                    str(r.get("home_team", "")).strip().lower(),
+                    str(r.get("away_team", "")).strip().lower(),
+                ]
+            )
+            if ck.strip("|"):
                 by_key[ck] = r
 
-    # ── 2. Supplement with CSV rows (richer data) ──────────────────
+    # ── 2. Completed games from live scores (today + recent) ───────
+    for r in _collect_live_past_game_rows(cutoff):
+        r = _merge_prediction_onto_past_row(r, prediction_lookup)
+        ck = "|".join(
+            [
+                _past_row_date_iso(r),
+                str(r.get("competition", "")).strip().lower(),
+                str(r.get("home_team", "")).strip().lower(),
+                str(r.get("away_team", "")).strip().lower(),
+            ]
+        )
+        if ck.strip("|"):
+            by_key[ck] = r
+
+    # ── 3. Supplement with CSV rows (richest prediction data) ───────
     for source, csv_path in (
         ("global", config.GLOBAL_UPCOMING_FILE),
         ("mls", config.MLS_UPCOMING_FILE),
@@ -1140,15 +1166,22 @@ def api_past_games():
     ):
         rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
         for r in rows:
-            if str(r.get("match_date", "")).strip() < cutoff:
+            if _past_row_date_iso(r) < cutoff:
                 continue
             # Only include actually settled games — skip placeholders
             if str(r.get("actual_result", "")).strip().upper() not in {"H", "D", "A"}:
                 continue
             if _is_placeholder_game(r):
                 continue
-            ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
-            if ck:
+            ck = "|".join(
+                [
+                    _past_row_date_iso(r),
+                    str(r.get("competition", "")).strip().lower(),
+                    str(r.get("home_team", "")).strip().lower(),
+                    str(r.get("away_team", "")).strip().lower(),
+                ]
+            )
+            if ck.strip("|"):
                 by_key[ck] = r  # CSV row (enriched) takes priority
 
     all_rows = list(by_key.values())
@@ -1157,7 +1190,7 @@ def api_past_games():
         league_lower = league.lower()
         all_rows = [r for r in all_rows if league_lower in r.get("competition", "").lower()]
 
-    all_rows.sort(key=lambda r: r.get("match_date", ""), reverse=True)
+    all_rows.sort(key=lambda r: _past_row_date_iso(r), reverse=True)
 
     total = len(all_rows)
     start = (page - 1) * per_page
