@@ -89,6 +89,26 @@ UPCOMING_ONLY_COMPETITIONS = {
     "FIFA/Friendly",
 }
 
+# Domestic leagues used only for UEFA/cup roster fallback (or upcoming API with no
+# domestic model history). Kept in fetch_league_teams / UEFA_Data_Manager but
+# omitted from league-facing APIs (tables, upcoming-global, league-data, leaders).
+LEAGUE_API_EXCLUDED_COMPETITIONS = {
+    # football-data.org upcoming fixtures only — no domestic prediction history
+    "Switzerland/Super League",
+    "Denmark/Superliga",
+    "Ukraine/Premier League",
+    "Croatia/HNL",
+    "Hungary/NB I",
+    "Israel/Premier League",
+    # UEFA/cup fallback roster only — no upcoming API, no domestic history
+    "Czech Republic/First League",
+    "Serbia/SuperLiga",
+    "Cyprus/First Division",
+    "Slovakia/Super Liga",
+    "Slovenia/PrvaLiga",
+    "Bulgaria/First League",
+}
+
 LIVE_SCORE_COMPETITIONS = {
     # Club leagues (top European + MLS)
     "England/Premier League": "eng.1",

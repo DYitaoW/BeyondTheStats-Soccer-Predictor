@@ -74,16 +74,12 @@ API_COMPETITIONS = {
     # Additional leagues with UCL-participating teams
     "DED": "Netherlands/Eredivisie",
     "ABL": "Austria/Bundesliga",
-    "SSL": "Switzerland/Super League",
     "GSL": "Greece/Super League",
-    "DSU": "Denmark/Superliga",
-    "UPL": "Ukraine/Premier League",
     "TIP": "Norway/Eliteserien",
-    "PRVA": "Croatia/HNL",
     "RL1": "Romania/Liga I",
     "ALL": "Sweden/Allsvenskan",
-    "HNB": "Hungary/NB I",
-    "ILH": "Israel/Premier League",
+    # Switzerland, Denmark, Ukraine, Croatia, Hungary, Israel: UEFA/cup fallback only
+    # (see config.LEAGUE_API_EXCLUDED_COMPETITIONS — not in domestic API_COMPETITIONS)
     # Extra leagues (already tracked via Extra-leagues pipeline)
     "BJL": "Belgium/First Division A",
     "TSL": "Turkey/Super Lig",

@@ -226,8 +226,34 @@ _ALL_UPCOMING_SOURCES = [
 
 def _exclude_upcoming_only_rows(rows):
     """Drop competitions that have a dedicated upcoming source only."""
-    blocked = config.UPCOMING_ONLY_COMPETITIONS
+    blocked = config.UPCOMING_ONLY_COMPETITIONS | config.LEAGUE_API_EXCLUDED_COMPETITIONS
     return [r for r in rows if str(r.get("competition", "")).strip() not in blocked]
+
+
+def _is_league_api_competition(comp_name):
+    """Return True when a competition should appear in league-facing APIs."""
+    comp = str(comp_name or "").strip()
+    if not comp:
+        return False
+    if comp in config.UPCOMING_ONLY_COMPETITIONS:
+        return False
+    if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+        return False
+    return True
+
+
+def _filter_league_tables_payload(data):
+    """Remove fallback-only / upcoming-only leagues from table API payloads."""
+    excluded = config.LEAGUE_API_EXCLUDED_COMPETITIONS
+    leagues = [c for c in (data.get("leagues") or []) if c not in excluded]
+    tables = {
+        k: v for k, v in (data.get("tables") or {}).items()
+        if k not in excluded
+    }
+    fixtures = data.get("fixtures")
+    if isinstance(fixtures, dict):
+        fixtures = {k: v for k, v in fixtures.items() if k not in excluded}
+    return {**data, "leagues": leagues, "tables": tables, "fixtures": fixtures}
 
 
 def _date_window_bounds():
@@ -456,6 +482,8 @@ def api_help_all():
     for comp_name in sorted(config.LIVE_SCORE_COMPETITIONS, key=str.lower):
         if comp_name in config.UPCOMING_ONLY_COMPETITIONS:
             continue
+        if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+            continue
         is_cup = comp_name in config._CUP_FORMATS
         base = {
             "competition": comp_name,
@@ -541,7 +569,10 @@ def api_upcoming(mode):
         for source, csv_path in _ALL_UPCOMING_SOURCES:
             rows, _st, _ls = _load_upcoming_rows(csv_path, source)
             for r in rows:
-                if str(r.get("competition", "")).strip() in config.UPCOMING_ONLY_COMPETITIONS:
+                comp = str(r.get("competition", "")).strip()
+                if comp in config.UPCOMING_ONLY_COMPETITIONS:
+                    continue
+                if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
                     continue
                 ck = "|".join(
                     str(r.get(k, "")).strip().lower()
@@ -611,7 +642,10 @@ def api_home_upcoming():
     for source, csv_path in _ALL_UPCOMING_SOURCES:
         rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source, date_range="all")
         for row in rows:
-            if str(row.get("competition", "")).strip() in config.UPCOMING_ONLY_COMPETITIONS:
+            comp = str(row.get("competition", "")).strip()
+            if comp in config.UPCOMING_ONLY_COMPETITIONS:
+                continue
+            if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
                 continue
             match_date = _row_date_iso(row)
             if not match_date:
@@ -1552,6 +1586,11 @@ def api_real_tables():
     from competition_rules import should_use_persisted_table
 
     if comp_filter:
+        if comp_filter in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+            return jsonify({
+                "ok": False,
+                "error": f"Competition not available in league APIs: {comp_filter}",
+            }), 404
         if comp_filter not in config.LIVE_SCORE_COMPETITIONS and comp_filter not in config.MLS_TABLE_VIEW_ALIASES:
             return jsonify({"ok": False, "error": f"Unknown competition: {comp_filter}"}), 400
         if force_refresh:
@@ -1574,6 +1613,8 @@ def api_real_tables():
     persisted = _load_json_payload(config.REAL_TABLES_PERSIST_FILE)
     if isinstance(persisted, dict):
         for comp_name in config.LIVE_SCORE_COMPETITIONS:
+            if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                continue
             cached = persisted.get(comp_name)
             if should_use_persisted_table(cached, force_refresh):
                 results[comp_name] = cached
@@ -1597,6 +1638,8 @@ def api_real_tables():
                     }
     else:
         for comp_name in config.LIVE_SCORE_COMPETITIONS:
+            if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                continue
             if force_refresh:
                 _clear_standings_cache(comp_name)
                 _clear_leaders_cache(comp_name)
@@ -1883,12 +1926,15 @@ def api_league_tables():
         return jsonify({"ok": True, **data, "fixtures": fixtures})
     else:
         if season_data:
-            data = season_data
+            data = _filter_league_tables_payload(season_data)
         else:
             csv_path = config.GLOBAL_PROJECTED_TABLE_FILE
-            data = _load_projected_tables(csv_path)
+            data = _filter_league_tables_payload(_load_projected_tables(csv_path))
         data["last_prediction_refresh"] = None
         fixtures = _load_all_fixtures_by_competition(config.GLOBAL_UPCOMING_FILE)
+        excluded = config.LEAGUE_API_EXCLUDED_COMPETITIONS
+        if isinstance(fixtures, dict):
+            fixtures = {k: v for k, v in fixtures.items() if k not in excluded}
     return jsonify({"ok": True, **data, "fixtures": fixtures})
 
 
@@ -1920,6 +1966,12 @@ def api_league_data(competition):
          "fixtures": [...]}
     """
     comp = competition.strip()
+
+    if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+        return jsonify({
+            "ok": False,
+            "error": f"Competition not available in league APIs: {comp}",
+        }), 404
 
     # ── 1. Find projected table from any CSV source ───────────────
     comp_table = _load_projected_competition_table(comp)
@@ -2078,6 +2130,8 @@ def api_league_leaders():
         proj = _load_projected_tables(csv_path)
         comp_list = proj.get("leagues") or []
         for comp_name in comp_list:
+            if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                continue
             # MLS sub-competitions — collect separately
             if comp_name.startswith("United States/MLS"):
                 comp_tbl = proj.get("tables", {}).get(comp_name, [])
@@ -2190,6 +2244,8 @@ def api_league_leaders():
             continue
         if comp_name in _COMPETITION_ALIASES:
             continue
+        if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+            continue
         if comp_name in config._CUP_FORMATS:
             cups.append({
                 "competition": comp_name,
@@ -2250,6 +2306,8 @@ def api_league_leaders():
             else:
                 entry["current_leader"] = None
                 entry["leader_source"] = "predicted"
+
+    leagues = [e for e in leagues if _is_league_api_competition(e.get("competition"))]
 
     return jsonify({
         "ok": True,

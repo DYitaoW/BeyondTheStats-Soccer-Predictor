@@ -468,15 +468,10 @@ _REAL_TABLE_COMPETITIONS = {
     "United States/MLS",
     "Mexico/Liga MX",
     "Belgium/First Division A", "Scotland/Premiership", "Turkey/Super Lig",
-    "Austria/Bundesliga", "Switzerland/Super League",
-    "Greece/Super League", "Denmark/Superliga",
-    "Ukraine/Premier League", "Norway/Eliteserien",
-    "Croatia/HNL", "Romania/Liga I",
-    "Sweden/Allsvenskan", "Hungary/NB I",
-    "Israel/Premier League", "Czech Republic/First League",
-    "Poland/Ekstraklasa", "Serbia/SuperLiga",
-    "Cyprus/First Division", "Slovakia/Super Liga",
-    "Slovenia/PrvaLiga", "Bulgaria/First League",
+    "Austria/Bundesliga",
+    "Greece/Super League", "Norway/Eliteserien",
+    "Romania/Liga I", "Sweden/Allsvenskan",
+    "Poland/Ekstraklasa",
 }
 
 _CUP_COMPETITIONS = {

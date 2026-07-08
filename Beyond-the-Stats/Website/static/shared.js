@@ -112,8 +112,11 @@ const EUROPEAN_LEAGUES = [
     "Scotland/Premiership",
     "Turkey/Super Lig",
     "Austria/Bundesliga",
+    "Greece/Super League",
+    "Norway/Eliteserien",
     "Romania/Liga I",
     "Poland/Ekstraklasa",
+    "Sweden/Allsvenskan",
 ];
 const EUROPEAN_CUPS = [
     "UEFA/Champions League",
