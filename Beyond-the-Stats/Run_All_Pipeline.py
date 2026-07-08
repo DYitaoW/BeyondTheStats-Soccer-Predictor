@@ -32,6 +32,8 @@ from pathlib import Path
 
 import pandas as pd
 
+import pipeline_log
+
 
 SP_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SP_DIR.parent
@@ -151,6 +153,7 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
             input=input_text,
             check=False,
             timeout=timeout,
+            capture_output=True,
         )
     except subprocess.TimeoutExpired as exc:
         elapsed = time.monotonic() - started
@@ -170,6 +173,10 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
         return False
 
     elapsed = time.monotonic() - started
+    if proc.stdout:
+        print(proc.stdout, end="" if str(proc.stdout).endswith("\n") else "\n")
+    if proc.stderr:
+        print(proc.stderr, end="" if str(proc.stderr).endswith("\n") else "\n")
     print(f"[DEBUG] run_step finished '{name}' rc={proc.returncode} elapsed={elapsed:.1f}s "
           f"at T+{time.monotonic() - _pipeline_start_global:.0f}s")
     if proc.returncode != 0:
@@ -643,6 +650,8 @@ def _write_pipeline_status(results: dict) -> None:
         passed = sum(1 for v in results.values() if v)
         failed = sum(1 for v in results.values() if not v)
         failed_steps = sorted(k for k, v in results.items() if not v)
+        log_stats = pipeline_log.log_stats()
+        log_snapshot = pipeline_log.read_log(tail=2000, level="notable", highlights_limit=80)
         PIPELINE_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
         PIPELINE_STATUS_FILE.write_text(
             json.dumps({
@@ -653,6 +662,10 @@ def _write_pipeline_status(results: dict) -> None:
                 "ok": failed == 0,
                 "failed_steps": failed_steps,
                 "steps": {k: bool(v) for k, v in sorted(results.items())},
+                "log_file": log_stats.get("log_file"),
+                "log_bytes": log_stats.get("bytes", 0),
+                "log_lines": log_stats.get("lines", 0),
+                "log_highlights": log_snapshot.get("highlights", []),
             }, indent=2),
             encoding="utf-8",
         )
@@ -663,9 +676,13 @@ def _write_pipeline_status(results: dict) -> None:
 def main():
     args = parse_args()
     api_token = load_api_token()
-    run_full_pipeline(args, api_token)
-    _write_pipeline_timestamp()
-    print("\nPipeline complete.")
+    tee = pipeline_log.activate_stdout_tee(trigger="cli")
+    try:
+        run_full_pipeline(args, api_token)
+        _write_pipeline_timestamp()
+        print("\nPipeline complete.")
+    finally:
+        pipeline_log.deactivate_stdout_tee()
 
 
 if __name__ == "__main__":

@@ -36,6 +36,11 @@ from typing import Callable, Optional
 from .memory import MemoryMonitor, MemoryReading
 from .scheduler import FutureGamesWatcher, next_run_after, seconds_until
 
+# Pipeline log helper lives next to Run_All_Pipeline.py
+if str(SP_DIR) not in sys.path:
+    sys.path.insert(0, str(SP_DIR))
+import pipeline_log  # noqa: E402
+
 LOG = logging.getLogger("backend.server")
 
 DEFAULT_REFRESH_HOUR = 2
@@ -307,7 +312,8 @@ class BackendServer:
                     )
             cmd = self._build_pipeline_cmd(full_retrain=full_retrain)
             LOG.info("[pipeline] starting (trigger=%s, full_retrain=%s) -> journald", trigger, full_retrain)
-            subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "BTS_BACKEND_MANAGED": "1"}
+            pipeline_log.start_run(trigger=trigger, reset=True)
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(PROJECT_ROOT),
@@ -352,6 +358,10 @@ class BackendServer:
             try:
                 for line in iter(proc.stdout.readline, ""):
                     LOG.info("[pipeline] %s", line.rstrip("\n\r"))
+                    try:
+                        pipeline_log.append_line(line.rstrip("\n\r"))
+                    except Exception:
+                        pass
             except Exception:
                 LOG.exception("[pipeline] output reader failed")
             finally:
@@ -398,8 +408,12 @@ class BackendServer:
                     "return_code": rc,
                     "ok": rc == 0,
                     "trigger": getattr(proc, "_bts_trigger", "unknown"),
+                    "log_file": str(pipeline_log.log_path()),
                 }, indent=2),
                 encoding="utf-8",
+            )
+            pipeline_log.append_line(
+                f"=== Backend pipeline subprocess finished rc={rc} trigger={getattr(proc, '_bts_trigger', 'unknown')} ==="
             )
         except Exception:
             LOG.exception("[pipeline] could not write backend_run_status.json")

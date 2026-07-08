@@ -14,6 +14,7 @@ Subsystem logic lives in dedicated modules; this file contains only:
 import json
 import math
 import os
+import sys
 import threading
 from collections import defaultdict
 from datetime import datetime, timedelta, date, timezone
@@ -24,6 +25,10 @@ from flask import Flask, jsonify, redirect, render_template, request, send_from_
 
 import config
 import auth
+
+if config.PROJECT_DIR not in sys.path:
+    sys.path.insert(0, config.PROJECT_DIR)
+import pipeline_log
 from auth import _client_ip, _debug_auth_ok, _mutation_auth_ok, _refresh_auth_ok
 from cache import _cache_clear_pattern, _cached_response
 from accuracy_tracker import (
@@ -424,6 +429,7 @@ def api_help():
         ("/api/predict/mls", "POST", "Run MLS-only predictions"),
         ("/api/predict/extra", "POST", "Run extra-league predictions"),
         ("/api/pipeline/status", "GET", "Pipeline health: step pass/fail + last refresh"),
+        ("/api/pipeline/logs", "GET", "Pipeline terminal output (tail, WARN/ERROR filters)"),
         ("/api/refresh", "POST", "Trigger background pipeline refresh"),
         ("/api/notifications", "GET", "List notification subscriptions"),
         ("/api/notifications", "POST", "Send a test notification"),
@@ -710,6 +716,7 @@ def api_pipeline_status():
         sub_pipelines[key].append({"step": step_name, "ok": bool(passed)})
 
     refreshed = get_last_pipeline_run()
+    log_stats = pipeline_log.log_stats()
     return jsonify({
         "ok": True,
         "last_refresh_utc": refreshed.isoformat() if refreshed else None,
@@ -721,7 +728,45 @@ def api_pipeline_status():
         "failed_steps": pipeline.get("failed_steps") or [
             k for k, v in (pipeline.get("steps") or {}).items() if not v
         ],
+        "log": {
+            "file": log_stats.get("log_file"),
+            "bytes": log_stats.get("bytes", 0),
+            "lines": log_stats.get("lines", 0),
+            "exists": log_stats.get("exists", False),
+            "highlights": pipeline.get("log_highlights") or [],
+            "logs_api": "/api/pipeline/logs",
+        },
     })
+
+
+@app.get("/api/pipeline/logs")
+def api_pipeline_logs():
+    """Return persisted pipeline terminal output from the latest run.
+
+    Query params:
+        tail   — max lines from end of log (default 500, max 5000)
+        level  — ``all`` | ``notable`` (OK+WARN+ERROR) | ``warn`` | ``error``
+        grep   — optional case-insensitive regex filter on line text
+        format — ``json`` (default) or ``text`` (plain-text body for quick copy)
+    """
+    try:
+        tail = int(request.args.get("tail", "500"))
+    except (TypeError, ValueError):
+        tail = 500
+    level = str(request.args.get("level", "all")).strip().lower() or "all"
+    grep = str(request.args.get("grep", "")).strip()
+    fmt = str(request.args.get("format", "json")).strip().lower() or "json"
+
+    payload = pipeline_log.read_log(tail=tail, level=level, grep=grep)
+    payload["ok"] = True
+
+    if fmt == "text":
+        from flask import Response
+        return Response(
+            payload.get("text") or "",
+            mimetype="text/plain; charset=utf-8",
+        )
+    return jsonify(payload)
 
 
 @app.post("/api/refresh")

@@ -1,0 +1,5 @@
+=== Pipeline run started trigger=test at 2026-07-08T21:51:00+00:00 ===
+[WARN] example skipped step
+[ERROR] example failed step rc=1
+[OK] example success
+  → Skipping (continue_on_error=True)
