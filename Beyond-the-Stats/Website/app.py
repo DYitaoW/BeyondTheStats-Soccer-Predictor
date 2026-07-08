@@ -74,6 +74,8 @@ from predictions import (
     _load_last_data_refresh,
     _load_last_refresh,
     _load_projected_tables,
+    _load_projected_competition_table,
+    _build_winner_probability_payload,
     _load_team_recent_matches,
     _load_teams_from_team_data,
     _load_upcoming_rows,
@@ -1524,6 +1526,7 @@ def api_competition_data():
     if not matches:
         if comp in config._CUP_FORMATS:
             result = _enrich_tournament_payload(comp, result)
+        result = _attach_projected_winner_fields(comp, result)
         return jsonify(result)
 
     knockout, odds_knockout, real_knockout = _build_cup_knockout_payload(matches, comp)
@@ -1533,7 +1536,20 @@ def api_competition_data():
 
     if comp in config._CUP_FORMATS:
         result = _enrich_tournament_payload(comp, result)
+
+    result = _attach_projected_winner_fields(comp, result)
     return jsonify(result)
+
+
+def _attach_projected_winner_fields(comp, result):
+    """Add World Cup-style winner probability fields when not already present."""
+    if not isinstance(result, dict) or result.get("winner_probabilities"):
+        return result
+    winner_payload = _build_winner_probability_payload(_load_projected_competition_table(comp))
+    for key in ("winner_probabilities", "champion", "simulations_run"):
+        if winner_payload.get(key) is not None:
+            result[key] = winner_payload[key]
+    return result
 
 
 def _build_mls_api_payload():
@@ -1691,66 +1707,40 @@ def api_league_data(competition):
          "position_odds": {"simple": {pos: [{team, pct}, ...]},
                            "detailed": [{team, odds: {pos: pct, ...}}, ...]},
          "winners_odds": [{team, win_league_pct, top4_pct, ...}, ...],
+         "winner_probabilities": {team: pct, ...},
+         "champion": "...",
+         "simulations_run": 200,
          "real_table": {"groups": [...], "source": "real"},
          "fixtures": [...]}
     """
     comp = competition.strip()
 
     # ── 1. Find projected table from any CSV source ───────────────
-    table_sources = [
-        ("global", config.GLOBAL_PROJECTED_TABLE_FILE),
-        ("mls", config.MLS_PROJECTED_TABLE_FILE),
-        ("extra", config.EXTRA_PROJECTED_TABLE_FILE),
-        ("cups", config.CUP_PROJECTED_TABLE_FILE),
-    ]
-    predicted_table = []
+    comp_table = _load_projected_competition_table(comp)
+    predicted_table = comp_table
+    winner_fields = _build_winner_probability_payload(comp_table) if comp_table else {}
+    winners_odds = winner_fields.get("winners_odds", [])
     position_odds_simple = {}
     position_odds_detailed = []
-    winners_odds = []
-    found_source = None
 
-    for source_name, csv_path in table_sources:
-        proj = _load_projected_tables(csv_path)
-        if comp in proj.get("tables", {}):
-            found_source = source_name
-            comp_table = proj["tables"][comp]
-            predicted_table = comp_table
-
-            # Winners odds — all teams sorted by win_league_pct desc
-            winners = []
-            for row in comp_table:
-                winners.append({
-                    "team": row.get("team", ""),
-                    "win_league_pct": row.get("win_league_pct"),
-                    "top4_pct": row.get("top4_pct"),
-                    "bottom3_pct": row.get("bottom3_pct"),
-                    "most_likely_position": row.get("most_likely_position"),
-                    "most_likely_position_pct": row.get("most_likely_position_pct"),
-                })
-            winners.sort(key=lambda x: x.get("win_league_pct") or 0, reverse=True)
-            winners_odds = winners
-
-            # Position odds — simple (per-position team list) + detailed (per-team)
-            pos_simple = {}
-            pos_detailed = []
-            for row in comp_table:
-                team = row.get("team", "")
-                raw = row.get("position_odds")
-                if raw and isinstance(raw, dict):
-                    entry = {"team": team, "odds": {}}
-                    for pos_str, pct in raw.items():
-                        pct_f = float(pct) if pct is not None else 0.0
-                        entry["odds"][str(pos_str)] = pct_f
-                        if str(pos_str) not in pos_simple:
-                            pos_simple[str(pos_str)] = []
-                        pos_simple[str(pos_str)].append({"team": team, "pct": pct_f})
-                    pos_detailed.append(entry)
-            # Sort each position's teams by pct descending
-            for ps in pos_simple:
-                pos_simple[ps].sort(key=lambda x: x["pct"], reverse=True)
-            position_odds_simple = dict(sorted(pos_simple.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 999))
-            position_odds_detailed = pos_detailed
-            break
+    if comp_table:
+        for row in comp_table:
+            team = row.get("team", "")
+            raw = row.get("position_odds")
+            if raw and isinstance(raw, dict):
+                entry = {"team": team, "odds": {}}
+                for pos_str, pct in raw.items():
+                    pct_f = float(pct) if pct is not None else 0.0
+                    entry["odds"][str(pos_str)] = pct_f
+                    if str(pos_str) not in position_odds_simple:
+                        position_odds_simple[str(pos_str)] = []
+                    position_odds_simple[str(pos_str)].append({"team": team, "pct": pct_f})
+                position_odds_detailed.append(entry)
+        for ps in position_odds_simple:
+            position_odds_simple[ps].sort(key=lambda x: x["pct"], reverse=True)
+        position_odds_simple = dict(
+            sorted(position_odds_simple.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 999)
+        )
 
     # If no projected table found in CSVs, fall back to league roster
     if not predicted_table:
@@ -1815,6 +1805,9 @@ def api_league_data(competition):
         "real_table": real_table,
         "fixtures": fixtures,
     }
+    for key in ("winner_probabilities", "champion", "simulations_run"):
+        if winner_fields.get(key) is not None:
+            payload[key] = winner_fields[key]
     payload = _enrich_league_data_cup_fields(comp, payload)
     payload = _enrich_league_data_mls_fields(comp, payload)
     return jsonify(payload)

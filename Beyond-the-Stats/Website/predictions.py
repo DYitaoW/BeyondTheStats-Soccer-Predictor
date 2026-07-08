@@ -1356,6 +1356,79 @@ def _load_projected_tables(csv_path):
     return {"leagues": leagues, "tables": tables, "position_odds": position_odds_tables}
 
 
+PROJECTED_TABLE_SOURCES = (
+    config.GLOBAL_PROJECTED_TABLE_FILE,
+    config.MLS_PROJECTED_TABLE_FILE,
+    config.EXTRA_PROJECTED_TABLE_FILE,
+    config.CUP_PROJECTED_TABLE_FILE,
+)
+
+PROJECTED_WINNER_COMP_ALIASES = {
+    "United States/MLS": "United States/MLS - Supporters Shield Table",
+}
+
+
+def _load_projected_competition_table(comp_name: str) -> list[dict]:
+    """Return projected table rows for a competition from any pipeline CSV."""
+    lookup_names = [str(comp_name or "").strip()]
+    alias = PROJECTED_WINNER_COMP_ALIASES.get(lookup_names[0])
+    if alias and alias not in lookup_names:
+        lookup_names.append(alias)
+    for lookup in lookup_names:
+        if not lookup:
+            continue
+        for csv_path in PROJECTED_TABLE_SOURCES:
+            proj = _load_projected_tables(csv_path)
+            table = (proj.get("tables") or {}).get(lookup)
+            if table:
+                return table
+    return []
+
+
+def _build_winner_probability_payload(comp_table: list[dict]) -> dict:
+    """Build World Cup-style winner odds fields from projected table rows."""
+    winner_probabilities: dict[str, float] = {}
+    winners_odds: list[dict] = []
+    champion = None
+    sim_runs = None
+    best_pct = -1.0
+
+    for row in comp_table:
+        team = str(row.get("team", "")).strip()
+        if not team:
+            continue
+        if sim_runs is None and row.get("sim_runs") is not None:
+            sim_runs = row.get("sim_runs")
+        try:
+            pct_f = float(row.get("win_league_pct") or 0)
+        except (TypeError, ValueError):
+            pct_f = 0.0
+        entry = {
+            "team": team,
+            "win_league_pct": round(pct_f, 2),
+            "top4_pct": row.get("top4_pct"),
+            "bottom3_pct": row.get("bottom3_pct"),
+            "most_likely_position": row.get("most_likely_position"),
+            "most_likely_position_pct": row.get("most_likely_position_pct"),
+        }
+        if pct_f > 0:
+            winner_probabilities[team] = round(pct_f, 2)
+            winners_odds.append(entry)
+            if pct_f > best_pct:
+                best_pct = pct_f
+                champion = team
+
+    winners_odds.sort(key=lambda x: x.get("win_league_pct") or 0, reverse=True)
+    payload: dict = {"winners_odds": winners_odds}
+    if winner_probabilities:
+        payload["winner_probabilities"] = winner_probabilities
+    if champion:
+        payload["champion"] = champion
+    if sim_runs is not None:
+        payload["simulations_run"] = sim_runs
+    return payload
+
+
 def _load_json_payload(path):
     """Safely load JSON payload from disk, returning None on failure."""
     if not os.path.exists(path):
