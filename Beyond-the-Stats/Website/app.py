@@ -430,7 +430,8 @@ def api_help():
         ("/api/predict/extra", "POST", "Run extra-league predictions"),
         ("/api/pipeline/status", "GET", "Pipeline health: step pass/fail + last refresh"),
         ("/api/pipeline/logs", "GET", "Pipeline terminal output (tail, WARN/ERROR filters)"),
-        ("/api/refresh", "POST", "Trigger background pipeline refresh"),
+        ("/api/refresh", "POST", "Trigger background pipeline refresh (light, no model retrain)"),
+        ("/api/retrain", "POST", "Force full model retrain (Tue/Fri-style, all pipelines)"),
         ("/api/notifications", "GET", "List notification subscriptions"),
         ("/api/notifications", "POST", "Send a test notification"),
         ("/api/notifications/register", "POST", "Register push notification token"),
@@ -779,15 +780,47 @@ def api_refresh():
 
     refresh_fn = app.config.get("_backend_refresh")
     if callable(refresh_fn):
-        refresh_fn(trigger="api")
-        return jsonify({"ok": True, "queued": True, "mode": "backend"})
+        refresh_fn(trigger="api", full_retrain=False)
+        return jsonify({"ok": True, "queued": True, "mode": "backend", "full_retrain": False})
 
     started = _run_full_pipeline_once()
     return jsonify({
         "ok": bool(started),
         "queued": False,
         "mode": "inline",
+        "full_retrain": True,
         "message": "Pipeline finished inline (no BackendServer hook registered).",
+    })
+
+
+@app.post("/api/retrain")
+def api_retrain():
+    """Force a full model retrain (global + MLS + extra cache rebuild).
+
+    Same as the scheduled Tuesday/Friday run: downloads data and retrains all
+    model caches. Non-blocking when :class:`BackendServer` is running.
+    """
+    if not _refresh_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    refresh_fn = app.config.get("_backend_refresh")
+    if callable(refresh_fn):
+        refresh_fn(trigger="api-retrain", full_retrain=True)
+        return jsonify({
+            "ok": True,
+            "queued": True,
+            "mode": "backend",
+            "full_retrain": True,
+            "message": "Full model retrain queued.",
+        })
+
+    started = _run_full_pipeline_once()
+    return jsonify({
+        "ok": bool(started),
+        "queued": False,
+        "mode": "inline",
+        "full_retrain": True,
+        "message": "Full retrain finished inline (no BackendServer hook registered).",
     })
 
 
@@ -2336,7 +2369,7 @@ if __name__ == "__main__":
     if not config.MUTATION_API_TOKEN and not config.NOTIFICATIONS_API_KEY:
         print("[startup] WARNING: no mutation auth configured — write-capable API endpoints are disabled!")
     if not config.REFRESH_API_TOKEN:
-        print("[startup] WARNING: config.REFRESH_API_TOKEN not set — /api/refresh is unprotected!")
+        print("[startup] WARNING: config.REFRESH_API_TOKEN not set — /api/refresh and /api/retrain are unprotected!")
     if not config.NOTIFICATIONS_API_KEY:
         print("[startup] WARNING: config.NOTIFICATIONS_API_KEY not set — notification endpoints require config.MUTATION_API_TOKEN or a matching header!")
     if not config.DEBUG_API_KEY and not config.REFRESH_API_TOKEN:
