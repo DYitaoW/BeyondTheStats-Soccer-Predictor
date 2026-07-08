@@ -418,149 +418,18 @@ def _is_placeholder_game(r):
 
 
 def _archive_completed_games():
-    """Archive completed/settled games from CSVs into past_games.json.
-
-    Called AFTER settle so the CSVs already have ``actual_result`` filled in.
-    Only today's settled games are archived (not all games in the date window).
-    Placeholder rows (group/third-place matchups) are skipped.
-
-    Upserts by composite key (match_date|competition|home_team|away_team)
-    so existing rows get their actual_result updated, and old rows beyond
-    the rolling 2-week window are pruned.
-    """
-    today_et = (datetime.now(UTC) - timedelta(hours=4)).date()
-    today_str = today_et.isoformat()
-    current_week_start = today_et - timedelta(days=today_et.weekday())
-    cutoff = current_week_start - timedelta(days=7)
-    cutoff_str = cutoff.isoformat()
-
-    csv_sources = [
-        (GLOBAL_UPCOMING_FILE, "global"),
-        (MLS_UPCOMING_FILE, "mls"),
-        (EXTRA_UPCOMING_FILE, "extra"),
-        (CUP_UPCOMING_FILE, "cups"),
-        (NATIONAL_UPCOMING_FILE, "national"),
-    ]
-
-    # Also check Output/ dirs for any additional global predictions
-    output_global = SP_DIR / "Output" / "Upcoming" / "all_upcoming.csv"
-    output_europe = SP_DIR / "Output" / "Europe" / "Upcoming" / "europe_upcoming.csv"
-    output_national = SP_DIR / "Output" / "National" / "Upcoming" / "national_upcoming.csv"
-    extra_sources = [
-        (output_global, "global"),
-        (output_europe, "global"),
-        (output_national, "global"),
-    ]
-
-    all_rows = []
-    seen_in_batch = set()
-
-    # Import enrichment from app.py
+    """Archive today's upcoming API rows into past_games.json after pipeline settle."""
+    website_dir = SP_DIR / "Website"
+    if str(website_dir) not in sys.path:
+        sys.path.insert(0, str(website_dir))
     try:
-        from importlib.util import spec_from_file_location, module_from_spec
-        app_path = str(SP_DIR / "Website" / "app.py")
-        spec = spec_from_file_location("webapp", app_path)
-        webapp = module_from_spec(spec)
-        spec.loader.exec_module(webapp)
-        load_upcoming = webapp._load_upcoming_rows
+        from predictions import archive_todays_games_to_past_games_file
+
+        archive_todays_games_to_past_games_file()
     except Exception as exc:
-        print(f"  [WARN] Could not import from app.py: {exc} — falling back to raw CSV dump")
-        load_upcoming = None
-
-    for csv_path, mode in csv_sources + extra_sources:
-        if not csv_path.exists():
-            continue
-        if load_upcoming is not None:
-            # Use enriched loader with date_range="completed" (last Thu → tomorrow)
-            try:
-                rows, _stats, _league_stats = load_upcoming(str(csv_path), mode, date_range="completed")
-            except Exception as exc:
-                print(f"  [WARN] _load_upcoming_rows failed for {csv_path}: {exc}")
-                rows = []
-            for r in rows:
-                # Only keep today's games — skip placeholders
-                if str(r.get("match_date", "")).strip() != today_str:
-                    continue
-                if _is_placeholder_game(r):
-                    continue
-                ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
-                if not ck or ck in seen_in_batch:
-                    continue
-                seen_in_batch.add(ck)
-                all_rows.append(r)
-        else:
-            # Fallback: raw CSV dump
-            try:
-                df = pd.read_csv(csv_path, dtype=str)
-            except Exception:
-                continue
-            if df.empty:
-                continue
-            for _, row in df.iterrows():
-                entry = row.dropna().to_dict()
-                if str(entry.get("match_date", "")).strip() != today_str:
-                    continue
-                if _is_placeholder_game(entry):
-                    continue
-                ck = "|".join(str(entry.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
-                if not ck or ck in seen_in_batch:
-                    continue
-                seen_in_batch.add(ck)
-                entry["source"] = f"pipeline_{mode}"
-                all_rows.append(entry)
-
-    if not all_rows:
-        print("  [past-games] No completed/past games found — nothing to archive.")
-        return
-
-    # Load existing past_games.json
-    if PAST_GAMES_FILE.exists():
-        try:
-            existing = json.loads(PAST_GAMES_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            existing = []
-    else:
-        existing = []
-
-    # Build key index of existing rows; upsert matching keys
-    existing_by_key: dict[str, dict] = {}
-    for r in existing:
-        ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
-        if ck:
-            existing_by_key[ck] = r
-
-    _RESULT_FIELDS = {"actual_result", "actual_home_goals", "actual_away_goals", "is_correct", "settled_at_utc"}
-
-    upserted = 0
-    for r in all_rows:
-        ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
-        if not ck:
-            continue
-        if ck in existing_by_key:
-            # Only update result fields — never overwrite pre-match predictions
-            for k in _RESULT_FIELDS:
-                if k in r:
-                    existing_by_key[ck][k] = r[k]
-            upserted += 1
-        else:
-            existing_by_key[ck] = r
-
-    merged = list(existing_by_key.values())
-
-    # Prune rows older than cutoff
-    before = len(merged)
-    merged = [r for r in merged if str(r.get("match_date", "")).strip() >= cutoff_str]
-    pruned = before - len(merged)
-
-    if upserted or pruned:
-        PAST_GAMES_FILE.parent.mkdir(parents=True, exist_ok=True)
-        PAST_GAMES_FILE.write_text(
-            json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-        print(f"  [past-games] Upserted {upserted} row(s), pruned {pruned} old "
-              f"→ past_games.json ({len(merged)} total)")
-    else:
-        print("  [past-games] No changes to past_games.json")
+        print(f"  [past-games] Archive failed: {exc}")
+        import traceback
+        traceback.print_exc()
 
 
 _REAL_STANDINGS_FILE = SP_DIR / "Data" / "standings_cache.json"

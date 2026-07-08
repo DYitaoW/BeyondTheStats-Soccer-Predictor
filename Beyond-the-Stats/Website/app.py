@@ -1095,9 +1095,9 @@ def api_past_games():
 
     Response structure matches ``/api/upcoming/global`` per-row format.
 
-    Data is sourced from ``past_games.json`` (the persistent archive),
-    ``live_score_history.json`` / in-memory live scores (includes today's
-    completed games), and prediction CSV rows with settled results.
+    Data is sourced from ``past_games.json`` (updated each pipeline run with
+    today's rows copied from the upcoming API shape), ``live_score_history.json``
+    / in-memory live scores, and settled prediction CSV rows.
     Rows older than the previous full week are excluded.
 
     For full live-score details (lineups, stats, key events, game info),

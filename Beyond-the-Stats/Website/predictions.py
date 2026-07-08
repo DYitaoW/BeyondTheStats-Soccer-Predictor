@@ -1938,6 +1938,135 @@ def _merge_prediction_onto_past_row(row: dict, lookup: dict[str, dict]) -> dict:
     return merged
 
 
+def _past_game_storage_key(row: dict) -> str:
+    """Stable dedupe key for past_games.json rows."""
+    date_iso = _past_row_date_iso(row)
+    if not date_iso:
+        return ""
+    return "|".join(
+        [
+            date_iso,
+            str(row.get("competition", "")).strip().lower(),
+            str(row.get("home_team", "")).strip().lower(),
+            str(row.get("away_team", "")).strip().lower(),
+        ]
+    )
+
+
+def _json_safe_row(row: dict) -> dict:
+    """Make an upcoming API row JSON-serializable for past_games.json."""
+    import math
+
+    safe: dict = {}
+    for key, value in row.items():
+        if value is None:
+            safe[key] = None
+        elif isinstance(value, float) and math.isnan(value):
+            safe[key] = None
+        elif isinstance(value, (datetime, pd.Timestamp)):
+            safe[key] = value.isoformat()
+        else:
+            safe[key] = value
+    return safe
+
+
+def archive_todays_games_to_past_games_file() -> int:
+    """Copy today's enriched upcoming rows into past_games.json.
+
+    Uses the same enriched row shape as ``/api/upcoming/*`` so
+    ``/api/past-games`` can serve identical payloads for the current date.
+    Intended to run at the end of the daily pipeline after predictions
+    are refreshed and results are settled.
+    """
+    today_str = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    cutoff_str = _week_based_cutoff()
+
+    csv_sources = [
+        ("global", config.GLOBAL_UPCOMING_FILE),
+        ("mls", config.MLS_UPCOMING_FILE),
+        ("extra", config.EXTRA_UPCOMING_FILE),
+        ("cups", config.CUP_UPCOMING_FILE),
+        ("national", config.NATIONAL_UPCOMING_FILE),
+    ]
+    extra_sources = [
+        ("global", os.path.join(config.PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv")),
+        ("global", os.path.join(config.PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv")),
+        ("global", os.path.join(config.PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv")),
+    ]
+
+    all_rows: list[dict] = []
+    seen: set[str] = set()
+    for source, csv_path in csv_sources + extra_sources:
+        if not csv_path or not os.path.exists(csv_path):
+            continue
+        try:
+            rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="completed")
+        except Exception:
+            continue
+        for row in rows:
+            date_iso = _past_row_date_iso(row)
+            if date_iso != today_str:
+                continue
+            if _is_placeholder_game(row):
+                continue
+            ck = _past_game_storage_key(row)
+            if not ck or ck in seen:
+                continue
+            seen.add(ck)
+            stored = _json_safe_row(dict(row))
+            stored["match_date_iso"] = date_iso
+            all_rows.append(stored)
+
+    if not all_rows:
+        print("[past-games] No rows for today to archive.")
+        return 0
+
+    existing_by_key: dict[str, dict] = {}
+    if os.path.exists(config.PAST_GAMES_FILE):
+        try:
+            with open(config.PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
+                existing = json.load(fh)
+        except Exception:
+            existing = []
+    else:
+        existing = []
+
+    if isinstance(existing, list):
+        for row in existing:
+            if isinstance(row, dict):
+                ck = _past_game_storage_key(row)
+                if ck:
+                    existing_by_key[ck] = row
+
+    inserted = 0
+    replaced = 0
+    for row in all_rows:
+        ck = _past_game_storage_key(row)
+        if not ck:
+            continue
+        if ck in existing_by_key:
+            existing_by_key[ck] = row
+            replaced += 1
+        else:
+            existing_by_key[ck] = row
+            inserted += 1
+
+    before = len(existing_by_key)
+    merged = [r for r in existing_by_key.values() if _past_row_date_iso(r) >= cutoff_str]
+    pruned = before - len(merged)
+
+    os.makedirs(os.path.dirname(config.PAST_GAMES_FILE), exist_ok=True)
+    with open(config.PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
+        json.dump(merged, fh, indent=2, ensure_ascii=False, default=str)
+
+    print(
+        f"[past-games] Archived {len(all_rows)} today row(s) "
+        f"({inserted} new, {replaced} replaced), pruned {pruned} old "
+        f"→ past_games.json ({len(merged)} total)"
+    )
+    return len(all_rows)
+
+
 def _is_placeholder_game(r):
     """Return True if a game dict is a placeholder (not a real match)."""
     for key in ("home_team", "away_team"):
