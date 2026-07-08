@@ -30,13 +30,9 @@ EASTERN_TZ = ZoneInfo("America/New_York")
 
 # Extra-league competitions with ESPN scoreboard coverage for full-season fixtures.
 EXTRA_ESPN_COMPETITIONS = {
-    "Mexico/Liga MX": "mex.1",
     "Argentina/Primera Division": "arg.1",
     "Brazil/Serie A": "bra.1",
     "Japan/J1 League": "jpn.1",
-    "Austria/Bundesliga": "aut.1",
-    "Romania/Liga I": "rou.1",
-    "Poland/Ekstraklasa": "pol.1",
 }
 
 # Allow import of global pipeline modules (UEFA_Data_Manager, etc.)

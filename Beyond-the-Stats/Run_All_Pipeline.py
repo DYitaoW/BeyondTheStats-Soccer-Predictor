@@ -642,6 +642,7 @@ def _write_pipeline_status(results: dict) -> None:
         now = datetime.now(UTC).replace(microsecond=0)
         passed = sum(1 for v in results.values() if v)
         failed = sum(1 for v in results.values() if not v)
+        failed_steps = sorted(k for k, v in results.items() if not v)
         PIPELINE_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
         PIPELINE_STATUS_FILE.write_text(
             json.dumps({
@@ -649,6 +650,8 @@ def _write_pipeline_status(results: dict) -> None:
                 "total_steps": len(results),
                 "passed": passed,
                 "failed": failed,
+                "ok": failed == 0,
+                "failed_steps": failed_steps,
                 "steps": {k: bool(v) for k, v in sorted(results.items())},
             }, indent=2),
             encoding="utf-8",

@@ -38,6 +38,14 @@ def fetch_source_dataframe():
 
 
 def normalize_season(value):
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return None
+    if "/" in text:
+        try:
+            return int(text.split("/")[0])
+        except Exception:
+            return None
     try:
         return int(float(value))
     except Exception:

@@ -42,13 +42,9 @@ SIMULATION_RUNS = 2500
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 EXTRA_ESPN_COMPETITIONS = {
-    "Mexico/Liga MX": "mex.1",
     "Argentina/Primera Division": "arg.1",
     "Brazil/Serie A": "bra.1",
     "Japan/J1 League": "jpn.1",
-    "Austria/Bundesliga": "aut.1",
-    "Romania/Liga I": "rou.1",
-    "Poland/Ekstraklasa": "pol.1",
 }
 
 

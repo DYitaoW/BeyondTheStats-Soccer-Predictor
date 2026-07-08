@@ -36,15 +36,11 @@ RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 #   url_template receives {season_code} (e.g. "2526") and {league_code}
 
 SOURCES = [
-    # ---- Original "new" format sources (keep) ----
+    # Americas / Asia only — Liga MX moved to MLS pipeline; Austria/Romania/Poland
+    # moved to the global European pipeline (see files/Download_Latest_Data.py).
     {"country": "Argentina",      "league": "Primera Division",    "type": "new",  "url": "https://www.football-data.co.uk/new/ARG.csv",  "file_prefix": "argstat"},
     {"country": "Brazil",         "league": "Serie A",             "type": "new",  "url": "https://www.football-data.co.uk/new/BRA.csv",  "file_prefix": "brastat"},
     {"country": "Japan",          "league": "J1 League",           "type": "new",  "url": "https://www.football-data.co.uk/new/JPN.csv",  "file_prefix": "jpnstat"},
-    {"country": "Mexico",         "league": "Liga MX",             "type": "new",  "url": "https://www.football-data.co.uk/new/MEX.csv",  "file_prefix": "mexstat"},
-    # ---- Additional "new" format sources ----
-    {"country": "Austria",        "league": "Bundesliga",          "type": "new",  "url": "https://www.football-data.co.uk/new/AUT.csv",  "file_prefix": "autstat"},
-    {"country": "Romania",        "league": "Liga I",              "type": "new",  "url": "https://www.football-data.co.uk/new/ROU.csv",  "file_prefix": "roustat"},
-    {"country": "Poland",         "league": "Ekstraklasa",         "type": "new",  "url": "https://www.football-data.co.uk/new/POL.csv",  "file_prefix": "polstat"},
 ]
 
 # ---------------------------------------------------------------------------
@@ -99,6 +95,14 @@ def fetch_source_dataframe(url):
 
 
 def normalize_season(value):
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return None
+    if "/" in text:
+        try:
+            return int(text.split("/")[0])
+        except Exception:
+            return None
     try:
         return int(float(value))
     except Exception:

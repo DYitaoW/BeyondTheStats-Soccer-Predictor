@@ -44,12 +44,13 @@ DEFAULT_LEAGUE_STRENGTH = {
     "Greece/Super League": 0.65,
     "Sweden/Allsvenskan": 0.63,
     "Norway/Eliteserien": 0.62,
+    "Austria/Bundesliga": 0.68,
+    "Romania/Liga I": 0.55,
+    "Poland/Ekstraklasa": 0.58,
 }
 
-# Smaller/lower-data leagues handled by the separate Extra-leagues
-# sub-pipeline (see Extra-leagues/files/Sort_Data.py) get their own
-# DEFAULT_LEAGUE_STRENGTH dict; the European ones there (Austria, Romania,
-# Poland) are also approximate UEFA-coefficient-informed values.
+# South American / Asian leagues handled by the Extra-leagues sub-pipeline
+# (see Extra-leagues/files/Sort_Data.py) keep their own strength dict there.
 H2H_RECENT_YEARS = 3
 USE_GPU_DF = os.getenv("SOCCER_USE_GPU_DF", "1").strip().lower() not in {"0", "false", "no"}
 

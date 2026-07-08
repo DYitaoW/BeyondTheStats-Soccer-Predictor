@@ -423,10 +423,8 @@ def api_help():
         ("/api/predict", "POST", "Run global predictions (triggers pipeline)"),
         ("/api/predict/mls", "POST", "Run MLS-only predictions"),
         ("/api/predict/extra", "POST", "Run extra-league predictions"),
-        ("/api/refresh", "POST", "Trigger data refresh from live sources"),
-        ("/api/last-refresh", "GET", "Timestamp of last manual refresh"),
-        ("/api/last-data-refresh", "GET", "Timestamp of last data refresh"),
-        ("/api/pipeline/status", "GET", "Current pipeline status"),
+        ("/api/pipeline/status", "GET", "Pipeline health: step pass/fail + last refresh"),
+        ("/api/refresh", "POST", "Trigger background pipeline refresh"),
         ("/api/notifications", "GET", "List notification subscriptions"),
         ("/api/notifications", "POST", "Send a test notification"),
         ("/api/notifications/register", "POST", "Register push notification token"),
@@ -491,8 +489,10 @@ def api_help_all():
         "cups": cups_list,
         "mls": {
             "competition": "United States/MLS",
+            "liga_mx": "Mexico/Liga MX",
             "projected": {
                 "league_tables": "/api/league-tables?mode=mls",
+                "liga_mx_data": "/api/league-data/Mexico/Liga%20MX",
                 "league_data_shield": "/api/league-data/United%20States/MLS%20-%20Supporters%20Shield%20Table",
                 "league_data_east": "/api/league-data/United%20States/MLS%20-%20Eastern%20Conference",
                 "league_data_west": "/api/league-data/United%20States/MLS%20-%20Western%20Conference",
@@ -505,6 +505,7 @@ def api_help_all():
                 "real_table_shield": "/api/real-tables?competition=United+States/MLS+-+Supporters+Shield+Table",
             },
             "league_data": "/api/league-data/United%20States/MLS",
+            "liga_mx_league_data": "/api/league-data/Mexico/Liga%20MX",
             "upcoming": "/api/upcoming/mls",
         },
     })
@@ -682,6 +683,65 @@ def api_last_refresh():
     return jsonify({"ok": True, "last_refresh_utc": refreshed_at})
 
 
+@app.get("/api/pipeline/status")
+def api_pipeline_status():
+    """Return pipeline health: last run, per-step pass/fail, and backend metadata.
+
+    Use this endpoint (or the mobile feed's ``step_results``) to see which
+    sub-pipeline steps failed without SSH-ing into the host logs.
+    """
+    pipeline = _load_json_payload(config.PIPELINE_STATUS_FILE) or {}
+    backend = _load_json_payload(config.BACKEND_RUN_STATUS_FILE) or {}
+    mobile_feed = _load_json_payload(config.MOBILE_FEED_FILE) or {}
+
+    sub_pipelines = {"global": [], "mls": [], "extra": [], "post": [], "other": []}
+    for step_name, passed in (pipeline.get("steps") or {}).items():
+        key = "other"
+        if step_name.startswith("global") or step_name in {
+            "build_real_standings", "upcoming_world_cup_predictions", "projected_world_cup",
+        }:
+            key = "global"
+        elif step_name.startswith("mls"):
+            key = "mls"
+        elif step_name.startswith("extra"):
+            key = "extra"
+        elif step_name.startswith("settle") or step_name.startswith("update") or step_name.startswith("track") or step_name.startswith("sync"):
+            key = "post"
+        sub_pipelines[key].append({"step": step_name, "ok": bool(passed)})
+
+    refreshed = get_last_pipeline_run()
+    return jsonify({
+        "ok": True,
+        "last_refresh_utc": refreshed.isoformat() if refreshed else None,
+        "pipeline": pipeline,
+        "backend": backend,
+        "mobile_feed_status": mobile_feed.get("pipeline_status"),
+        "mobile_feed_generated_at": mobile_feed.get("generated_at_utc"),
+        "sub_pipelines": sub_pipelines,
+        "failed_steps": pipeline.get("failed_steps") or [
+            k for k, v in (pipeline.get("steps") or {}).items() if not v
+        ],
+    })
+
+
+@app.post("/api/refresh")
+def api_refresh():
+    """Trigger a background pipeline refresh (non-blocking when BackendServer is running)."""
+    if not _refresh_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    refresh_fn = app.config.get("_backend_refresh")
+    if callable(refresh_fn):
+        refresh_fn(trigger="api")
+        return jsonify({"ok": True, "queued": True, "mode": "backend"})
+
+    started = _run_full_pipeline_once()
+    return jsonify({
+        "ok": bool(started),
+        "queued": False,
+        "mode": "inline",
+        "message": "Pipeline finished inline (no BackendServer hook registered).",
+    })
 
 
 @app.get("/api/mobile/feed")

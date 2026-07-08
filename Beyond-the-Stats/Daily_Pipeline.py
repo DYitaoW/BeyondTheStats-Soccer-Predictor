@@ -364,6 +364,8 @@ def build_mobile_app_feed(pipeline_status, step_results, output_path):
         "mls_upcoming_fixtures": MLS_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
         "mls_projected_league_tables": MLS_PREDICTIONS_DIR / "projected_league_tables.csv",
         "mls_projected_bracket": MLS_PREDICTIONS_DIR / "projected_mls_playoff_bracket.json",
+        "extra_upcoming_fixtures": EXTRA_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
+        "extra_projected_league_tables": EXTRA_PREDICTIONS_DIR / "projected_league_tables.csv",
     }
 
     feed = {
@@ -374,11 +376,13 @@ def build_mobile_app_feed(pipeline_status, step_results, output_path):
         "sources": {name: str(path) for name, path in sources.items()},
         "data": {
             "upcoming_fixtures": _condense_fixtures(sources["upcoming_fixtures_global"])
-            + _condense_fixtures(sources["mls_upcoming_fixtures"]),
+            + _condense_fixtures(sources["mls_upcoming_fixtures"])
+            + _condense_fixtures(sources["extra_upcoming_fixtures"]),
             "upcoming_cup_fixtures": _condense_fixtures(sources["upcoming_fixtures_cups"]),
             "upcoming_national_fixtures": _condense_fixtures(sources["upcoming_fixtures_national"]),
             "projected_league_tables": _condense_tables(sources["projected_league_tables_global"])
-            + _condense_tables(sources["mls_projected_league_tables"]),
+            + _condense_tables(sources["mls_projected_league_tables"])
+            + _condense_tables(sources["extra_projected_league_tables"]),
             "projected_cup_tables": _condense_tables(sources["projected_cup_tables"]),
             "projected_cup_brackets": _merge_projected_brackets(
                 sources["projected_cup_brackets"],
@@ -754,6 +758,7 @@ def _write_pipeline_status(results: dict) -> None:
         now = datetime.now(UTC).replace(microsecond=0)
         passed = sum(1 for v in results.values() if v)
         failed = sum(1 for v in results.values() if not v)
+        failed_steps = sorted(k for k, v in results.items() if not v)
         pfile = SP_DIR / "Data" / "pipeline_status.json"
         pfile.parent.mkdir(parents=True, exist_ok=True)
         pfile.write_text(
@@ -762,6 +767,8 @@ def _write_pipeline_status(results: dict) -> None:
                 "total_steps": len(results),
                 "passed": passed,
                 "failed": failed,
+                "ok": failed == 0,
+                "failed_steps": failed_steps,
                 "steps": {k: bool(v) for k, v in sorted(results.items())},
             }, indent=2),
             encoding="utf-8",

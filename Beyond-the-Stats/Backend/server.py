@@ -20,6 +20,7 @@ through the constructor so the server can be unit-tested.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -315,6 +316,7 @@ class BackendServer:
                 text=True,
                 env=subprocess_env,
             )
+            proc._bts_trigger = trigger  # type: ignore[attr-defined]
             self._pipeline_proc = proc
             started = True
             self._tee_pipeline_output()
@@ -387,6 +389,20 @@ class BackendServer:
             self._last_run.isoformat(),
             self._last_status,
         )
+        try:
+            status_path = SP_DIR / "Data" / "backend_run_status.json"
+            status_path.parent.mkdir(parents=True, exist_ok=True)
+            status_path.write_text(
+                json.dumps({
+                    "finished_utc": self._last_run.replace(microsecond=0).isoformat(),
+                    "return_code": rc,
+                    "ok": rc == 0,
+                    "trigger": getattr(proc, "_bts_trigger", "unknown"),
+                }, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            LOG.exception("[pipeline] could not write backend_run_status.json")
         # Propagate the finish time to the Flask app so /api/stats returns it.
         try:
             import app as website_app

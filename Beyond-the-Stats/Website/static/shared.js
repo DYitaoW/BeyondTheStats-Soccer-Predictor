@@ -103,6 +103,9 @@ const EUROPEAN_LEAGUES = [
     "Portugal/Liga Portugal",
     "Scotland/Premiership",
     "Turkey/Super Lig",
+    "Austria/Bundesliga",
+    "Romania/Liga I",
+    "Poland/Ekstraklasa",
 ];
 const EUROPEAN_CUPS = [
     "UEFA/Champions League",
@@ -117,15 +120,12 @@ const MLS_LEAGUES = [
     "United States/MLS - Supporters Shield Table",
     "United States/MLS - Eastern Conference",
     "United States/MLS - Western Conference",
+    "Mexico/Liga MX",
 ];
 const OTHER_LEAGUES = [
-    "Mexico/Liga MX",
     "Argentina/Primera Division",
     "Brazil/Serie A",
     "Japan/J1 League",
-    "Austria/Bundesliga",
-    "Romania/Liga I",
-    "Poland/Ekstraklasa",
 ];
 const WORLD_CUP_OPTIONS = ["FIFA/World Cup"];
 
