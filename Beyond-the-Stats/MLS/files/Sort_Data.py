@@ -18,6 +18,7 @@ SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})\.csv$", re.IGNORECASE)
 MIN_START_YEAR = 2002
 DEFAULT_LEAGUE_STRENGTH = {
     "United States/MLS": 0.84,
+    "Mexico/Liga MX": 0.62,
 }
 H2H_RECENT_YEARS = 2
 USE_GPU_DF = os.getenv("SOCCER_USE_GPU_DF", "1").strip().lower() not in {"0", "false", "no"}

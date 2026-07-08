@@ -40,7 +40,9 @@ OUT_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
 OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
 OUT_BRACKET = os.path.join(OUT_DIR, "projected_mls_playoff_bracket.json")
-ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard"
+ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
+LIGA_MX_COMPETITION = "Mexico/Liga MX"
+LIGA_MX_ESPN_ID = "mex.1"
 RNG = random.Random()
 SIMULATION_RUNS = 2500
 
@@ -231,7 +233,7 @@ def load_full_schedule_from_espn_season(target_year):
 
     day = start
     while day <= end:
-        url = f"{ESPN_SCOREBOARD_API}?dates={day.strftime('%Y%m%d')}"
+        url = ESPN_SCOREBOARD_API.format(espn_id="usa.1") + f"?dates={day.strftime('%Y%m%d')}"
         try:
             data = fetch_json(url, timeout=20)
         except Exception:
@@ -508,11 +510,12 @@ def coerce_scoreline(pred_result, base_hg, base_ag):
     return hg, ag
 
 
-def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, conference_lookup, runs):
+def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, conference_lookup, runs, ctx=None):
     stat_sums = {team: defaultdict(float) for team in canonical_teams}
     league_pos_counts = {team: defaultdict(int) for team in canonical_teams}
     east_pos_counts = {team: defaultdict(int) for team in canonical_teams}
     west_pos_counts = {team: defaultdict(int) for team in canonical_teams}
+    cup_win_counts = {team: 0 for team in canonical_teams}
 
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
@@ -534,7 +537,27 @@ def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, confere
         for pos, (team, _) in enumerate(west_ranked, start=1):
             west_pos_counts[team][pos] += 1
 
-    return stat_sums, league_pos_counts, east_pos_counts, west_pos_counts
+        if ctx is not None and len(east_ranked) >= 9 and len(west_ranked) >= 9:
+            bracket = simulate_mls_playoff_bracket(ctx, east_ranked, west_ranked)
+            cup_winner = (bracket.get("mls_cup") or {}).get("winner")
+            if cup_winner in cup_win_counts:
+                cup_win_counts[cup_winner] += 1
+
+    return stat_sums, league_pos_counts, east_pos_counts, west_pos_counts, cup_win_counts
+
+
+def build_cup_probability_columns(cup_win_counts, team, total_runs):
+    wins = int(cup_win_counts.get(team, 0))
+    pct = round((wins / max(1, int(total_runs))) * 100.0, 2)
+    return {
+        "win_league_pct": pct,
+        "top4_pct": 0.0,
+        "bottom3_pct": 0.0,
+        "most_likely_position": 1 if wins > 0 else 0,
+        "most_likely_position_pct": pct,
+        "position_odds_json": json.dumps({"1": pct}, separators=(",", ":"), sort_keys=True),
+        "sim_runs": int(total_runs),
+    }
 
 
 def build_probability_columns(position_counts, team, total_teams):
@@ -685,6 +708,12 @@ def predict_best_of_three(ctx, high_seed_team, low_seed_team, competition_hint):
 
 
 def build_mls_playoff_bracket_prediction(ctx, east_ranked, west_ranked):
+    bracket = simulate_mls_playoff_bracket(ctx, east_ranked, west_ranked)
+    bracket["generated_at_utc"] = datetime.utcnow().isoformat() + "Z"
+    return bracket
+
+
+def simulate_mls_playoff_bracket(ctx, east_ranked, west_ranked):
     def seed_at(items, seed_num):
         for pos, (team, _) in enumerate(items, start=1):
             if pos == seed_num:
@@ -732,7 +761,6 @@ def build_mls_playoff_bracket_prediction(ctx, east_ranked, west_ranked):
     cup_winner = predict_single_winner_no_draw(ctx, cup_home, cup_away, "United States/MLS", cup_home)
 
     return {
-        "generated_at_utc": datetime.utcnow().isoformat() + "Z",
         "eastern_seeds": [{"seed": i + 1, "team": team} for i, team in enumerate([e1, e2, e3, e4, e5, e6, e7, e8, e9])],
         "western_seeds": [{"seed": i + 1, "team": team} for i, team in enumerate([w1, w2, w3, w4, w5, w6, w7, w8, w9])],
         "wildcard": {
@@ -759,6 +787,247 @@ def build_mls_playoff_bracket_prediction(ctx, east_ranked, west_ranked):
         },
         "mls_cup": {"home_team": cup_home, "away_team": cup_away, "winner": cup_winner},
     }
+
+
+def normalize_raw_df(df):
+    frame = df.copy()
+    if {"HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}.issubset(frame.columns):
+        return frame
+    if {"Home", "Away", "HG", "AG", "Res"}.issubset(frame.columns):
+        out = frame.copy()
+        out["HomeTeam"] = out["Home"].astype(str).str.strip()
+        out["AwayTeam"] = out["Away"].astype(str).str.strip()
+        out["FTHG"] = pd.to_numeric(out["HG"], errors="coerce")
+        out["FTAG"] = pd.to_numeric(out["AG"], errors="coerce")
+        out["FTR"] = out["Res"].astype(str).str.strip().str.upper()
+        if "Date" in out.columns:
+            out["Date"] = out["Date"]
+        return out
+    return frame
+
+
+def load_future_fixtures_from_espn(competition, espn_id=LIGA_MX_ESPN_ID, year=None):
+    from datetime import UTC
+
+    target_year = int(year or datetime.now().year)
+    start = pd.Timestamp(f"{target_year}-01-01")
+    end = pd.Timestamp(f"{target_year}-12-31")
+    today = pd.Timestamp(datetime.now(UTC).date())
+    rows = []
+    seen = set()
+    day = start
+    while day <= end:
+        url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
+        try:
+            data = fetch_json(url, timeout=20)
+        except Exception:
+            day += pd.Timedelta(days=1)
+            continue
+
+        for event in data.get("events", []) or []:
+            event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
+            if pd.isna(event_date):
+                continue
+            match_date = event_date.tz_convert("UTC").tz_localize(None).normalize()
+            if match_date.year != target_year or match_date < today:
+                continue
+
+            competitions = event.get("competitions", [])
+            if not competitions:
+                continue
+            comp0 = competitions[0] or {}
+            status_state = (
+                ((comp0.get("status") or {}).get("type") or {}).get("state", "")
+            ).strip().lower()
+            if status_state and status_state not in {"pre"}:
+                continue
+
+            home_team = ""
+            away_team = ""
+            for competitor in comp0.get("competitors", []) or []:
+                team_name = ((competitor.get("team") or {}).get("displayName") or "").strip()
+                side = str(competitor.get("homeAway", "")).strip().lower()
+                if side == "home":
+                    home_team = team_name
+                elif side == "away":
+                    away_team = team_name
+            if not home_team or not away_team:
+                continue
+
+            key = (match_date.date().isoformat(), home_team, away_team)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(
+                {
+                    "Date": match_date.date().isoformat(),
+                    "HomeTeam": home_team,
+                    "AwayTeam": away_team,
+                    "FTHG": None,
+                    "FTAG": None,
+                    "FTR": "",
+                }
+            )
+        day += pd.Timedelta(days=1)
+    return pd.DataFrame(rows)
+
+
+def run_monte_carlo_standard(teams, base_table, future_predictions, runs):
+    stat_sums = {team: defaultdict(float) for team in teams}
+    position_counts = {team: defaultdict(int) for team in teams}
+
+    for _ in range(max(1, int(runs))):
+        sim_table = clone_table(base_table)
+        for fixture in future_predictions:
+            result = sample_outcome(fixture["probs"])
+            hg, ag = coerce_scoreline(result, fixture["pred_home_goals"], fixture["pred_away_goals"])
+            apply_result(sim_table, fixture["home_team"], fixture["away_team"], hg, ag, is_real=False)
+
+        ranked = rank_table(sim_table)
+        for pos, (team, stats) in enumerate(ranked, start=1):
+            position_counts[team][pos] += 1
+            for key, value in stats.items():
+                stat_sums[team][key] += float(value)
+
+    return stat_sums, position_counts
+
+
+def project_liga_mx_competition(ctx, competition, raw_file):
+    df = normalize_raw_df(pd.read_csv(raw_file))
+    required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
+    if not required.issubset(df.columns):
+        return [], [], None
+
+    espn_future = load_future_fixtures_from_espn(competition)
+    if not espn_future.empty:
+        espn_future = espn_future.copy()
+        espn_future["DateParsed"] = pd.to_datetime(espn_future["Date"], errors="coerce")
+        df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
+        played_keys = set()
+        for _, row in df.iterrows():
+            home = str(row.get("HomeTeam", "")).strip()
+            away = str(row.get("AwayTeam", "")).strip()
+            ftr = str(row.get("FTR", "")).strip().upper()
+            hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
+            ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
+            if home and away and ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag):
+                played_keys.add(tuple(sorted([home, away])))
+        supplemental = []
+        for _, row in espn_future.iterrows():
+            home = str(row.get("HomeTeam", "")).strip()
+            away = str(row.get("AwayTeam", "")).strip()
+            if not home or not away:
+                continue
+            if tuple(sorted([home, away])) in played_keys:
+                continue
+            supplemental.append(row)
+        if supplemental:
+            df = pd.concat([df, pd.DataFrame(supplemental)], ignore_index=True, sort=False)
+
+    df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
+    df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]
+    df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
+
+    teams = sorted(set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip()))
+    table = init_table(teams)
+    future_rows = []
+    future_predictions = []
+    seen_pairs = set()
+
+    for _, row in df.iterrows():
+        home = str(row.get("HomeTeam", "")).strip()
+        away = str(row.get("AwayTeam", "")).strip()
+        if not home or not away:
+            continue
+        ftr = str(row.get("FTR", "")).strip().upper()
+        hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
+        ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
+        match_date = row.get("DateParsed")
+        match_date_str = match_date.strftime("%Y-%m-%d") if pd.notna(match_date) else ""
+
+        if ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag):
+            apply_result(table, home, away, int(hg), int(ag), is_real=True)
+            continue
+
+        pair_key = tuple(sorted([home, away]))
+        if pair_key in seen_pairs:
+            continue
+        seen_pairs.add(pair_key)
+        pred_res, phg, pag, probs = predict_match(ctx, home, away, competition)
+        future_predictions.append(
+            {
+                "home_team": home,
+                "away_team": away,
+                "pred_home_goals": phg,
+                "pred_away_goals": pag,
+                "probs": probs,
+            }
+        )
+        future_rows.append(
+            {
+                "competition": competition,
+                "match_date": match_date_str,
+                "home_team": home,
+                "away_team": away,
+                "predicted_result": pred_res,
+                "pred_home_goals": phg,
+                "pred_away_goals": pag,
+                "prob_home": round(probs["H"], 6),
+                "prob_draw": round(probs["D"], 6),
+                "prob_away": round(probs["A"], 6),
+            }
+        )
+
+    stat_sums, position_counts = run_monte_carlo_standard(
+        teams, table, future_predictions, SIMULATION_RUNS
+    )
+    out_rows = []
+    n_teams = len(teams)
+    top_n = min(4, n_teams)
+    bottom_cutoff = max(1, n_teams - 2)
+    for pos, team in enumerate(
+        sorted(teams, key=lambda t: (-stat_sums[t]["Pts"], -stat_sums[t]["GD"], -stat_sums[t]["GF"], t)),
+        start=1,
+    ):
+        sums = stat_sums[team]
+        team_positions = position_counts.get(team, {})
+        most_likely_pos, most_likely_count = max(
+            team_positions.items(), key=lambda kv: kv[1], default=(pos, 0)
+        )
+        win_league_pct = (team_positions.get(1, 0) / SIMULATION_RUNS) * 100.0
+        top4_pct = (sum(v for k, v in team_positions.items() if k <= top_n) / SIMULATION_RUNS) * 100.0
+        bottom3_pct = (
+            sum(v for k, v in team_positions.items() if k >= bottom_cutoff) / SIMULATION_RUNS
+        ) * 100.0
+        position_odds = {
+            str(rank): round((team_positions.get(rank, 0) / SIMULATION_RUNS) * 100.0, 2)
+            for rank in range(1, n_teams + 1)
+        }
+        out_rows.append(
+            {
+                "competition": competition,
+                "position": pos,
+                "team": team,
+                "P": int(round(sums.get("P", 0.0) / SIMULATION_RUNS)),
+                "W": int(round(sums.get("W", 0.0) / SIMULATION_RUNS)),
+                "D": int(round(sums.get("D", 0.0) / SIMULATION_RUNS)),
+                "L": int(round(sums.get("L", 0.0) / SIMULATION_RUNS)),
+                "GF": int(round(sums.get("GF", 0.0) / SIMULATION_RUNS)),
+                "GA": int(round(sums.get("GA", 0.0) / SIMULATION_RUNS)),
+                "GD": int(round(sums.get("GD", 0.0) / SIMULATION_RUNS)),
+                "Pts": int(round(sums.get("Pts", 0.0) / SIMULATION_RUNS)),
+                "PlayedReal": int(round(sums.get("PlayedReal", 0.0) / SIMULATION_RUNS)),
+                "PlayedPred": int(round(sums.get("PlayedPred", 0.0) / SIMULATION_RUNS)),
+                "win_league_pct": round(win_league_pct, 2),
+                "top4_pct": round(top4_pct, 2),
+                "bottom3_pct": round(bottom3_pct, 2),
+                "most_likely_position": int(most_likely_pos),
+                "most_likely_position_pct": round((most_likely_count / SIMULATION_RUNS) * 100.0, 2),
+                "position_odds_json": json.dumps(position_odds, separators=(",", ":"), sort_keys=True),
+                "sim_runs": int(SIMULATION_RUNS),
+            }
+        )
+    return out_rows, future_rows, None
 
 
 def project_competition(ctx, competition, raw_file):
@@ -879,8 +1148,8 @@ def project_competition(ctx, competition, raw_file):
             add_predicted_fixture(home, away, "")
 
     conference_lookup = build_conference_lookup()
-    stat_sums, league_pos_counts, east_pos_counts, west_pos_counts = run_monte_carlo_mls(
-        canonical_teams, table, future_predictions, conference_lookup, SIMULATION_RUNS
+    stat_sums, league_pos_counts, east_pos_counts, west_pos_counts, cup_win_counts = run_monte_carlo_mls(
+        canonical_teams, table, future_predictions, conference_lookup, SIMULATION_RUNS, ctx=ctx
     )
     averaged = {}
     for team in canonical_teams:
@@ -924,9 +1193,41 @@ def project_competition(ctx, competition, raw_file):
     if west_ranked:
         out_rows.extend(emit_rows("United States/MLS - Western Conference", west_ranked, west_pos_counts))
 
+    cup_ranked = sorted(
+        [(team, averaged[team]) for team in canonical_teams],
+        key=lambda kv: (
+            -cup_win_counts.get(kv[0], 0),
+            -kv[1]["Pts"],
+            -kv[1]["GD"],
+            -kv[1]["GF"],
+            kv[0],
+        ),
+    )
+    cup_pos_counts = {team: {1: cup_win_counts.get(team, 0)} for team in canonical_teams}
+    cup_rows = []
+    for pos, (team, stats) in enumerate(cup_ranked, start=1):
+        cup_rows.append(
+            {
+                "competition": "United States/MLS - MLS Cup",
+                "position": pos,
+                "team": team,
+                **stats,
+                **build_cup_probability_columns(cup_win_counts, team, SIMULATION_RUNS),
+            }
+        )
+    out_rows.extend(cup_rows)
+
     bracket_payload = None
     if len(east_ranked) >= 9 and len(west_ranked) >= 9:
         bracket_payload = build_mls_playoff_bracket_prediction(ctx, east_ranked, west_ranked)
+        cup_probs = {
+            team: round((count / SIMULATION_RUNS) * 100.0, 2)
+            for team, count in cup_win_counts.items()
+            if count > 0
+        }
+        if cup_probs:
+            bracket_payload["mls_cup_winner_probabilities"] = cup_probs
+            bracket_payload["simulations_run"] = int(SIMULATION_RUNS)
 
     return out_rows, future_rows, bracket_payload
 
@@ -941,7 +1242,10 @@ def main():
     all_future = []
     playoff_bracket = None
     for competition, path in sorted(latest.items()):
-        table_rows, future_rows, bracket_payload = project_competition(ctx, competition, path)
+        if competition == LIGA_MX_COMPETITION:
+            table_rows, future_rows, bracket_payload = project_liga_mx_competition(ctx, competition, path)
+        else:
+            table_rows, future_rows, bracket_payload = project_competition(ctx, competition, path)
         all_tables.extend(table_rows)
         all_future.extend(future_rows)
         if bracket_payload:

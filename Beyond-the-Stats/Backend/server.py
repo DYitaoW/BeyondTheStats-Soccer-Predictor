@@ -20,6 +20,7 @@ through the constructor so the server can be unit-tested.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -50,6 +51,10 @@ SP_DIR = PROJECT_ROOT / "Beyond-the-Stats"
 WEBSITE_DIR = SP_DIR / "Website"
 OUTPUT_DIR = SP_DIR / "Output"
 
+if str(SP_DIR) not in sys.path:
+    sys.path.insert(0, str(SP_DIR))
+import pipeline_log  # noqa: E402
+
 
 @dataclass
 class BackendConfig:
@@ -71,7 +76,7 @@ class BackendConfig:
     weekly_model_refresh_minute: int = DEFAULT_REFRESH_MINUTE
     pipeline_workers: int = 3  # 3 = run global/MLS/extra sub-pipelines in parallel
     pipeline_competition_workers: int = 0  # 0 = auto
-    pipeline_window_days: int = 3
+    pipeline_window_days: int = 365
     pipeline_national_window_days: int = 90
     pipeline_continue_on_error: bool = True
     pipeline_skip_mls: bool = False
@@ -83,7 +88,7 @@ class BackendConfig:
     # Future-games watcher
     enable_watcher: bool = True
     watcher_interval_s: float = DEFAULT_WATCHER_INTERVAL_S
-    watcher_window_days: int = 3  # how far ahead the watcher re-runs
+    watcher_window_days: int = 365  # how far ahead the watcher re-runs
 
     # Resource limits
     memory_limit_gb: float = DEFAULT_MEMORY_LIMIT_GB
@@ -306,7 +311,8 @@ class BackendServer:
                     )
             cmd = self._build_pipeline_cmd(full_retrain=full_retrain)
             LOG.info("[pipeline] starting (trigger=%s, full_retrain=%s) -> journald", trigger, full_retrain)
-            subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "BTS_BACKEND_MANAGED": "1"}
+            pipeline_log.start_run(trigger=trigger, reset=True)
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(PROJECT_ROOT),
@@ -315,6 +321,7 @@ class BackendServer:
                 text=True,
                 env=subprocess_env,
             )
+            proc._bts_trigger = trigger  # type: ignore[attr-defined]
             self._pipeline_proc = proc
             started = True
             self._tee_pipeline_output()
@@ -350,6 +357,10 @@ class BackendServer:
             try:
                 for line in iter(proc.stdout.readline, ""):
                     LOG.info("[pipeline] %s", line.rstrip("\n\r"))
+                    try:
+                        pipeline_log.append_line(line.rstrip("\n\r"))
+                    except Exception:
+                        pass
             except Exception:
                 LOG.exception("[pipeline] output reader failed")
             finally:
@@ -387,6 +398,24 @@ class BackendServer:
             self._last_run.isoformat(),
             self._last_status,
         )
+        try:
+            status_path = SP_DIR / "Data" / "backend_run_status.json"
+            status_path.parent.mkdir(parents=True, exist_ok=True)
+            status_path.write_text(
+                json.dumps({
+                    "finished_utc": self._last_run.replace(microsecond=0).isoformat(),
+                    "return_code": rc,
+                    "ok": rc == 0,
+                    "trigger": getattr(proc, "_bts_trigger", "unknown"),
+                    "log_file": str(pipeline_log.log_path()),
+                }, indent=2),
+                encoding="utf-8",
+            )
+            pipeline_log.append_line(
+                f"=== Backend pipeline subprocess finished rc={rc} trigger={getattr(proc, '_bts_trigger', 'unknown')} ==="
+            )
+        except Exception:
+            LOG.exception("[pipeline] could not write backend_run_status.json")
         # Propagate the finish time to the Flask app so /api/stats returns it.
         try:
             import app as website_app

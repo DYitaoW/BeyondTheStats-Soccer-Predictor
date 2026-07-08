@@ -32,6 +32,9 @@ LEAGUES = [
     "Poland/Ekstraklasa", "Serbia/SuperLiga",
     "Cyprus/First Division", "Slovakia/Super Liga",
     "Slovenia/PrvaLiga", "Bulgaria/First League",
+    "Mexico/Liga MX", "Argentina/Primera Division",
+    "Brazil/Serie A", "Japan/J1 League",
+    "CONCACAF/Leagues Cup",
     # ── MLS sub-competitions (for bracket display) ──────────────
     "United States/MLS - Supporters Shield Table",
     "United States/MLS - Eastern Conference",

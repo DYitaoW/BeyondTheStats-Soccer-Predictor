@@ -378,6 +378,11 @@ def _parse_espn_live_event(event):
 
         home_team_name = str(home.get("team", {}).get("displayName", ""))
         away_team_name = str(away.get("team", {}).get("displayName", ""))
+        winner_team = ""
+        if home.get("winner") is True:
+            winner_team = home_team_name
+        elif away.get("winner") is True:
+            winner_team = away_team_name
 
         goalscorers = []
         red_cards = []
@@ -453,6 +458,10 @@ def _parse_espn_live_event(event):
         if round_name:
             result["round"] = round_name
             result["round_order"] = bracket_slot
+        if winner_team:
+            result["winner"] = winner_team
+        if "pen" in str(detail).lower():
+            result["decided_by_penalties"] = True
         return result
     except Exception:
         return None

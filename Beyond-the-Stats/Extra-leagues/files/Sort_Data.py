@@ -24,11 +24,7 @@ MIN_START_YEAR = 2002
 DEFAULT_LEAGUE_STRENGTH = {
     "Brazil/Serie A": 0.75,
     "Argentina/Primera Division": 0.70,
-    "Austria/Bundesliga": 0.68,
-    "Mexico/Liga MX": 0.62,
     "Japan/J1 League": 0.60,
-    "Poland/Ekstraklasa": 0.58,
-    "Romania/Liga I": 0.55,
 }
 H2H_RECENT_YEARS = 2
 USE_GPU_DF = os.getenv("SOCCER_USE_GPU_DF", "1").strip().lower() not in {"0", "false", "no"}

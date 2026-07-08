@@ -64,6 +64,11 @@ NEW_FORMAT_BASE_URL = "https://www.football-data.co.uk/new/{code}.csv"
 NEW_FORMAT_COMPETITIONS = [
     {"country": "Norway", "league": "Eliteserien", "code": "NOR", "file_prefix": "norstat"},
     {"country": "Sweden", "league": "Allsvenskan", "code": "SWE", "file_prefix": "swestat"},
+    # Moved from Extra-leagues (2026): UEFA-regular domestic leagues with real
+    # football-data.co.uk "new" format feeds.
+    {"country": "Austria", "league": "Bundesliga", "code": "AUT", "file_prefix": "autstat"},
+    {"country": "Romania", "league": "Liga I", "code": "ROU", "file_prefix": "roustat"},
+    {"country": "Poland", "league": "Ekstraklasa", "code": "POL", "file_prefix": "polstat"},
 ]
 NEW_FORMAT_REQUIRED_COLUMNS = ["Season", "Date", "Home", "Away", "HG", "AG", "Res"]
 NEW_FORMAT_MIN_ROWS = 100
@@ -137,6 +142,14 @@ def fetch_new_format_dataframe(url):
 
 
 def normalize_new_format_season(value):
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return None
+    if "/" in text:
+        try:
+            return int(text.split("/")[0])
+        except Exception:
+            return None
     try:
         return int(float(value))
     except Exception:

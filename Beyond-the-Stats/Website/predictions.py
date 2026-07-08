@@ -903,7 +903,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
     Args:
         csv_path: Path to the prediction CSV.
         mode: Source mode ("global", "mls", "extra", "cups", "national").
-        date_range: ``"upcoming"`` — today to 21 days out (default).
+        date_range: ``"upcoming"`` — today onward, all future fixtures (default).
                     ``"completed"`` — previous full prediction week to yesterday.
     """
     from accuracy_tracker import _compute_accuracy_stats, _compute_league_accuracy_stats
@@ -943,6 +943,10 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                 "prob_over_2_5",
                 "prob_over_3_5",
                 "actual_result",
+                "actual_home_goals",
+                "actual_away_goals",
+                "schedule_only",
+                "live_tracking",
                 "match_datetime_utc",
                 "match_datetime_et",
             }
@@ -959,6 +963,8 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                     "predicted_result": "string",
                     "probability_reasoning": "string",
                     "actual_result": "string",
+                    "schedule_only": "string",
+                    "live_tracking": "string",
                     "match_datetime_utc": "string",
                     "match_datetime_et": "string",
                 },
@@ -973,10 +979,16 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         target_mode = mode or "global"
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
 
-    required = ["match_date", "competition", "home_team", "away_team", "predicted_result", "prob_home", "prob_draw", "prob_away"]
+    required = ["match_date", "competition", "home_team", "away_team"]
     for col in required:
         if col not in frame.columns:
             return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
+    if "schedule_only" not in frame.columns:
+        frame["schedule_only"] = "0"
+    prediction_required = ["predicted_result", "prob_home", "prob_draw", "prob_away"]
+    for col in prediction_required:
+        if col not in frame.columns:
+            frame[col] = ""
 
     # Drop past fixtures so stale upcoming rows never show on the website.
     # CRITICAL: Must reset index after each filter to avoid index alignment issues
@@ -998,10 +1010,9 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         # All available rows (no date filter)
         pass
     else:
-        # Upcoming: today → 21 days out (today + rest of current week + 2 full weeks)
+        # Upcoming: today onward (full season — no upper date bound)
         lo = pd.Timestamp(today_et)
-        hi = pd.Timestamp(today_et + timedelta(days=21))
-        frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] <= hi)].reset_index(drop=True)
+        frame = frame[frame["parsed_date"] >= lo].reset_index(drop=True)
     
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
@@ -1012,6 +1023,8 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
 
     frame = frame.sort_values(["match_date", "competition", "match_datetime_utc", "home_team", "away_team"])
     target_mode = mode or ("mls" if os.path.normpath(csv_path) == os.path.normpath(config.MLS_UPCOMING_FILE) else "global")
+    if os.path.normpath(csv_path) == os.path.normpath(config.FRIENDLIES_UPCOMING_FILE):
+        target_mode = "friendlies"
     is_mls_file = target_mode == "mls"
 
     # Pre-build form & strength indices (only for modes that have processed data)
@@ -1074,6 +1087,9 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         except Exception:
             ph_raw, pdv_raw, pa_raw = 0.0, 0.0, 0.0
             ph, pdv, pa = 0.0, 0.0, 0.0
+        schedule_only = str(row.get("schedule_only", "")).strip().lower() in {"1", "true", "yes"}
+        actual_home_goals = pd.to_numeric(row.get("actual_home_goals"), errors="coerce")
+        actual_away_goals = pd.to_numeric(row.get("actual_away_goals"), errors="coerce")
         rows.append(
             {
                 "match_date": date_label if is_mls_file else str(row["match_date"]),
@@ -1085,7 +1101,8 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                 "competition": str(row["competition"]),
                 "home_team": home,
                 "away_team": away,
-                "winner_label": _winner_label(row["predicted_result"], home, away),
+                "schedule_only": schedule_only,
+                "winner_label": _winner_label(row["predicted_result"], home, away) if not schedule_only else "Schedule only",
                 "prob_home": ph,
                 "prob_draw": pdv,
                 "prob_away": pa,
@@ -1137,6 +1154,8 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                     row.get("pred_home_goals"), row.get("pred_away_goals"),
                 ),
                 "reasoning": str(row.get("probability_reasoning", "")).strip(),
+                "actual_home_goals": int(actual_home_goals) if pd.notna(actual_home_goals) else None,
+                "actual_away_goals": int(actual_away_goals) if pd.notna(actual_away_goals) else None,
                 "actual_result": str(row.get("actual_result", "")).strip(),
                 "is_correct": (
                     "1"
@@ -1335,6 +1354,123 @@ def _load_projected_tables(csv_path):
 
     leagues = sorted(tables.keys(), key=lambda name: name.lower())
     return {"leagues": leagues, "tables": tables, "position_odds": position_odds_tables}
+
+
+PROJECTED_TABLE_SOURCES = (
+    config.GLOBAL_PROJECTED_TABLE_FILE,
+    config.MLS_PROJECTED_TABLE_FILE,
+    config.EXTRA_PROJECTED_TABLE_FILE,
+    config.CUP_PROJECTED_TABLE_FILE,
+)
+
+PROJECTED_WINNER_COMP_ALIASES = {
+    "United States/MLS": "United States/MLS - Supporters Shield Table",
+}
+
+
+def _build_mls_winners_odds_bundle() -> dict:
+    """Return separate winner odds for Shield, East, West, and MLS Cup."""
+    bundle: dict = {}
+    for key, comp_name in config.MLS_WINNER_VIEWS.items():
+        table = _load_projected_competition_table(comp_name)
+        if table:
+            payload = _build_winner_probability_payload(table)
+            if payload.get("winner_probabilities"):
+                bundle[key] = {
+                    "competition": comp_name,
+                    "winner_probabilities": payload.get("winner_probabilities", {}),
+                    "winners_odds": payload.get("winners_odds", []),
+                    "champion": payload.get("champion"),
+                    "simulations_run": payload.get("simulations_run"),
+                }
+
+    if "mls_cup" not in bundle:
+        bracket = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
+        if isinstance(bracket, dict):
+            cup_probs = bracket.get("mls_cup_winner_probabilities") or {}
+            if cup_probs:
+                winners_odds = [
+                    {
+                        "team": team,
+                        "win_league_pct": round(float(pct), 2),
+                        "top4_pct": None,
+                        "bottom3_pct": None,
+                        "most_likely_position": None,
+                        "most_likely_position_pct": None,
+                    }
+                    for team, pct in sorted(cup_probs.items(), key=lambda x: -float(x[1] or 0))
+                    if float(pct or 0) > 0
+                ]
+                champion = winners_odds[0]["team"] if winners_odds else (bracket.get("mls_cup") or {}).get("winner")
+                bundle["mls_cup"] = {
+                    "competition": config.MLS_CUP_COMPETITION,
+                    "winner_probabilities": {k: round(float(v), 2) for k, v in cup_probs.items() if float(v or 0) > 0},
+                    "winners_odds": winners_odds,
+                    "champion": champion,
+                    "simulations_run": bracket.get("simulations_run"),
+                }
+    return bundle
+
+
+def _load_projected_competition_table(comp_name: str) -> list[dict]:
+    """Return projected table rows for a competition from any pipeline CSV."""
+    lookup_names = [str(comp_name or "").strip()]
+    alias = PROJECTED_WINNER_COMP_ALIASES.get(lookup_names[0])
+    if alias and alias not in lookup_names:
+        lookup_names.append(alias)
+    for lookup in lookup_names:
+        if not lookup:
+            continue
+        for csv_path in PROJECTED_TABLE_SOURCES:
+            proj = _load_projected_tables(csv_path)
+            table = (proj.get("tables") or {}).get(lookup)
+            if table:
+                return table
+    return []
+
+
+def _build_winner_probability_payload(comp_table: list[dict]) -> dict:
+    """Build World Cup-style winner odds fields from projected table rows."""
+    winner_probabilities: dict[str, float] = {}
+    winners_odds: list[dict] = []
+    champion = None
+    sim_runs = None
+    best_pct = -1.0
+
+    for row in comp_table:
+        team = str(row.get("team", "")).strip()
+        if not team:
+            continue
+        if sim_runs is None and row.get("sim_runs") is not None:
+            sim_runs = row.get("sim_runs")
+        try:
+            pct_f = float(row.get("win_league_pct") or 0)
+        except (TypeError, ValueError):
+            pct_f = 0.0
+        entry = {
+            "team": team,
+            "win_league_pct": round(pct_f, 2),
+            "top4_pct": row.get("top4_pct"),
+            "bottom3_pct": row.get("bottom3_pct"),
+            "most_likely_position": row.get("most_likely_position"),
+            "most_likely_position_pct": row.get("most_likely_position_pct"),
+        }
+        if pct_f > 0:
+            winner_probabilities[team] = round(pct_f, 2)
+            winners_odds.append(entry)
+            if pct_f > best_pct:
+                best_pct = pct_f
+                champion = team
+
+    winners_odds.sort(key=lambda x: x.get("win_league_pct") or 0, reverse=True)
+    payload: dict = {"winners_odds": winners_odds}
+    if winner_probabilities:
+        payload["winner_probabilities"] = winner_probabilities
+    if champion:
+        payload["champion"] = champion
+    if sim_runs is not None:
+        payload["simulations_run"] = sim_runs
+    return payload
 
 
 def _load_json_payload(path):
@@ -1624,6 +1760,311 @@ def _enrich_json_past_row(r):
         r["home_score"] = r["actual_home_goals"]
     if r.get("actual_away_goals") is not None and r.get("away_score") is None:
         r["away_score"] = r["actual_away_goals"]
+
+
+def _past_row_date_iso(row: dict) -> str:
+    """Normalize any past-game row to an ISO date (YYYY-MM-DD) in US/Eastern."""
+    for key in ("match_date_iso", "match_date", "kickoff_utc", "match_datetime_utc", "completed_at"):
+        raw = str(row.get(key, "") or "").strip()
+        if not raw:
+            continue
+        if len(raw) >= 10 and _valid_date_iso(raw[:10]):
+            return raw[:10]
+        try:
+            parsed = pd.to_datetime(raw, errors="coerce", utc=True)
+            if pd.notna(parsed):
+                if parsed.tzinfo is None:
+                    parsed = parsed.tz_localize("UTC")
+                return parsed.tz_convert("America/New_York").date().isoformat()
+        except Exception:
+            continue
+    return ""
+
+
+def _live_game_to_past_row(game: dict, competition: str | None = None) -> dict | None:
+    """Convert a completed live-score game into a past-games API row."""
+    from accuracy_tracker import _compute_actual_result
+
+    try:
+        hs = int(float(game.get("home_score")))
+        aws = int(float(game.get("away_score")))
+    except (TypeError, ValueError):
+        return None
+    actual = _compute_actual_result(hs, aws)
+    if not actual:
+        return None
+
+    match_date_iso = _past_row_date_iso(game)
+    if not match_date_iso:
+        return None
+
+    home = str(game.get("home_team", "")).strip()
+    away = str(game.get("away_team", "")).strip()
+    if not home or not away:
+        return None
+
+    row = {
+        "match_date": match_date_iso,
+        "match_date_iso": match_date_iso,
+        "competition": str(competition or game.get("competition", "")).strip(),
+        "home_team": home,
+        "away_team": away,
+        "actual_home_goals": hs,
+        "actual_away_goals": aws,
+        "actual_result": actual,
+        "home_score": hs,
+        "away_score": aws,
+        "match_datetime_utc": str(game.get("kickoff_utc", "") or game.get("match_datetime_utc", "")).strip(),
+        "source": "live_score_history",
+    }
+    _enrich_json_past_row(row)
+    return row
+
+
+def _collect_live_past_game_rows(cutoff: str) -> list[dict]:
+    """Return completed games from persisted and in-memory live scores."""
+    from standings import _load_live_score_history
+
+    rows: list[dict] = []
+    seen: set[str] = set()
+
+    def add_game(game: dict, competition: str | None = None) -> None:
+        if str(game.get("status", "")).lower() != "post":
+            return
+        row = _live_game_to_past_row(game, competition)
+        if not row:
+            return
+        date_iso = _past_row_date_iso(row)
+        if not date_iso or date_iso < cutoff:
+            return
+        if _is_placeholder_game(row):
+            return
+        ck = "|".join(
+            [
+                date_iso,
+                str(row.get("competition", "")).strip().lower(),
+                str(row.get("home_team", "")).strip().lower(),
+                str(row.get("away_team", "")).strip().lower(),
+            ]
+        )
+        if not ck or ck in seen:
+            return
+        seen.add(ck)
+        rows.append(row)
+
+    for game in _load_live_score_history():
+        add_game(game)
+
+    try:
+        from live_poller import _live_scores, _live_scores_lock
+
+        with _live_scores_lock:
+            for comp_name, comp_data in _live_scores.items():
+                for game in comp_data.get("games", []):
+                    add_game(game, comp_name)
+    except Exception:
+        pass
+
+    return rows
+
+
+def _build_past_game_prediction_lookup() -> dict[str, dict]:
+    """Index prediction CSV rows by match key for enriching live results."""
+    lookup: dict[str, dict] = {}
+    for source, csv_path in (
+        ("global", config.GLOBAL_UPCOMING_FILE),
+        ("mls", config.MLS_UPCOMING_FILE),
+        ("extra", config.EXTRA_UPCOMING_FILE),
+        ("cups", config.CUP_UPCOMING_FILE),
+        ("national", config.NATIONAL_UPCOMING_FILE),
+    ):
+        pred_rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
+        for row in pred_rows:
+            date_iso = _past_row_date_iso(row)
+            if not date_iso:
+                continue
+            ck = "|".join(
+                [
+                    date_iso,
+                    str(row.get("competition", "")).strip().lower(),
+                    str(row.get("home_team", "")).strip().lower(),
+                    str(row.get("away_team", "")).strip().lower(),
+                ]
+            )
+            if ck:
+                lookup[ck] = row
+    return lookup
+
+
+def _merge_prediction_onto_past_row(row: dict, lookup: dict[str, dict]) -> dict:
+    """Attach pre-match prediction fields when a CSV row exists for the fixture."""
+    date_iso = _past_row_date_iso(row)
+    if not date_iso:
+        return row
+    ck = "|".join(
+        [
+            date_iso,
+            str(row.get("competition", "")).strip().lower(),
+            str(row.get("home_team", "")).strip().lower(),
+            str(row.get("away_team", "")).strip().lower(),
+        ]
+    )
+    pred = lookup.get(ck)
+    if not pred:
+        return row
+    merged = dict(row)
+    for key in (
+        "predicted_result",
+        "prob_home",
+        "prob_draw",
+        "prob_away",
+        "prob_home_text",
+        "prob_draw_text",
+        "prob_away_text",
+        "pred_home_goals",
+        "pred_away_goals",
+        "winner_label",
+        "schedule_only",
+        "match_datetime_et",
+        "weekday",
+        "date_label",
+        "time_label",
+    ):
+        if pred.get(key) not in (None, ""):
+            merged[key] = pred[key]
+    if not merged.get("match_datetime_utc") and pred.get("match_datetime_utc"):
+        merged["match_datetime_utc"] = pred.get("match_datetime_utc")
+    _enrich_json_past_row(merged)
+    return merged
+
+
+def _past_game_storage_key(row: dict) -> str:
+    """Stable dedupe key for past_games.json rows."""
+    date_iso = _past_row_date_iso(row)
+    if not date_iso:
+        return ""
+    return "|".join(
+        [
+            date_iso,
+            str(row.get("competition", "")).strip().lower(),
+            str(row.get("home_team", "")).strip().lower(),
+            str(row.get("away_team", "")).strip().lower(),
+        ]
+    )
+
+
+def _json_safe_row(row: dict) -> dict:
+    """Make an upcoming API row JSON-serializable for past_games.json."""
+    import math
+
+    safe: dict = {}
+    for key, value in row.items():
+        if value is None:
+            safe[key] = None
+        elif isinstance(value, float) and math.isnan(value):
+            safe[key] = None
+        elif isinstance(value, (datetime, pd.Timestamp)):
+            safe[key] = value.isoformat()
+        else:
+            safe[key] = value
+    return safe
+
+
+def archive_todays_games_to_past_games_file() -> int:
+    """Copy today's enriched upcoming rows into past_games.json.
+
+    Uses the same enriched row shape as ``/api/upcoming/*`` so
+    ``/api/past-games`` can serve identical payloads for the current date.
+    Intended to run at the end of the daily pipeline after predictions
+    are refreshed and results are settled.
+    """
+    today_str = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    cutoff_str = _week_based_cutoff()
+
+    csv_sources = [
+        ("global", config.GLOBAL_UPCOMING_FILE),
+        ("mls", config.MLS_UPCOMING_FILE),
+        ("extra", config.EXTRA_UPCOMING_FILE),
+        ("cups", config.CUP_UPCOMING_FILE),
+        ("national", config.NATIONAL_UPCOMING_FILE),
+    ]
+    extra_sources = [
+        ("global", os.path.join(config.PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv")),
+        ("global", os.path.join(config.PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv")),
+        ("global", os.path.join(config.PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv")),
+    ]
+
+    all_rows: list[dict] = []
+    seen: set[str] = set()
+    for source, csv_path in csv_sources + extra_sources:
+        if not csv_path or not os.path.exists(csv_path):
+            continue
+        try:
+            rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="completed")
+        except Exception:
+            continue
+        for row in rows:
+            date_iso = _past_row_date_iso(row)
+            if date_iso != today_str:
+                continue
+            if _is_placeholder_game(row):
+                continue
+            ck = _past_game_storage_key(row)
+            if not ck or ck in seen:
+                continue
+            seen.add(ck)
+            stored = _json_safe_row(dict(row))
+            stored["match_date_iso"] = date_iso
+            all_rows.append(stored)
+
+    if not all_rows:
+        print("[past-games] No rows for today to archive.")
+        return 0
+
+    existing_by_key: dict[str, dict] = {}
+    if os.path.exists(config.PAST_GAMES_FILE):
+        try:
+            with open(config.PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
+                existing = json.load(fh)
+        except Exception:
+            existing = []
+    else:
+        existing = []
+
+    if isinstance(existing, list):
+        for row in existing:
+            if isinstance(row, dict):
+                ck = _past_game_storage_key(row)
+                if ck:
+                    existing_by_key[ck] = row
+
+    inserted = 0
+    replaced = 0
+    for row in all_rows:
+        ck = _past_game_storage_key(row)
+        if not ck:
+            continue
+        if ck in existing_by_key:
+            existing_by_key[ck] = row
+            replaced += 1
+        else:
+            existing_by_key[ck] = row
+            inserted += 1
+
+    before = len(existing_by_key)
+    merged = [r for r in existing_by_key.values() if _past_row_date_iso(r) >= cutoff_str]
+    pruned = before - len(merged)
+
+    os.makedirs(os.path.dirname(config.PAST_GAMES_FILE), exist_ok=True)
+    with open(config.PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
+        json.dump(merged, fh, indent=2, ensure_ascii=False, default=str)
+
+    print(
+        f"[past-games] Archived {len(all_rows)} today row(s) "
+        f"({inserted} new, {replaced} replaced), pruned {pruned} old "
+        f"→ past_games.json ({len(merged)} total)"
+    )
+    return len(all_rows)
 
 
 def _is_placeholder_game(r):

@@ -30,6 +30,7 @@ CUP_COMPLETED_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "completed
 MLS_UPCOMING_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 EXTRA_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Extra-leagues", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 NATIONAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_national_team_predictions.csv")
+FRIENDLIES_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_club_friendlies.csv")
 GLOBAL_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_league_tables.csv")
 CUP_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_tables.csv")
 CUP_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_brackets.json")
@@ -44,6 +45,8 @@ LIVE_RESULTS_UPDATER = os.path.join(FILES_DIR, "Update_Live_Prediction_Results.p
 RUN_ALL_PIPELINE = os.path.join(PROJECT_DIR, "Run_All_Pipeline.py")
 LAST_DATA_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_data_refresh.json")
 PIPELINE_STATUS_FILE = os.path.join(PROJECT_DIR, "Data", "pipeline_status.json")
+BACKEND_RUN_STATUS_FILE = os.path.join(PROJECT_DIR, "Data", "backend_run_status.json")
+PIPELINE_LOG_FILE = os.path.join(PROJECT_DIR, "Data", "pipeline_latest.log")
 TEAM_NAME_DISPLAY_MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "team_name_mapping_master.json")
 TOP_SCORERS_FILE = os.path.join(PROJECT_DIR, "Data", "Team_Data", "current_season_top_scorers.json")
 LIVE_SCORE_HISTORY_FILE = os.path.join(PROJECT_DIR, "Data", "live_score_history.json")
@@ -60,6 +63,7 @@ UPCOMING_CSV_FILES = {
     "extra": EXTRA_UPCOMING_FILE,
     "cups": CUP_UPCOMING_FILE,
     "national": NATIONAL_UPCOMING_FILE,
+    "friendlies": FRIENDLIES_UPCOMING_FILE,
 }
 
 # ── Cache Configuration ───────────────────────────────────────────
@@ -77,6 +81,15 @@ STATIC_PREDICTIONS_CACHE = os.environ.get("STATIC_PREDICTIONS_CACHE", "0").strip
 
 LIVE_SCORE_ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
+CLUB_FRIENDLIES_COMPETITION = "Club Friendlies"
+CLUB_FRIENDLIES_ESPN_ID = "club.friendly"
+
+# Competitions polled for scores but excluded from league-table/help listings.
+UPCOMING_ONLY_COMPETITIONS = {
+    CLUB_FRIENDLIES_COMPETITION,
+    "FIFA/Friendly",
+}
+
 LIVE_SCORE_COMPETITIONS = {
     # Club leagues (top European + MLS)
     "England/Premier League": "eng.1",
@@ -92,6 +105,8 @@ LIVE_SCORE_COMPETITIONS = {
     "Portugal/Liga Portugal": "por.1",
     "Netherlands/Eredivisie": "ned.1",
     "United States/MLS": "usa.1",
+    "Mexico/Liga MX": "mex.1",
+    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
     # Domestic cups
     "England/FA Cup": "eng.fa",
     "England/League Cup": "eng.efl",
@@ -108,6 +123,8 @@ LIVE_SCORE_COMPETITIONS = {
     "Germany/DFB-Pokal": "ger.dfb_pokal",
     "France/Coupe de France": "fra.coupe_de_france",
     "United States/US Open Cup": "usa.open_cup",
+    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
+    CLUB_FRIENDLIES_COMPETITION: CLUB_FRIENDLIES_ESPN_ID,
     # National team & World Cup
     "FIFA/World Cup": "fifa.world",
     "FIFA/Friendly": "fifa.friendly",
@@ -139,6 +156,13 @@ LIVE_SCORE_COMPETITIONS = {
 # ── Competitions ──────────────────────────────────────────────────
 
 MLS_COMPETITION = "United States/MLS"
+MLS_CUP_COMPETITION = "United States/MLS - MLS Cup"
+MLS_WINNER_VIEWS = {
+    "supporters_shield": "United States/MLS - Supporters Shield Table",
+    "eastern_conference": "United States/MLS - Eastern Conference",
+    "western_conference": "United States/MLS - Western Conference",
+    "mls_cup": MLS_CUP_COMPETITION,
+}
 
 CUP_COMPETITIONS = {
     "England/FA Cup",
@@ -154,6 +178,7 @@ CUP_COMPETITIONS = {
     "Germany/DFB-Pokal",
     "France/Coupe de France",
     "United States/US Open Cup",
+    "CONCACAF/Leagues Cup",
 }
 
 _CUP_FORMATS = {
@@ -260,6 +285,34 @@ _CUP_FORMATS = {
         "two_leg_rounds": [],
         "final_neutral": False,
     },
+    "CONCACAF/Leagues Cup": {
+        "format": "group_stage_then_knockout",
+        "description": "Group stage (3 matches per team across MLS and Liga MX clubs) followed by single-elimination knockout rounds.",
+        "group_count": 4,
+        "group_stage_matches_per_team": 3,
+        "league_phase_matches": 3,
+        "stages": ["Group Stage", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "knockout_rounds": ["Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": True,
+    },
+    "FIFA/World Cup": {
+        "format": "group_stage_then_knockout",
+        "description": "12 groups of 4 teams (3 group matches each). Top two plus eight best third-place teams advance to a fixed Round of 32 knockout bracket.",
+        "group_count": 12,
+        "group_stage_matches_per_team": 3,
+        "group_labels": list("ABCDEFGHIJKL"),
+        "stages": [
+            "Group Stage", "Round of 32", "Round of 16", "Quarter-finals",
+            "Semi-finals", "Third Place", "Final",
+        ],
+        "knockout_rounds": [
+            "Round of 32", "Round of 16", "Quarter-finals",
+            "Semi-finals", "Third Place", "Final",
+        ],
+        "two_leg_rounds": [],
+        "final_neutral": True,
+    },
 }
 
 # Mobile app / website tournament keys → canonical competition names.
@@ -276,6 +329,7 @@ TOURNAMENT_KEY_MAP = {
     "coupe-de-france": "France/Coupe de France",
     "coppa-italia": "Italy/Coppa Italia",
     "us-open-cup": "United States/US Open Cup",
+    "leagues-cup": "CONCACAF/Leagues Cup",
 }
 
 H2H_LEAGUES = {
@@ -284,6 +338,13 @@ H2H_LEAGUES = {
     "Portugal/Liga Portugal",
     "Belgium/First Division A",
     "Turkey/Super Lig",
+}
+
+MLS_TABLE_VIEW_ALIASES = {
+    "United States/MLS - Eastern Conference",
+    "United States/MLS - Western Conference",
+    "United States/MLS - Supporters Shield Table",
+    MLS_CUP_COMPETITION,
 }
 
 # ── API & Authentication ──────────────────────────────────────────

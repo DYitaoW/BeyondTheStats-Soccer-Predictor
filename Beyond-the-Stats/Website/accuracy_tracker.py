@@ -53,6 +53,7 @@ _UPCOMING_CSV_MODE_MAP = {
     "United States/US Open Cup": "cups",
     "FIFA/World Cup": "national",
     "FIFA/Friendly": "national",
+    "Club Friendlies": "friendlies",
     "UEFA/European Championship": "national",
     "UEFA/Nations League": "national",
     "CONMEBOL/Copa America": "national",
@@ -60,24 +61,29 @@ _UPCOMING_CSV_MODE_MAP = {
     "Belgium/First Division A": "extra",
     "Scotland/Premiership": "extra",
     "Turkey/Super Lig": "extra",
-    "Austria/Bundesliga": "extra",
+    "Austria/Bundesliga": "global",
     "Switzerland/Super League": "extra",
     "Greece/Super League": "extra",
     "Denmark/Superliga": "extra",
     "Ukraine/Premier League": "extra",
     "Norway/Eliteserien": "extra",
     "Croatia/HNL": "extra",
-    "Romania/Liga I": "extra",
+    "Romania/Liga I": "global",
     "Sweden/Allsvenskan": "extra",
     "Hungary/NB I": "extra",
     "Israel/Premier League": "extra",
     "Czech Republic/First League": "extra",
-    "Poland/Ekstraklasa": "extra",
+    "Poland/Ekstraklasa": "global",
     "Serbia/SuperLiga": "extra",
     "Cyprus/First Division": "extra",
     "Slovakia/Super Liga": "extra",
     "Slovenia/PrvaLiga": "extra",
     "Bulgaria/First League": "extra",
+    "Mexico/Liga MX": "mls",
+    "Argentina/Primera Division": "extra",
+    "Brazil/Serie A": "extra",
+    "Japan/J1 League": "extra",
+    "CONCACAF/Leagues Cup": "cups",
     "Azerbaijan/Premier League": "extra",
     "Kazakhstan/Premier League": "extra",
     "Belarus/Premier League": "extra",
@@ -343,6 +349,11 @@ def _build_persistent_accuracy_stats(mode, rows):
         filtered = {
             str(k): v for k, v in by_league_all.items()
             if str(k).strip() in CUP_COMPETITIONS
+        }
+    elif mode == "friendlies":
+        filtered = {
+            str(k): v for k, v in by_league_all.items()
+            if str(k).strip() == config.CLUB_FRIENDLIES_COMPETITION
         }
     else:
         filtered = {

@@ -45,6 +45,7 @@ CUP_ESPN_COMPETITION_KEYS = {
     "Europe/Champions League": "uefa.champions",
     "Europe/Europa League": "uefa.europa",
     "Europe/Conference League": "uefa.europa.conf",
+    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
 }
 UEFA_TABLE_COMPETITIONS = {
     "UEFA/Champions League",
@@ -53,6 +54,7 @@ UEFA_TABLE_COMPETITIONS = {
     "Europe/Champions League",
     "Europe/Europa League",
     "Europe/Conference League",
+    "CONCACAF/Leagues Cup",
 }
 UEFA_LEAGUE_PHASE_MATCHES = {
     "UEFA/Champions League": 8,
@@ -61,6 +63,7 @@ UEFA_LEAGUE_PHASE_MATCHES = {
     "Europe/Europa League": 8,
     "UEFA/Conference League": 6,
     "Europe/Conference League": 6,
+    "CONCACAF/Leagues Cup": 3,
 }
 UEFA_PRIMARY_COMPETITIONS = [
     "UEFA/Champions League",
@@ -150,6 +153,15 @@ CUP_FORMAT_RULES = {
         "draw_type": "fully_randomized",
         "allows_lower_league": True,
     },
+    "CONCACAF/Leagues Cup": {
+        "format": "group_stage_then_knockout",
+        "description": "Group stage with MLS and Liga MX clubs, then single-elimination knockout rounds.",
+        "typical_rounds": ["Group Stage", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "two_leg_rounds": [],
+        "final_neutral": True,
+        "draw_type": "seeded_groups",
+        "allows_lower_league": False,
+    },
 }
 
 # Update DOMESTIC_BRACKET_COMPETITIONS to reflect all domestic cups with rules
@@ -161,6 +173,7 @@ DOMESTIC_BRACKET_COMPETITIONS = {
     "France/Coupe de France",
     "Italy/Coppa Italia",
     "United States/US Open Cup",
+    "CONCACAF/Leagues Cup",
 }
 
 CUP_HISTORY_COLUMNS = [

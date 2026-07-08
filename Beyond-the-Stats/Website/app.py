@@ -14,6 +14,7 @@ Subsystem logic lives in dedicated modules; this file contains only:
 import json
 import math
 import os
+import sys
 import threading
 from collections import defaultdict
 from datetime import datetime, timedelta, date, timezone
@@ -24,6 +25,10 @@ from flask import Flask, jsonify, redirect, render_template, request, send_from_
 
 import config
 import auth
+
+if config.PROJECT_DIR not in sys.path:
+    sys.path.insert(0, config.PROJECT_DIR)
+import pipeline_log
 from auth import _client_ip, _debug_auth_ok, _mutation_auth_ok, _refresh_auth_ok
 from cache import _cache_clear_pattern, _cached_response
 from accuracy_tracker import (
@@ -74,6 +79,13 @@ from predictions import (
     _load_last_data_refresh,
     _load_last_refresh,
     _load_projected_tables,
+    _load_projected_competition_table,
+    _build_winner_probability_payload,
+    _build_mls_winners_odds_bundle,
+    _build_past_game_prediction_lookup,
+    _collect_live_past_game_rows,
+    _merge_prediction_onto_past_row,
+    _past_row_date_iso,
     _load_team_recent_matches,
     _load_teams_from_team_data,
     _load_upcoming_rows,
@@ -199,6 +211,7 @@ _UPCOMING_MODE_MAP = {
     "extra": (config.EXTRA_UPCOMING_FILE, "extra"),
     "cups": (config.CUP_UPCOMING_FILE, "cups"),
     "world-cup": (config.NATIONAL_UPCOMING_FILE, "national"),
+    "friendlies": (config.FRIENDLIES_UPCOMING_FILE, "friendlies"),
 }
 
 _ALL_UPCOMING_SOURCES = [
@@ -211,11 +224,19 @@ _ALL_UPCOMING_SOURCES = [
 ]
 
 
+def _exclude_upcoming_only_rows(rows):
+    """Drop competitions that have a dedicated upcoming source only."""
+    blocked = config.UPCOMING_ONLY_COMPETITIONS
+    return [r for r in rows if str(r.get("competition", "")).strip() not in blocked]
+
+
 def _date_window_bounds():
     """Return the website's stored match window as ISO date bounds."""
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    # Full-season window: from the start of the prior week through one year ahead.
+    season_end = today_et + timedelta(days=365)
     current_week_start = today_et - timedelta(days=today_et.weekday())
-    return current_week_start - timedelta(days=7), current_week_start + timedelta(days=20)
+    return current_week_start - timedelta(days=7), season_end
 
 
 def _parse_query_date(value, fallback):
@@ -282,7 +303,7 @@ def _render_site_page(template_name, active_page):
         "about": "/about",
     }
     # Template defaults prevent Undefined errors for pages that serialize these values.
-    upcoming_leagues = {"global": [], "mls": [], "extra": [], "cups": []}
+    upcoming_leagues = {"global": [], "mls": [], "extra": [], "cups": [], "friendlies": []}
     table_leagues = {"global": [], "mls": [], "extra": [], "cups": []}
 
     if config.STATIC_PREDICTIONS:
@@ -407,10 +428,9 @@ def api_help():
         ("/api/predict", "POST", "Run global predictions (triggers pipeline)"),
         ("/api/predict/mls", "POST", "Run MLS-only predictions"),
         ("/api/predict/extra", "POST", "Run extra-league predictions"),
-        ("/api/refresh", "POST", "Trigger data refresh from live sources"),
-        ("/api/last-refresh", "GET", "Timestamp of last manual refresh"),
-        ("/api/last-data-refresh", "GET", "Timestamp of last data refresh"),
-        ("/api/pipeline/status", "GET", "Current pipeline status"),
+        ("/api/pipeline/status", "GET", "Pipeline health: step pass/fail + last refresh"),
+        ("/api/pipeline/logs", "GET", "Pipeline terminal output (tail, WARN/ERROR filters)"),
+        ("/api/refresh", "POST", "Trigger background pipeline refresh"),
         ("/api/notifications", "GET", "List notification subscriptions"),
         ("/api/notifications", "POST", "Send a test notification"),
         ("/api/notifications/register", "POST", "Register push notification token"),
@@ -433,6 +453,8 @@ def api_help_all():
     cups_list = []
 
     for comp_name in sorted(config.LIVE_SCORE_COMPETITIONS, key=str.lower):
+        if comp_name in config.UPCOMING_ONLY_COMPETITIONS:
+            continue
         is_cup = comp_name in config._CUP_FORMATS
         base = {
             "competition": comp_name,
@@ -471,6 +493,27 @@ def api_help_all():
         "total": len(leagues_list) + len(cups_list),
         "leagues": leagues_list,
         "cups": cups_list,
+        "mls": {
+            "competition": "United States/MLS",
+            "liga_mx": "Mexico/Liga MX",
+            "projected": {
+                "league_tables": "/api/league-tables?mode=mls",
+                "liga_mx_data": "/api/league-data/Mexico/Liga%20MX",
+                "league_data_shield": "/api/league-data/United%20States/MLS%20-%20Supporters%20Shield%20Table",
+                "league_data_east": "/api/league-data/United%20States/MLS%20-%20Eastern%20Conference",
+                "league_data_west": "/api/league-data/United%20States/MLS%20-%20Western%20Conference",
+                "leaders": "/api/league-leaders",
+            },
+            "real": {
+                "real_table": "/api/real-tables?competition=United+States/MLS",
+                "real_table_east": "/api/real-tables?competition=United+States/MLS+-+Eastern+Conference",
+                "real_table_west": "/api/real-tables?competition=United+States/MLS+-+Western+Conference",
+                "real_table_shield": "/api/real-tables?competition=United+States/MLS+-+Supporters+Shield+Table",
+            },
+            "league_data": "/api/league-data/United%20States/MLS",
+            "liga_mx_league_data": "/api/league-data/Mexico/Liga%20MX",
+            "upcoming": "/api/upcoming/mls",
+        },
     })
 
 
@@ -503,6 +546,8 @@ def api_upcoming(mode):
             if not rows:
                 rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="all")
             for r in rows:
+                if str(r.get("competition", "")).strip() in config.UPCOMING_ONLY_COMPETITIONS:
+                    continue
                 ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
                 if ck and ck not in seen_keys:
                     seen_keys.add(ck)
@@ -583,6 +628,7 @@ def api_home_upcoming():
             seen_keys.add(key)
             all_rows.append(row)
 
+    all_rows = _exclude_upcoming_only_rows(all_rows)
     all_rows.sort(key=lambda row: (
         _row_date_iso(row),
         str(row.get("competition") or ""),
@@ -643,6 +689,104 @@ def api_last_refresh():
     return jsonify({"ok": True, "last_refresh_utc": refreshed_at})
 
 
+@app.get("/api/pipeline/status")
+def api_pipeline_status():
+    """Return pipeline health: last run, per-step pass/fail, and backend metadata.
+
+    Use this endpoint (or the mobile feed's ``step_results``) to see which
+    sub-pipeline steps failed without SSH-ing into the host logs.
+    """
+    pipeline = _load_json_payload(config.PIPELINE_STATUS_FILE) or {}
+    backend = _load_json_payload(config.BACKEND_RUN_STATUS_FILE) or {}
+    mobile_feed = _load_json_payload(config.MOBILE_FEED_FILE) or {}
+
+    sub_pipelines = {"global": [], "mls": [], "extra": [], "post": [], "other": []}
+    for step_name, passed in (pipeline.get("steps") or {}).items():
+        key = "other"
+        if step_name.startswith("global") or step_name in {
+            "build_real_standings", "upcoming_world_cup_predictions", "projected_world_cup",
+        }:
+            key = "global"
+        elif step_name.startswith("mls"):
+            key = "mls"
+        elif step_name.startswith("extra"):
+            key = "extra"
+        elif step_name.startswith("settle") or step_name.startswith("update") or step_name.startswith("track") or step_name.startswith("sync"):
+            key = "post"
+        sub_pipelines[key].append({"step": step_name, "ok": bool(passed)})
+
+    refreshed = get_last_pipeline_run()
+    log_stats = pipeline_log.log_stats()
+    return jsonify({
+        "ok": True,
+        "last_refresh_utc": refreshed.isoformat() if refreshed else None,
+        "pipeline": pipeline,
+        "backend": backend,
+        "mobile_feed_status": mobile_feed.get("pipeline_status"),
+        "mobile_feed_generated_at": mobile_feed.get("generated_at_utc"),
+        "sub_pipelines": sub_pipelines,
+        "failed_steps": pipeline.get("failed_steps") or [
+            k for k, v in (pipeline.get("steps") or {}).items() if not v
+        ],
+        "log": {
+            "file": log_stats.get("log_file"),
+            "bytes": log_stats.get("bytes", 0),
+            "lines": log_stats.get("lines", 0),
+            "exists": log_stats.get("exists", False),
+            "highlights": pipeline.get("log_highlights") or [],
+            "logs_api": "/api/pipeline/logs",
+        },
+    })
+
+
+@app.get("/api/pipeline/logs")
+def api_pipeline_logs():
+    """Return persisted pipeline terminal output from the latest run.
+
+    Query params:
+        tail   — max lines from end of log (default 500, max 5000)
+        level  — ``all`` | ``notable`` (OK+WARN+ERROR) | ``warn`` | ``error``
+        grep   — optional case-insensitive regex filter on line text
+        format — ``json`` (default) or ``text`` (plain-text body for quick copy)
+    """
+    try:
+        tail = int(request.args.get("tail", "500"))
+    except (TypeError, ValueError):
+        tail = 500
+    level = str(request.args.get("level", "all")).strip().lower() or "all"
+    grep = str(request.args.get("grep", "")).strip()
+    fmt = str(request.args.get("format", "json")).strip().lower() or "json"
+
+    payload = pipeline_log.read_log(tail=tail, level=level, grep=grep)
+    payload["ok"] = True
+
+    if fmt == "text":
+        from flask import Response
+        return Response(
+            payload.get("text") or "",
+            mimetype="text/plain; charset=utf-8",
+        )
+    return jsonify(payload)
+
+
+@app.post("/api/refresh")
+def api_refresh():
+    """Trigger a background pipeline refresh (non-blocking when BackendServer is running)."""
+    if not _refresh_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    refresh_fn = app.config.get("_backend_refresh")
+    if callable(refresh_fn):
+        refresh_fn(trigger="api")
+        return jsonify({"ok": True, "queued": True, "mode": "backend"})
+
+    started = _run_full_pipeline_once()
+    return jsonify({
+        "ok": bool(started),
+        "queued": False,
+        "mode": "inline",
+        "message": "Pipeline finished inline (no BackendServer hook registered).",
+    })
 
 
 @app.get("/api/mobile/feed")
@@ -1056,10 +1200,10 @@ def api_past_games():
 
     Response structure matches ``/api/upcoming/global`` per-row format.
 
-    Data is sourced from ``past_games.json`` (the persistent archive) and
-    supplemented with any recently completed rows from the prediction CSVs
-    that haven't been archived yet.  Rows older than the previous full week
-    are excluded.
+    Data is sourced from ``past_games.json`` (updated each pipeline run with
+    today's rows copied from the upcoming API shape), ``live_score_history.json``
+    / in-memory live scores, and settled prediction CSV rows.
+    Rows older than the previous full week are excluded.
 
     For full live-score details (lineups, stats, key events, game info),
     use ``/api/live-score-history``.
@@ -1080,22 +1224,44 @@ def api_past_games():
         per_page = 50
 
     cutoff = _week_based_cutoff()
+    prediction_lookup = _build_past_game_prediction_lookup()
 
     # ── 1. Rows from persistent archive ────────────────────────────
     by_key = {}
     archive = _load_json_payload(config.PAST_GAMES_FILE)
     if isinstance(archive, list):
         for r in archive:
-            if str(r.get("match_date", "")).strip() < cutoff:
+            if _past_row_date_iso(r) < cutoff:
                 continue
             if _is_placeholder_game(r):
                 continue
             _enrich_json_past_row(r)
-            ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
-            if ck:
+            ck = "|".join(
+                [
+                    _past_row_date_iso(r),
+                    str(r.get("competition", "")).strip().lower(),
+                    str(r.get("home_team", "")).strip().lower(),
+                    str(r.get("away_team", "")).strip().lower(),
+                ]
+            )
+            if ck.strip("|"):
                 by_key[ck] = r
 
-    # ── 2. Supplement with CSV rows (richer data) ──────────────────
+    # ── 2. Completed games from live scores (today + recent) ───────
+    for r in _collect_live_past_game_rows(cutoff):
+        r = _merge_prediction_onto_past_row(r, prediction_lookup)
+        ck = "|".join(
+            [
+                _past_row_date_iso(r),
+                str(r.get("competition", "")).strip().lower(),
+                str(r.get("home_team", "")).strip().lower(),
+                str(r.get("away_team", "")).strip().lower(),
+            ]
+        )
+        if ck.strip("|"):
+            by_key[ck] = r
+
+    # ── 3. Supplement with CSV rows (richest prediction data) ───────
     for source, csv_path in (
         ("global", config.GLOBAL_UPCOMING_FILE),
         ("mls", config.MLS_UPCOMING_FILE),
@@ -1105,15 +1271,22 @@ def api_past_games():
     ):
         rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
         for r in rows:
-            if str(r.get("match_date", "")).strip() < cutoff:
+            if _past_row_date_iso(r) < cutoff:
                 continue
             # Only include actually settled games — skip placeholders
             if str(r.get("actual_result", "")).strip().upper() not in {"H", "D", "A"}:
                 continue
             if _is_placeholder_game(r):
                 continue
-            ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
-            if ck:
+            ck = "|".join(
+                [
+                    _past_row_date_iso(r),
+                    str(r.get("competition", "")).strip().lower(),
+                    str(r.get("home_team", "")).strip().lower(),
+                    str(r.get("away_team", "")).strip().lower(),
+                ]
+            )
+            if ck.strip("|"):
                 by_key[ck] = r  # CSV row (enriched) takes priority
 
     all_rows = list(by_key.values())
@@ -1122,7 +1295,7 @@ def api_past_games():
         league_lower = league.lower()
         all_rows = [r for r in all_rows if league_lower in r.get("competition", "").lower()]
 
-    all_rows.sort(key=lambda r: r.get("match_date", ""), reverse=True)
+    all_rows.sort(key=lambda r: _past_row_date_iso(r), reverse=True)
 
     total = len(all_rows)
     start = (page - 1) * per_page
@@ -1341,16 +1514,19 @@ def api_real_tables():
     comp_filter = request.args.get("competition", "").strip()
     force_refresh = request.args.get("refresh", "").strip().lower() in ("1", "true")
 
+    from competition_rules import should_use_persisted_table
+
     if comp_filter:
-        if comp_filter not in config.LIVE_SCORE_COMPETITIONS:
+        if comp_filter not in config.LIVE_SCORE_COMPETITIONS and comp_filter not in config.MLS_TABLE_VIEW_ALIASES:
             return jsonify({"ok": False, "error": f"Unknown competition: {comp_filter}"}), 400
         if force_refresh:
             _clear_standings_cache(comp_filter)
             _clear_leaders_cache(comp_filter)
-        # Try persisted cache first
         persisted = _load_json_payload(config.REAL_TABLES_PERSIST_FILE)
         if isinstance(persisted, dict) and comp_filter in persisted:
-            return jsonify({"ok": True, "table": persisted[comp_filter]})
+            cached = persisted[comp_filter]
+            if should_use_persisted_table(cached, force_refresh):
+                return jsonify({"ok": True, "table": cached})
         table = _compute_standings_from_history(comp_filter)
         if table is not None:
             return jsonify({"ok": True, "table": table})
@@ -1364,7 +1540,7 @@ def api_real_tables():
     if isinstance(persisted, dict):
         for comp_name in config.LIVE_SCORE_COMPETITIONS:
             cached = persisted.get(comp_name)
-            if cached and cached.get("groups"):
+            if should_use_persisted_table(cached, force_refresh):
                 results[comp_name] = cached
                 continue
             if force_refresh:
@@ -1403,6 +1579,14 @@ def api_real_tables():
                         "groups": [{"name": "Overall", "entries": []}],
                         "source": "placeholder",
                     }
+    for alias in config.MLS_TABLE_VIEW_ALIASES:
+        if alias in results:
+            continue
+        if force_refresh:
+            _clear_standings_cache(alias)
+        table = _compute_standings_from_history(alias)
+        if table:
+            results[alias] = table
     return jsonify({"ok": True, "tables": results, "total": len(results)})
 
 
@@ -1481,6 +1665,7 @@ def api_competition_data():
     if not matches:
         if comp in config._CUP_FORMATS:
             result = _enrich_tournament_payload(comp, result)
+        result = _attach_projected_winner_fields(comp, result)
         return jsonify(result)
 
     knockout, odds_knockout, real_knockout = _build_cup_knockout_payload(matches, comp)
@@ -1490,7 +1675,109 @@ def api_competition_data():
 
     if comp in config._CUP_FORMATS:
         result = _enrich_tournament_payload(comp, result)
+
+    result = _attach_projected_winner_fields(comp, result)
     return jsonify(result)
+
+
+def _attach_projected_winner_fields(comp, result):
+    """Add World Cup-style winner probability fields when not already present."""
+    if not isinstance(result, dict) or result.get("winner_probabilities"):
+        return result
+    winner_payload = _build_winner_probability_payload(_load_projected_competition_table(comp))
+    for key in ("winner_probabilities", "champion", "simulations_run"):
+        if winner_payload.get(key) is not None:
+            result[key] = winner_payload[key]
+    return result
+
+
+def _build_mls_api_payload():
+    """Shared MLS payload for ``/api/league-tables?mode=mls``."""
+    season_data = _load_current_season_tables()
+    if season_data:
+        mls_leagues = [
+            c for c in season_data.get("leagues", [])
+            if "MLS" in c or "United States" in c
+        ]
+        data = {
+            "leagues": mls_leagues,
+            "tables": {
+                c: season_data["tables"][c]
+                for c in mls_leagues
+                if c in season_data.get("tables", {})
+            },
+        }
+        last_refresh = None
+    else:
+        data = _load_projected_tables(config.MLS_PROJECTED_TABLE_FILE)
+        last_refresh = _file_mtime_utc(config.MLS_PROJECTED_TABLE_FILE)
+
+    payload = {
+        "leagues": data.get("leagues") or [],
+        "tables": data.get("tables") or {},
+        "bracket": _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE),
+        "fixtures": _load_all_fixtures_by_competition(config.MLS_UPCOMING_FILE),
+        "last_prediction_refresh": last_refresh,
+        "mls_winners_odds": _build_mls_winners_odds_bundle(),
+    }
+    return payload
+
+
+def _enrich_league_data_mls_fields(comp, payload):
+    """Attach MLS Cup bracket, all MLS winner-odds views, and fixtures."""
+    if not str(comp or "").startswith("United States/MLS"):
+        return payload
+
+    mls_winners = _build_mls_winners_odds_bundle()
+    if mls_winners:
+        payload["mls_winners_odds"] = mls_winners
+
+    from competition_rules import resolve_competition_query
+
+    base_comp, view = resolve_competition_query(comp)
+    view_key_map = {
+        "shield": "supporters_shield",
+        "east": "eastern_conference",
+        "west": "western_conference",
+    }
+    if comp == config.MLS_CUP_COMPETITION:
+        view_key = "mls_cup"
+    elif view:
+        view_key = view_key_map.get(view)
+    else:
+        view_key = None
+
+    if view_key and view_key in mls_winners:
+        view_payload = mls_winners[view_key]
+        for key in ("winner_probabilities", "winners_odds", "champion", "simulations_run"):
+            if view_payload.get(key) is not None:
+                payload[key] = view_payload[key]
+
+    bracket = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
+    if isinstance(bracket, dict) and bracket:
+        payload["bracket"] = bracket
+        cup_data = bracket.get("mls_cup") or {}
+        if cup_data.get("winner"):
+            payload["mls_cup_winner"] = cup_data.get("winner")
+
+    if not payload.get("fixtures"):
+        from competition_rules import resolve_competition_query
+
+        base_comp, _view = resolve_competition_query(comp)
+        fixture_comp = base_comp if base_comp == "United States/MLS" else comp
+        for csv_path in (config.MLS_UPCOMING_FILE, config.GLOBAL_UPCOMING_FILE):
+            try:
+                rows, _, _ = _load_upcoming_rows(csv_path, date_range="all")
+            except Exception:
+                continue
+            comp_fixtures = [
+                r for r in rows
+                if r.get("competition") in (comp, fixture_comp, "United States/MLS")
+            ]
+            if comp_fixtures:
+                payload["fixtures"] = comp_fixtures
+                break
+    return payload
 
 
 @app.get("/api/league-tables")
@@ -1509,21 +1796,8 @@ def api_league_tables():
     season_data = _load_current_season_tables()
 
     if mode == "mls":
-        if season_data:
-            mls_leagues = [c for c in season_data.get("leagues", [])
-                           if "MLS" in c or "United States" in c]
-            data = {
-                "leagues": mls_leagues,
-                "tables": {c: season_data["tables"][c]
-                           for c in mls_leagues if c in season_data.get("tables", {})},
-            }
-        else:
-            csv_path = config.MLS_PROJECTED_TABLE_FILE
-            data = _load_projected_tables(csv_path)
-        bracket = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
-        data["last_prediction_refresh"] = _file_mtime_utc(config.MLS_PROJECTED_TABLE_FILE) if not season_data else None
-        fixtures = _load_all_fixtures_by_competition(config.MLS_UPCOMING_FILE)
-        return jsonify({"ok": True, **data, "bracket": bracket, "fixtures": fixtures})
+        data = _build_mls_api_payload()
+        return jsonify({"ok": True, **data})
     if mode == "cups":
         csv_path = config.CUP_PROJECTED_TABLE_FILE
         data = _load_projected_tables(csv_path)
@@ -1598,66 +1872,46 @@ def api_league_data(competition):
          "position_odds": {"simple": {pos: [{team, pct}, ...]},
                            "detailed": [{team, odds: {pos: pct, ...}}, ...]},
          "winners_odds": [{team, win_league_pct, top4_pct, ...}, ...],
+         "winner_probabilities": {team: pct, ...},
+         "champion": "...",
+         "simulations_run": 200,
+         "mls_winners_odds": {
+           "supporters_shield": {...},
+           "eastern_conference": {...},
+           "western_conference": {...},
+           "mls_cup": {...}
+         },
          "real_table": {"groups": [...], "source": "real"},
          "fixtures": [...]}
     """
     comp = competition.strip()
 
     # ── 1. Find projected table from any CSV source ───────────────
-    table_sources = [
-        ("global", config.GLOBAL_PROJECTED_TABLE_FILE),
-        ("mls", config.MLS_PROJECTED_TABLE_FILE),
-        ("extra", config.EXTRA_PROJECTED_TABLE_FILE),
-        ("cups", config.CUP_PROJECTED_TABLE_FILE),
-    ]
-    predicted_table = []
+    comp_table = _load_projected_competition_table(comp)
+    predicted_table = comp_table
+    winner_fields = _build_winner_probability_payload(comp_table) if comp_table else {}
+    winners_odds = winner_fields.get("winners_odds", [])
     position_odds_simple = {}
     position_odds_detailed = []
-    winners_odds = []
-    found_source = None
 
-    for source_name, csv_path in table_sources:
-        proj = _load_projected_tables(csv_path)
-        if comp in proj.get("tables", {}):
-            found_source = source_name
-            comp_table = proj["tables"][comp]
-            predicted_table = comp_table
-
-            # Winners odds — all teams sorted by win_league_pct desc
-            winners = []
-            for row in comp_table:
-                winners.append({
-                    "team": row.get("team", ""),
-                    "win_league_pct": row.get("win_league_pct"),
-                    "top4_pct": row.get("top4_pct"),
-                    "bottom3_pct": row.get("bottom3_pct"),
-                    "most_likely_position": row.get("most_likely_position"),
-                    "most_likely_position_pct": row.get("most_likely_position_pct"),
-                })
-            winners.sort(key=lambda x: x.get("win_league_pct") or 0, reverse=True)
-            winners_odds = winners
-
-            # Position odds — simple (per-position team list) + detailed (per-team)
-            pos_simple = {}
-            pos_detailed = []
-            for row in comp_table:
-                team = row.get("team", "")
-                raw = row.get("position_odds")
-                if raw and isinstance(raw, dict):
-                    entry = {"team": team, "odds": {}}
-                    for pos_str, pct in raw.items():
-                        pct_f = float(pct) if pct is not None else 0.0
-                        entry["odds"][str(pos_str)] = pct_f
-                        if str(pos_str) not in pos_simple:
-                            pos_simple[str(pos_str)] = []
-                        pos_simple[str(pos_str)].append({"team": team, "pct": pct_f})
-                    pos_detailed.append(entry)
-            # Sort each position's teams by pct descending
-            for ps in pos_simple:
-                pos_simple[ps].sort(key=lambda x: x["pct"], reverse=True)
-            position_odds_simple = dict(sorted(pos_simple.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 999))
-            position_odds_detailed = pos_detailed
-            break
+    if comp_table:
+        for row in comp_table:
+            team = row.get("team", "")
+            raw = row.get("position_odds")
+            if raw and isinstance(raw, dict):
+                entry = {"team": team, "odds": {}}
+                for pos_str, pct in raw.items():
+                    pct_f = float(pct) if pct is not None else 0.0
+                    entry["odds"][str(pos_str)] = pct_f
+                    if str(pos_str) not in position_odds_simple:
+                        position_odds_simple[str(pos_str)] = []
+                    position_odds_simple[str(pos_str)].append({"team": team, "pct": pct_f})
+                position_odds_detailed.append(entry)
+        for ps in position_odds_simple:
+            position_odds_simple[ps].sort(key=lambda x: x["pct"], reverse=True)
+        position_odds_simple = dict(
+            sorted(position_odds_simple.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 999)
+        )
 
     # If no projected table found in CSVs, fall back to league roster
     if not predicted_table:
@@ -1687,6 +1941,12 @@ def api_league_data(competition):
     real_table = _compute_standings_from_history(comp)
 
     # ── 3. Upcoming fixtures with prediction odds ────────────────
+    from competition_rules import resolve_competition_query
+
+    base_comp, _mls_view = resolve_competition_query(comp)
+    fixture_comps = {comp}
+    if base_comp == "United States/MLS":
+        fixture_comps.update({"United States/MLS", base_comp})
     upcoming_sources = [
         config.GLOBAL_UPCOMING_FILE,
         config.MLS_UPCOMING_FILE,
@@ -1697,7 +1957,7 @@ def api_league_data(competition):
     for csv_path in upcoming_sources:
         try:
             rows, _, _ = _load_upcoming_rows(csv_path, date_range="all")
-            comp_fixtures = [r for r in rows if r.get("competition") == comp]
+            comp_fixtures = [r for r in rows if r.get("competition") in fixture_comps]
             if comp_fixtures:
                 fixtures = comp_fixtures
                 break
@@ -1716,7 +1976,11 @@ def api_league_data(competition):
         "real_table": real_table,
         "fixtures": fixtures,
     }
+    for key in ("winner_probabilities", "champion", "simulations_run"):
+        if winner_fields.get(key) is not None:
+            payload[key] = winner_fields[key]
     payload = _enrich_league_data_cup_fields(comp, payload)
+    payload = _enrich_league_data_mls_fields(comp, payload)
     return jsonify(payload)
 
 
@@ -1910,27 +2174,22 @@ def api_league_leaders():
         comp = entry["competition"]
         if comp in cup_set:
             continue
-        # MLS real leaders — read from history for East/West conferences
+        # MLS real leaders — read conference groups from the unified MLS table
         if comp == "United States/MLS":
-            east_real = _compute_standings_from_history("United States/MLS - Eastern Conference")
-            west_real = _compute_standings_from_history("United States/MLS - Western Conference")
-            if east_real and isinstance(east_real, dict):
-                for g in (east_real.get("groups") or []):
-                    if g.get("entries"):
-                        entry["east_leader"] = g["entries"][0].get("team", "")
-                        break
-            if west_real and isinstance(west_real, dict):
-                for g in (west_real.get("groups") or []):
-                    if g.get("entries"):
-                        entry["west_leader"] = g["entries"][0].get("team", "")
-                        break
-            overall_real = _compute_standings_from_history("United States/MLS - Supporters Shield Table")
-            if overall_real and isinstance(overall_real, dict):
-                for g in (overall_real.get("groups") or []):
-                    if g.get("entries"):
-                        entry["current_leader"] = g["entries"][0].get("team", "")
+            real = _compute_standings_from_history("United States/MLS")
+            if real and isinstance(real, dict):
+                for g in (real.get("groups") or []):
+                    name = str(g.get("name", "")).strip()
+                    leader = (g.get("entries") or [{}])[0].get("team", "")
+                    if not leader:
+                        continue
+                    if name == "Eastern Conference":
+                        entry["east_leader"] = leader
+                    elif name == "Western Conference":
+                        entry["west_leader"] = leader
+                    elif name == "Supporters Shield":
+                        entry["current_leader"] = leader
                         entry["leader_source"] = "real"
-                        break
             if "leader_source" not in entry:
                 entry["current_leader"] = entry.get("predicted_winner") if entry.get("predicted_winner") and entry["predicted_winner"] != "—" else None
                 entry["leader_source"] = "predicted"

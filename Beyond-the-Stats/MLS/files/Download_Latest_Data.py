@@ -1,9 +1,9 @@
 """
-Download MLS fixture data from football-data.co.uk.
+Download MLS + Liga MX fixture data from football-data.co.uk.
 
-Mirrors ``files/Download_Latest_Data.py`` but configured for MLS-only
-competitions.  Fetches CSVs, then immediately processes and sorts them
-(imports sibling ``Process_Data`` and ``Sort_Data``).
+Mirrors ``files/Download_Latest_Data.py`` but configured for CONCACAF club
+competitions (MLS and Liga MX).  Fetches CSVs, then immediately processes
+and sorts them (imports sibling ``Process_Data`` and ``Sort_Data``).
 """
 import argparse
 import os
@@ -18,6 +18,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(__file__))
 import Process_Data as process_data
 import Sort_Data as sort_data
+import Download_Mexico_Data as download_mexico
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -136,14 +137,17 @@ def main():
         f"skipped {skipped_existing_count} existing historical files."
     )
 
-    print("\nProcessing MLS files...")
+    print("\nDownloading Liga MX source data...")
+    download_mexico.main()
+
+    print("\nProcessing MLS + Liga MX files...")
     process_data.main()
-    print("\nSorting MLS team data...")
+    print("\nSorting MLS + Liga MX team data...")
     sort_data.sort_all_seasons()
     sort_data.build_current_form_file()
     if not args.skip_squad_values:
         sort_data.build_squad_values_file()
-    print("\nMLS pipeline complete (download + process + sort).")
+    print("\nMLS + Liga MX pipeline complete (download + process + sort).")
 
 
 if __name__ == "__main__":

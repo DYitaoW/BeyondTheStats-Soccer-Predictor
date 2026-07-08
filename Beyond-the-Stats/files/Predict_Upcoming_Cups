@@ -40,7 +40,8 @@ EASTERN_TZ = ZoneInfo("America/New_York")
 
 # TheSportsDB API
 THESPORTSDB_API_BASE = "https://www.thesportsdb.com/api/v1/json/123"
-DEFAULT_CUP_FIXTURE_WINDOW_DAYS = 3
+DEFAULT_CUP_FIXTURE_WINDOW_DAYS = 365
+LEAGUES_CUP_COMPETITION = "CONCACAF/Leagues Cup"
 
 # Map cup names to TheSportsDB league IDs (these IDs must be correct for each cup)
 THESPORTSDB_LEAGUE_IDS = {
@@ -117,63 +118,70 @@ CUP_COMPETITIONS = {
         "espn_id": "eng.fa",  # ESPN FA Cup
         "priority": 1,
         "api_source": "espn",
-        "fixture_window_days": 7,
+        "fixture_window_days": 365,
     },
     "Carabao Cup": {
         "name": "England/League Cup",
         "espn_id": "eng.league_cup",  # ESPN Carabao Cup (EFL Cup)
         "priority": 2,
         "api_source": "espn",
-        "fixture_window_days": 5,
+        "fixture_window_days": 365,
     },
     "UCL": {
         "name": "UEFA/Champions League",
         "espn_id": "uefa.champions",  # ESPN UCL
         "priority": 3,
         "api_source": "espn",
-        "fixture_window_days": 5,
+        "fixture_window_days": 365,
     },
     "UEL": {
         "name": "UEFA/Europa League",
         "espn_id": "uefa.europa",  # ESPN UEL
         "priority": 4,
         "api_source": "espn",
-        "fixture_window_days": 6,
+        "fixture_window_days": 365,
     },
     "UECL": {
         "name": "UEFA/Conference League",
         "espn_id": "uefa.europa.conf",  # ESPN UECL
         "priority": 5,
         "api_source": "espn",
-        "fixture_window_days": 6,
+        "fixture_window_days": 365,
     },
     "Coppa Italia": {
         "name": "Italy/Coppa Italia",
         "espn_id": "ita.coppa_italia",
         "priority": 6,
         "api_source": "espn",
-        "fixture_window_days": 5,
+        "fixture_window_days": 365,
     },
     "Copa del Rey": {
         "name": "Spain/Copa del Rey",
         "espn_id": "esp.copa_del_rey",
         "priority": 7,
         "api_source": "espn",
-        "fixture_window_days": 5,
+        "fixture_window_days": 365,
     },
     "DFB-Pokal": {
         "name": "Germany/DFB-Pokal",
         "espn_id": "ger.dfb_pokal",
         "priority": 8,
         "api_source": "espn",
-        "fixture_window_days": 6,
+        "fixture_window_days": 365,
     },
     "Coupe de France": {
         "name": "France/Coupe de France",
         "espn_id": "fra.coupe_de_france",
         "priority": 9,
         "api_source": "espn",
-        "fixture_window_days": 6,
+        "fixture_window_days": 365,
+    },
+    "Leagues Cup": {
+        "name": LEAGUES_CUP_COMPETITION,
+        "espn_id": "concacaf.leagues.cup",
+        "priority": 10,
+        "api_source": "espn",
+        "fixture_window_days": 365,
     },
 }
 
@@ -182,6 +190,7 @@ AUTO_RESOLVE_CUP_COMPETITIONS = {
     "Spain/Copa del Rey",
     "Germany/DFB-Pokal",
     "France/Coupe de France",
+    LEAGUES_CUP_COMPETITION,
 }
 
 UEFA_CUP_COMPETITIONS = {
@@ -189,6 +198,15 @@ UEFA_CUP_COMPETITIONS = {
     "UEFA/Europa League",
     "UEFA/Conference League",
 }
+
+CROSS_LEAGUE_CUP_COMPETITIONS = {
+    LEAGUES_CUP_COMPETITION,
+}
+
+LEAGUES_CUP_SOURCE_COMPETITIONS = (
+    "United States/MLS",
+    "Mexico/Liga MX",
+)
 
 # --- CORE CLASSES AND UTILITIES (Copied from original script) ---
 
@@ -706,9 +724,14 @@ def calculate_fixture_window_end(window_days, start_date=None):
     # Anchor to the supplied start date, usually the cup's first upcoming fixture date.
     today = pd.Timestamp(start_date or datetime.now(UTC).date())
     today = today.normalize()
-    min_window_end = today + pd.Timedelta(days=max(0, int(window_days)))
+    window_days = max(0, int(window_days))
 
-    # Extend through the next Tuesday when that keeps the Friday-to-Tuesday block together.
+    # Full-season windows include every remaining scheduled fixture.
+    if window_days >= 90:
+        return today + pd.Timedelta(days=window_days)
+
+    min_window_end = today + pd.Timedelta(days=window_days)
+    # Short windows extend through the next Tuesday to keep Friday-to-Tuesday blocks together.
     days_to_tuesday = (1 - today.weekday()) % 7
     if days_to_tuesday == 0:
         days_to_tuesday = 7
@@ -813,6 +836,25 @@ def load_shared_mapping():
     if merged:
         save_team_mapping(TEAM_MAPPING_FILE, merged)
     return merged
+
+
+def resolve_leagues_cup_team(raw_name, mapping, context):
+    """Resolve a Leagues Cup team via MLS or Liga MX mappings."""
+    api_name = str(raw_name).strip()
+    if not api_name:
+        return None
+    known_teams = set(context.get("available_teams", []))
+    team_competition_map = context.get("team_competition_map", {})
+    for source_comp in LEAGUES_CUP_SOURCE_COMPETITIONS:
+        mapped = str(mapping.get(source_comp, {}).get(api_name, "")).strip()
+        if mapped and mapped in known_teams:
+            team_competition_map[mapped] = source_comp
+            return mapped
+        resolved = resolve_live_team_name(api_name, source_comp, context)
+        if resolved:
+            team_competition_map[resolved] = source_comp
+            return resolved
+    return None
 
 
 def resolve_live_team_name(raw_name, competition, context):
@@ -929,6 +971,11 @@ def apply_team_mapping_to_fixtures(fixtures, mapping, context):
             # coefficients, league context, domestic table data, and squad
             # values rather than skipping the fixture outright.
             return api_name
+        if competition in CROSS_LEAGUE_CUP_COMPETITIONS:
+            resolved = resolve_leagues_cup_team(api_name, mapping, context)
+            if resolved:
+                return resolved
+            return api_name
         if competition in AUTO_RESOLVE_CUP_COMPETITIONS:
             resolved = resolve_live_team_name(api_name, competition, context)
             if resolved:
@@ -987,6 +1034,80 @@ def inject_fallback_team(team_name, competition, season_key, context):
         if team_name not in season_teams.get(season_key, {}):
             season_teams.setdefault(season_key, {})[team_name] = {"games": 0, "points": 0}
         return
+
+    if competition in CROSS_LEAGUE_CUP_COMPETITIONS:
+        comp_teams = [
+            team
+            for team, comp in team_competition_map.items()
+            if comp in LEAGUES_CUP_SOURCE_COMPETITIONS
+        ]
+        if not comp_teams:
+            comp_teams = [
+                team
+                for team, comp in team_competition_map.items()
+                if comp in LEAGUES_CUP_SOURCE_COMPETITIONS or comp == competition
+            ]
+        league_strength = context.setdefault("league_strength", {})
+        league_strength.setdefault("United States/MLS", league_strength.get("United States/MLS", 0.70))
+        league_strength.setdefault("Mexico/Liga MX", league_strength.get("Mexico/Liga MX", 0.62))
+        comp_overall_rows = [overall_teams[t] for t in comp_teams if t in overall_teams]
+        if comp_overall_rows:
+            overall_teams[team_name] = {
+                "games": max(1, int(round(mean_from_dicts(comp_overall_rows, "games", 30)))),
+                "goals_scored": mean_from_dicts(comp_overall_rows, "goals_scored", 40.0),
+                "goals_conceded": mean_from_dicts(comp_overall_rows, "goals_conceded", 40.0),
+                "home_games": max(1, int(round(mean_from_dicts(comp_overall_rows, "home_games", 15)))),
+                "away_games": max(1, int(round(mean_from_dicts(comp_overall_rows, "away_games", 15)))),
+                "home_goals_scored": mean_from_dicts(comp_overall_rows, "home_goals_scored", 20.0),
+                "away_goals_scored": mean_from_dicts(comp_overall_rows, "away_goals_scored", 20.0),
+                "avg_goals_scored": mean_from_dicts(comp_overall_rows, "avg_goals_scored", 1.35),
+                "avg_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_goals_conceded", 1.35),
+                "avg_home_goals_scored": mean_from_dicts(comp_overall_rows, "avg_home_goals_scored", 1.45),
+                "avg_home_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_home_goals_conceded", 1.20),
+                "avg_away_goals_scored": mean_from_dicts(comp_overall_rows, "avg_away_goals_scored", 1.20),
+                "avg_away_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_away_goals_conceded", 1.45),
+                "avg_home_shots_for": mean_from_dicts(comp_overall_rows, "avg_home_shots_for", 12.0),
+                "avg_home_shots_against": mean_from_dicts(comp_overall_rows, "avg_home_shots_against", 12.0),
+                "avg_away_shots_for": mean_from_dicts(comp_overall_rows, "avg_away_shots_for", 10.5),
+                "avg_away_shots_against": mean_from_dicts(comp_overall_rows, "avg_away_shots_against", 12.5),
+                "weighted_avg_goals_scored": mean_from_dicts(comp_overall_rows, "weighted_avg_goals_scored", 1.35),
+            }
+            season_rows = []
+            for src in LEAGUES_CUP_SOURCE_COMPETITIONS:
+                season_rows.extend(list(season_teams.get(season_key, {}).values()))
+            season_teams.setdefault(season_key, {})
+            season_teams[season_key][team_name] = {
+                "games": max(1, int(round(mean_from_dicts(season_rows, "games", 20)))),
+                "points": mean_from_dicts(season_rows, "points", 28.0),
+                "avg_goals_scored": mean_from_dicts(comp_overall_rows, "avg_goals_scored", 1.35),
+                "avg_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_goals_conceded", 1.35),
+                "avg_home_goals_scored": mean_from_dicts(comp_overall_rows, "avg_home_goals_scored", 1.45),
+                "avg_home_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_home_goals_conceded", 1.20),
+                "avg_away_goals_scored": mean_from_dicts(comp_overall_rows, "avg_away_goals_scored", 1.20),
+                "avg_away_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_away_goals_conceded", 1.45),
+                "avg_home_shots_for": mean_from_dicts(comp_overall_rows, "avg_home_shots_for", 12.0),
+                "avg_home_shots_against": mean_from_dicts(comp_overall_rows, "avg_home_shots_against", 12.0),
+                "avg_away_shots_for": mean_from_dicts(comp_overall_rows, "avg_away_shots_for", 10.5),
+                "avg_away_shots_against": mean_from_dicts(comp_overall_rows, "avg_away_shots_against", 12.5),
+            }
+            current_form.setdefault("teams", {})
+            current_form["teams"].setdefault(
+                team_name,
+                {
+                    "points_last_10": 12.0,
+                    "wins_last_10": 4,
+                    "losses_last_10": 3,
+                    "avg_goals_for_last_10": 1.3,
+                    "avg_goals_against_last_10": 1.3,
+                    "previous_match_win_odds": 2.8,
+                    "previous_match_draw_odds": 3.3,
+                    "previous_match_lose_odds": 2.8,
+                },
+            )
+            team_competition_map[team_name] = competition
+            if team_name not in available_teams:
+                available_teams.append(team_name)
+            return
 
     uefa_data = None
     if "uefa_coefficients" in context:
@@ -1360,7 +1481,7 @@ def load_upcoming_matchweek_fixtures_from_csv_fallback(window_days, competition_
     return fixtures
 
 
-def load_upcoming_matchweek_fixtures_from_espn(window_days, competition_name, espn_id, lookahead_days=21):
+def load_upcoming_matchweek_fixtures_from_espn(window_days, competition_name, espn_id, lookahead_days=365):
     today = pd.Timestamp(datetime.now(UTC).date())
     rows = []
     seen = set()
@@ -1515,6 +1636,7 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
             cup_window_days,
             cup_data["name"],
             cup_data["espn_id"],
+            lookahead_days=max(cup_window_days, 365),
         )
         if not fixtures.empty:
             all_fixtures.append(fixtures)

@@ -6,10 +6,13 @@ model; reuses the extra-leagues model cache and outputs predictions to
 ``Data/Predictions/``.
 """
 import argparse
+import json
 import os
 import sys
 import time
-from datetime import datetime, timedelta
+import urllib.request
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import joblib
 import pandas as pd
@@ -21,6 +24,16 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_matchweek_predictions.csv")
+
+ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
+EASTERN_TZ = ZoneInfo("America/New_York")
+
+# Extra-league competitions with ESPN scoreboard coverage for full-season fixtures.
+EXTRA_ESPN_COMPETITIONS = {
+    "Argentina/Primera Division": "arg.1",
+    "Brazil/Serie A": "bra.1",
+    "Japan/J1 League": "jpn.1",
+}
 
 # Allow import of global pipeline modules (UEFA_Data_Manager, etc.)
 _GLOBAL_FILES_DIR = os.path.join(os.path.dirname(BASE_DIR), "files")
@@ -73,8 +86,8 @@ def parse_args():
     parser.add_argument(
         "--window-days",
         type=int,
-        default=3,
-        help="Minimum lookahead window in days, extended through the next Tuesday when that is farther out.",
+        default=365,
+        help="Lookahead window in days for upcoming fixtures (default: full season). Short windows (<90 days) extend through the next Tuesday.",
     )
     return parser.parse_args()
 
@@ -105,9 +118,14 @@ def parse_date(value):
 def calculate_fixture_window_end(window_days, start_date=None):
     # Anchor the window to today so extra-league pulls reflect the current slate.
     today = pd.Timestamp(start_date or datetime.utcnow().date()).normalize()
-    min_window_end = today + pd.Timedelta(days=max(0, int(window_days)))
+    window_days = max(0, int(window_days))
 
-    # Extend through the next Tuesday when that keeps the Friday-to-Tuesday block together.
+    # Full-season windows include every remaining scheduled fixture.
+    if window_days >= 90:
+        return today + pd.Timedelta(days=window_days)
+
+    min_window_end = today + pd.Timedelta(days=window_days)
+    # Short windows extend through the next Tuesday to keep Friday-to-Tuesday blocks together.
     days_to_tuesday = (1 - today.weekday()) % 7
     if days_to_tuesday == 0:
         days_to_tuesday = 7
@@ -479,6 +497,90 @@ def upcoming_fixtures_from_raw(raw_path, window_days):
     return future[future["DateParsed"] <= window_end].copy()
 
 
+def fetch_json(url, timeout=30):
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def upcoming_fixtures_from_espn(competition, window_days, lookahead_days=365):
+    espn_id = EXTRA_ESPN_COMPETITIONS.get(competition)
+    if not espn_id:
+        return pd.DataFrame()
+
+    today = pd.Timestamp(datetime.now(UTC).date())
+    cutoff = calculate_fixture_window_end(window_days, start_date=today)
+    rows = []
+    seen = set()
+
+    for offset in range(0, max(1, int(lookahead_days) + 1)):
+        day = today + pd.Timedelta(days=offset)
+        url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
+        try:
+            data = fetch_json(url, timeout=30)
+        except Exception:
+            continue
+
+        for event in data.get("events", []) or []:
+            event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
+            if pd.isna(event_date):
+                continue
+            event_dt_et = event_date.tz_convert(EASTERN_TZ)
+            match_date = event_dt_et.tz_localize(None).normalize()
+            if match_date < today or match_date > cutoff:
+                continue
+
+            competitions = event.get("competitions", [])
+            if not competitions:
+                continue
+            comp0 = competitions[0] or {}
+            status_state = (
+                ((comp0.get("status") or {}).get("type") or {}).get("state", "")
+            ).strip().lower()
+            if status_state and status_state not in {"pre"}:
+                continue
+
+            home_team = ""
+            away_team = ""
+            for competitor in comp0.get("competitors", []) or []:
+                team_name = ((competitor.get("team") or {}).get("displayName") or "").strip()
+                side = str(competitor.get("homeAway", "")).strip().lower()
+                if side == "home":
+                    home_team = team_name
+                elif side == "away":
+                    away_team = team_name
+            if not home_team or not away_team:
+                continue
+
+            key = (match_date.strftime("%Y-%m-%d"), home_team, away_team)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(
+                {
+                    "DateParsed": match_date,
+                    "Home": home_team,
+                    "Away": away_team,
+                }
+            )
+
+    if not rows:
+        return pd.DataFrame()
+    frame = pd.DataFrame(rows)
+    return frame.sort_values(["DateParsed", "Home", "Away"]).reset_index(drop=True)
+
+
+def merge_fixture_frames(*frames):
+    valid = [frame for frame in frames if frame is not None and not frame.empty]
+    if not valid:
+        return pd.DataFrame()
+    merged = pd.concat(valid, ignore_index=True)
+    merged["DateParsed"] = pd.to_datetime(merged["DateParsed"], errors="coerce").dt.normalize()
+    merged = merged[merged["DateParsed"].notna() & merged["Home"].notna() & merged["Away"].notna()]
+    merged = merged.drop_duplicates(subset=["DateParsed", "Home", "Away"], keep="first")
+    return merged.sort_values(["DateParsed", "Home", "Away"]).reset_index(drop=True)
+
+
 def main():
     args = parse_args()
     latest = latest_raw_file_per_competition(RAW_DATA_DIR)
@@ -489,7 +591,9 @@ def main():
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = []
     for competition, path in sorted(latest.items()):
-        fixtures = upcoming_fixtures_from_raw(path, args.window_days)
+        raw_fixtures = upcoming_fixtures_from_raw(path, args.window_days)
+        espn_fixtures = upcoming_fixtures_from_espn(competition, args.window_days)
+        fixtures = merge_fixture_frames(raw_fixtures, espn_fixtures)
         if fixtures.empty:
             continue
         for _, row in fixtures.iterrows():

@@ -1,6 +1,8 @@
 """Background live score polling thread and ESPN scoreboard merging."""
+import importlib.util
 import json
 import os
+import sys
 import threading
 import time
 from collections import defaultdict
@@ -48,6 +50,51 @@ _live_scores_lock = threading.RLock()
 
 _live_summary_cache: dict[str, dict] = {}
 _live_summary_cache_lock = threading.Lock()
+_last_friendlies_sync_ts = 0.0
+_FRIENDLIES_SYNC_INTERVAL_S = 900
+
+
+def _load_friendlies_sync_module():
+    script_path = os.path.join(config.FILES_DIR, "Update_Club_Friendlies.py")
+    if not os.path.exists(script_path):
+        return None
+    spec = importlib.util.spec_from_file_location("update_club_friendlies", script_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, config.FILES_DIR)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    return module
+
+
+def _chelsea_team_name(name):
+    text = str(name or "").strip().lower().replace("fc", "").replace(" ", "")
+    return text in {"chelsea", "chelseafc"}
+
+
+def _is_chelsea_live_game(game):
+    return _chelsea_team_name(game.get("home_team")) or _chelsea_team_name(game.get("away_team"))
+
+
+def _sync_friendlies_results_if_due():
+    global _last_friendlies_sync_ts
+    now = time.time()
+    if now - _last_friendlies_sync_ts < _FRIENDLIES_SYNC_INTERVAL_S:
+        return
+    module = _load_friendlies_sync_module()
+    if module is None:
+        return
+    try:
+        updated = module.update_recent_friendlies_results(days_back=1, days_forward=1)
+        if updated:
+            print(f"[friendlies] Updated {updated} final result(s) from ESPN.")
+    except Exception:
+        import traceback
+        traceback.print_exc()
+    _last_friendlies_sync_ts = now
 
 
 def _merge_completed_to_history():
@@ -196,6 +243,30 @@ def _get_todays_competitions(today_date=None):
                                 if isinstance(match, dict):
                                     _add_if_today(match, comp_name, today_date, now_et, todays)
 
+    # ── Source 4: club friendlies (Chelsea live only) ───────────
+    if os.path.exists(config.FRIENDLIES_UPCOMING_FILE):
+        try:
+            frame = pd.read_csv(config.FRIENDLIES_UPCOMING_FILE, dtype=str)
+        except Exception:
+            frame = pd.DataFrame()
+        for _, row in frame.iterrows():
+            if str(row.get("live_tracking", "")).strip() != "1":
+                continue
+            kickoff_utc_str = str(row.get("match_datetime_utc", "") or "").strip()
+            if not kickoff_utc_str:
+                continue
+            try:
+                dt_utc = pd.to_datetime(kickoff_utc_str, errors="coerce")
+                if pd.isna(dt_utc):
+                    continue
+                if dt_utc.tz is None:
+                    dt_utc = dt_utc.tz_localize("UTC")
+                kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
+                if kickoff_et.date() == today_date:
+                    todays[config.CLUB_FRIENDLIES_COMPETITION].append(kickoff_et)
+            except Exception:
+                continue
+
     return {k: sorted(v) for k, v in todays.items()}
 
 
@@ -319,6 +390,8 @@ def _live_score_poller_loop():
                         name = ft_to_name[ft]
                         try:
                             games = ft.result()
+                            if name == config.CLUB_FRIENDLIES_COMPETITION:
+                                games = [g for g in games if _is_chelsea_live_game(g)]
                             if not games:
                                 continue
                             results[name] = {
@@ -567,6 +640,8 @@ def _live_score_poller_loop():
         except Exception:
             import traceback
             traceback.print_exc()
+
+        _sync_friendlies_results_if_due()
 
         now = datetime.now()
         interval = _compute_poll_interval(now, results, active_comps, todays_comps)

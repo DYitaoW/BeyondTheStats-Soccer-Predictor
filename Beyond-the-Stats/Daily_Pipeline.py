@@ -43,6 +43,8 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pipeline_log
+
 SP_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SP_DIR.parent
 FILES_DIR = SP_DIR / "files"
@@ -139,7 +141,7 @@ def parse_args():
     parser.add_argument("--skip-mls", action="store_true", help="Skip MLS pipeline steps.")
     parser.add_argument("--skip-extra", action="store_true", help="Skip extra-leagues pipeline steps.")
     parser.add_argument("--skip-global", action="store_true", help="Skip European/global pipeline steps.")
-    parser.add_argument("--window-days", type=int, default=3, help="Fixture window days for upcoming matchweek scripts.")
+    parser.add_argument("--window-days", type=int, default=365, help="Fixture window days for upcoming matchweek scripts.")
     parser.add_argument(
         "--national-window-days",
         type=int,
@@ -295,6 +297,53 @@ def _condense_cup_brackets(path):
 # Mobile feed builder
 # ---------------------------------------------------------------------------
 
+def _condense_real_league_tables():
+    """Load real standings for all tracked leagues (including MLS views)."""
+    import config as website_config
+
+    website_dir = SP_DIR / "Website"
+    if str(website_dir) not in sys.path:
+        sys.path.insert(0, str(website_dir))
+
+    comp_names = list(website_config.LIVE_SCORE_COMPETITIONS) + sorted(
+        website_config.MLS_TABLE_VIEW_ALIASES
+    )
+    standings_file = SP_DIR / "Data" / "standings_cache.json"
+    if standings_file.exists():
+        try:
+            cache = json.loads(standings_file.read_text(encoding="utf-8"))
+        except Exception:
+            cache = {}
+        if isinstance(cache, dict):
+            tables = {name: cache[name] for name in comp_names if name in cache}
+            if tables:
+                return tables
+
+    try:
+        from standings import _compute_standings_from_history
+    except ImportError as exc:
+        print(f"[WARN] Could not import standings for mobile feed: {exc}")
+        return {}
+
+    tables = {}
+    for comp_name in comp_names:
+        table = _compute_standings_from_history(comp_name)
+        if table:
+            tables[comp_name] = table
+    return tables
+
+
+def _merge_projected_brackets(cup_path, mls_path):
+    """Combine domestic-cup and MLS playoff brackets into one object."""
+    brackets = _condense_cup_brackets(cup_path)
+    mls_bracket = _condense_cup_brackets(mls_path)
+    if not isinstance(brackets, dict):
+        brackets = {}
+    if isinstance(mls_bracket, dict) and mls_bracket:
+        brackets["United States/MLS"] = mls_bracket
+    return brackets
+
+
 def build_mobile_app_feed(pipeline_status, step_results, output_path):
     """Read the latest prediction outputs and write a condensed JSON feed.
 
@@ -316,6 +365,9 @@ def build_mobile_app_feed(pipeline_status, step_results, output_path):
         "world_cup_projection": PREDICTIONS_DIR / "world_cup_projection.json",
         "mls_upcoming_fixtures": MLS_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
         "mls_projected_league_tables": MLS_PREDICTIONS_DIR / "projected_league_tables.csv",
+        "mls_projected_bracket": MLS_PREDICTIONS_DIR / "projected_mls_playoff_bracket.json",
+        "extra_upcoming_fixtures": EXTRA_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
+        "extra_projected_league_tables": EXTRA_PREDICTIONS_DIR / "projected_league_tables.csv",
     }
 
     feed = {
@@ -325,15 +377,21 @@ def build_mobile_app_feed(pipeline_status, step_results, output_path):
         "step_results": dict(step_results),
         "sources": {name: str(path) for name, path in sources.items()},
         "data": {
-            "upcoming_fixtures": _condense_fixtures(sources["upcoming_fixtures_global"]),
+            "upcoming_fixtures": _condense_fixtures(sources["upcoming_fixtures_global"])
+            + _condense_fixtures(sources["mls_upcoming_fixtures"])
+            + _condense_fixtures(sources["extra_upcoming_fixtures"]),
             "upcoming_cup_fixtures": _condense_fixtures(sources["upcoming_fixtures_cups"]),
             "upcoming_national_fixtures": _condense_fixtures(sources["upcoming_fixtures_national"]),
-            "projected_league_tables": _condense_tables(sources["projected_league_tables_global"]),
+            "projected_league_tables": _condense_tables(sources["projected_league_tables_global"])
+            + _condense_tables(sources["mls_projected_league_tables"])
+            + _condense_tables(sources["extra_projected_league_tables"]),
             "projected_cup_tables": _condense_tables(sources["projected_cup_tables"]),
-            "projected_cup_brackets": _condense_cup_brackets(sources["projected_cup_brackets"]),
+            "projected_cup_brackets": _merge_projected_brackets(
+                sources["projected_cup_brackets"],
+                sources["mls_projected_bracket"],
+            ),
             "completed_cup_predictions": _condense_fixtures(sources["completed_cup_predictions"]),
-            "mls_upcoming_fixtures": _condense_fixtures(sources["mls_upcoming_fixtures"]),
-            "mls_projected_league_tables": _condense_tables(sources["mls_projected_league_tables"]),
+            "real_league_tables": _condense_real_league_tables(),
             "world_cup": _condense_world_cup(sources["world_cup_projection"]),
         },
     }
@@ -647,11 +705,12 @@ def publish_to_output(output_dir=None):
         if path:
             written[region]["upcoming"] = str(path)
     nat_sources = [PREDICTIONS_DIR / "upcoming_national_team_predictions.csv"]
+    friendlies_sources = [PREDICTIONS_DIR / "upcoming_club_friendlies.csv"]
     path = _publish_upcoming_csv(output_dir, nat_sources, "national")
     if path:
         written["national"]["upcoming"] = str(path)
 
-    combined = _publish_all_upcoming(output_dir, upcoming_sources + nat_sources)
+    combined = _publish_all_upcoming(output_dir, upcoming_sources + nat_sources + friendlies_sources)
     if combined:
         written["combined"]["all_upcoming"] = str(combined)
 
@@ -701,6 +760,9 @@ def _write_pipeline_status(results: dict) -> None:
         now = datetime.now(UTC).replace(microsecond=0)
         passed = sum(1 for v in results.values() if v)
         failed = sum(1 for v in results.values() if not v)
+        failed_steps = sorted(k for k, v in results.items() if not v)
+        log_stats = pipeline_log.log_stats()
+        log_snapshot = pipeline_log.read_log(tail=2000, level="notable", highlights_limit=80)
         pfile = SP_DIR / "Data" / "pipeline_status.json"
         pfile.parent.mkdir(parents=True, exist_ok=True)
         pfile.write_text(
@@ -709,7 +771,13 @@ def _write_pipeline_status(results: dict) -> None:
                 "total_steps": len(results),
                 "passed": passed,
                 "failed": failed,
+                "ok": failed == 0,
+                "failed_steps": failed_steps,
                 "steps": {k: bool(v) for k, v in sorted(results.items())},
+                "log_file": log_stats.get("log_file"),
+                "log_bytes": log_stats.get("bytes", 0),
+                "log_lines": log_stats.get("lines", 0),
+                "log_highlights": log_snapshot.get("highlights", []),
             }, indent=2),
             encoding="utf-8",
         )
@@ -789,6 +857,9 @@ def main():
         _iter_start = time.monotonic()
         step_results = {}
         pipeline_ok = False
+        tee = None
+        if not os.environ.get("BTS_BACKEND_MANAGED"):
+            tee = pipeline_log.activate_stdout_tee(trigger="daily")
         try:
             run_full_pipeline(args, api_token, step_results)
             pipeline_ok = bool(step_results) and all(step_results.values())
@@ -800,6 +871,15 @@ def main():
             traceback.print_exc()
         finally:
             _write_pipeline_status(step_results)
+
+        try:
+            build_mobile_app_feed(pipeline_ok, step_results, DEFAULT_FEED_FILE)
+            publish_to_output()
+        except Exception as exc:
+            print(f"[WARN] Mobile feed generation failed: {exc}")
+        finally:
+            if tee is not None:
+                pipeline_log.deactivate_stdout_tee()
 
         _write_pipeline_timestamp()
         _iter_elapsed = time.monotonic() - _iter_start
