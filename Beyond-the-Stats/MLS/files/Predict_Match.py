@@ -1312,7 +1312,12 @@ def main():
                 bt = cache_bundle.get("build_time")
                 age_h = (time.time() - bt) / 3600.0 if bt is not None else None
                 age_s = f" (cache age {age_h:.1f}h)" if age_h is not None else ""
-                print(f"[model-cache] fingerprint mismatch{age_s}; retraining models...")
+                import sys
+                if "--build-cache-only" in sys.argv:
+                    print(f"[model-cache] fingerprint mismatch{age_s}; retraining models...")
+                else:
+                    print(f"[model-cache] fingerprint mismatch{age_s}; using cached models (retrain runs Tue/Fri)")
+                    cache_valid = True
         except Exception:
             cache_bundle = None
             cache_valid = False

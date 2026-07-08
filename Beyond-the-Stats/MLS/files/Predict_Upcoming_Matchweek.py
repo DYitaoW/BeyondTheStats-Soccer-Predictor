@@ -802,13 +802,7 @@ def build_prediction_context():
 
     fingerprint = pm.data_fingerprint(season_files)
     if bundle.get("fingerprint") != fingerprint:
-        print("[model-cache] fingerprint mismatch; rebuilding model cache...")
-        rebuild_model_cache_once()
-        bundle = joblib.load(pm.MODEL_CACHE)
-        if bundle.get("fingerprint") != fingerprint:
-            raise RuntimeError(
-                "Model cache is still stale after rebuild. Check Predict_Match.py logs."
-            )
+        print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
 
     required_keys = {
         "clf",

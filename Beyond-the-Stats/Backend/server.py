@@ -71,8 +71,8 @@ class BackendConfig:
     daily_refresh_hour: int = DEFAULT_REFRESH_HOUR
     daily_refresh_minute: int = DEFAULT_REFRESH_MINUTE
     daily_refresh_tz: str = DEFAULT_REFRESH_TZ
-    # Full model retrain: once per week on this day (0=Mon ... 6=Sun)
-    weekly_model_refresh_day: int = 1  # Tuesday
+    # Full model retrain: twice weekly (0=Mon ... 6=Sun). Default Tue + Fri.
+    weekly_model_refresh_days: tuple[int, ...] = (1, 4)
     weekly_model_refresh_hour: int = DEFAULT_REFRESH_HOUR
     weekly_model_refresh_minute: int = DEFAULT_REFRESH_MINUTE
     pipeline_workers: int = 3  # 3 = run global/MLS/extra sub-pipelines in parallel
@@ -130,8 +130,9 @@ class BackendServer:
         if self.config.enable_watcher:
             self._start_watcher()
         if self.config.run_on_start:
-            full_retrain = self._any_model_cache_needs_rebuild()
-            self._run_pipeline_in_background(trigger="startup", full_retrain=full_retrain)
+            # Always a light refresh on boot; missing caches are built without a
+            # full retrain. Scheduled Tue/Fri runs handle model retraining.
+            self._run_pipeline_in_background(trigger="startup", full_retrain=False)
 
         self._scheduler_thread = threading.Thread(
             target=self._scheduler_loop, name="daily-scheduler", daemon=True
@@ -431,8 +432,8 @@ class BackendServer:
         except RuntimeError:
             pass
 
-    def _any_model_cache_needs_rebuild(self) -> bool:
-        """Return True when any enabled sub-pipeline has a missing or stale model cache."""
+    def _any_model_cache_missing(self) -> bool:
+        """Return True when any enabled sub-pipeline has no loadable model cache file."""
         specs: list[tuple[str, str]] = []
         if not self.config.pipeline_skip_global:
             specs.append(("global", str(SP_DIR / "files" / "Predict_Match.py")))
@@ -546,9 +547,8 @@ class BackendServer:
     # ------------------------------------------------------------------
 
     def _is_model_refresh_day(self, dt: datetime) -> bool:
-        """Return True if dt falls on the configured weekly model refresh day."""
-        # Monday=0 ... Sunday=6
-        return dt.weekday() == self.config.weekly_model_refresh_day
+        """Return True if dt falls on a configured model-retrain day (Tue/Fri by default)."""
+        return dt.weekday() in self.config.weekly_model_refresh_days
 
     def _scheduler_loop(self) -> None:
         while not self._stop.is_set():
@@ -571,7 +571,7 @@ class BackendServer:
             wait_s = seconds_until(target)
             LOG.info(
                 "[scheduler] next %s pipeline at %s (in %.1f h)",
-                "full model retrain" if self._is_model_refresh_day(target) else "light refresh",
+                "full model retrain (Tue/Fri)" if self._is_model_refresh_day(target) else "light refresh",
                 target.isoformat(),
                 wait_s / 3600.0,
             )

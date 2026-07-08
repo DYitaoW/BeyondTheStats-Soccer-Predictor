@@ -23,16 +23,32 @@ def import_predict_match_module(script_path: str):
     return mod
 
 
+def model_cache_missing_or_broken(pm_mod) -> Tuple[bool, str]:
+    """Return True only when the cache file is absent or cannot be loaded."""
+    if not os.path.exists(pm_mod.MODEL_CACHE):
+        return True, "cache file missing"
+    try:
+        joblib.load(pm_mod.MODEL_CACHE)
+    except Exception as exc:
+        return True, f"cache unloadable ({exc.__class__.__name__})"
+    return False, "present"
+
+
 def model_cache_status(pm_mod) -> Tuple[bool, str]:
-    """Return ``(needs_rebuild, reason)`` for a Predict_Match module instance."""
+    """Return ``(needs_rebuild, reason)`` for a Predict_Match module instance.
+
+    Fingerprint mismatch is reported as stale but does not set needs_rebuild;
+    scheduled Tue/Fri retrains handle that. Missing/unloadable caches do.
+    """
     try:
         _matches, season_files = pm_mod.load_training_matches(pm_mod.PROCESSED_DIR)
     except Exception as exc:
         return True, f"cannot load training data ({exc.__class__.__name__})"
     if not season_files:
         return True, "no processed season files"
-    if not os.path.exists(pm_mod.MODEL_CACHE):
-        return True, "cache file missing"
+    missing, missing_reason = model_cache_missing_or_broken(pm_mod)
+    if missing:
+        return True, missing_reason
     try:
         bundle = joblib.load(pm_mod.MODEL_CACHE)
     except Exception as exc:
@@ -42,8 +58,8 @@ def model_cache_status(pm_mod) -> Tuple[bool, str]:
         bt = bundle.get("build_time")
         if bt is not None:
             age_h = (time.time() - bt) / 3600.0
-            return True, f"fingerprint mismatch (cache age {age_h:.1f}h)"
-        return True, "fingerprint mismatch (no build_time)"
+            return False, f"stale fingerprint (cache age {age_h:.1f}h; retrain Tue/Fri)"
+        return False, "stale fingerprint (retrain Tue/Fri)"
     return False, "fresh"
 
 
@@ -82,10 +98,27 @@ def ensure_model_cache(
     build_argv: Optional[list[str]] = None,
     input_text: Optional[str] = None,
     label: str = "model-cache",
+    force: bool = False,
 ) -> None:
-    needs, reason = model_cache_status(pm_mod)
+    if force:
+        needs, reason = model_cache_status(pm_mod)
+        if not needs and reason == "fresh":
+            print(f"[{label}] forced retrain requested")
+        elif not needs:
+            print(f"[{label}] forced retrain ({reason})")
+        else:
+            print(f"[{label}] rebuilding model cache: {reason}")
+        run_model_cache_build(
+            predict_script,
+            cwd,
+            build_argv=build_argv,
+            input_text=input_text,
+        )
+        return
+    needs, reason = model_cache_missing_or_broken(pm_mod)
     if not needs:
-        print(f"[{label}] cache is fresh ({pm_mod.MODEL_CACHE})")
+        _status, detail = model_cache_status(pm_mod)
+        print(f"[{label}] cache present ({detail})")
         return
     print(f"[{label}] rebuilding model cache: {reason}")
     run_model_cache_build(
@@ -94,14 +127,14 @@ def ensure_model_cache(
         build_argv=build_argv,
         input_text=input_text,
     )
-    needs_after, reason_after = model_cache_status(pm_mod)
+    needs_after, reason_after = model_cache_missing_or_broken(pm_mod)
     if needs_after:
-        raise RuntimeError(f"Model cache still stale after rebuild: {reason_after}")
+        raise RuntimeError(f"Model cache still broken after rebuild: {reason_after}")
     print(f"[{label}] rebuild complete ({pm_mod.MODEL_CACHE})")
 
 
 def load_model_cache_bundle(pm_mod, season_files, rebuild_fn: Callable[[], None]):
-    """Load the model cache, rebuilding once when missing, unloadable, or stale."""
+    """Load the model cache, rebuilding only when missing or unloadable."""
     fingerprint = pm_mod.data_fingerprint(season_files)
 
     def _reload():
@@ -119,22 +152,19 @@ def load_model_cache_bundle(pm_mod, season_files, rebuild_fn: Callable[[], None]
             bundle = _reload()
 
     if bundle.get("fingerprint") != fingerprint:
-        print("[model-cache] fingerprint mismatch; rebuilding...")
-        bundle = _reload()
-        if bundle.get("fingerprint") != fingerprint:
-            raise RuntimeError("Model cache fingerprint still mismatched after rebuild.")
+        print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
     return bundle
 
 
 def any_pipeline_cache_needs_rebuild(specs: list[tuple[str, str]]) -> Tuple[bool, list[str]]:
-    """Check multiple pipelines. Each spec is ``(label, predict_script_path)``."""
+    """Return True when any pipeline cache is missing or unloadable (not merely stale)."""
     stale: list[str] = []
     for label, script_path in specs:
         if not os.path.exists(script_path):
             stale.append(f"{label}: predictor script missing")
             continue
         pm_mod = import_predict_match_module(script_path)
-        needs, reason = model_cache_status(pm_mod)
+        needs, reason = model_cache_missing_or_broken(pm_mod)
         if needs:
             stale.append(f"{label}: {reason}")
     return bool(stale), stale

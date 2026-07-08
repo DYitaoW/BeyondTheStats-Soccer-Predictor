@@ -192,11 +192,7 @@ def build_context():
         rebuild_model_cache_once()
         bundle = joblib.load(pm.MODEL_CACHE)
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
-        print("[model-cache] fingerprint mismatch; rebuilding model cache...")
-        rebuild_model_cache_once()
-        bundle = joblib.load(pm.MODEL_CACHE)
-        if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
-            raise RuntimeError("Model cache still stale after rebuild.")
+        print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
 
     overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
     season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))
