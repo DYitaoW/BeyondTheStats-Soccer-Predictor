@@ -172,6 +172,48 @@ LIVE_SCORE_COMPETITIONS = {
     "Bulgaria/First League": None,
 }
 
+# UEFA club competitions: show qualifying fixtures in upcoming, but defer
+# in-play live scoring until the main group/league phase (September).
+UEFA_MAIN_STAGE_LIVE_FROM = "2026-09-01"
+UEFA_LIVE_SCORE_COMPETITIONS = frozenset({
+    "UEFA/Champions League",
+    "UEFA/Europa League",
+    "UEFA/Conference League",
+    "Europe/Champions League",
+    "Europe/Europa League",
+    "Europe/Conference League",
+})
+
+# Domestic cups that should prefer ESPN fixtures and skip synthetic fallbacks.
+CUP_ESPN_FIRST_COMPETITIONS = frozenset({
+    "Spain/Copa del Rey",
+    "France/Coupe de France",
+    "Italy/Coppa Italia",
+    "Germany/DFB-Pokal",
+})
+CUP_NO_PRESEASON_FALLBACK = CUP_ESPN_FIRST_COMPETITIONS
+CUP_SKIP_THESPORTSDB = CUP_ESPN_FIRST_COMPETITIONS
+
+
+def uefa_live_scoring_allowed(as_of=None):
+    """Return True when UEFA club competitions should receive in-play live scores."""
+    from datetime import date
+
+    cutoff = date.fromisoformat(UEFA_MAIN_STAGE_LIVE_FROM)
+    today = as_of or date.today()
+    return today >= cutoff
+
+
+def competition_live_aliases(competition: str) -> set[str]:
+    """Return equivalent competition labels used across pipelines."""
+    comp = str(competition or "").strip()
+    aliases = {comp} if comp else set()
+    if comp.startswith("Europe/"):
+        aliases.add(comp.replace("Europe/", "UEFA/", 1))
+    elif comp.startswith("UEFA/"):
+        aliases.add(comp.replace("UEFA/", "Europe/", 1))
+    return aliases
+
 # ── Competitions ──────────────────────────────────────────────────
 
 MLS_COMPETITION = "United States/MLS"

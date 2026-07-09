@@ -757,6 +757,43 @@ button:hover {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 6px;
+  gap: 8px;
+}
+
+.kick-head-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.quality-pill,
+.live-pill {
+  border-radius: 999px;
+  border: 1px solid var(--badge-border);
+  background: var(--badge-bg);
+  color: var(--text);
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  font-weight: 700;
+}
+
+.no-prediction-pill {
+  border-style: dashed;
+}
+
+.provisional-pill {
+  font-style: italic;
+}
+
+.live-pill {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.prediction-note {
+  font-style: italic;
+  color: var(--muted);
 }
 
 .kick-league {

@@ -145,6 +145,8 @@ RESULT_COLUMNS = [
     "display_home_team",
     "display_away_team",
     "is_neutral_site",
+    "schedule_only",
+    "prediction_quality",
     "predicted_result",
     "prob_home",
     "prob_draw",
@@ -1484,6 +1486,8 @@ def predict_fixture(row, context):
         "display_home_team": home_display,
         "display_away_team": away_display,
         "is_neutral_site": "1" if is_neutral_site else "0",
+        "schedule_only": "0",
+        "prediction_quality": "provisional" if (home_is_provisional or away_is_provisional) else "prediction",
         "predicted_result": prediction,
         "prob_home": round(probabilities["H"], 6),
         "prob_draw": round(probabilities["D"], 6),
@@ -1503,6 +1507,66 @@ def predict_fixture(row, context):
             is_cup=is_cup_competition(competition),
         ),
         **goal_probs,
+        "actual_home_goals": None,
+        "actual_away_goals": None,
+        "actual_result": None,
+        "is_correct": None,
+        "settled_at_utc": None,
+    }
+
+
+def build_schedule_only_row(row, context=None):
+    raw_home = str(row.get("home_team", "")).strip()
+    raw_away = str(row.get("away_team", "")).strip()
+    competition = str(row.get("competition", "")).strip()
+    match_date = row.get("match_date")
+    if match_date is None or pd.isna(match_date):
+        return None
+    match_date = pd.Timestamp(match_date).normalize()
+    home_team = str(row.get("mapped_home_team", "")).strip() or raw_home
+    away_team = str(row.get("mapped_away_team", "")).strip() or raw_away
+    home_display = str(row.get("display_home_team", "")).strip() or raw_home
+    away_display = str(row.get("display_away_team", "")).strip() or raw_away
+    if not home_team or not away_team:
+        home_team = raw_home
+        away_team = raw_away
+    if not home_team or not away_team or home_team == away_team:
+        return None
+    key = make_prediction_key(match_date, competition, home_team, away_team)
+    return {
+        "prediction_key": key,
+        "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+        "match_date": match_date.strftime("%Y-%m-%d"),
+        "match_datetime_utc": str(row.get("match_datetime_utc", "")).strip(),
+        "competition": competition,
+        "home_team": home_team,
+        "away_team": away_team,
+        "display_home_team": home_display,
+        "display_away_team": away_display,
+        "is_neutral_site": "1" if bool(row.get("is_neutral_site", False)) else "0",
+        "schedule_only": "1",
+        "prediction_quality": "no_prediction",
+        "predicted_result": "",
+        "prob_home": 0.0,
+        "prob_draw": 0.0,
+        "prob_away": 0.0,
+        "pred_home_goals": None,
+        "pred_away_goals": None,
+        "pred_home_shots": None,
+        "pred_away_shots": None,
+        "pred_home_sot": None,
+        "pred_away_sot": None,
+        "probability_reasoning": "Teams are not in the model database — fixture listed without odds.",
+        "prob_home_goals_0": None,
+        "prob_home_goals_1plus": None,
+        "prob_home_goals_2plus": None,
+        "prob_away_goals_0": None,
+        "prob_away_goals_1plus": None,
+        "prob_away_goals_2plus": None,
+        "prob_both_score": None,
+        "prob_over_1_5": None,
+        "prob_over_2_5": None,
+        "prob_over_3_5": None,
         "actual_home_goals": None,
         "actual_away_goals": None,
         "actual_result": None,
@@ -1663,6 +1727,8 @@ def main():
     skipped = 0
     for _, fixture in fixtures.iterrows():
         pred = predict_fixture(fixture, context)
+        if pred is None:
+            pred = build_schedule_only_row(fixture, context)
         if pred is None:
             skipped += 1
             continue
