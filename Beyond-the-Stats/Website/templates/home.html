@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026070401') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026070901') }}">
 </head>
 <body class="dark-mode" data-active-page="home">
   <main class="page">
@@ -39,10 +39,9 @@
     </header>
 
     <section class="hero">
-      <p class="sub">Advanced analytics and machine learning forecasts for top European leagues, MLS and more soon...</p>
       <div class="hero-stats">
         <div class="hero-stat">
-          <span class="hero-stat-value" id="hero-accuracy">XX%</span>
+          <span class="hero-stat-value" id="hero-accuracy">63+%</span>
           <span class="hero-stat-label">Accuracy Rate</span>
         </div>
         <div class="hero-stat">
@@ -56,54 +55,60 @@
       </div>
     </section>
 
-    <section id="panel-home" class="content-panel">
-      <div class="card home-upcoming-card">
-        <div class="section-header-row">
-          <div>
-            <h3>Upcoming Matches</h3>
-            <p class="section-subtitle">All leagues for the selected dates, using the same match cards as the Upcoming Matches tab.</p>
-          </div>
-          <div class="date-range-picker">
-            <button id="home-date-toggle" class="date-toggle-btn" type="button" aria-expanded="false" aria-controls="home-date-popover">Today</button>
-            <div id="home-date-popover" class="date-popover hidden">
-              <label for="home-start-date">Start date</label>
-              <input id="home-start-date" type="date">
-              <label for="home-end-date">End date</label>
-              <input id="home-end-date" type="date">
-              <button id="home-apply-dates" type="button">Apply</button>
+    <div class="home-layout">
+      <section id="panel-home" class="content-panel home-main">
+        <div class="card home-upcoming-card">
+          <div class="section-header-row">
+            <div>
+              <h3>Upcoming Matches</h3>
+              <p class="section-subtitle">All leagues for the selected dates, using the same match cards as the Upcoming Matches tab.</p>
+            </div>
+            <div class="date-range-picker">
+              <button id="home-date-toggle" class="date-toggle-btn" type="button" aria-expanded="false" aria-controls="home-date-popover">Today</button>
+              <div id="home-date-popover" class="date-popover hidden">
+                <label for="home-start-date">Start date</label>
+                <input id="home-start-date" type="date">
+                <label for="home-end-date">End date</label>
+                <input id="home-end-date" type="date">
+                <button id="home-apply-dates" type="button">Apply</button>
+              </div>
             </div>
           </div>
+          <div id="home-upcoming-list">
+            <p class="muted-placeholder">Loading today's matches...</p>
+          </div>
         </div>
-        <div id="home-upcoming-list">
-          <p class="muted-placeholder">Loading today's matches...</p>
+        <div class="card">
+          <h3>2026 FIFA World Cup Winner Odds</h3>
+          <div id="wc-winner-odds" class="top-picks-grid">
+            <p class="muted-placeholder">Loading World Cup winner odds...</p>
+          </div>
         </div>
-      </div>
-      <div class="card">
-        <h3>2026 FIFA World Cup Winner Odds</h3>
-        <div id="wc-winner-odds" class="top-picks-grid">
-          <p class="muted-placeholder">Loading World Cup winner odds...</p>
+        <div class="card">
+          <h3>2026 FIFA World Cup Projected Groups</h3>
+          <p class="section-subtitle">Simulated World Cup below is a representation of a SINGLE random simulation, not an aggregate result.</p>
+          <div id="wc-projected-groups" class="top-picks-grid">
+            <p class="muted-placeholder">Loading World Cup group tables...</p>
+          </div>
         </div>
-      </div>
-      <div class="card">
-        <h3>2026 FIFA World Cup Projected Groups</h3>
-        <p class="section-subtitle">Simulated World Cup below is a representation of a SINGLE random simulation, not an aggregate result.</p>
-        <div id="wc-projected-groups" class="top-picks-grid">
-          <p class="muted-placeholder">Loading World Cup group tables...</p>
+      </section>
+
+      <aside class="home-sidebar card" aria-label="League projections">
+        <h3>Leagues</h3>
+        <p class="section-subtitle">Predicted winners and projected tables by league.</p>
+        <div id="home-league-sidebar" class="home-league-sidebar">
+          <p class="muted-placeholder">Loading leagues...</p>
         </div>
-      </div>
-      <div class="card">
-        <h3>Predicted League Winners</h3>
-        <div id="winner-view">Loading league winners...</div>
-      </div>
-    </section>
+      </aside>
+    </div>
       <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
       <p>&copy; 2026 Beyond The Stats</p>
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='shared.js', v='2026070401') }}"></script>
-  <script src="{{ url_for('static', filename='home.js', v='2026070401') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026070901') }}"></script>
+  <script src="{{ url_for('static', filename='home.js', v='2026070901') }}"></script>
 
 </body>
 </html>
