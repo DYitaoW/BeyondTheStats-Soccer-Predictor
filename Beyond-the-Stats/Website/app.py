@@ -65,6 +65,7 @@ from notifications import (
     ios_device_tokens,
     start_apns_worker,
 )
+from league_data import build_league_data_payload
 from predictions import (
     _enrich_json_past_row,
     _file_mtime_utc,
@@ -1943,27 +1944,25 @@ def api_league_tables():
 def api_league_data(competition):
     """Return consolidated data for a single league / cup / competition.
 
-    Combines projected table, position odds, winners odds, real table,
-    and upcoming fixtures into one response.
+    Uses a unified schema across all competitions (see ``league_data.py``):
 
     .. code-block:: json
 
         {"ok": true, "competition": "...",
-         "predicted_table": [...],
-         "position_odds": {"simple": {pos: [{team, pct}, ...]},
-                           "detailed": [{team, odds: {pos: pct, ...}}, ...]},
-         "winners_odds": [{team, win_league_pct, top4_pct, ...}, ...],
-         "winner_probabilities": {team: pct, ...},
-         "champion": "...",
-         "simulations_run": 200,
-         "mls_winners_odds": {
-           "supporters_shield": {...},
-           "eastern_conference": {...},
-           "western_conference": {...},
-           "mls_cup": {...}
+         "format": {"standings_layout": "...", "tiebreaker": "gd|h2h", "notes": [...]},
+         "predicted": {
+           "table": [...],
+           "groups": [{"name": "...", "entries": [...]}] | null,
+           "winner": {"champion": "...", "probabilities": {...}, "simulations_run": 200},
+           "winners_odds": [...],
+           "position_odds": {"simple": {...}, "detailed": [...], "detailed_same_as_simple": false}
          },
-         "real_table": {"groups": [...], "source": "real"},
+         "real": {"standings": {"groups": [...], "standings_layout": "...", ...}},
+         "bracket": {"projected": {...}, "knockout": {...}, "odds_knockout": {...}},
          "fixtures": [...]}
+
+    Legacy top-level keys (``predicted_table``, ``real_table``, etc.) are kept
+    as mirrors of the nested fields for existing clients.
     """
     comp = competition.strip()
 
@@ -1973,102 +1972,7 @@ def api_league_data(competition):
             "error": f"Competition not available in league APIs: {comp}",
         }), 404
 
-    # ── 1. Find projected table from any CSV source ───────────────
-    comp_table = _load_projected_competition_table(comp)
-    predicted_table = comp_table
-    winner_fields = _build_winner_probability_payload(comp_table) if comp_table else {}
-    winners_odds = winner_fields.get("winners_odds", [])
-    position_odds_simple = {}
-    position_odds_detailed = []
-
-    if comp_table:
-        for row in comp_table:
-            team = row.get("team", "")
-            raw = row.get("position_odds")
-            if raw and isinstance(raw, dict):
-                entry = {"team": team, "odds": {}}
-                for pos_str, pct in raw.items():
-                    pct_f = float(pct) if pct is not None else 0.0
-                    entry["odds"][str(pos_str)] = pct_f
-                    if str(pos_str) not in position_odds_simple:
-                        position_odds_simple[str(pos_str)] = []
-                    position_odds_simple[str(pos_str)].append({"team": team, "pct": pct_f})
-                position_odds_detailed.append(entry)
-        for ps in position_odds_simple:
-            position_odds_simple[ps].sort(key=lambda x: x["pct"], reverse=True)
-        position_odds_simple = dict(
-            sorted(position_odds_simple.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 999)
-        )
-
-    # If no projected table found in CSVs, fall back to league roster
-    if not predicted_table:
-        league_teams = _load_league_teams()
-        roster = league_teams.get(comp)
-        if roster:
-            predicted_table = []
-            winners_odds = []
-            for pos, team in enumerate(sorted(roster), start=1):
-                entry = {
-                    "position": pos, "team": team,
-                    "P": 0, "W": 0, "D": 0, "L": 0,
-                    "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-                    "PlayedReal": 0, "PlayedPred": 0,
-                    "win_league_pct": 0.0, "top4_pct": 0.0, "bottom3_pct": 0.0,
-                    "most_likely_position": 0, "most_likely_position_pct": 0.0,
-                    "position_odds": {}, "sim_runs": 0,
-                }
-                predicted_table.append(entry)
-                winners_odds.append({
-                    "team": team,
-                    "win_league_pct": 0.0, "top4_pct": 0.0, "bottom3_pct": 0.0,
-                    "most_likely_position": 0, "most_likely_position_pct": 0.0,
-                })
-
-    # ── 2. Real table from live-score history ─────────────────────
-    real_table = _compute_standings_from_history(comp)
-
-    # ── 3. Upcoming fixtures with prediction odds ────────────────
-    from competition_rules import resolve_competition_query
-
-    base_comp, _mls_view = resolve_competition_query(comp)
-    fixture_comps = {comp}
-    if base_comp == "United States/MLS":
-        fixture_comps.update({"United States/MLS", base_comp})
-    upcoming_sources = [
-        config.GLOBAL_UPCOMING_FILE,
-        config.MLS_UPCOMING_FILE,
-        config.EXTRA_UPCOMING_FILE,
-        config.CUP_UPCOMING_FILE,
-    ]
-    fixtures = []
-    for csv_path in upcoming_sources:
-        try:
-            rows, _, _ = _load_upcoming_rows(csv_path, date_range="all")
-            comp_fixtures = [r for r in rows if r.get("competition") in fixture_comps]
-            if comp_fixtures:
-                fixtures = comp_fixtures
-                break
-        except Exception:
-            continue
-
-    payload = {
-        "ok": True,
-        "competition": comp,
-        "predicted_table": predicted_table,
-        "position_odds": {
-            "simple": position_odds_simple,
-            "detailed": position_odds_detailed,
-        },
-        "winners_odds": winners_odds,
-        "real_table": real_table,
-        "fixtures": fixtures,
-    }
-    for key in ("winner_probabilities", "champion", "simulations_run"):
-        if winner_fields.get(key) is not None:
-            payload[key] = winner_fields[key]
-    payload = _enrich_league_data_cup_fields(comp, payload)
-    payload = _enrich_league_data_mls_fields(comp, payload)
-    return jsonify(payload)
+    return jsonify(build_league_data_payload(comp))
 
 
 @app.get("/api/stats")

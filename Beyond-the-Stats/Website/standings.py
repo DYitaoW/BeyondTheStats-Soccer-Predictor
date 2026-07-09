@@ -11,13 +11,16 @@ import config
 from competition_rules import (
     MLS_EASTERN_CONFERENCE_TEAMS,
     MLS_WESTERN_CONFERENCE_TEAMS,
+    active_liga_mx_tournament_label,
     build_structured_standings_groups,
     canonical_team_name,
     classify_match_stage,
     collect_competition_games,
+    competition_format_spec,
     cup_format,
     current_competition_phase,
     extract_group_label,
+    filter_games_to_liga_mx_tournament,
     load_wc_team_groups,
     mls_conference,
     package_real_standings,
@@ -357,6 +360,7 @@ def _compute_standings_from_history(comp_name):
     is_mls = base_comp == "United States/MLS"
     is_belgian = "belgium" in comp_name.lower() or "belgian" in comp_name.lower()
     is_scottish = "scotland" in comp_name.lower() or "scottish" in comp_name.lower()
+    is_liga_mx = base_comp == config.LIGA_MX_COMPETITION
 
     if is_league_phase:
         # UCL/UEL/UECL league phase: single table with all teams
@@ -560,6 +564,37 @@ def _compute_standings_from_history(comp_name):
         else:
             groups = [{"name": "Regular Season", "entries": entries}]
 
+        return _finalize(groups, source="computed")
+
+
+    # ── Liga MX active tournament (Apertura / Clausura) ────────
+    if is_liga_mx:
+        tournament_label = active_liga_mx_tournament_label()
+        tournament_games = filter_games_to_liga_mx_tournament(comp_games, tournament_label)
+        if not tournament_games:
+            return None
+        teams = set()
+        match_records = []
+        for g in tournament_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            if ht and at:
+                teams.add(ht)
+                teams.add(at)
+        if not teams:
+            return None
+        table = _init_table(teams)
+        for g in tournament_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht and at:
+                _apply_result(table, ht, at, hs, as_)
+                match_records.append((ht, at, hs, as_))
+        ranked = _rank_table(table, match_records if uses_h2h_tiebreaker(comp_name) else None)
+        entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+        groups = [{"name": tournament_label, "entries": entries}]
         return _finalize(groups, source="computed")
 
 

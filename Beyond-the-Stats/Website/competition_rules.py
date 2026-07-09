@@ -781,6 +781,7 @@ STANDINGS_LAYOUT_BELGIAN = "belgian_two_phase"
 STANDINGS_LAYOUT_SCOTTISH = "scottish_split"
 STANDINGS_LAYOUT_LEAGUE_PHASE = "league_phase"
 STANDINGS_LAYOUT_CUP_GROUPS = "cup_groups"
+STANDINGS_LAYOUT_LIGA_MX = "liga_mx_tournament"
 
 # Leagues that rank tied teams by head-to-head record before goal difference.
 H2H_TIEBREAKER_COMPETITIONS = frozenset({
@@ -791,12 +792,15 @@ H2H_TIEBREAKER_COMPETITIONS = frozenset({
     "Portugal/Liga Portugal",
     "Belgium/First Division A",
     "Turkey/Super Lig",
+    config.LIGA_MX_COMPETITION,
 })
 
 
 def standings_layout_for(comp_name: str) -> str:
     """Return the structural layout id for real standings JSON."""
     base_comp, mls_view = resolve_competition_query(comp_name)
+    if base_comp == config.LIGA_MX_COMPETITION:
+        return STANDINGS_LAYOUT_LIGA_MX
     if base_comp == "United States/MLS" or mls_view:
         return STANDINGS_LAYOUT_MLS
     if "belgium" in base_comp.lower():
@@ -819,6 +823,110 @@ def uses_h2h_tiebreaker(comp_name: str) -> bool:
     return base_comp in H2H_TIEBREAKER_COMPETITIONS
 
 
+def active_liga_mx_tournament_label(reference_date=None) -> str:
+    """Return the active short-tournament label, e.g. ``Clausura 2026``."""
+    from datetime import date
+
+    ref = reference_date or date.today()
+    if ref.month >= 7:
+        return f"Apertura {ref.year}"
+    return f"Clausura {ref.year}"
+
+
+def _liga_mx_game_tournament(game: dict) -> str | None:
+    raw = str(game.get("match_date") or game.get("match_datetime_utc") or "")[:10]
+    if len(raw) < 7:
+        return None
+    try:
+        year = int(raw[:4])
+        month = int(raw[5:7])
+    except ValueError:
+        return None
+    if month >= 7:
+        return f"Apertura {year}"
+    return f"Clausura {year}"
+
+
+def filter_games_to_liga_mx_tournament(
+    games: list[dict],
+    tournament_label: str | None = None,
+) -> list[dict]:
+    """Keep only matches belonging to the requested Liga MX short tournament."""
+    label = tournament_label or active_liga_mx_tournament_label()
+    return [g for g in games if _liga_mx_game_tournament(g) == label]
+
+
+def competition_format_spec(comp_name: str) -> dict:
+    """Machine-readable competition rules for clients (layout, tiebreakers, extras)."""
+    base_comp, mls_view = resolve_competition_query(comp_name)
+    layout = standings_layout_for(comp_name)
+    tiebreaker = "h2h" if uses_h2h_tiebreaker(comp_name) else "gd"
+    cup_fmt = cup_format(base_comp)
+
+    spec: dict = {
+        "competition": comp_name,
+        "base_competition": base_comp,
+        "competition_type": "cup" if cup_fmt else "league",
+        "standings_layout": layout,
+        "tiebreaker": tiebreaker,
+        "notes": [],
+        "extensions": {},
+    }
+    if mls_view:
+        spec["mls_view"] = mls_view
+
+    if layout == STANDINGS_LAYOUT_SINGLE:
+        spec["notes"].append("Single round-robin table ranked by points, then tiebreakers.")
+    elif layout == STANDINGS_LAYOUT_MLS:
+        spec["notes"].append(
+            "Supporters Shield overall table plus separate Eastern and Western conference tables."
+        )
+        spec["extensions"]["playoff_format"] = "mls_cup"
+        spec["extensions"]["conferences"] = ["Eastern Conference", "Western Conference"]
+    elif layout == STANDINGS_LAYOUT_LIGA_MX:
+        active = active_liga_mx_tournament_label()
+        spec["extensions"]["active_tournament"] = active
+        spec["extensions"]["tournaments_per_season"] = ["Apertura", "Clausura"]
+        spec["extensions"]["regular_season_matches"] = 17
+        spec["extensions"]["playoff_format"] = "liguilla"
+        if active.startswith("Clausura 2026"):
+            spec["extensions"]["liguilla"] = {"direct_qualifiers": 8, "play_in": None}
+            spec["notes"].append(
+                "Clausura 2026: top 8 qualify directly for the Liguilla (play-in removed for World Cup)."
+            )
+        else:
+            spec["extensions"]["liguilla"] = {"direct_qualifiers": 6, "play_in": [7, 10]}
+            spec["notes"].append(
+                "Top 6 reach Liguilla quarter-finals; places 7–10 contest a play-in for the last two spots."
+            )
+        spec["notes"].append(
+            "Mexico plays two independent short tournaments per year; tables show the active tournament only."
+        )
+    elif layout == STANDINGS_LAYOUT_BELGIAN:
+        spec["notes"].append(
+            "Regular season then championship / Europe / relegation playoff groups after 30 matches."
+        )
+    elif layout == STANDINGS_LAYOUT_SCOTTISH:
+        spec["notes"].append("Single table until 33 matches, then top-six / bottom-six split groups.")
+    elif layout == STANDINGS_LAYOUT_LEAGUE_PHASE:
+        spec["notes"].append("Single league-phase table; top sides advance to two-legged knockout rounds.")
+        spec["extensions"]["knockout"] = True
+    elif layout == STANDINGS_LAYOUT_CUP_GROUPS:
+        spec["notes"].append("Group-stage tables with knockout rounds for advancing teams.")
+        spec["extensions"]["knockout"] = True
+
+    if cup_fmt:
+        spec["format"] = cup_fmt.get("format")
+        spec["cup_format"] = cup_fmt
+
+    if tiebreaker == "h2h":
+        spec["notes"].append("Among tied teams: head-to-head points before overall goal difference.")
+    else:
+        spec["notes"].append("Among tied teams: goal difference before head-to-head.")
+
+    return spec
+
+
 def expected_standings_group_names(comp_name: str) -> list[str] | None:
     """Required group names for a valid persisted table (None = flexible)."""
     base_comp, mls_view = resolve_competition_query(comp_name)
@@ -838,6 +946,8 @@ def expected_standings_group_names(comp_name: str) -> list[str] | None:
     if layout == STANDINGS_LAYOUT_SCOTTISH:
         return None
     if layout == STANDINGS_LAYOUT_CUP_GROUPS:
+        return None
+    if layout == STANDINGS_LAYOUT_LIGA_MX:
         return None
     return ["Overall"]
 
@@ -860,6 +970,11 @@ def standings_shape_is_valid(cached: dict, comp_name: str) -> bool:
         return "Overall" not in names
     if layout == STANDINGS_LAYOUT_CUP_GROUPS:
         return not (len(groups) == 1 and names == {"Overall"})
+    if layout == STANDINGS_LAYOUT_LIGA_MX:
+        active = active_liga_mx_tournament_label()
+        if "Overall" in names:
+            return False
+        return active in names
     return True
 
 
@@ -948,6 +1063,9 @@ def build_structured_standings_groups(comp_name: str, teams: list[str]) -> list[
             {"name": "Eastern Conference", "entries": _entries_from_teams(east)},
             {"name": "Western Conference", "entries": _entries_from_teams(west)},
         ]
+
+    if layout == STANDINGS_LAYOUT_LIGA_MX:
+        return [{"name": active_liga_mx_tournament_label(), "entries": _entries_from_teams(team_list)}]
 
     if layout == STANDINGS_LAYOUT_BELGIAN:
         return [{"name": "Regular Season", "entries": _entries_from_teams(team_list)}]
