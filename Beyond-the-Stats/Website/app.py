@@ -83,6 +83,7 @@ from predictions import (
     _load_projected_competition_table,
     _build_winner_probability_payload,
     _build_mls_winners_odds_bundle,
+    _normalize_mls_conference_tables,
     _build_past_game_prediction_lookup,
     _collect_live_past_game_rows,
     _merge_prediction_onto_past_row,
@@ -255,6 +256,95 @@ def _filter_league_tables_payload(data):
     if isinstance(fixtures, dict):
         fixtures = {k: v for k, v in fixtures.items() if k not in excluded}
     return {**data, "leagues": leagues, "tables": tables, "fixtures": fixtures}
+
+
+def _merge_projected_with_season_tables(projected: dict, season_data: dict | None, dataset_competitions: tuple[str, ...]) -> dict:
+    """Prefer projected CSV rows; fill gaps from season rosters and placeholders."""
+    tables = dict(projected.get("tables") or {})
+    leagues = set(projected.get("leagues") or [])
+    if season_data:
+        for comp, rows in (season_data.get("tables") or {}).items():
+            if comp not in tables or not tables.get(comp):
+                tables[comp] = rows
+            leagues.add(comp)
+    for comp in dataset_competitions:
+        leagues.add(comp)
+    data = {"leagues": sorted(leagues), "tables": tables}
+    _fill_placeholder_tables(data)
+    data["leagues"] = sorted(set(data.get("leagues") or []) | set(dataset_competitions))
+    return _filter_league_tables_payload(data)
+
+
+def _pick_league_winner_row(rows: list[dict]) -> dict | None:
+    if not rows:
+        return None
+    return max(
+        rows,
+        key=lambda row: (
+            float(row.get("win_league_pct") or 0),
+            -(int(row.get("position") or 999)),
+        ),
+    )
+
+
+def _build_global_api_payload() -> dict:
+    projected = _load_projected_tables(config.GLOBAL_PROJECTED_TABLE_FILE)
+    season_data = _load_current_season_tables()
+    return _merge_projected_with_season_tables(
+        projected,
+        season_data,
+        config.GLOBAL_DATASET_COMPETITIONS,
+    )
+
+
+def _build_extra_api_payload() -> dict:
+    projected = _load_projected_tables(config.EXTRA_PROJECTED_TABLE_FILE)
+    season_data = _load_current_season_tables()
+    return _merge_projected_with_season_tables(
+        projected,
+        season_data,
+        config.EXTRA_DATASET_COMPETITIONS,
+    )
+
+
+def _build_home_league_sidebar_entries() -> list[dict]:
+    priority = {
+        name: index
+        for index, name in enumerate(
+            list(config.GLOBAL_DATASET_COMPETITIONS)
+            + [config.MLS_COMPETITION, config.LIGA_MX_COMPETITION]
+            + list(config.EXTRA_DATASET_COMPETITIONS)
+        )
+    }
+    entries: list[dict] = []
+    seen: set[str] = set()
+    for dataset, builder in (
+        ("global", _build_global_api_payload),
+        ("mls", _build_mls_api_payload),
+        ("extra", _build_extra_api_payload),
+    ):
+        payload = builder()
+        tables = payload.get("tables") or {}
+        for league, rows in tables.items():
+            if league in config.HOME_SIDEBAR_SKIP_COMPETITIONS or league == "__mls_bracket__":
+                continue
+            if not rows or league in seen:
+                continue
+            winner = _pick_league_winner_row(rows)
+            entries.append({
+                "dataset": dataset,
+                "league": league,
+                "winner": (winner or {}).get("team") or "N/A",
+                "win_pct": float((winner or {}).get("win_league_pct") or 0),
+            })
+            seen.add(league)
+    entries.sort(
+        key=lambda item: (
+            priority.get(item["league"], 1000),
+            item["league"],
+        )
+    )
+    return entries
 
 
 def _date_window_bounds():
@@ -617,6 +707,16 @@ def api_upcoming(mode):
         "stats": stats,
         "league_stats": league_stats,
         "available_leagues": leagues,
+    })
+
+
+@app.get("/api/home/league-sidebar")
+@_cached_response(ttl=config.CACHE_TTL_LONG)
+def api_home_league_sidebar():
+    """Compact predicted-winner list for the home page league sidebar."""
+    return jsonify({
+        "ok": True,
+        "leagues": _build_home_league_sidebar_entries(),
     })
 
 
@@ -1772,24 +1872,29 @@ def _attach_projected_winner_fields(comp, result):
 
 def _build_mls_api_payload():
     """Shared MLS payload for ``/api/league-tables?mode=mls``."""
+    projected = _load_projected_tables(config.MLS_PROJECTED_TABLE_FILE)
+    last_refresh = (
+        _file_mtime_utc(config.MLS_PROJECTED_TABLE_FILE)
+        if os.path.exists(config.MLS_PROJECTED_TABLE_FILE)
+        else None
+    )
+
+    tables = dict(projected.get("tables") or {})
+    leagues = set(projected.get("leagues") or [])
+
     season_data = _load_current_season_tables()
     if season_data:
-        mls_leagues = [
-            c for c in season_data.get("leagues", [])
-            if "MLS" in c or "United States" in c
-        ]
-        data = {
-            "leagues": mls_leagues,
-            "tables": {
-                c: season_data["tables"][c]
-                for c in mls_leagues
-                if c in season_data.get("tables", {})
-            },
-        }
-        last_refresh = None
-    else:
-        data = _load_projected_tables(config.MLS_PROJECTED_TABLE_FILE)
-        last_refresh = _file_mtime_utc(config.MLS_PROJECTED_TABLE_FILE)
+        for comp, rows in (season_data.get("tables") or {}).items():
+            if comp not in tables or not tables.get(comp):
+                tables[comp] = rows
+            leagues.add(comp)
+
+    for comp in config.MLS_DATASET_COMPETITIONS:
+        leagues.add(comp)
+
+    data = {"leagues": sorted(leagues), "tables": tables}
+    _fill_placeholder_tables(data)
+    data["leagues"] = sorted(set(data.get("leagues") or []) | set(config.MLS_DATASET_COMPETITIONS))
 
     payload = {
         "leagues": data.get("leagues") or [],
@@ -1799,6 +1904,7 @@ def _build_mls_api_payload():
         "last_prediction_refresh": last_refresh,
         "mls_winners_odds": _build_mls_winners_odds_bundle(),
     }
+    _normalize_mls_conference_tables(payload)
     return payload
 
 
@@ -1871,9 +1977,6 @@ def api_league_tables():
     """
     mode = str(request.args.get("mode", "global")).strip().lower()
 
-    # If current_season_teams.json exists, use it instead of stale CSV data.
-    season_data = _load_current_season_tables()
-
     if mode == "mls":
         data = _build_mls_api_payload()
         return jsonify({"ok": True, **data})
@@ -1917,25 +2020,24 @@ def api_league_tables():
             "fixtures": fixtures,
         })
     if mode == "extra":
-        if season_data:
-            data = season_data
-        else:
-            csv_path = config.EXTRA_PROJECTED_TABLE_FILE
-            data = _load_projected_tables(csv_path)
-        data["last_prediction_refresh"] = None
+        data = _build_extra_api_payload()
+        data["last_prediction_refresh"] = (
+            _file_mtime_utc(config.EXTRA_PROJECTED_TABLE_FILE)
+            if os.path.exists(config.EXTRA_PROJECTED_TABLE_FILE)
+            else None
+        )
         fixtures = _load_all_fixtures_by_competition(config.EXTRA_UPCOMING_FILE)
         return jsonify({"ok": True, **data, "fixtures": fixtures})
-    else:
-        if season_data:
-            data = _filter_league_tables_payload(season_data)
-        else:
-            csv_path = config.GLOBAL_PROJECTED_TABLE_FILE
-            data = _filter_league_tables_payload(_load_projected_tables(csv_path))
-        data["last_prediction_refresh"] = None
-        fixtures = _load_all_fixtures_by_competition(config.GLOBAL_UPCOMING_FILE)
-        excluded = config.LEAGUE_API_EXCLUDED_COMPETITIONS
-        if isinstance(fixtures, dict):
-            fixtures = {k: v for k, v in fixtures.items() if k not in excluded}
+    data = _build_global_api_payload()
+    data["last_prediction_refresh"] = (
+        _file_mtime_utc(config.GLOBAL_PROJECTED_TABLE_FILE)
+        if os.path.exists(config.GLOBAL_PROJECTED_TABLE_FILE)
+        else None
+    )
+    fixtures = _load_all_fixtures_by_competition(config.GLOBAL_UPCOMING_FILE)
+    excluded = config.LEAGUE_API_EXCLUDED_COMPETITIONS
+    if isinstance(fixtures, dict):
+        fixtures = {k: v for k, v in fixtures.items() if k not in excluded}
     return jsonify({"ok": True, **data, "fixtures": fixtures})
 
 

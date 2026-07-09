@@ -120,6 +120,39 @@ def _load_league_teams():
     return {}
 
 
+_espn_roster_cache: dict[str, list[str]] = {}
+
+
+def _fetch_espn_roster_for_competition(comp_name: str) -> list[str]:
+    """Best-effort roster fetch from ESPN when local league_teams.json is missing."""
+    if comp_name in _espn_roster_cache:
+        return _espn_roster_cache[comp_name]
+    espn_id = config.LIVE_SCORE_COMPETITIONS.get(comp_name)
+    if not espn_id:
+        _espn_roster_cache[comp_name] = []
+        return []
+    try:
+        import urllib.request
+
+        url = f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/teams"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            payload = json.load(resp)
+        teams: list[str] = []
+        for league in (payload.get("sports") or [{}])[0].get("leagues") or []:
+            for team_entry in league.get("teams") or []:
+                entry = team_entry.get("team", team_entry)
+                name = str(entry.get("displayName", "")).strip()
+                if name:
+                    teams.append(name)
+        teams = sorted(set(teams))
+        _espn_roster_cache[comp_name] = teams
+        return teams
+    except Exception:
+        _espn_roster_cache[comp_name] = []
+        return []
+
+
 def _load_live_score_history():
     if not os.path.exists(config.LIVE_SCORE_HISTORY_FILE):
         return []
@@ -459,23 +492,13 @@ def _compute_standings_from_history(comp_name):
         ranked = _rank_table(full_table, match_records)
         all_entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
 
-        # Split into conferences
-        east_teams = [t for t in teams if _mls_conference(t) == "east"]
-        west_teams = [t for t in teams if _mls_conference(t) == "west"]
-        east_table = _init_table(east_teams)
-        west_table = _init_table(west_teams)
-        for g in comp_games:
-            ht = str(g.get("home_team", ""))
-            at = str(g.get("away_team", ""))
-            hs = int(g.get("home_score", 0))
-            as_ = int(g.get("away_score", 0))
-            if ht in east_teams and at in east_teams:
-                _apply_result(east_table, ht, at, hs, as_)
-            if ht in west_teams and at in west_teams:
-                _apply_result(west_table, ht, at, hs, as_)
-
-        east_ranked = _rank_table(east_table)
-        west_ranked = _rank_table(west_table)
+        # Conference tables use full-season stats (all 34 games), same as Supporters Shield.
+        east_teams = {t for t in teams if _mls_conference(t) == "east"}
+        west_teams = {t for t in teams if _mls_conference(t) == "west"}
+        east_table = {team: full_table[team] for team in east_teams if team in full_table}
+        west_table = {team: full_table[team] for team in west_teams if team in full_table}
+        east_ranked = _rank_table(east_table, match_records)
+        west_ranked = _rank_table(west_table, match_records)
 
         groups = [
             {"name": "Supporters Shield", "entries": all_entries},
@@ -572,6 +595,12 @@ def _compute_standings_from_history(comp_name):
         tournament_label = active_liga_mx_tournament_label()
         tournament_games = filter_games_to_liga_mx_tournament(comp_games, tournament_label)
         if not tournament_games:
+            fallback = _build_fallback_standings(comp_name)
+            if fallback is not None:
+                with _real_tables_lock:
+                    _real_tables[comp_name] = fallback
+                _persist_real_tables()
+                return fallback
             return None
         teams = set()
         match_records = []
@@ -693,30 +722,69 @@ def _fill_placeholder_tables(data):
     """Fill ``data["tables"]`` with zero-stat team entries from league_teams.json
     for any competition in ``data["leagues"]`` that has no projected table data.
 
+    Falls back to team discovery from local prediction/projected CSVs when the
+    persisted roster file is missing (common for Liga MX early in the season).
+
     Mutates ``data["tables"]`` in place.
     """
     league_teams = _load_league_teams()
     tables = data.get("tables", {})
     leagues = data.get("leagues", [])
-    now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     for comp_name in leagues:
         if comp_name in tables and tables[comp_name]:
             continue
         roster = league_teams.get(comp_name)
         if not roster:
+            roster = _fetch_espn_roster_for_competition(comp_name)
+        if roster:
+            entries = []
+            for pos, team in enumerate(sorted(roster), start=1):
+                entries.append({
+                    "position": pos, "team": team,
+                    "P": 0, "W": 0, "D": 0, "L": 0,
+                    "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
+                    "PlayedReal": 0, "PlayedPred": 0,
+                    "win_league_pct": 0.0, "top4_pct": 0.0, "bottom3_pct": 0.0,
+                    "most_likely_position": 0, "most_likely_position_pct": 0.0,
+                    "position_odds": {}, "sim_runs": 0,
+                })
+            tables[comp_name] = entries
+            continue
+
+        fallback = _build_fallback_standings(comp_name)
+        if not fallback or not fallback.get("groups"):
             continue
         entries = []
-        for pos, team in enumerate(sorted(roster), start=1):
-            entries.append({
-                "position": pos, "team": team,
-                "P": 0, "W": 0, "D": 0, "L": 0,
-                "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-                "PlayedReal": 0, "PlayedPred": 0,
-                "win_league_pct": 0.0, "top4_pct": 0.0, "bottom3_pct": 0.0,
-                "most_likely_position": 0, "most_likely_position_pct": 0.0,
-                "position_odds": {}, "sim_runs": 0,
-            })
-        tables[comp_name] = entries
+        for group in fallback["groups"]:
+            for entry in group.get("entries", []):
+                team = str(entry.get("team", "")).strip()
+                if not team:
+                    continue
+                rank = entry.get("rank") or entry.get("position") or (len(entries) + 1)
+                entries.append({
+                    "position": rank,
+                    "team": team,
+                    "P": int(entry.get("P") or 0),
+                    "W": int(entry.get("W") or 0),
+                    "D": int(entry.get("D") or 0),
+                    "L": int(entry.get("L") or 0),
+                    "GF": int(entry.get("GF") or 0),
+                    "GA": int(entry.get("GA") or 0),
+                    "GD": int(entry.get("GD") or 0),
+                    "Pts": int(entry.get("Pts") or 0),
+                    "PlayedReal": 0,
+                    "PlayedPred": 0,
+                    "win_league_pct": 0.0,
+                    "top4_pct": 0.0,
+                    "bottom3_pct": 0.0,
+                    "most_likely_position": rank,
+                    "most_likely_position_pct": 0.0,
+                    "position_odds": {},
+                    "sim_runs": 0,
+                })
+        if entries:
+            entries.sort(key=lambda item: item.get("position") or 999)
+            tables[comp_name] = entries
     data["tables"] = tables
 
 def _build_fallback_standings(comp_name):

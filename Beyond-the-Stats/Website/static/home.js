@@ -2,17 +2,6 @@
 
 const homeLeagueSidebar = document.getElementById("home-league-sidebar");
 
-// build a winner row from a league table payload
-function pickLeagueWinner(rows) {
-    if (!Array.isArray(rows) || !rows.length) return null;
-    return [...rows].sort((left, right) => {
-        const leftWin = Number(left?.win_league_pct) || 0;
-        const rightWin = Number(right?.win_league_pct) || 0;
-        if (rightWin !== leftWin) return rightWin - leftWin;
-        return (Number(left?.position) || 999) - (Number(right?.position) || 999);
-    })[0];
-}
-
 function formatLeagueLabel(league) {
     const parts = String(league || "").split("/");
     if (parts.length < 2) return { country: "", name: league };
@@ -24,20 +13,11 @@ function leagueTableUrl(dataset, league) {
     return `/league-tables?${params.toString()}`;
 }
 
-function collectSidebarEntries(payload, dataset) {
-    const tables = payload?.tables || {};
-    const entries = [];
-    for (const league of Object.keys(tables)) {
-        if (league === "__mls_bracket__") continue;
-        const winner = pickLeagueWinner(tables[league]);
-        entries.push({
-            dataset,
-            league,
-            winner: winner?.team || "N/A",
-            winPct: winner ? asPct(winner.win_league_pct) : "0%",
-        });
-    }
-    return entries;
+function formatSidebarWinPct(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return "0%";
+    if (typeof asPct === "function") return asPct(number);
+    return `${number.toFixed(1)}%`;
 }
 
 function renderHomeLeagueSidebar(entries) {
@@ -46,34 +26,19 @@ function renderHomeLeagueSidebar(entries) {
         homeLeagueSidebar.innerHTML = "<p class=\"muted-placeholder\">No league data available.</p>";
         return;
     }
-    const priorityLeagues = [
-        "England/Premier League",
-        "England/Championship",
-        "United States/MLS - Supporters Shield Table",
-        "United States/MLS - Eastern Conference",
-        "United States/MLS - Western Conference",
-    ];
-    const leagueRank = (name) => {
-        const idx = priorityLeagues.indexOf(name);
-        return idx >= 0 ? idx : 1000;
-    };
-    entries.sort((left, right) => {
-        const rankDiff = leagueRank(left.league) - leagueRank(right.league);
-        if (rankDiff !== 0) return rankDiff;
-        return left.league.localeCompare(right.league);
-    });
 
     homeLeagueSidebar.innerHTML = entries.map((entry) => {
         const label = formatLeagueLabel(entry.league);
         const href = leagueTableUrl(entry.dataset, entry.league);
+        const winPct = formatSidebarWinPct(entry.win_pct);
         return `
             <a class="home-league-item" href="${escapeHtmlText(href)}">
                 <div class="home-league-item-top">
                     <span class="home-league-name">${escapeHtmlText(label.name)}</span>
-                    <span class="home-league-pct">${escapeHtmlText(entry.winPct)}</span>
+                    <span class="home-league-pct">${escapeHtmlText(winPct)}</span>
                 </div>
                 ${label.country ? `<span class="home-league-country">${escapeHtmlText(label.country)}</span>` : ""}
-                <span class="home-league-winner">${escapeHtmlText(entry.winner)}</span>
+                <span class="home-league-winner">${escapeHtmlText(entry.winner || "N/A")}</span>
             </a>
         `;
     }).join("");
@@ -82,30 +47,20 @@ function renderHomeLeagueSidebar(entries) {
 async function loadHomeLeagueSidebar() {
     if (!homeLeagueSidebar) return;
     homeLeagueSidebar.innerHTML = "<p class=\"muted-placeholder\">Loading leagues...</p>";
-    const sources = ["global", "mls", "extra"];
     try {
-        const payloads = await Promise.all(sources.map(async (mode) => {
-            try {
-                const response = await fetch(`/api/league-tables?mode=${encodeURIComponent(mode)}`);
-                const data = await response.json();
-                if (!response.ok || !data?.ok) return [];
-                return collectSidebarEntries(data, mode);
-            } catch (_error) {
-                return [];
-            }
-        }));
-        const entries = payloads.flat();
-        renderHomeLeagueSidebar(entries);
+        const response = await fetch("/api/home/league-sidebar");
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.ok) {
+            homeLeagueSidebar.innerHTML = "<p class=\"muted-placeholder\">Failed to load leagues.</p>";
+            return;
+        }
+        renderHomeLeagueSidebar(Array.isArray(data.leagues) ? data.leagues : []);
     } catch (_error) {
         homeLeagueSidebar.innerHTML = "<p class=\"muted-placeholder\">Failed to load leagues.</p>";
     }
 }
 
 // ===== World Cup section on the home page =====
-//
-// The home page surfaces two compact WC widgets above the existing fixtures:
-// the top 8 title chances (aggregate from 1000 sims) and the 12 projected
-// group tables (from the single sim whose champion matches the highest-odds winner).
 const wcWinnerOddsView = document.getElementById("wc-winner-odds");
 const wcProjectedGroupsView = document.getElementById("wc-projected-groups");
 const homeUpcomingList = document.getElementById("home-upcoming-list");
@@ -192,14 +147,12 @@ async function loadHomeWorldCup() {
 }
 
 function isoToday() {
-    // Use the browser's local day to match the date picker and default home view.
     const now = new Date();
     const offsetMs = now.getTimezoneOffset() * 60000;
     return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
 }
 
 function formatDateButton(start, end) {
-    // Keep the compact button readable for same-day and range selections.
     const today = isoToday();
     if (start === today && end === today) return "Today";
     const dateOptions = { month: "short", day: "numeric" };
@@ -215,7 +168,6 @@ function renderHomeUpcoming(data) {
         homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">No matches found for this date range.</p>";
         return;
     }
-    // Reuse the Upcoming Matches tab renderer so the card format stays identical.
     renderUpcoming(homeUpcomingList, rows, "", { includePast: true, groupByLeague: true });
 }
 
@@ -253,7 +205,6 @@ function setupHomeDatePicker() {
     if (homeStartDate) homeStartDate.value = today;
     if (homeEndDate) homeEndDate.value = today;
 
-    // Toggle the compact popover that holds both date inputs.
     homeDateToggle.addEventListener("click", () => {
         const isHidden = homeDatePopover.classList.toggle("hidden");
         homeDateToggle.setAttribute("aria-expanded", String(!isHidden));
@@ -270,7 +221,6 @@ function setupHomeDatePicker() {
 
 function setupHomeUpcomingClicks() {
     if (!homeUpcomingList) return;
-    // Match the Upcoming tab behavior by opening selected games in head-to-head.
     homeUpcomingList.addEventListener("click", (event) => {
         const button = event.target.closest(".match-toggle");
         if (!button || typeof openMatchupInH2H !== "function") return;
