@@ -162,7 +162,10 @@ def _fetch_competition_schedule(comp_name, espn_id, days_forward=90):
         return cached[1]
     today_str = date.today().strftime("%Y%m%d")
     end = (date.today() + timedelta(days=days_forward)).strftime("%Y%m%d")
-    data = _fetch_espn_json(f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard?dates={today_str}-{end}")
+    data = _fetch_espn_json(
+        f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard"
+        f"?dates={today_str}-{end}&limit=1000"
+    )
     if data is None:
         return None
     games = []

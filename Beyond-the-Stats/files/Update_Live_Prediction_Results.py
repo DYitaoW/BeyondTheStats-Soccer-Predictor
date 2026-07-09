@@ -522,8 +522,13 @@ def save_completed_rows_to_past_games(frame, today=None):
         if prediction_key:
             return f"prediction:{prediction_key}"
         raw_date = row.get("match_date_iso") or row.get("match_date") or row.get("match_datetime_utc")
-        parsed = pd.to_datetime(raw_date, utc=True, errors="coerce")
-        date_iso = parsed.tz_convert("America/New_York").date().isoformat() if pd.notna(parsed) else ""
+        raw_text = str(raw_date or "").strip()
+        if len(raw_text) == 10:
+            parsed = pd.to_datetime(raw_text, errors="coerce")
+            date_iso = parsed.date().isoformat() if pd.notna(parsed) else ""
+        else:
+            parsed = pd.to_datetime(raw_text, utc=True, errors="coerce")
+            date_iso = parsed.tz_convert("America/New_York").date().isoformat() if pd.notna(parsed) else ""
         competition = str(row.get("competition", "") or "").strip().lower()
         home = str(row.get("home_team", "") or "").strip().lower()
         away = str(row.get("away_team", "") or "").strip().lower()
@@ -574,10 +579,20 @@ def save_completed_rows_to_past_games(frame, today=None):
 
         def keep_row(row):
             raw_date = row.get("match_date_iso") or row.get("match_date") or row.get("match_datetime_utc")
-            parsed = pd.to_datetime(raw_date, utc=True, errors="coerce")
+            raw_text = str(raw_date or "").strip()
+            parsed = pd.to_datetime(
+                raw_text,
+                utc=False if len(raw_text) == 10 else True,
+                errors="coerce",
+            )
             if pd.isna(parsed):
                 return True
-            return parsed.tz_convert("America/New_York").date() >= cutoff
+            row_date = (
+                parsed.date()
+                if len(raw_text) == 10
+                else parsed.tz_convert("America/New_York").date()
+            )
+            return row_date >= cutoff
 
         existing = [r for r in existing if keep_row(r)]
         pruned = before - len(existing)

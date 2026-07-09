@@ -193,6 +193,11 @@ def _live_history_game_date(game):
         raw = str(game.get(field, "") or "").strip()
         if not raw:
             continue
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+            try:
+                return datetime.strptime(raw, "%Y-%m-%d").date()
+            except ValueError:
+                continue
         try:
             parsed = pd.to_datetime(raw, utc=True, errors="coerce")
             if pd.notna(parsed):
