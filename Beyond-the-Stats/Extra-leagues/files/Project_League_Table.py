@@ -187,18 +187,17 @@ def load_future_fixtures_from_espn(competition, year=None):
 def load_context():
     matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
     if not os.path.exists(pm.MODEL_CACHE):
-        raise FileNotFoundError(f"Missing model cache: {pm.MODEL_CACHE}. Run Predict_Match.py first.")
+        print("[model-cache] cache missing; rebuilding model cache...")
+        rebuild_model_cache_once()
 
     try:
         bundle = joblib.load(pm.MODEL_CACHE)
     except Exception as exc:
-        print(f"[warn] Failed to load model cache ({exc.__class__.__name__}). Rebuilding cache once...")
+        print(f"[model-cache] failed to load cache ({exc.__class__.__name__}); rebuilding...")
         rebuild_model_cache_once()
         bundle = joblib.load(pm.MODEL_CACHE)
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
-        bt = bundle.get("build_time")
-        if bt is None or (time.time() - bt) >= 604800:
-            raise RuntimeError("Model cache is stale. Rebuild by running Predict_Match.py.")
+        print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
 
     overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
     season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))

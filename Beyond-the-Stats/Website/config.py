@@ -86,8 +86,27 @@ CLUB_FRIENDLIES_ESPN_ID = "club.friendly"
 
 # Competitions polled for scores but excluded from league-table/help listings.
 UPCOMING_ONLY_COMPETITIONS = {
-    CLUB_FRIENDLIES_COMPETITION,
     "FIFA/Friendly",
+}
+
+# Domestic leagues used only for UEFA/cup roster fallback (or upcoming API with no
+# domestic model history). Kept in fetch_league_teams / UEFA_Data_Manager but
+# omitted from league-facing APIs (tables, upcoming-global, league-data, leaders).
+LEAGUE_API_EXCLUDED_COMPETITIONS = {
+    # football-data.org upcoming fixtures only — no domestic prediction history
+    "Switzerland/Super League",
+    "Denmark/Superliga",
+    "Ukraine/Premier League",
+    "Croatia/HNL",
+    "Hungary/NB I",
+    "Israel/Premier League",
+    # UEFA/cup fallback roster only — no upcoming API, no domestic history
+    "Czech Republic/First League",
+    "Serbia/SuperLiga",
+    "Cyprus/First Division",
+    "Slovakia/Super Liga",
+    "Slovenia/PrvaLiga",
+    "Bulgaria/First League",
 }
 
 LIVE_SCORE_COMPETITIONS = {
@@ -332,12 +351,16 @@ TOURNAMENT_KEY_MAP = {
     "leagues-cup": "CONCACAF/Leagues Cup",
 }
 
+LIGA_MX_COMPETITION = "Mexico/Liga MX"
+
+# Leagues using head-to-head as the first tiebreaker (canonical: competition_rules.H2H_TIEBREAKER_COMPETITIONS).
 H2H_LEAGUES = {
     "Spain/La Liga", "Spain/La Liga 2",
     "Italy/Serie A", "Italy/Serie B",
     "Portugal/Liga Portugal",
     "Belgium/First Division A",
     "Turkey/Super Lig",
+    LIGA_MX_COMPETITION,
 }
 
 MLS_TABLE_VIEW_ALIASES = {

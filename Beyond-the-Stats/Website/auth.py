@@ -102,6 +102,7 @@ def enforce_mutation_auth(f):
             "/api/predict/mls",
             "/api/predict/extra",
             "/api/refresh",
+            "/api/retrain",
         }
         if request.path not in protected_paths:
             return f()
@@ -173,6 +174,7 @@ def register_auth_handlers(app):
             "/api/predict/mls",
             "/api/predict/extra",
             "/api/refresh",
+            "/api/retrain",
         }
         if request.path not in protected_paths:
             return None

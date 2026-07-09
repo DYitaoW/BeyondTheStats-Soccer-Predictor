@@ -65,6 +65,7 @@ from notifications import (
     ios_device_tokens,
     start_apns_worker,
 )
+from league_data import build_league_data_payload
 from predictions import (
     _enrich_json_past_row,
     _file_mtime_utc,
@@ -215,19 +216,45 @@ _UPCOMING_MODE_MAP = {
 }
 
 _ALL_UPCOMING_SOURCES = [
-    ("global", config.ALL_UPCOMING_FILE),
     ("global", config.GLOBAL_UPCOMING_FILE),
     ("mls", config.MLS_UPCOMING_FILE),
     ("extra", config.EXTRA_UPCOMING_FILE),
     ("cups", config.CUP_UPCOMING_FILE),
     ("national", config.NATIONAL_UPCOMING_FILE),
+    ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
 ]
 
 
 def _exclude_upcoming_only_rows(rows):
     """Drop competitions that have a dedicated upcoming source only."""
-    blocked = config.UPCOMING_ONLY_COMPETITIONS
+    blocked = config.UPCOMING_ONLY_COMPETITIONS | config.LEAGUE_API_EXCLUDED_COMPETITIONS
     return [r for r in rows if str(r.get("competition", "")).strip() not in blocked]
+
+
+def _is_league_api_competition(comp_name):
+    """Return True when a competition should appear in league-facing APIs."""
+    comp = str(comp_name or "").strip()
+    if not comp:
+        return False
+    if comp in config.UPCOMING_ONLY_COMPETITIONS:
+        return False
+    if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+        return False
+    return True
+
+
+def _filter_league_tables_payload(data):
+    """Remove fallback-only / upcoming-only leagues from table API payloads."""
+    excluded = config.LEAGUE_API_EXCLUDED_COMPETITIONS
+    leagues = [c for c in (data.get("leagues") or []) if c not in excluded]
+    tables = {
+        k: v for k, v in (data.get("tables") or {}).items()
+        if k not in excluded
+    }
+    fixtures = data.get("fixtures")
+    if isinstance(fixtures, dict):
+        fixtures = {k: v for k, v in fixtures.items() if k not in excluded}
+    return {**data, "leagues": leagues, "tables": tables, "fixtures": fixtures}
 
 
 def _date_window_bounds():
@@ -430,7 +457,8 @@ def api_help():
         ("/api/predict/extra", "POST", "Run extra-league predictions"),
         ("/api/pipeline/status", "GET", "Pipeline health: step pass/fail + last refresh"),
         ("/api/pipeline/logs", "GET", "Pipeline terminal output (tail, WARN/ERROR filters)"),
-        ("/api/refresh", "POST", "Trigger background pipeline refresh"),
+        ("/api/refresh", "POST", "Trigger background pipeline refresh (light, no model retrain)"),
+        ("/api/retrain", "POST", "Force full model retrain (Tue/Fri-style, all pipelines)"),
         ("/api/notifications", "GET", "List notification subscriptions"),
         ("/api/notifications", "POST", "Send a test notification"),
         ("/api/notifications/register", "POST", "Register push notification token"),
@@ -454,6 +482,8 @@ def api_help_all():
 
     for comp_name in sorted(config.LIVE_SCORE_COMPETITIONS, key=str.lower):
         if comp_name in config.UPCOMING_ONLY_COMPETITIONS:
+            continue
+        if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
             continue
         is_cup = comp_name in config._CUP_FORMATS
         base = {
@@ -538,17 +568,17 @@ def api_upcoming(mode):
         combined_league_stats = {}
         seen_keys = set()
         for source, csv_path in _ALL_UPCOMING_SOURCES:
-            # For global aggregation, include ALL future dates (no upper bound)
-            # and also include the current prediction week (completed range) so
-            # recently settled games appear until the next pipeline run.
             rows, _st, _ls = _load_upcoming_rows(csv_path, source)
-            # If the standard window returned nothing, try a broader range
-            if not rows:
-                rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="all")
             for r in rows:
-                if str(r.get("competition", "")).strip() in config.UPCOMING_ONLY_COMPETITIONS:
+                comp = str(r.get("competition", "")).strip()
+                if comp in config.UPCOMING_ONLY_COMPETITIONS:
                     continue
-                ck = "|".join(str(r.get(k, "")).strip().lower() for k in ("match_date", "competition", "home_team", "away_team"))
+                if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                    continue
+                ck = "|".join(
+                    str(r.get(k, "")).strip().lower()
+                    for k in ("match_date_iso", "competition", "home_team", "away_team")
+                )
                 if ck and ck not in seen_keys:
                     seen_keys.add(ck)
                     all_rows.append(r)
@@ -561,7 +591,7 @@ def api_upcoming(mode):
                     combined_league_stats[comp] = ls
         # Re-sort aggregated rows: date → league → time
         all_rows.sort(key=lambda r: (
-            str(r.get("match_date", "")),
+            _row_date_iso(r),
             str(r.get("competition", "")),
             str(r.get("match_datetime_et", "") or r.get("match_datetime_utc", "")),
             str(r.get("home_team", "")),
@@ -606,13 +636,18 @@ def api_home_upcoming():
     start_date = min(max(start_date, window_start), window_end)
     end_date = min(max(end_date, window_start), window_end)
 
-    # Prefer the new combined CSV; fall back to legacy per-source files.
-    source_paths = [("global", config.ALL_UPCOMING_FILE)] if os.path.exists(config.ALL_UPCOMING_FILE) else _ALL_UPCOMING_SOURCES
+    # Aggregate the same sources as /api/upcoming/global so MLS, cups, and
+    # friendlies are not dropped when Output/Upcoming/all_upcoming.csv is stale.
     all_rows = []
     seen_keys = set()
-    for source, csv_path in source_paths:
+    for source, csv_path in _ALL_UPCOMING_SOURCES:
         rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source, date_range="all")
         for row in rows:
+            comp = str(row.get("competition", "")).strip()
+            if comp in config.UPCOMING_ONLY_COMPETITIONS:
+                continue
+            if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                continue
             match_date = _row_date_iso(row)
             if not match_date:
                 continue
@@ -622,7 +657,10 @@ def api_home_upcoming():
                 continue
             if parsed_date < start_date or parsed_date > end_date:
                 continue
-            key = "|".join(str(row.get(field, "")).strip().lower() for field in ("match_date_iso", "competition", "home_team", "away_team"))
+            key = "|".join(
+                str(row.get(field, "")).strip().lower()
+                for field in ("match_date_iso", "competition", "home_team", "away_team")
+            )
             if key in seen_keys:
                 continue
             seen_keys.add(key)
@@ -777,15 +815,47 @@ def api_refresh():
 
     refresh_fn = app.config.get("_backend_refresh")
     if callable(refresh_fn):
-        refresh_fn(trigger="api")
-        return jsonify({"ok": True, "queued": True, "mode": "backend"})
+        refresh_fn(trigger="api", full_retrain=False)
+        return jsonify({"ok": True, "queued": True, "mode": "backend", "full_retrain": False})
 
     started = _run_full_pipeline_once()
     return jsonify({
         "ok": bool(started),
         "queued": False,
         "mode": "inline",
+        "full_retrain": True,
         "message": "Pipeline finished inline (no BackendServer hook registered).",
+    })
+
+
+@app.post("/api/retrain")
+def api_retrain():
+    """Force a full model retrain (global + MLS + extra cache rebuild).
+
+    Same as the scheduled Tuesday/Friday run: downloads data and retrains all
+    model caches. Non-blocking when :class:`BackendServer` is running.
+    """
+    if not _refresh_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    refresh_fn = app.config.get("_backend_refresh")
+    if callable(refresh_fn):
+        refresh_fn(trigger="api-retrain", full_retrain=True)
+        return jsonify({
+            "ok": True,
+            "queued": True,
+            "mode": "backend",
+            "full_retrain": True,
+            "message": "Full model retrain queued.",
+        })
+
+    started = _run_full_pipeline_once()
+    return jsonify({
+        "ok": bool(started),
+        "queued": False,
+        "mode": "inline",
+        "full_retrain": True,
+        "message": "Full retrain finished inline (no BackendServer hook registered).",
     })
 
 
@@ -1517,6 +1587,11 @@ def api_real_tables():
     from competition_rules import should_use_persisted_table
 
     if comp_filter:
+        if comp_filter in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+            return jsonify({
+                "ok": False,
+                "error": f"Competition not available in league APIs: {comp_filter}",
+            }), 404
         if comp_filter not in config.LIVE_SCORE_COMPETITIONS and comp_filter not in config.MLS_TABLE_VIEW_ALIASES:
             return jsonify({"ok": False, "error": f"Unknown competition: {comp_filter}"}), 400
         if force_refresh:
@@ -1539,6 +1614,8 @@ def api_real_tables():
     persisted = _load_json_payload(config.REAL_TABLES_PERSIST_FILE)
     if isinstance(persisted, dict):
         for comp_name in config.LIVE_SCORE_COMPETITIONS:
+            if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                continue
             cached = persisted.get(comp_name)
             if should_use_persisted_table(cached, force_refresh):
                 results[comp_name] = cached
@@ -1562,6 +1639,8 @@ def api_real_tables():
                     }
     else:
         for comp_name in config.LIVE_SCORE_COMPETITIONS:
+            if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                continue
             if force_refresh:
                 _clear_standings_cache(comp_name)
                 _clear_leaders_cache(comp_name)
@@ -1848,12 +1927,15 @@ def api_league_tables():
         return jsonify({"ok": True, **data, "fixtures": fixtures})
     else:
         if season_data:
-            data = season_data
+            data = _filter_league_tables_payload(season_data)
         else:
             csv_path = config.GLOBAL_PROJECTED_TABLE_FILE
-            data = _load_projected_tables(csv_path)
+            data = _filter_league_tables_payload(_load_projected_tables(csv_path))
         data["last_prediction_refresh"] = None
         fixtures = _load_all_fixtures_by_competition(config.GLOBAL_UPCOMING_FILE)
+        excluded = config.LEAGUE_API_EXCLUDED_COMPETITIONS
+        if isinstance(fixtures, dict):
+            fixtures = {k: v for k, v in fixtures.items() if k not in excluded}
     return jsonify({"ok": True, **data, "fixtures": fixtures})
 
 
@@ -1862,126 +1944,35 @@ def api_league_tables():
 def api_league_data(competition):
     """Return consolidated data for a single league / cup / competition.
 
-    Combines projected table, position odds, winners odds, real table,
-    and upcoming fixtures into one response.
+    Uses a unified schema across all competitions (see ``league_data.py``):
 
     .. code-block:: json
 
         {"ok": true, "competition": "...",
-         "predicted_table": [...],
-         "position_odds": {"simple": {pos: [{team, pct}, ...]},
-                           "detailed": [{team, odds: {pos: pct, ...}}, ...]},
-         "winners_odds": [{team, win_league_pct, top4_pct, ...}, ...],
-         "winner_probabilities": {team: pct, ...},
-         "champion": "...",
-         "simulations_run": 200,
-         "mls_winners_odds": {
-           "supporters_shield": {...},
-           "eastern_conference": {...},
-           "western_conference": {...},
-           "mls_cup": {...}
+         "format": {"standings_layout": "...", "tiebreaker": "gd|h2h", "notes": [...]},
+         "predicted": {
+           "table": [...],
+           "groups": [{"name": "...", "entries": [...]}] | null,
+           "winner": {"champion": "...", "probabilities": {...}, "simulations_run": 200},
+           "winners_odds": [...],
+           "position_odds": {"simple": {...}, "detailed": [...], "detailed_same_as_simple": false}
          },
-         "real_table": {"groups": [...], "source": "real"},
+         "real": {"standings": {"groups": [...], "standings_layout": "...", ...}},
+         "bracket": {"projected": {...}, "knockout": {...}, "odds_knockout": {...}},
          "fixtures": [...]}
+
+    Legacy top-level keys (``predicted_table``, ``real_table``, etc.) are kept
+    as mirrors of the nested fields for existing clients.
     """
     comp = competition.strip()
 
-    # ── 1. Find projected table from any CSV source ───────────────
-    comp_table = _load_projected_competition_table(comp)
-    predicted_table = comp_table
-    winner_fields = _build_winner_probability_payload(comp_table) if comp_table else {}
-    winners_odds = winner_fields.get("winners_odds", [])
-    position_odds_simple = {}
-    position_odds_detailed = []
+    if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+        return jsonify({
+            "ok": False,
+            "error": f"Competition not available in league APIs: {comp}",
+        }), 404
 
-    if comp_table:
-        for row in comp_table:
-            team = row.get("team", "")
-            raw = row.get("position_odds")
-            if raw and isinstance(raw, dict):
-                entry = {"team": team, "odds": {}}
-                for pos_str, pct in raw.items():
-                    pct_f = float(pct) if pct is not None else 0.0
-                    entry["odds"][str(pos_str)] = pct_f
-                    if str(pos_str) not in position_odds_simple:
-                        position_odds_simple[str(pos_str)] = []
-                    position_odds_simple[str(pos_str)].append({"team": team, "pct": pct_f})
-                position_odds_detailed.append(entry)
-        for ps in position_odds_simple:
-            position_odds_simple[ps].sort(key=lambda x: x["pct"], reverse=True)
-        position_odds_simple = dict(
-            sorted(position_odds_simple.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 999)
-        )
-
-    # If no projected table found in CSVs, fall back to league roster
-    if not predicted_table:
-        league_teams = _load_league_teams()
-        roster = league_teams.get(comp)
-        if roster:
-            predicted_table = []
-            winners_odds = []
-            for pos, team in enumerate(sorted(roster), start=1):
-                entry = {
-                    "position": pos, "team": team,
-                    "P": 0, "W": 0, "D": 0, "L": 0,
-                    "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-                    "PlayedReal": 0, "PlayedPred": 0,
-                    "win_league_pct": 0.0, "top4_pct": 0.0, "bottom3_pct": 0.0,
-                    "most_likely_position": 0, "most_likely_position_pct": 0.0,
-                    "position_odds": {}, "sim_runs": 0,
-                }
-                predicted_table.append(entry)
-                winners_odds.append({
-                    "team": team,
-                    "win_league_pct": 0.0, "top4_pct": 0.0, "bottom3_pct": 0.0,
-                    "most_likely_position": 0, "most_likely_position_pct": 0.0,
-                })
-
-    # ── 2. Real table from live-score history ─────────────────────
-    real_table = _compute_standings_from_history(comp)
-
-    # ── 3. Upcoming fixtures with prediction odds ────────────────
-    from competition_rules import resolve_competition_query
-
-    base_comp, _mls_view = resolve_competition_query(comp)
-    fixture_comps = {comp}
-    if base_comp == "United States/MLS":
-        fixture_comps.update({"United States/MLS", base_comp})
-    upcoming_sources = [
-        config.GLOBAL_UPCOMING_FILE,
-        config.MLS_UPCOMING_FILE,
-        config.EXTRA_UPCOMING_FILE,
-        config.CUP_UPCOMING_FILE,
-    ]
-    fixtures = []
-    for csv_path in upcoming_sources:
-        try:
-            rows, _, _ = _load_upcoming_rows(csv_path, date_range="all")
-            comp_fixtures = [r for r in rows if r.get("competition") in fixture_comps]
-            if comp_fixtures:
-                fixtures = comp_fixtures
-                break
-        except Exception:
-            continue
-
-    payload = {
-        "ok": True,
-        "competition": comp,
-        "predicted_table": predicted_table,
-        "position_odds": {
-            "simple": position_odds_simple,
-            "detailed": position_odds_detailed,
-        },
-        "winners_odds": winners_odds,
-        "real_table": real_table,
-        "fixtures": fixtures,
-    }
-    for key in ("winner_probabilities", "champion", "simulations_run"):
-        if winner_fields.get(key) is not None:
-            payload[key] = winner_fields[key]
-    payload = _enrich_league_data_cup_fields(comp, payload)
-    payload = _enrich_league_data_mls_fields(comp, payload)
-    return jsonify(payload)
+    return jsonify(build_league_data_payload(comp))
 
 
 @app.get("/api/stats")
@@ -2043,6 +2034,8 @@ def api_league_leaders():
         proj = _load_projected_tables(csv_path)
         comp_list = proj.get("leagues") or []
         for comp_name in comp_list:
+            if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                continue
             # MLS sub-competitions — collect separately
             if comp_name.startswith("United States/MLS"):
                 comp_tbl = proj.get("tables", {}).get(comp_name, [])
@@ -2155,6 +2148,8 @@ def api_league_leaders():
             continue
         if comp_name in _COMPETITION_ALIASES:
             continue
+        if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+            continue
         if comp_name in config._CUP_FORMATS:
             cups.append({
                 "competition": comp_name,
@@ -2215,6 +2210,8 @@ def api_league_leaders():
             else:
                 entry["current_leader"] = None
                 entry["leader_source"] = "predicted"
+
+    leagues = [e for e in leagues if _is_league_api_competition(e.get("competition"))]
 
     return jsonify({
         "ok": True,
@@ -2334,7 +2331,7 @@ if __name__ == "__main__":
     if not config.MUTATION_API_TOKEN and not config.NOTIFICATIONS_API_KEY:
         print("[startup] WARNING: no mutation auth configured — write-capable API endpoints are disabled!")
     if not config.REFRESH_API_TOKEN:
-        print("[startup] WARNING: config.REFRESH_API_TOKEN not set — /api/refresh is unprotected!")
+        print("[startup] WARNING: config.REFRESH_API_TOKEN not set — /api/refresh and /api/retrain are unprotected!")
     if not config.NOTIFICATIONS_API_KEY:
         print("[startup] WARNING: config.NOTIFICATIONS_API_KEY not set — notification endpoints require config.MUTATION_API_TOKEN or a matching header!")
     if not config.DEBUG_API_KEY and not config.REFRESH_API_TOKEN:
