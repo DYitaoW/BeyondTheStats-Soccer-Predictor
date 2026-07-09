@@ -1773,24 +1773,29 @@ def _attach_projected_winner_fields(comp, result):
 
 def _build_mls_api_payload():
     """Shared MLS payload for ``/api/league-tables?mode=mls``."""
+    projected = _load_projected_tables(config.MLS_PROJECTED_TABLE_FILE)
+    last_refresh = (
+        _file_mtime_utc(config.MLS_PROJECTED_TABLE_FILE)
+        if os.path.exists(config.MLS_PROJECTED_TABLE_FILE)
+        else None
+    )
+
+    tables = dict(projected.get("tables") or {})
+    leagues = set(projected.get("leagues") or [])
+
     season_data = _load_current_season_tables()
     if season_data:
-        mls_leagues = [
-            c for c in season_data.get("leagues", [])
-            if "MLS" in c or "United States" in c
-        ]
-        data = {
-            "leagues": mls_leagues,
-            "tables": {
-                c: season_data["tables"][c]
-                for c in mls_leagues
-                if c in season_data.get("tables", {})
-            },
-        }
-        last_refresh = None
-    else:
-        data = _load_projected_tables(config.MLS_PROJECTED_TABLE_FILE)
-        last_refresh = _file_mtime_utc(config.MLS_PROJECTED_TABLE_FILE)
+        for comp, rows in (season_data.get("tables") or {}).items():
+            if comp not in tables or not tables.get(comp):
+                tables[comp] = rows
+            leagues.add(comp)
+
+    for comp in config.MLS_DATASET_COMPETITIONS:
+        leagues.add(comp)
+
+    data = {"leagues": sorted(leagues), "tables": tables}
+    _fill_placeholder_tables(data)
+    data["leagues"] = sorted(set(data.get("leagues") or []) | set(config.MLS_DATASET_COMPETITIONS))
 
     payload = {
         "leagues": data.get("leagues") or [],

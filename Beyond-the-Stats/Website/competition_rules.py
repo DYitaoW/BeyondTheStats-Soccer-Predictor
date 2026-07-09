@@ -59,6 +59,7 @@ MLS_TEAM_ALIASES = {
 }
 
 MLS_SEASON_FILE_RE = re.compile(r"^mlsstat(\d{4})\.csv$", re.IGNORECASE)
+LIGA_MX_SEASON_FILE_RE = re.compile(r"^mexstat(\d{4})\.csv$", re.IGNORECASE)
 
 _UEFA_COMPETITIONS = frozenset({
     "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
@@ -224,6 +225,20 @@ def _find_latest_mls_season_file() -> str | None:
     return max(candidates, key=lambda item: item[0])[1]
 
 
+def _find_latest_liga_mx_season_file() -> str | None:
+    base = os.path.join(config.PROJECT_DIR, "MLS", "Data", "Raw_Data", "Mexico", "Liga MX")
+    if not os.path.isdir(base):
+        return None
+    candidates: list[tuple[int, str]] = []
+    for name in os.listdir(base):
+        match = LIGA_MX_SEASON_FILE_RE.match(name)
+        if match:
+            candidates.append((int(match.group(1)), os.path.join(base, name)))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[0])[1]
+
+
 def _mls_season_csv_games(comp_name: str) -> list[dict]:
     """Load completed MLS results from the latest mlsstatYYYY.csv season file."""
     if comp_name != "United States/MLS":
@@ -283,6 +298,69 @@ def _mls_season_csv_games(comp_name: str) -> list[dict]:
             "status": "post",
             "match_date": match_date,
             "source": f"mls_season_csv:{os.path.basename(path)}",
+        })
+    return rows
+
+
+def _liga_mx_season_csv_games(comp_name: str) -> list[dict]:
+    """Load completed Liga MX results from the latest mexstatYYYY.csv season file."""
+    if comp_name != config.LIGA_MX_COMPETITION:
+        return []
+    path = _find_latest_liga_mx_season_file()
+    if not path:
+        return []
+    try:
+        frame = pd.read_csv(path, dtype=str)
+    except Exception:
+        return []
+    if frame.empty:
+        return []
+
+    rows: list[dict] = []
+    processed = "HomeTeam" in frame.columns and "FTHG" in frame.columns
+    for _, row in frame.iterrows():
+        if processed:
+            home_raw = row.get("HomeTeam")
+            away_raw = row.get("AwayTeam")
+            result = str(row.get("FTR", "")).strip().upper()
+            home_goals = row.get("FTHG")
+            away_goals = row.get("FTAG")
+        else:
+            home_raw = row.get("Home")
+            away_raw = row.get("Away")
+            result = str(row.get("Res", "")).strip().upper()
+            home_goals = row.get("HG")
+            away_goals = row.get("AG")
+
+        if result not in {"H", "D", "A"}:
+            continue
+        try:
+            hs = int(float(home_goals))
+            aws = int(float(away_goals))
+        except (TypeError, ValueError):
+            continue
+
+        home = str(home_raw or "").strip()
+        away = str(away_raw or "").strip()
+        if not home or not away:
+            continue
+
+        date_raw = str(row.get("Date", "")).strip()
+        match_date = ""
+        if date_raw:
+            parsed = pd.to_datetime(date_raw, errors="coerce", dayfirst=True)
+            if pd.notna(parsed):
+                match_date = parsed.strftime("%Y-%m-%d")
+
+        rows.append({
+            "competition": comp_name,
+            "home_team": home,
+            "away_team": away,
+            "home_score": hs,
+            "away_score": aws,
+            "status": "post",
+            "match_date": match_date,
+            "source": f"liga_mx_season_csv:{os.path.basename(path)}",
         })
     return rows
 
@@ -703,6 +781,7 @@ def collect_competition_games(comp_name: str) -> list[dict]:
         _national_csv_games(base_comp),
         _world_cup_projection_games(base_comp),
         _mls_season_csv_games(base_comp),
+        _liga_mx_season_csv_games(base_comp),
     ):
         for g in source_rows:
             _append_game(games, seen, g)

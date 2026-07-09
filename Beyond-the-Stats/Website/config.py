@@ -176,6 +176,14 @@ LIVE_SCORE_COMPETITIONS = {
 
 MLS_COMPETITION = "United States/MLS"
 MLS_CUP_COMPETITION = "United States/MLS - MLS Cup"
+LIGA_MX_COMPETITION = "Mexico/Liga MX"
+MLS_DATASET_COMPETITIONS = (
+    MLS_COMPETITION,
+    "United States/MLS - Supporters Shield Table",
+    "United States/MLS - Eastern Conference",
+    "United States/MLS - Western Conference",
+    LIGA_MX_COMPETITION,
+)
 MLS_WINNER_VIEWS = {
     "supporters_shield": "United States/MLS - Supporters Shield Table",
     "eastern_conference": "United States/MLS - Eastern Conference",
@@ -350,8 +358,6 @@ TOURNAMENT_KEY_MAP = {
     "us-open-cup": "United States/US Open Cup",
     "leagues-cup": "CONCACAF/Leagues Cup",
 }
-
-LIGA_MX_COMPETITION = "Mexico/Liga MX"
 
 # Leagues using head-to-head as the first tiebreaker (canonical: competition_rules.H2H_TIEBREAKER_COMPETITIONS).
 H2H_LEAGUES = {
