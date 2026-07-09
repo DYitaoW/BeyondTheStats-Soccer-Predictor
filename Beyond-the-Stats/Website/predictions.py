@@ -1171,7 +1171,12 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         )
     from accuracy_tracker import _build_persistent_accuracy_stats
     persistent_stats, persistent_league_stats = _build_persistent_accuracy_stats(target_mode, rows)
-    return rows, persistent_stats, persistent_league_stats
+    rows = [_sanitize_for_json(row) for row in rows]
+    return (
+        rows,
+        _sanitize_for_json(persistent_stats),
+        _sanitize_for_json(persistent_league_stats),
+    )
 
 
 def _load_all_fixtures_by_competition(csv_path):
@@ -1352,7 +1357,10 @@ def _load_projected_tables(csv_path):
             position_odds_tables[str(competition)] = pos_odds_rows
 
     leagues = sorted(tables.keys(), key=lambda name: name.lower())
-    return {"leagues": leagues, "tables": tables, "position_odds": position_odds_tables}
+    result = {"leagues": leagues, "tables": tables, "position_odds": position_odds_tables}
+    if os.path.normpath(csv_path) == os.path.normpath(config.MLS_PROJECTED_TABLE_FILE):
+        _normalize_mls_conference_tables(result)
+    return result
 
 
 PROJECTED_TABLE_SOURCES = (
@@ -1365,6 +1373,51 @@ PROJECTED_TABLE_SOURCES = (
 PROJECTED_WINNER_COMP_ALIASES = {
     "United States/MLS": "United States/MLS - Supporters Shield Table",
 }
+
+MLS_SHIELD_TABLE = "United States/MLS - Supporters Shield Table"
+MLS_EAST_TABLE = "United States/MLS - Eastern Conference"
+MLS_WEST_TABLE = "United States/MLS - Western Conference"
+MLS_CONFERENCE_STAT_FIELDS = ("P", "W", "D", "L", "GF", "GA", "GD", "Pts", "PlayedReal", "PlayedPred")
+
+
+def _normalize_mls_conference_tables(data: dict) -> dict:
+    """Ensure MLS conference projected rows reuse Supporters Shield season stats."""
+    from competition_rules import mls_conference
+
+    tables = data.get("tables") or {}
+    shield_rows = tables.get(MLS_SHIELD_TABLE)
+    if not shield_rows:
+        return data
+
+    shield_by_team = {str(row.get("team", "")).strip(): row for row in shield_rows if row.get("team")}
+    for conf_name, target_conf in ((MLS_EAST_TABLE, "east"), (MLS_WEST_TABLE, "west")):
+        conf_rows = tables.get(conf_name)
+        if not conf_rows:
+            continue
+        synced_rows = []
+        for row in conf_rows:
+            team = str(row.get("team", "")).strip()
+            base = shield_by_team.get(team)
+            if not base or mls_conference(team) != target_conf:
+                continue
+            synced = dict(row)
+            for field in MLS_CONFERENCE_STAT_FIELDS:
+                if field in base:
+                    synced[field] = base[field]
+            synced_rows.append(synced)
+        synced_rows.sort(
+            key=lambda item: (
+                -(int(item.get("Pts") or 0)),
+                -(int(item.get("GD") or 0)),
+                -(int(item.get("GF") or 0)),
+                str(item.get("team", "")),
+            )
+        )
+        for pos, row in enumerate(synced_rows, start=1):
+            row["position"] = pos
+        tables[conf_name] = synced_rows
+    data["tables"] = tables
+    return data
 
 
 def _build_mls_winners_odds_bundle() -> dict:
@@ -1954,21 +2007,47 @@ def _past_game_storage_key(row: dict) -> str:
     )
 
 
-def _json_safe_row(row: dict) -> dict:
-    """Make an upcoming API row JSON-serializable for past_games.json."""
+def _sanitize_for_json(value):
+    """Recursively coerce API payloads into strict JSON-safe Python values."""
     import math
 
-    safe: dict = {}
-    for key, value in row.items():
-        if value is None:
-            safe[key] = None
-        elif isinstance(value, float) and math.isnan(value):
-            safe[key] = None
-        elif isinstance(value, (datetime, pd.Timestamp)):
-            safe[key] = value.isoformat()
-        else:
-            safe[key] = value
-    return safe
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return {str(key): _sanitize_for_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_for_json(item) for item in value]
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+    try:
+        import numpy as np
+
+        if isinstance(value, np.floating):
+            number = float(value)
+            if math.isnan(number) or math.isinf(number):
+                return None
+            return number
+        if isinstance(value, np.integer):
+            return int(value)
+    except Exception:
+        pass
+    if isinstance(value, (datetime, pd.Timestamp)):
+        return value.isoformat()
+    if isinstance(value, str):
+        return "".join(ch for ch in value if ord(ch) >= 32 or ch in "\t\n\r")
+    return value
+
+
+def _json_safe_row(row: dict) -> dict:
+    """Make an upcoming API row JSON-serializable for past_games.json."""
+    sanitized = _sanitize_for_json(row)
+    return sanitized if isinstance(sanitized, dict) else {}
 
 
 def archive_todays_games_to_past_games_file() -> int:

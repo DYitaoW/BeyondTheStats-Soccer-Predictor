@@ -176,6 +176,58 @@ LIVE_SCORE_COMPETITIONS = {
 
 MLS_COMPETITION = "United States/MLS"
 MLS_CUP_COMPETITION = "United States/MLS - MLS Cup"
+LIGA_MX_COMPETITION = "Mexico/Liga MX"
+MLS_DATASET_COMPETITIONS = (
+    MLS_COMPETITION,
+    "United States/MLS - Supporters Shield Table",
+    "United States/MLS - Eastern Conference",
+    "United States/MLS - Western Conference",
+    LIGA_MX_COMPETITION,
+)
+GLOBAL_DATASET_COMPETITIONS = (
+    "England/Premier League",
+    "England/Championship",
+    "Spain/La Liga",
+    "Spain/La Liga 2",
+    "Germany/Bundesliga",
+    "Germany/Bundesliga 2",
+    "Italy/Serie A",
+    "Italy/Serie B",
+    "France/Ligue 1",
+    "France/Ligue 2",
+    "Belgium/First Division A",
+    "Netherlands/Eredivisie",
+    "Portugal/Liga Portugal",
+    "Scotland/Premiership",
+    "Turkey/Super Lig",
+    "Austria/Bundesliga",
+    "Greece/Super League",
+    "Norway/Eliteserien",
+    "Romania/Liga I",
+    "Poland/Ekstraklasa",
+    "Sweden/Allsvenskan",
+    "UEFA/Champions League",
+    "UEFA/Europa League",
+    "UEFA/Conference League",
+    "England/FA Cup",
+    "England/League Cup",
+    "CONCACAF/Leagues Cup",
+    "Germany/DFB-Pokal",
+    "Italy/Coppa Italia",
+    "Spain/Copa del Rey",
+    "France/Coupe de France",
+)
+EXTRA_DATASET_COMPETITIONS = (
+    "Argentina/Primera Division",
+    "Brazil/Serie A",
+    "Japan/J1 League",
+)
+# MLS conference views duplicate the main MLS table on the home sidebar.
+HOME_SIDEBAR_SKIP_COMPETITIONS = frozenset({
+    "United States/MLS - Supporters Shield Table",
+    "United States/MLS - Eastern Conference",
+    "United States/MLS - Western Conference",
+})
 MLS_WINNER_VIEWS = {
     "supporters_shield": "United States/MLS - Supporters Shield Table",
     "eastern_conference": "United States/MLS - Eastern Conference",
@@ -350,8 +402,6 @@ TOURNAMENT_KEY_MAP = {
     "us-open-cup": "United States/US Open Cup",
     "leagues-cup": "CONCACAF/Leagues Cup",
 }
-
-LIGA_MX_COMPETITION = "Mexico/Liga MX"
 
 # Leagues using head-to-head as the first tiebreaker (canonical: competition_rules.H2H_TIEBREAKER_COMPETITIONS).
 H2H_LEAGUES = {
