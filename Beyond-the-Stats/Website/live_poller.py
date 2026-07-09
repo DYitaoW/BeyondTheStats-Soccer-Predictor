@@ -40,6 +40,7 @@ from standings import (
     _clear_standings_cache,
     _compute_standings_from_history,
     _load_live_score_history,
+    _live_history_cutoff,
     _real_tables,
     _real_tables_lock,
     _upsert_live_score_history,
@@ -136,6 +137,46 @@ def _effective_poller_date():
     if now_et.hour < 2:
         return (now_et - timedelta(days=1)).date()
     return now_et.date()
+
+
+def _backfill_recent_live_score_history():
+    """Recover the retained history window from ESPN at poller startup."""
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    date_range = f"{_live_history_cutoff(today).strftime('%Y%m%d')}-{today.strftime('%Y%m%d')}"
+    competitions = {}
+    for comp_name, espn_id in config.LIVE_SCORE_COMPETITIONS.items():
+        if espn_id and espn_id not in competitions:
+            competitions[espn_id] = comp_name
+
+    completed = []
+    if competitions:
+        with ThreadPoolExecutor(max_workers=min(8, len(competitions))) as pool:
+            futures = {
+                pool.submit(_fetch_competition_scores, comp_name, espn_id, date_range): comp_name
+                for espn_id, comp_name in competitions.items()
+            }
+            for future in as_completed(futures):
+                comp_name = futures[future]
+                try:
+                    games = future.result()
+                except Exception:
+                    continue
+                for game in games:
+                    if str(game.get("status", "")).strip().lower() != "post":
+                        continue
+                    entry = dict(game)
+                    entry.setdefault("competition", comp_name)
+                    entry.setdefault("completed_at", datetime.now(timezone.utc).isoformat())
+                    completed.append(entry)
+
+    if completed:
+        result = _upsert_live_score_history(completed, as_of=today)
+        print(
+            "[live-history] ESPN retained-window backfill: "
+            f"{len(completed)} final(s), {result['inserted']} inserted, "
+            f"{result['updated']} updated, {result['total']} total."
+        )
+    return len(completed)
 
 
 def _uefa_live_scoring_allowed_for_comp(comp_name: str) -> bool:
@@ -387,6 +428,11 @@ def _live_score_poller_loop():
     todays_comps = {}
     active_comps = {}
     results = {}
+    try:
+        _backfill_recent_live_score_history()
+    except Exception:
+        import traceback
+        traceback.print_exc()
     while True:
         try:
             poll_date = _effective_poller_date()

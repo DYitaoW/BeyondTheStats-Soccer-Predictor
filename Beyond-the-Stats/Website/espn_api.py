@@ -32,7 +32,10 @@ _STANDINGS_STAT_NAMES = {
 
 def _fetch_competition_scores(comp_name, espn_id, today_str):
     """Fetch ESPN scoreboard for one competition/date, return parsed games."""
-    url = f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard?dates={today_str}"
+    url = (
+        f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard"
+        f"?dates={today_str}&limit=1000"
+    )
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
