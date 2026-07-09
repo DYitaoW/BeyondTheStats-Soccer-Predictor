@@ -1,5 +1,7 @@
 // preloadHomeData is invoked from shared.js so upcoming cards and summary stats render on every page
 
+const homeLeagueSidebar = document.getElementById("home-league-sidebar");
+
 // build a winner row from a league table payload
 function pickLeagueWinner(rows) {
     if (!Array.isArray(rows) || !rows.length) return null;
@@ -11,53 +13,98 @@ function pickLeagueWinner(rows) {
     })[0];
 }
 
-// render winners from a single dataset payload.
-function renderHomeWinners(data) {
-    if (!winnerView) return;
-    const tables = data?.tables || {};
-    const leagues = Object.keys(tables).filter((name) => name !== "__mls_bracket__").sort((a, b) => a.localeCompare(b));
-    if (!leagues.length) return "";
-    return leagues.map((league) => {
+function formatLeagueLabel(league) {
+    const parts = String(league || "").split("/");
+    if (parts.length < 2) return { country: "", name: league };
+    return { country: parts[0], name: parts.slice(1).join("/") };
+}
+
+function leagueTableUrl(dataset, league) {
+    const params = new URLSearchParams({ dataset, league });
+    return `/league-tables?${params.toString()}`;
+}
+
+function collectSidebarEntries(payload, dataset) {
+    const tables = payload?.tables || {};
+    const entries = [];
+    for (const league of Object.keys(tables)) {
+        if (league === "__mls_bracket__") continue;
         const winner = pickLeagueWinner(tables[league]);
-        return `<tr><td>${escapeHtmlText(league)}</td><td>${winner ? escapeHtmlText(winner.team) : "N/A"}</td><td>${winner ? asPct(winner.win_league_pct) : "0%"}</td></tr>`;
+        entries.push({
+            dataset,
+            league,
+            winner: winner?.team || "N/A",
+            winPct: winner ? asPct(winner.win_league_pct) : "0%",
+        });
+    }
+    return entries;
+}
+
+function renderHomeLeagueSidebar(entries) {
+    if (!homeLeagueSidebar) return;
+    if (!entries.length) {
+        homeLeagueSidebar.innerHTML = "<p class=\"muted-placeholder\">No league data available.</p>";
+        return;
+    }
+    const priorityLeagues = [
+        "England/Premier League",
+        "England/Championship",
+        "United States/MLS - Supporters Shield Table",
+        "United States/MLS - Eastern Conference",
+        "United States/MLS - Western Conference",
+    ];
+    const leagueRank = (name) => {
+        const idx = priorityLeagues.indexOf(name);
+        return idx >= 0 ? idx : 1000;
+    };
+    entries.sort((left, right) => {
+        const rankDiff = leagueRank(left.league) - leagueRank(right.league);
+        if (rankDiff !== 0) return rankDiff;
+        return left.league.localeCompare(right.league);
+    });
+
+    homeLeagueSidebar.innerHTML = entries.map((entry) => {
+        const label = formatLeagueLabel(entry.league);
+        const href = leagueTableUrl(entry.dataset, entry.league);
+        return `
+            <a class="home-league-item" href="${escapeHtmlText(href)}">
+                <div class="home-league-item-top">
+                    <span class="home-league-name">${escapeHtmlText(label.name)}</span>
+                    <span class="home-league-pct">${escapeHtmlText(entry.winPct)}</span>
+                </div>
+                ${label.country ? `<span class="home-league-country">${escapeHtmlText(label.country)}</span>` : ""}
+                <span class="home-league-winner">${escapeHtmlText(entry.winner)}</span>
+            </a>
+        `;
     }).join("");
 }
 
-// fetch every available dataset and render all winners into a single combined table.
-async function loadHomeWinners() {
-    if (!winnerView) return;
-    winnerView.innerHTML = "Loading league winners...";
+async function loadHomeLeagueSidebar() {
+    if (!homeLeagueSidebar) return;
+    homeLeagueSidebar.innerHTML = "<p class=\"muted-placeholder\">Loading leagues...</p>";
     const sources = ["global", "mls", "extra"];
     try {
         const payloads = await Promise.all(sources.map(async (mode) => {
             try {
                 const response = await fetch(`/api/league-tables?mode=${encodeURIComponent(mode)}`);
                 const data = await response.json();
-                if (!response.ok || !data?.ok) return null;
-                return { mode, data };
+                if (!response.ok || !data?.ok) return [];
+                return collectSidebarEntries(data, mode);
             } catch (_error) {
-                return null;
+                return [];
             }
         }));
-        const rows = payloads
-            .filter((entry) => entry)
-            .map((entry) => renderHomeWinners(entry.data))
-            .filter(Boolean)
-            .join("");
-        if (!rows) {
-            winnerView.textContent = "No winner data available.";
-            return;
-        }
-        winnerView.innerHTML = `<table class="league-table"><thead><tr><th>League</th><th>Predicted Winner</th><th>Win Chance</th></tr></thead><tbody>${rows}</tbody></table>`;
+        const entries = payloads.flat();
+        renderHomeLeagueSidebar(entries);
     } catch (_error) {
-        winnerView.textContent = "Failed to load league winners.";
+        homeLeagueSidebar.innerHTML = "<p class=\"muted-placeholder\">Failed to load leagues.</p>";
     }
 }
 
 // ===== World Cup section on the home page =====
 //
-// The home page surfaces two compact WC widgets above the existing fixtures + league
-// winners: the top 8 title chances (aggregate from 1000 sims) and the 12 projected
+// The home page surfaces two compact WC widgets above the existing fixtures:
+// the top 8 title chances (aggregate from 1000 sims) and the 12 projected
 // group tables (from the single sim whose champion matches the highest-odds winner).
 const wcWinnerOddsView = document.getElementById("wc-winner-odds");
 const wcProjectedGroupsView = document.getElementById("wc-projected-groups");
@@ -253,11 +300,7 @@ function escapeHtmlText(value) {
     return String(value).replace(/[&<>"']/g, (character) => map[character]);
 }
 
-// fetch and render winners for the single home-page block (no dataset dropdown)
-if (winnerView) {
-    loadHomeWinners();
-}
-
+loadHomeLeagueSidebar();
 loadHomeWorldCup();
 setupHomeDatePicker();
 setupHomeUpcomingClicks();

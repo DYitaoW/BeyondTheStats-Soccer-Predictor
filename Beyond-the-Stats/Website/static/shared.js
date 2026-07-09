@@ -989,7 +989,7 @@ const cupBracketCount = data.cup_brackets && data.cup_brackets.competitions
     : 0;
 if (!leagues.length && !(mode === "cups" && cupBracketCount)) {
     leagueTableView.innerHTML = "<p>No available Tables yet. Try again later.</p>";
-    winnerView.innerHTML = "<p>No available Tables yet. Try again later.</p>";
+    if (winnerView) winnerView.innerHTML = "<p>No available Tables yet. Try again later.</p>";
     return;
 }
 setLeagueSelectOptions(tableLeague, leagues, mode === "mls", mode === "cups" ? data.cup_brackets : null, mode);
@@ -1006,7 +1006,7 @@ if (mode === "mls" && tableLeague.value === "__mls_bracket__") {
     tableViewToggle.disabled = false;
     renderSelectedLeagueTable();
 }
-if (winnerDataset.value === mode) {
+if (winnerDataset && winnerDataset.value === mode) {
     renderWinnerView();
 }
 }
@@ -1929,6 +1929,44 @@ const ACTIVE_PAGE = (document.body?.dataset?.activePage || "home").trim();
 updateTableViewToggleLabel();
 activateTab(ACTIVE_PAGE);
 
+function getLeagueTableUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    return {
+        dataset: params.get("dataset"),
+        league: params.get("league"),
+    };
+}
+
+function applyLeagueTableSelection(leagueName) {
+    if (!tableLeague || !leagueName) return false;
+    const option = Array.from(tableLeague.options).find((entry) => entry.value === leagueName);
+    if (!option) return false;
+    tableLeague.value = leagueName;
+    return true;
+}
+
+async function renderLeagueTableSelection() {
+    if (!tableDataset || !tableLeague) return;
+    if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
+        tableViewToggle.disabled = true;
+        if (tablePositionOddsToggle) tablePositionOddsToggle.disabled = true;
+        await renderMlsBracket(leagueTablesCache.mls || { tables: {} });
+        return;
+    }
+    if (tableDataset.value === "cups" && tableLeague.value.startsWith("__cup_bracket__:")) {
+        tableViewToggle.disabled = true;
+        if (tablePositionOddsToggle) tablePositionOddsToggle.disabled = true;
+        renderCupBracket(
+            leagueTablesCache.cups || { tables: {}, cup_brackets: null },
+            tableLeague.value.replace("__cup_bracket__:", "")
+        );
+        return;
+    }
+    tableViewToggle.disabled = false;
+    if (tablePositionOddsToggle) tablePositionOddsToggle.disabled = false;
+    renderSelectedLeagueTable();
+}
+
 async function initializeActivePage() {
 if (ACTIVE_PAGE === "global") {
     if (!globalList || !globalStats || !globalLeagueFilter || !globalSourceFilter) return;
@@ -1940,9 +1978,16 @@ if (ACTIVE_PAGE === "global") {
     await loadCupProjections();
 } else if (ACTIVE_PAGE === "league-table") {
     if (!tableDataset || !tableLeague) return;
+    const urlParams = getLeagueTableUrlParams();
+    if (urlParams.dataset && ["global", "mls", "extra", "world-cup", "cups"].includes(urlParams.dataset)) {
+        tableDataset.value = urlParams.dataset;
+    }
     await loadLeagueTables(tableDataset.value);
+    if (urlParams.league) {
+        applyLeagueTableSelection(urlParams.league);
+    }
     if (tableLeague.value) {
-        renderSelectedLeagueTable();
+        await renderLeagueTableSelection();
     }
 }
 }
