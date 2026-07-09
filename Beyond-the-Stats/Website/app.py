@@ -83,6 +83,7 @@ from predictions import (
     _load_projected_competition_table,
     _build_winner_probability_payload,
     _build_mls_winners_odds_bundle,
+    _normalize_mls_conference_tables,
     _build_past_game_prediction_lookup,
     _collect_live_past_game_rows,
     _merge_prediction_onto_past_row,
@@ -1799,6 +1800,7 @@ def _build_mls_api_payload():
         "last_prediction_refresh": last_refresh,
         "mls_winners_odds": _build_mls_winners_odds_bundle(),
     }
+    _normalize_mls_conference_tables(payload)
     return payload
 
 

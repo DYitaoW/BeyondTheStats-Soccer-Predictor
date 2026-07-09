@@ -459,23 +459,13 @@ def _compute_standings_from_history(comp_name):
         ranked = _rank_table(full_table, match_records)
         all_entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
 
-        # Split into conferences
-        east_teams = [t for t in teams if _mls_conference(t) == "east"]
-        west_teams = [t for t in teams if _mls_conference(t) == "west"]
-        east_table = _init_table(east_teams)
-        west_table = _init_table(west_teams)
-        for g in comp_games:
-            ht = str(g.get("home_team", ""))
-            at = str(g.get("away_team", ""))
-            hs = int(g.get("home_score", 0))
-            as_ = int(g.get("away_score", 0))
-            if ht in east_teams and at in east_teams:
-                _apply_result(east_table, ht, at, hs, as_)
-            if ht in west_teams and at in west_teams:
-                _apply_result(west_table, ht, at, hs, as_)
-
-        east_ranked = _rank_table(east_table)
-        west_ranked = _rank_table(west_table)
+        # Conference tables use full-season stats (all 34 games), same as Supporters Shield.
+        east_teams = {t for t in teams if _mls_conference(t) == "east"}
+        west_teams = {t for t in teams if _mls_conference(t) == "west"}
+        east_table = {team: full_table[team] for team in east_teams if team in full_table}
+        west_table = {team: full_table[team] for team in west_teams if team in full_table}
+        east_ranked = _rank_table(east_table, match_records)
+        west_ranked = _rank_table(west_table, match_records)
 
         groups = [
             {"name": "Supporters Shield", "entries": all_entries},
