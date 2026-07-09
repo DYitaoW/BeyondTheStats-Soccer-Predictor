@@ -622,70 +622,76 @@ def load_upcoming_matchweek_fixtures_from_csv_fallback(window_days):
     ).reset_index(drop=True)
 
 
-def load_upcoming_matchweek_fixtures_from_espn(window_days, lookahead_days=365):
+def load_upcoming_matchweek_fixtures_from_espn(
+    window_days, lookahead_days=365, competition_names=None
+):
     today = pd.Timestamp(datetime.now(UTC).date())
     rows = []
     seen = set()
 
     for competition_name, espn_id in REGIONAL_ESPN_COMPETITIONS.items():
-        for offset in range(0, max(1, lookahead_days + 1)):
-            day = today + pd.Timedelta(days=offset)
-            url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
-            try:
-                data = fetch_json(url, timeout=30)
-            except Exception:
+        if competition_names and competition_name not in set(competition_names):
+            continue
+        end = today + pd.Timedelta(days=max(1, min(int(lookahead_days), 365)))
+        url = (
+            ESPN_SCOREBOARD_API.format(espn_id=espn_id)
+            + f"?dates={today.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}&limit=1000"
+        )
+        try:
+            data = fetch_json(url, timeout=30)
+        except Exception:
+            continue
+
+        events = data.get("events", [])
+        if not isinstance(events, list):
+            continue
+
+        for event in events:
+            event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
+            if pd.isna(event_date):
+                continue
+            event_dt_et = event_date.tz_convert(EASTERN_TZ)
+            match_date = event_dt_et.tz_localize(None).normalize()
+            if match_date < today:
                 continue
 
-            events = data.get("events", [])
-            if not isinstance(events, list):
+            competitions = event.get("competitions", [])
+            if not competitions:
+                continue
+            comp0 = competitions[0] or {}
+
+            status_state = (
+                ((comp0.get("status") or {}).get("type") or {}).get("state", "")
+            ).strip().lower()
+            if status_state and status_state not in {"pre"}:
                 continue
 
-            for event in events:
-                event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
-                if pd.isna(event_date):
-                    continue
-                event_dt_et = event_date.tz_convert(EASTERN_TZ)
-                match_date = event_dt_et.tz_localize(None).normalize()
-                if match_date < today:
-                    continue
+            competitors = comp0.get("competitors", [])
+            home_team = ""
+            away_team = ""
+            for c in competitors:
+                team_name = ((c.get("team") or {}).get("displayName") or "").strip()
+                side = str(c.get("homeAway", "")).strip().lower()
+                if side == "home":
+                    home_team = team_name
+                elif side == "away":
+                    away_team = team_name
+            if not home_team or not away_team:
+                continue
 
-                competitions = event.get("competitions", [])
-                if not competitions:
-                    continue
-                comp0 = competitions[0] or {}
-
-                status_state = (
-                    ((comp0.get("status") or {}).get("type") or {}).get("state", "")
-                ).strip().lower()
-                if status_state and status_state not in {"pre"}:
-                    continue
-
-                competitors = comp0.get("competitors", [])
-                home_team = ""
-                away_team = ""
-                for c in competitors:
-                    team_name = ((c.get("team") or {}).get("displayName") or "").strip()
-                    side = str(c.get("homeAway", "")).strip().lower()
-                    if side == "home":
-                        home_team = team_name
-                    elif side == "away":
-                        away_team = team_name
-                if not home_team or not away_team:
-                    continue
-
-                key = (competition_name, match_date.strftime("%Y-%m-%d"), home_team, away_team)
-                if key in seen:
-                    continue
-                seen.add(key)
-                rows.append(
-                    {
-                        "match_date": match_date,
-                        "match_datetime_et": event_dt_et.isoformat(),
-                        "competition": competition_name,
-                        "home_team": home_team,
-                        "away_team": away_team,
-                    }
-                )
+            key = (competition_name, match_date.strftime("%Y-%m-%d"), home_team, away_team)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(
+                {
+                    "match_date": match_date,
+                    "match_datetime_et": event_dt_et.isoformat(),
+                    "competition": competition_name,
+                    "home_team": home_team,
+                    "away_team": away_team,
+                }
+            )
 
     fixtures = pd.DataFrame(rows)
     if fixtures.empty:
@@ -758,14 +764,36 @@ def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
 
 
 def load_upcoming_matchweek_fixtures(api_token, window_days):
-    # Prefer the API for full-season pulls (single request vs. day-by-day ESPN calls).
+    # football-data.org supplies MLS only. Always supplement it with ESPN
+    # Liga MX fixtures instead of returning early and silently dropping Liga MX.
     if api_token:
-        fixtures = load_upcoming_matchweek_fixtures_from_api(api_token, window_days)
-        if not fixtures.empty:
-            print("Fixture source: football-data.org API")
-            return fixtures
+        mls_fixtures = load_upcoming_matchweek_fixtures_from_api(api_token, window_days)
+        if not mls_fixtures.empty:
+            mexico_fixtures = load_upcoming_matchweek_fixtures_from_espn(
+                window_days,
+                lookahead_days=window_days,
+                competition_names={"Mexico/Liga MX"},
+            )
+            if mexico_fixtures.empty:
+                fallback = load_upcoming_matchweek_fixtures_from_csv_fallback(window_days)
+                if not fallback.empty:
+                    mexico_fixtures = fallback[
+                        fallback["competition"].astype(str).eq("Mexico/Liga MX")
+                    ].copy()
+            frames = [mls_fixtures]
+            if not mexico_fixtures.empty:
+                frames.append(mexico_fixtures)
+            fixtures = pd.concat(frames, ignore_index=True)
+            fixtures = fixtures.drop_duplicates(
+                subset=["match_date", "competition", "home_team", "away_team"],
+                keep="first",
+            ).sort_values(["match_date", "competition", "home_team", "away_team"])
+            print("Fixture sources: football-data.org MLS + ESPN/CSV Liga MX")
+            return fixtures.reset_index(drop=True)
 
-    fixtures = load_upcoming_matchweek_fixtures_from_espn(window_days)
+    fixtures = load_upcoming_matchweek_fixtures_from_espn(
+        window_days, lookahead_days=window_days
+    )
     if not fixtures.empty:
         print("Fixture source: ESPN scoreboard API")
         return fixtures

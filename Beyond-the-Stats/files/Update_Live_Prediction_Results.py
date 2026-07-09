@@ -16,6 +16,7 @@ import argparse
 import difflib
 import json
 import os
+import tempfile
 import urllib.request
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -510,13 +511,34 @@ def save_completed_rows_to_past_games(frame, today=None):
         try:
             with open(PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
                 existing = json.load(fh)
-        except Exception:
-            existing = []
-    existing_keys = set()
+            if not isinstance(existing, list):
+                raise ValueError("past_games.json must contain a JSON list")
+        except Exception as exc:
+            print(f"[past-games] Refusing to overwrite unreadable archive: {exc}")
+            return 0
+
+    def storage_key(row):
+        prediction_key = str(row.get("prediction_key", "") or "").strip()
+        if prediction_key:
+            return f"prediction:{prediction_key}"
+        raw_date = row.get("match_date_iso") or row.get("match_date") or row.get("match_datetime_utc")
+        parsed = pd.to_datetime(raw_date, utc=True, errors="coerce")
+        date_iso = parsed.tz_convert("America/New_York").date().isoformat() if pd.notna(parsed) else ""
+        competition = str(row.get("competition", "") or "").strip().lower()
+        home = str(row.get("home_team", "") or "").strip().lower()
+        away = str(row.get("away_team", "") or "").strip().lower()
+        return f"fixture:{date_iso}|{competition}|{home}|{away}" if date_iso and home and away else ""
+
+    existing_by_key = {}
+    keyless_existing = []
     for row in existing:
-        pk = row.get("prediction_key", "")
-        if pk:
-            existing_keys.add(pk)
+        if not isinstance(row, dict):
+            continue
+        key = storage_key(row)
+        if key:
+            existing_by_key[key] = row
+        else:
+            keyless_existing.append(row)
     new_rows = []
     for _, row in to_save.iterrows():
         row_dict = {}
@@ -532,33 +554,49 @@ def save_completed_rows_to_past_games(frame, today=None):
                         row_dict[k] = v
                 except Exception:
                     row_dict[k] = v if v is not None else None
-        pk = str(row_dict.get("prediction_key", "")).strip()
         if _is_placeholder_game(row_dict):
             continue
-        if pk and pk not in existing_keys:
-            existing_keys.add(pk)
+        key = storage_key(row_dict)
+        if key:
+            existing_by_key[key] = row_dict
             new_rows.append(row_dict)
-        elif not pk:
+        else:
+            keyless_existing.append(row_dict)
             new_rows.append(row_dict)
-    if new_rows:
-        existing.extend(new_rows)
+
+    existing = list(existing_by_key.values()) + keyless_existing
     # Prune rows older than previous full week (keep current week + previous full week)
     try:
-        today_local = (datetime.now(UTC) - timedelta(hours=4)).date()
+        today_local = datetime.now(ZoneInfo("America/New_York")).date()
         current_week_start = today_local - timedelta(days=today_local.weekday())
         cutoff = current_week_start - timedelta(days=7)
         before = len(existing)
-        existing = [
-            r for r in existing
-            if str(r.get("match_date", "")).strip() >= cutoff.isoformat()
-        ]
+
+        def keep_row(row):
+            raw_date = row.get("match_date_iso") or row.get("match_date") or row.get("match_datetime_utc")
+            parsed = pd.to_datetime(raw_date, utc=True, errors="coerce")
+            if pd.isna(parsed):
+                return True
+            return parsed.tz_convert("America/New_York").date() >= cutoff
+
+        existing = [r for r in existing if keep_row(r)]
         pruned = before - len(existing)
     except Exception:
         pruned = 0
     if new_rows or pruned:
         os.makedirs(os.path.dirname(PAST_GAMES_FILE), exist_ok=True)
-        with open(PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
-            json.dump(existing, fh, indent=2, ensure_ascii=False)
+        fd, temporary_path = tempfile.mkstemp(
+            prefix=".past-games-", suffix=".json", dir=os.path.dirname(PAST_GAMES_FILE)
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(existing, fh, indent=2, ensure_ascii=False)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(temporary_path, PAST_GAMES_FILE)
+        finally:
+            if os.path.exists(temporary_path):
+                os.unlink(temporary_path)
     return len(new_rows)
 
 

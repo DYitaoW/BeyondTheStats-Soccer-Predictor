@@ -42,7 +42,7 @@ from standings import (
     _load_live_score_history,
     _real_tables,
     _real_tables_lock,
-    _save_live_score_history,
+    _upsert_live_score_history,
 )
 
 _live_scores: dict[str, dict] = {}
@@ -121,9 +121,7 @@ def _merge_completed_to_history():
         _clear_standings_cache(comp)
         _clear_leaders_cache(comp)
     if new_games:
-        history.extend(new_games)
-        history.sort(key=lambda x: x.get("kickoff_utc", ""), reverse=True)
-        _save_live_score_history(history)
+        _upsert_live_score_history(new_games)
     # Track predictions for newly completed games against our CSV predictions.
     if new_games:
         _track_prediction_results(new_games)
@@ -442,25 +440,29 @@ def _live_score_poller_loop():
                     # Save any in-progress games that started yesterday but
                     # haven't finished yet so they persist in history.
                     now_utc = datetime.now(timezone.utc)
+                    pending_history = []
                     for comp_name, comp_data in list(_live_scores.items()):
                         for g in comp_data.get("games", []):
                             if g.get("status") not in ("post", "in"):
                                 continue
-                            mid = g.get("match_id")
-                            if not mid:
-                                continue
-                            history = _load_live_score_history()
-                            historic_ids = {h["match_id"] for h in history if h.get("match_id")}
-                            if mid not in historic_ids:
-                                entry = dict(g)
-                                entry.setdefault("competition", comp_name)
-                                entry.setdefault("completed_at", now_utc.isoformat())
-                                history.append(entry)
-                                _save_live_score_history(history)
-                    _live_scores.clear()
-                    with _live_summary_cache_lock:
-                        _live_summary_cache.clear()
-                    _live_score_poller_loop._poller_date = _poller_day_str
+                            entry = dict(g)
+                            entry.setdefault("competition", comp_name)
+                            entry.setdefault("completed_at", now_utc.isoformat())
+                            pending_history.append(entry)
+                    try:
+                        if pending_history:
+                            _upsert_live_score_history(pending_history)
+                        # An empty day performs no write. Only clear the
+                        # in-memory day after any pending rows were persisted.
+                        _live_scores.clear()
+                        with _live_summary_cache_lock:
+                            _live_summary_cache.clear()
+                        _live_score_poller_loop._poller_date = _poller_day_str
+                    except Exception:
+                        # Keep yesterday's in-memory data and retry next cycle;
+                        # never trade a persistence error for data loss.
+                        import traceback
+                        traceback.print_exc()
                 # Merge new results into existing so finished games persist.
                 for comp_name, comp_data in results.items():
                     new_games = comp_data.get("games", [])
