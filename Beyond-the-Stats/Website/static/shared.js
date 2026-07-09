@@ -252,9 +252,9 @@ let html = `
             <span>${p.away_team} (${pctLabel(p.prob_away)}%)</span>
         </div>
         <div class="probability-track">
-            <div style="width: ${p.prob_home}%; background-color: #55d37a;" title="${p.home_team}"></div>
-            <div style="width: ${p.prob_draw}%; background-color: #93a4b3;" title="Draw"></div>
-            <div style="width: ${p.prob_away}%; background-color: #7297ff;" title="${p.away_team}"></div>
+            <div style="width: ${p.prob_home}%;" title="${p.home_team}"></div>
+            <div style="width: ${p.prob_draw}%;" title="Draw"></div>
+            <div style="width: ${p.prob_away}%;" title="${p.away_team}"></div>
         </div>
     </div>
 
@@ -1287,9 +1287,9 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                             ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
                             : ""}
                         <div class="probability-track">
-                            <div style="width: ${r.prob_home}%; background-color: #55d37a;" title="${escapeHtml(r.home_team)}"></div>
-                            <div style="width: ${r.prob_draw}%; background-color: #93a4b3;" title="Draw"></div>
-                            <div style="width: ${r.prob_away}%; background-color: #7297ff;" title="${escapeHtml(r.away_team)}"></div>
+                            <div style="width: ${r.prob_home}%;" title="${escapeHtml(r.home_team)}"></div>
+                            <div style="width: ${r.prob_draw}%;" title="Draw"></div>
+                            <div style="width: ${r.prob_away}%;" title="${escapeHtml(r.away_team)}"></div>
                         </div>
                         <div class="probability-labels">
                             <span>H: ${pctLabel(r.prob_home)}%</span> <span>D: ${pctLabel(r.prob_draw)}%</span> <span>A: ${pctLabel(r.prob_away)}%</span>
@@ -1426,9 +1426,9 @@ function renderTopPicks(rows) {
         <p class="match-meta">${escapeHtml(`${r.weekday || ""} ${r.date_label || ""}`.trim())}${r.time_label ? ` - ${escapeHtml(r.time_label)}` : ""}</p>
         <p class="pick-prediction">Prediction: ${escapeHtml(r.winner_label)}</p>
         <div class="probability-track">
-        <div style="width: ${Number(r.prob_home) || 0}%; background-color: #55d37a;" title="${escapeHtml(r.home_team)}"></div>
-        <div style="width: ${Number(r.prob_draw) || 0}%; background-color: #93a4b3;" title="Draw"></div>
-        <div style="width: ${Number(r.prob_away) || 0}%; background-color: #7297ff;" title="${escapeHtml(r.away_team)}"></div>
+        <div style="width: ${Number(r.prob_home) || 0}%;" title="${escapeHtml(r.home_team)}"></div>
+        <div style="width: ${Number(r.prob_draw) || 0}%;" title="Draw"></div>
+        <div style="width: ${Number(r.prob_away) || 0}%;" title="${escapeHtml(r.away_team)}"></div>
         </div>
         <div class="probability-labels">
         <span>H: ${pctLabel(r.prob_home)}%</span>
@@ -1700,9 +1700,9 @@ h2hCompareButton.addEventListener("click", async () => {
                 <p><strong>Predicted score:</strong> ${escapeHtml(prediction.home_team)} ${prediction.pred_home_goals} - ${prediction.pred_away_goals} ${escapeHtml(prediction.away_team)}</p>
                 <p><strong>Confidence:</strong> ${pctLabel(confidence)}%</p>
                 <div class="probability-track">
-                    <div style="width: ${prediction.prob_home}%; background-color: #55d37a;" title="${escapeHtml(prediction.home_team)}"></div>
-                    <div style="width: ${prediction.prob_draw}%; background-color: #93a4b3;" title="Draw"></div>
-                    <div style="width: ${prediction.prob_away}%; background-color: #7297ff;" title="${escapeHtml(prediction.away_team)}"></div>
+                    <div style="width: ${prediction.prob_home}%;" title="${escapeHtml(prediction.home_team)}"></div>
+                    <div style="width: ${prediction.prob_draw}%;" title="Draw"></div>
+                    <div style="width: ${prediction.prob_away}%;" title="${escapeHtml(prediction.away_team)}"></div>
                 </div>
                 <div class="probability-labels">
                     <span>H: ${pctLabel(prediction.prob_home)}%</span>
