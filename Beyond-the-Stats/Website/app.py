@@ -66,6 +66,7 @@ from notifications import (
     start_apns_worker,
 )
 from league_data import build_league_data_payload
+from team_mappings import build_predictor_teams_payload, build_unmapped_espn_payload
 from predictions import (
     _enrich_json_past_row,
     _file_mtime_utc,
@@ -523,11 +524,36 @@ def api_teams():
     return jsonify({"teams": display_teams})
 
 
+@app.get("/api/team-mappings/unmapped")
+def api_team_mappings_unmapped():
+    """List ESPN upcoming team names that are missing or blank in the mapping master."""
+    lookahead_days = request.args.get("lookahead_days", 30)
+    competition = str(request.args.get("competition", "")).strip() or None
+    try:
+        lookahead_days = int(lookahead_days)
+    except (TypeError, ValueError):
+        lookahead_days = 30
+    return jsonify(
+        build_unmapped_espn_payload(
+            lookahead_days=lookahead_days,
+            competition_filter=competition,
+        )
+    )
+
+
+@app.get("/api/team-mappings/predictor-teams")
+def api_team_mappings_predictor_teams():
+    """List canonical team names used by global, MLS, and extra predictors."""
+    return jsonify(build_predictor_teams_payload())
+
+
 @app.get("/api/help")
 def api_help():
     """Return a listing of every /api/ route with a short description."""
     routes = [
         ("/api/teams", "GET", "List selectable teams for a given mode (?mode=global|mls|extra)"),
+        ("/api/team-mappings/unmapped", "GET", "ESPN upcoming teams missing/blank in mapping master (?lookahead_days=30&competition=)"),
+        ("/api/team-mappings/predictor-teams", "GET", "All canonical predictor team names (global/mls/extra) with duplicate detection"),
         ("/api/upcoming/<mode>", "GET", "Upcoming prediction rows (mode=global|mls|extra|cups|world-cup)"),
         ("/api/past-games", "GET", "Completed games with predictions, optional ?competition= filter"),
         ("/api/world-cup", "GET", "World Cup standings + knockout brackets (odds + real)"),
