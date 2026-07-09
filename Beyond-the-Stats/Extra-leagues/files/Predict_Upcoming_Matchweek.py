@@ -21,6 +21,11 @@ import Predict_Match as pm
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_DIR = os.path.dirname(BASE_DIR)
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+
+import season_calendar
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_matchweek_predictions.csv")
@@ -288,6 +293,25 @@ def latest_season_for_competition(season_teams, competition, fallback):
     return best_key or fallback
 
 
+def choose_prediction_season(home_team, away_team, competition, match_date, season_teams, fallback_season):
+    competition_latest = latest_season_for_competition(season_teams, competition, fallback_season)
+    fixture_year = -1
+    if match_date is not None:
+        try:
+            fixture_year = int(pd.Timestamp(match_date).year)
+        except Exception:
+            fixture_year = -1
+    if fixture_year > 0:
+        competition_latest = season_calendar.season_key_for_fixture_year(
+            competition, competition_latest, fixture_year
+        )
+    if home_team in season_teams.get(competition_latest, {}) and away_team in season_teams.get(
+        competition_latest, {}
+    ):
+        return competition_latest
+    return pm.choose_season_for_teams(home_team, away_team, season_teams, competition_latest)
+
+
 def inject_fallback_team(team_name, competition, season_key, context):
     """Ensure *team_name* exists in all context structures; fallback to UEFA
     data or minimal placeholders when it is not in the training data."""
@@ -358,16 +382,20 @@ def inject_fallback_team(team_name, competition, season_key, context):
         available.append(team_name)
 
 
-def predict_fixture(ctx, home_raw, away_raw, competition_hint):
+def predict_fixture(ctx, home_raw, away_raw, competition_hint, match_date=None):
     home_team = pm.resolve_team_name(home_raw, ctx["available_teams"])
     away_team = pm.resolve_team_name(away_raw, ctx["available_teams"])
 
     competition_fallback = latest_season_for_competition(
         ctx["season_teams"], competition_hint, ctx["latest_season"]
     )
-    prediction_season = pm.choose_season_for_teams(
-        home_team or home_raw, away_team or away_raw,
-        ctx["season_teams"], competition_fallback,
+    prediction_season = choose_prediction_season(
+        home_team or home_raw,
+        away_team or away_raw,
+        competition_hint,
+        match_date,
+        ctx["season_teams"],
+        competition_fallback,
     )
     season_key = prediction_season
 
@@ -489,7 +517,12 @@ def upcoming_fixtures_from_raw(raw_path, window_days):
         res = str(row.get("Res", "")).strip().upper()
         hg = row.get("HG")
         ag = row.get("AG")
-        return res in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag)
+        if res in {"H", "D", "A"}:
+            return True
+        try:
+            return pd.notna(hg) and pd.notna(ag) and float(hg) >= 0 and float(ag) >= 0
+        except (TypeError, ValueError):
+            return False
 
     work = work[~work.apply(is_played, axis=1)].copy()
     if work.empty:
@@ -610,7 +643,7 @@ def main():
             away = str(row.get("Away", "")).strip()
             if not home or not away:
                 continue
-            pred = predict_fixture(ctx, home, away, competition)
+            pred = predict_fixture(ctx, home, away, competition, match_date)
             if pred is None:
                 continue
             rows.append(

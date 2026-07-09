@@ -1,10 +1,18 @@
 """Process Extra Leagues raw data — same logic as global ``Process_Data`` but for lower-tier comps."""
 import os
 import re
+import sys
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
+
+EXTRA_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_DIR = os.path.dirname(EXTRA_DIR)
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+
+import season_calendar
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -93,13 +101,12 @@ def get_target_season_files(folder):
     return [name for _, name in valid]
 
 
-def has_minimum_rows(df, start_year):
+def has_minimum_rows(df, start_year, file_name=""):
     if not REQUIRED_RAW_COLUMNS.issubset(set(df.columns)):
         return False
 
     current_year = datetime.now().year
-    in_progress_season = start_year == (current_year - 1)
-    if in_progress_season:
+    if season_calendar.is_in_progress_season(start_year, file_name, current_year=current_year):
         return len(df) >= CURRENT_SEASON_MIN_ROWS
     return len(df) >= MIN_ROWS
 
@@ -246,7 +253,7 @@ def process_one_file(rel_path):
         return False, rel_path, "skipped_invalid_name"
 
     raw_df = read_csv_fast(file_path)
-    if not has_minimum_rows(raw_df, season_start_year):
+    if not has_minimum_rows(raw_df, season_start_year, os.path.basename(rel_path)):
         return False, rel_path, "skipped_insufficient_data"
 
     processed_df = convert_raw_to_standard(raw_df)
