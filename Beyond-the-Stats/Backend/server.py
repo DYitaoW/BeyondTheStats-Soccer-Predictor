@@ -284,8 +284,11 @@ class BackendServer:
     # Pipeline
     # ------------------------------------------------------------------
 
-    def _run_pipeline_in_background(self, trigger: str = "scheduled", full_retrain: bool = False, wait_for_lock: bool = False) -> None:
-        """Spawn the daily pipeline as a subprocess. Non-blocking."""
+    def _run_pipeline_in_background(self, trigger: str = "scheduled", full_retrain: bool = False, wait_for_lock: bool = False) -> bool:
+        """Spawn the daily pipeline as a subprocess. Non-blocking.
+
+        Returns True when a new subprocess was started, False when skipped.
+        """
         if wait_for_lock:
             # Scheduled runs: wait for lock (up to 10 min) so daily 2 AM run isn't skipped
             if not self._pipeline_lock.acquire(blocking=True, timeout=600):
@@ -295,23 +298,27 @@ class BackendServer:
                 # Force-acquire now that the process is dead
                 if not self._pipeline_lock.acquire(blocking=True, timeout=30):
                     LOG.error("[pipeline] still cannot acquire lock after force-kill; skipping trigger=%s", trigger)
-                    return
+                    return False
         else:
             # Manual triggers: don't wait, skip if locked
             if not self._pipeline_lock.acquire(blocking=False):
                 LOG.info("[pipeline] already running; skipping trigger=%s", trigger)
-                return
+                return False
 
-        started = False
         skip_reason = None
+        if self._memory_monitor is not None:
+            reading = self._memory_monitor.current()
+            if reading.utilization_pct >= 100.0:
+                skip_reason = (
+                    f"over memory budget ({reading.rss_mb:.1f} MB / "
+                    f"{reading.limit_mb:.1f} MB)"
+                )
+        if skip_reason:
+            LOG.error("[pipeline] %s -- skipping trigger=%s", skip_reason, trigger)
+            self._release_lock()
+            return False
+
         try:
-            if self._memory_monitor is not None:
-                reading = self._memory_monitor.current()
-                if reading.utilization_pct >= 100.0:
-                    skip_reason = (
-                        f"over memory budget ({reading.rss_mb:.1f} MB / "
-                        f"{reading.limit_mb:.1f} MB)"
-                    )
             cmd = self._build_pipeline_cmd(full_retrain=full_retrain)
             LOG.info("[pipeline] starting (trigger=%s, full_retrain=%s) -> journald", trigger, full_retrain)
             subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "BTS_BACKEND_MANAGED": "1"}
@@ -326,24 +333,13 @@ class BackendServer:
             )
             proc._bts_trigger = trigger  # type: ignore[attr-defined]
             self._pipeline_proc = proc
-            started = True
             self._tee_pipeline_output()
+            return True
         except Exception:
             LOG.exception("[pipeline] failed to start")
-            if started:
-                try:
-                    self._pipeline_proc.stdout.close()  # type: ignore[union-attr]
-                except Exception:
-                    pass
-            else:
-                self._pipeline_proc = None
-                self._release_lock()
-            return
-
-        if skip_reason:
-            LOG.error("[pipeline] %s -- skipping trigger=%s", skip_reason, trigger)
+            self._pipeline_proc = None
             self._release_lock()
-            return
+            return False
 
     def _release_lock(self) -> None:
         """Safely release the pipeline lock."""
@@ -425,6 +421,7 @@ class BackendServer:
             website_app.set_last_pipeline_run(self._last_run)
             website_app._save_last_refresh()
             website_app._save_last_data_refresh()
+            website_app._invalidate_prediction_caches(reload_contexts=True)
         except Exception:
             pass
         try:
@@ -451,6 +448,7 @@ class BackendServer:
         cmd = [
             sys.executable,
             str(SP_DIR / "Daily_Pipeline.py"),
+            "--once",
             "--workers",
             str(cfg.pipeline_workers),
             "--competition-workers",

@@ -1842,51 +1842,70 @@ def run_live_results_updater():
         print(f"[startup] Live updater error: {exc}")
 
 
-def _run_full_pipeline_once():
-    """Run full data/model refresh pipeline and reload in-memory predictor contexts."""
-    global _ctx_global, _ctx_mls, _ctx_extra, _last_pipeline_run
-    if not os.path.exists(config.RUN_ALL_PIPELINE):
-        print(f"[refresh] Pipeline runner not found: {config.RUN_ALL_PIPELINE}")
-        return False
-    try:
-        proc = subprocess.run(
-            [sys.executable, config.RUN_ALL_PIPELINE],
-            cwd=config.PROJECT_DIR,
-            timeout=3600,
-            check=False,
-        )
-        if proc.returncode != 0:
-            print(f"[refresh] Daily pipeline failed with rc={proc.returncode}.")
-            _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
-            _save_last_refresh()
-            return False
-        print("[refresh] Daily pipeline finished successfully.")
-    except subprocess.TimeoutExpired:
-        print("[refresh] Daily pipeline timed out after 3600s.")
-        return False
-    except Exception as exc:
-        print(f"[refresh] Daily pipeline error: {exc}")
-        return False
-
-    _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
-    _save_last_refresh()
+def _invalidate_prediction_caches(*, reload_contexts: bool = False) -> None:
+    """Clear in-memory predictor state and Redis API caches after a pipeline run."""
+    global _ctx_global, _ctx_mls, _ctx_extra
     with _ctx_lock:
         _ctx_global = None
         _ctx_mls = None
         _ctx_extra = None
     _static_predictions_cache.clear()
     _static_team_cache.clear()
-    from accuracy_tracker import update_accuracy_history_files
-    update_accuracy_history_files()
-    if not config.STATIC_PREDICTIONS:
+    try:
+        from cache import _cache_clear_pattern
+        _cache_clear_pattern()
+    except Exception:
+        pass
+    try:
+        from standings import _clear_all_real_data_caches
+        _clear_all_real_data_caches()
+    except Exception:
+        pass
+    if reload_contexts and not config.STATIC_PREDICTIONS:
         try:
-            # Warm both contexts so API requests do not pay first-load penalty.
             get_context("global")
             get_context("mls")
             get_context("extra")
             print("[refresh] Model contexts reloaded successfully.")
         except Exception as exc:
             print(f"[refresh] Context reload warning: {exc}")
+
+
+def _run_full_pipeline_once(*, full_retrain: bool = True):
+    """Run data/model refresh pipeline and reload in-memory predictor contexts."""
+    global _last_pipeline_run
+    if not os.path.exists(config.RUN_ALL_PIPELINE):
+        print(f"[refresh] Pipeline runner not found: {config.RUN_ALL_PIPELINE}")
+        return False
+    cmd = [sys.executable, config.RUN_ALL_PIPELINE]
+    if not full_retrain:
+        cmd.append("--skip-model-train")
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=config.PROJECT_DIR,
+            timeout=3600,
+            check=False,
+        )
+        if proc.returncode != 0:
+            print(f"[refresh] Pipeline failed with rc={proc.returncode}.")
+            _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
+            _save_last_refresh()
+            return False
+        print(f"[refresh] Pipeline finished successfully (full_retrain={full_retrain}).")
+    except subprocess.TimeoutExpired:
+        print("[refresh] Pipeline timed out after 3600s.")
+        return False
+    except Exception as exc:
+        print(f"[refresh] Pipeline error: {exc}")
+        return False
+
+    _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
+    _save_last_refresh()
+    _save_last_data_refresh()
+    _invalidate_prediction_caches(reload_contexts=True)
+    from accuracy_tracker import update_accuracy_history_files
+    update_accuracy_history_files()
     return True
 
 

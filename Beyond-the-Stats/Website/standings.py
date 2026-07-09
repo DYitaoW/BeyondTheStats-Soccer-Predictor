@@ -718,6 +718,14 @@ def _clear_leaders_cache(comp_name):
     with _real_leaders_lock:
         _real_leaders.pop(comp_name, None)
 
+
+def _clear_all_real_data_caches():
+    """Drop all in-memory ESPN standings/leaders caches (e.g. after pipeline refresh)."""
+    with _real_tables_lock:
+        _real_tables.clear()
+    with _real_leaders_lock:
+        _real_leaders.clear()
+
 def _fill_placeholder_tables(data):
     """Fill ``data["tables"]`` with zero-stat team entries from league_teams.json
     for any competition in ``data["leagues"]`` that has no projected table data.

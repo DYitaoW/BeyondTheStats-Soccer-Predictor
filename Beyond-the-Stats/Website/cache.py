@@ -55,12 +55,14 @@ def _cached_response(ttl: int = config.CACHE_TTL_DEFAULT):
     """Decorator that caches a route's JSON response in Redis.
 
     The cache key is ``api:{md5(endpoint + query_string)}``.
-    Skips caching when ``?no_cache=1`` is present.
+    Skips caching when ``?no_cache=1`` or ``?refresh=1`` is present.
     """
     def decorator(f):
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
             if request.args.get("no_cache", "").strip() in ("1", "true"):
+                return f(*args, **kwargs)
+            if request.args.get("refresh", "").strip() in ("1", "true"):
                 return f(*args, **kwargs)
             from app import app  # Lazy import to avoid circular dep
             key = _cache_key(request.path, request.query_string.decode("utf-8", errors="replace"))
