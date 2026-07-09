@@ -17,7 +17,9 @@ Execution order
 Flags
 -----
 ``--skip-global / --skip-mls / --skip-extra`` — skip entire sub-pipelines
-``--skip-model-train`` — skip model cache building; also implies ``--skip-squad-values``
+``--skip-model-train`` — skip model retraining on light refresh days; still builds
+  the cache automatically when the file is missing or unloadable. Full retrains
+  run on Tuesday and Friday via the backend scheduler.
 ``--continue-on-error`` — keep going even if individual steps fail (default: true)
 """
 import argparse
@@ -33,6 +35,7 @@ from pathlib import Path
 import pandas as pd
 
 import pipeline_log
+import model_cache_util
 
 
 SP_DIR = Path(__file__).resolve().parent
@@ -119,7 +122,7 @@ def parse_args():
     parser.add_argument(
         "--skip-model-train",
         action="store_true",
-        help="Skip model cache building (retraining) steps; only fetch data and update predictions.",
+        help="Skip model retraining on light days; still builds cache if missing. Also implies --skip-squad-values.",
     )
     return parser.parse_args()
 
@@ -137,6 +140,19 @@ def load_api_token():
         if token:
             return token
     return ""
+
+
+def _should_build_model_cache(args, label: str, predict_script: Path) -> tuple[bool, str]:
+    if not args.skip_model_train:
+        return True, "scheduled model retrain (Tue/Fri)"
+    pm_mod = model_cache_util.import_predict_match_module(str(predict_script))
+    needs, reason = model_cache_util.model_cache_missing_or_broken(pm_mod)
+    if needs:
+        print(f"[pipeline] [{label}] building model cache (required): {reason}")
+        return True, reason
+    _fresh, detail = model_cache_util.model_cache_status(pm_mod)
+    print(f"[pipeline] [{label}] skipping model cache build ({detail})")
+    return False, detail
 
 
 def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
@@ -220,7 +236,7 @@ def _run_global_subpipeline(args, api_token):
         continue_on_error=args.continue_on_error,
         timeout=600,
     )
-    if not args.skip_model_train:
+    if _should_build_model_cache(args, "global", FILES_DIR / "Predict_Match.py")[0]:
         sub["global_build_model_cache"] = run_step(
             "[global] Build model cache (non-interactive)",
             [py, str(FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
@@ -293,7 +309,7 @@ def _run_mls_subpipeline(args, api_token):
         continue_on_error=args.continue_on_error,
         timeout=1200,
     )
-    if not args.skip_model_train:
+    if _should_build_model_cache(args, "mls", MLS_FILES_DIR / "Predict_Match.py")[0]:
         sub["mls_build_model_cache"] = run_step(
             "[mls] Build model cache (non-interactive)",
             [py, str(MLS_FILES_DIR / "Predict_Match.py")],
@@ -328,7 +344,7 @@ def _run_extra_subpipeline(args, api_token):
         continue_on_error=args.continue_on_error,
         timeout=1200,
     )
-    if not args.skip_model_train:
+    if _should_build_model_cache(args, "extra", EXTRA_FILES_DIR / "Predict_Match.py")[0]:
         sub["extra_build_model_cache"] = run_step(
             "[extra] Build model cache (non-interactive)",
             [py, str(EXTRA_FILES_DIR / "Predict_Match.py")],
@@ -452,15 +468,10 @@ _REAL_TABLE_COMPETITIONS = {
     "United States/MLS",
     "Mexico/Liga MX",
     "Belgium/First Division A", "Scotland/Premiership", "Turkey/Super Lig",
-    "Austria/Bundesliga", "Switzerland/Super League",
-    "Greece/Super League", "Denmark/Superliga",
-    "Ukraine/Premier League", "Norway/Eliteserien",
-    "Croatia/HNL", "Romania/Liga I",
-    "Sweden/Allsvenskan", "Hungary/NB I",
-    "Israel/Premier League", "Czech Republic/First League",
-    "Poland/Ekstraklasa", "Serbia/SuperLiga",
-    "Cyprus/First Division", "Slovakia/Super Liga",
-    "Slovenia/PrvaLiga", "Bulgaria/First League",
+    "Austria/Bundesliga",
+    "Greece/Super League", "Norway/Eliteserien",
+    "Romania/Liga I", "Sweden/Allsvenskan",
+    "Poland/Ekstraklasa",
 }
 
 _CUP_COMPETITIONS = {

@@ -35,6 +35,28 @@ EXTRA_ESPN_COMPETITIONS = {
     "Japan/J1 League": "jpn.1",
 }
 
+
+def rebuild_model_cache_once():
+    """Rebuild the extra-leagues model cache in non-interactive mode."""
+    import subprocess
+
+    predict_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Predict_Match.py")
+    proc = subprocess.run(
+        [sys.executable, predict_script],
+        cwd=BASE_DIR,
+        text=True,
+        input="n\nq\n",
+        capture_output=True,
+        check=False,
+        timeout=3600,
+    )
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        stdout = (proc.stdout or "").strip()
+        message = stderr or stdout or f"exit code {proc.returncode}"
+        raise RuntimeError(f"Auto-rebuild of model cache failed: {message}")
+
+
 # Allow import of global pipeline modules (UEFA_Data_Manager, etc.)
 _GLOBAL_FILES_DIR = os.path.join(os.path.dirname(BASE_DIR), "files")
 if _GLOBAL_FILES_DIR not in sys.path:
@@ -154,9 +176,8 @@ def latest_raw_file_per_competition(raw_root):
 def build_context():
     matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
     if not os.path.exists(pm.MODEL_CACHE):
-        raise FileNotFoundError(
-            f"Missing model cache: {pm.MODEL_CACHE}. Run Predict_Match.py first."
-        )
+        print("[model-cache] cache missing; rebuilding model cache...")
+        rebuild_model_cache_once()
 
     try:
         # Ensure custom wrapper class is resolvable when cache was pickled from __main__.
@@ -166,25 +187,12 @@ def build_context():
 
     try:
         bundle = joblib.load(pm.MODEL_CACHE)
-    except Exception:
-        # Rebuild once if the cache was created under a different module name.
-        if hasattr(pm, "rebuild_model_cache_once"):
-            pm.rebuild_model_cache_once()
-        else:
-            import subprocess
-
-            subprocess.run(
-                [sys.executable, os.path.join(os.path.dirname(__file__), "Predict_Match.py")],
-                cwd=BASE_DIR,
-                text=True,
-                input="n\nq\n",
-                check=False,
-            )
+    except Exception as exc:
+        print(f"[model-cache] failed to load cache ({exc.__class__.__name__}); rebuilding...")
+        rebuild_model_cache_once()
         bundle = joblib.load(pm.MODEL_CACHE)
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
-        bt = bundle.get("build_time")
-        if bt is None or (time.time() - bt) >= 604800:
-            raise RuntimeError("Model cache is stale. Rebuild by running Predict_Match.py.")
+        print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
 
     overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
     season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))

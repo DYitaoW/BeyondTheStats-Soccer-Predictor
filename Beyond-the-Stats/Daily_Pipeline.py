@@ -21,15 +21,16 @@ scheduler + mobile-feed writer on top of it.
 """
 Scheduled daily pipeline runner — wraps ``Run_All_Pipeline`` in a scheduler loop.
 
-Runs continuously on the Steam Deck as a long-lived process.  On Tuesday it
-executes a full retrain (model + data); on other days it runs a light refresh
-(data only, ``--skip-model-train`` / ``--skip-squad-values``).
+Runs continuously on the Steam Deck as a long-lived process.  On Tuesday and
+Friday it executes a full model retrain; on other days it runs a light refresh
+(data download, predictions, tables — ``--skip-model-train``). A missing or
+broken cache file is still built automatically on light days.
 
 Key differences from ``Run_All_Pipeline``:
 - Scheduler loop with configurable window (``--window-days``)
 - After each pipeline run, builds the mobile-app feed JSON
 - Publishes output files to a deployment directory
-- Decides full vs. light refresh based on ``weekly_model_refresh_day``
+- Decides full vs. light refresh based on backend ``weekly_model_refresh_days`` (Tue/Fri)
 """
 import argparse
 import hashlib

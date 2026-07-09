@@ -213,13 +213,17 @@ def make_prediction_key(match_date, home_team, away_team):
 def build_prediction_context():
     matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
     if not os.path.exists(pm.MODEL_CACHE):
-        raise FileNotFoundError(f"Missing model cache: {pm.MODEL_CACHE}")
+        raise FileNotFoundError(
+            f"Missing model cache: {pm.MODEL_CACHE}. Run the daily pipeline to build it."
+        )
 
     bundle = __import__("joblib").load(pm.MODEL_CACHE)
-    if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
-        bt = bundle.get("build_time")
-        if bt is None or (__import__("time").time() - bt) >= 604800:
-            raise RuntimeError("Model cache is stale. Rebuild by running Predict_Match.py.")
+    fingerprint = pm.data_fingerprint(season_files)
+    if bundle.get("fingerprint") != fingerprint:
+        raise RuntimeError(
+            "Model cache is stale for current processed data. "
+            "Run the daily pipeline or Predict_Match.py to rebuild."
+        )
 
     overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json")) or {}
     season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json")) or {}

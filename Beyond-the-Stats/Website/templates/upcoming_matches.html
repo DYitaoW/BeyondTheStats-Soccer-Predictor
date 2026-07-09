@@ -42,10 +42,10 @@
       <div class="card">
         <label for="global-source-filter">Source</label>
         <select id="global-source-filter">
-          <option value="global">European Leagues</option>
+          <option value="global" selected>European Leagues</option>
           <option value="mls">MLS</option>
           <option value="extra">Extra Leagues</option>
-          <option value="world-cup" selected>World Cup 2026</option>
+          <option value="world-cup">World Cup 2026</option>
           <option value="friendlies">Club Friendlies</option>
         </select>
         <label for="cup-tabs" class="hidden" style="margin-top: 10px;">Cup</label>
@@ -63,7 +63,7 @@
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='shared.js', v='2026070801') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026070802') }}"></script>
   <script src="{{ url_for('static', filename='upcoming_matches.js', v='2026070801') }}"></script>
 </body>
 </html>

@@ -11,15 +11,22 @@ import config
 from competition_rules import (
     MLS_EASTERN_CONFERENCE_TEAMS,
     MLS_WESTERN_CONFERENCE_TEAMS,
+    active_liga_mx_tournament_label,
+    build_structured_standings_groups,
     canonical_team_name,
     classify_match_stage,
     collect_competition_games,
+    competition_format_spec,
     cup_format,
     current_competition_phase,
     extract_group_label,
+    filter_games_to_liga_mx_tournament,
     load_wc_team_groups,
     mls_conference,
+    package_real_standings,
     resolve_competition_query,
+    resolve_mls_team_name,
+    uses_h2h_tiebreaker,
 )
 from espn_api import _fetch_leaders, _fetch_standings, LIVE_SCORE_FETCH_TIMEOUT
 from team_utils import _to_int
@@ -118,9 +125,20 @@ def _load_live_score_history():
         return []
     try:
         with open(config.LIVE_SCORE_HISTORY_FILE, "r") as f:
-            return json.load(f)
+            games = json.load(f)
     except Exception:
         return []
+    if not isinstance(games, list):
+        return []
+    filtered = []
+    for game in games:
+        if not isinstance(game, dict):
+            continue
+        match_id = str(game.get("match_id", "")).strip().lower()
+        if match_id.startswith("test-") or "test-past-games" in match_id:
+            continue
+        filtered.append(game)
+    return filtered
 
 
 def _save_live_score_history(games):
@@ -135,6 +153,15 @@ _UEFA_COMPETITIONS = {
     "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
     "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
 }
+
+
+def _competition_names_for_lookup(comp_name):
+    """Return competition keys to scan when discovering teams for standings."""
+    base_comp, _view = resolve_competition_query(comp_name)
+    names = [comp_name]
+    if base_comp and base_comp not in names:
+        names.append(base_comp)
+    return names
 
 
 def _mls_conference(team_name):
@@ -158,8 +185,8 @@ def _compute_standings_from_history(comp_name):
     if not comp_games:
         return None
 
-    def _finalize(response):
-        if mls_view and response.get("groups"):
+    def _finalize(groups, source="computed", current_phase=None):
+        if mls_view and groups:
             view_map = {
                 "east": "Eastern Conference",
                 "west": "Western Conference",
@@ -167,10 +194,15 @@ def _compute_standings_from_history(comp_name):
             }
             target = view_map.get(mls_view)
             if target:
-                filtered = [g for g in response["groups"] if g.get("name") == target]
+                filtered = [g for g in groups if g.get("name") == target]
                 if filtered:
-                    response = dict(response)
-                    response["groups"] = filtered
+                    groups = filtered
+        response = package_real_standings(
+            comp_name,
+            groups,
+            source,
+            current_phase=current_phase,
+        )
         with _real_tables_lock:
             _real_tables[comp_name] = response
         _persist_real_tables()
@@ -244,7 +276,7 @@ def _compute_standings_from_history(comp_name):
             hs["D"] += 1; at["D"] += 1; hs["Pts"] += 1; at["Pts"] += 1
 
     def _rank_table(table, all_matches=None):
-        use_h2h = comp_name in config.H2H_LEAGUES and all_matches is not None
+        use_h2h = uses_h2h_tiebreaker(comp_name) and all_matches is not None
         if not use_h2h:
             return sorted(table.items(), key=lambda kv: (-kv[1]["Pts"], -kv[1]["GD"], -kv[1]["GF"], kv[0]))
         from collections import defaultdict
@@ -303,47 +335,32 @@ def _compute_standings_from_history(comp_name):
                 if ht and at:
                     _apply_result(table, ht, at, hs, as_)
                     match_records.append((ht, at, hs, as_))
-            ranked = _rank_table(table, match_records if base_comp in config.H2H_LEAGUES else None)
+            ranked = _rank_table(table, match_records if uses_h2h_tiebreaker(base_comp) else None)
             entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
             groups.append({"name": f"Group {group_name}", "entries": entries})
 
         if groups:
-            from knockout import _build_knockout_framework
-            response = {
-                "competition": comp_name,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "groups": groups,
-                "source": "computed",
-                "format": fmt.get("format") if fmt else "group_stage_then_knockout",
-                "current_phase": current_competition_phase(comp_games, base_comp),
-            }
-            ko = _build_knockout_framework(base_comp)
-            if ko:
-                response["knockout_rounds"] = ko
-            return _finalize(response)
+            return _finalize(
+                groups,
+                source="computed",
+                current_phase=current_competition_phase(comp_games, base_comp),
+            )
 
         if base_comp == "FIFA/World Cup" or (
             fmt and fmt.get("format") == "group_stage_then_knockout"
         ):
-            from knockout import _build_knockout_framework
-            response = {
-                "competition": comp_name,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "groups": [],
-                "source": "computed",
-                "format": fmt.get("format") if fmt else "group_stage_then_knockout",
-                "current_phase": current_competition_phase(comp_games, base_comp),
-            }
-            ko = _build_knockout_framework(base_comp)
-            if ko:
-                response["knockout_rounds"] = ko
-            return _finalize(response)
+            return _finalize(
+                [],
+                source="computed",
+                current_phase=current_competition_phase(comp_games, base_comp),
+            )
 
     # ── League-phase format (UCL/UEL/UECL) ──────────────────────
     is_league_phase = base_comp in _UEFA_COMPETITIONS and not has_groups
     is_mls = base_comp == "United States/MLS"
     is_belgian = "belgium" in comp_name.lower() or "belgian" in comp_name.lower()
     is_scottish = "scotland" in comp_name.lower() or "scottish" in comp_name.lower()
+    is_liga_mx = base_comp == config.LIGA_MX_COMPETITION
 
     if is_league_phase:
         # UCL/UEL/UECL league phase: single table with all teams
@@ -369,18 +386,8 @@ def _compute_standings_from_history(comp_name):
                 match_records.append((ht, at, hs, as_))
         ranked = _rank_table(table, match_records)
         entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
-        from knockout import _build_knockout_framework
-        knockout_rounds = _build_knockout_framework(comp_name)
         groups = [{"name": "League Phase", "entries": entries}]
-        response = {
-            "competition": comp_name,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "groups": groups,
-            "source": "computed",
-        }
-        if knockout_rounds:
-            response["knockout_rounds"] = knockout_rounds
-        return _finalize(response)
+        return _finalize(groups, source="computed")
 
     if has_groups:
         groups_data = {}
@@ -413,7 +420,7 @@ def _compute_standings_from_history(comp_name):
                 if ht and at:
                     _apply_result(table, ht, at, hs, as_)
                     match_records.append((ht, at, hs, as_))
-            ranked = _rank_table(table, match_records if comp_name in config.H2H_LEAGUES else None)
+            ranked = _rank_table(table, match_records if uses_h2h_tiebreaker(comp_name) else None)
             entries = []
             for pos, (team, stats) in enumerate(ranked, 1):
                 entries.append({"team": team, "rank": pos, **stats})
@@ -422,20 +429,7 @@ def _compute_standings_from_history(comp_name):
         if not groups_data:
             return None
         groups = [{"name": gd["name"], "entries": gd["entries"]} for _, gd in sorted(groups_data.items())]
-
-        # Add knockout framework for UEFA group-stage competitions
-        response = {
-            "competition": comp_name,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "groups": groups,
-            "source": "computed",
-        }
-        if comp_name in _UEFA_COMPETITIONS:
-            from knockout import _build_knockout_framework
-            ko = _build_knockout_framework(comp_name)
-            if ko:
-                response["knockout_rounds"] = ko
-        return _finalize(response)
+        return _finalize(groups, source="computed")
 
 
     # ── MLS conference split ─────────────────────────────────
@@ -488,13 +482,7 @@ def _compute_standings_from_history(comp_name):
             {"name": "Eastern Conference", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(east_ranked)]},
             {"name": "Western Conference", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(west_ranked)]},
         ]
-        response = {
-            "competition": comp_name,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "groups": groups,
-            "source": "computed",
-        }
-        return _finalize(response)
+        return _finalize(groups, source="computed")
 
 
     # ── Scottish Premiership split ───────────────────────────
@@ -519,7 +507,7 @@ def _compute_standings_from_history(comp_name):
             if ht and at:
                 _apply_result(table, ht, at, hs, as_)
                 match_records.append((ht, at, hs, as_))
-        ranked = _rank_table(table, match_records if comp_name in config.H2H_LEAGUES else None)
+        ranked = _rank_table(table, match_records if uses_h2h_tiebreaker(comp_name) else None)
         total_games = sum(1 for t, s in ranked if s["P"] > 0) and max(s["P"] for _, s in ranked) if ranked else 0
         # Split into top 6 / bottom 6 after 33 games
         if total_games >= 33:
@@ -537,16 +525,7 @@ def _compute_standings_from_history(comp_name):
             entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
             groups = [{"name": "Overall", "entries": entries}]
 
-        response = {
-            "competition": comp_name,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "groups": groups,
-            "source": "computed",
-        }
-        return _finalize(response)
-
-
-    # ── Belgian Pro League (2-phase detection) ───────────────
+        return _finalize(groups, source="computed")
     if is_belgian:
         teams = set()
         match_records = []
@@ -568,7 +547,7 @@ def _compute_standings_from_history(comp_name):
             if ht and at:
                 _apply_result(table, ht, at, hs, as_)
                 match_records.append((ht, at, hs, as_))
-        ranked = _rank_table(table, match_records if comp_name in config.H2H_LEAGUES else None)
+        ranked = _rank_table(table, match_records if uses_h2h_tiebreaker(comp_name) else None)
         max_gp = max(s["P"] for _, s in ranked) if ranked else 0
         entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
 
@@ -585,13 +564,38 @@ def _compute_standings_from_history(comp_name):
         else:
             groups = [{"name": "Regular Season", "entries": entries}]
 
-        response = {
-            "competition": comp_name,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "groups": groups,
-            "source": "computed",
-        }
-        return _finalize(response)
+        return _finalize(groups, source="computed")
+
+
+    # ── Liga MX active tournament (Apertura / Clausura) ────────
+    if is_liga_mx:
+        tournament_label = active_liga_mx_tournament_label()
+        tournament_games = filter_games_to_liga_mx_tournament(comp_games, tournament_label)
+        if not tournament_games:
+            return None
+        teams = set()
+        match_records = []
+        for g in tournament_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            if ht and at:
+                teams.add(ht)
+                teams.add(at)
+        if not teams:
+            return None
+        table = _init_table(teams)
+        for g in tournament_games:
+            ht = str(g.get("home_team", ""))
+            at = str(g.get("away_team", ""))
+            hs = int(g.get("home_score", 0))
+            as_ = int(g.get("away_score", 0))
+            if ht and at:
+                _apply_result(table, ht, at, hs, as_)
+                match_records.append((ht, at, hs, as_))
+        ranked = _rank_table(table, match_records if uses_h2h_tiebreaker(comp_name) else None)
+        entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+        groups = [{"name": tournament_label, "entries": entries}]
+        return _finalize(groups, source="computed")
 
 
     # ── Standard single table ────────────────────────────────
@@ -617,17 +621,10 @@ def _compute_standings_from_history(comp_name):
         if ht and at:
             _apply_result(table, ht, at, hs, as_)
             match_records.append((ht, at, hs, as_))
-    ranked = _rank_table(table, match_records if comp_name in config.H2H_LEAGUES else None)
+    ranked = _rank_table(table, match_records if uses_h2h_tiebreaker(comp_name) else None)
     entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
     groups = [{"name": "Overall", "entries": entries}]
-
-    response = {
-        "competition": comp_name,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "groups": groups,
-        "source": "computed",
-    }
-    return _finalize(response)
+    return _finalize(groups, source="computed")
 
 
 def _get_or_fetch_standings(comp_name, computed=True):
@@ -732,15 +729,20 @@ def _build_fallback_standings(comp_name):
     Does NOT call ESPN API — teams are discovered from local CSV data only.
 
     Response shape (matches ``_compute_standings_from_history``):
-    ``{"competition": str, "groups": [{"name": "Overall", "entries": [...]}]}``
+    ``{"competition": str, "groups": [{"name": "...", "entries": [...]}, ...]}``
+    where group names follow each competition's real table rules (MLS conferences,
+    Belgian regular season, UEFA league phase, World Cup groups, etc.).
     """
+    base_comp, _view = resolve_competition_query(comp_name)
+    lookup_names = _competition_names_for_lookup(comp_name)
     teams = set()
 
     # 1. Persisted league-team rosters (offseason fallback from fetch_league_teams.py)
     league_teams = _load_league_teams()
-    cached = league_teams.get(comp_name)
-    if cached:
-        teams.update(cached)
+    for lookup_name in lookup_names:
+        cached = league_teams.get(lookup_name)
+        if cached:
+            teams.update(cached)
 
     # 2. Upcoming prediction CSVs and projected table CSVs
     csv_sources = [
@@ -766,7 +768,7 @@ def _build_fallback_standings(comp_name):
             continue
         if "competition" not in df.columns:
             continue
-        mask = df["competition"].astype(str).str.strip() == comp_name
+        mask = df["competition"].astype(str).str.strip().isin(lookup_names)
         sub = df[mask]
         if sub.empty:
             continue
@@ -777,20 +779,13 @@ def _build_fallback_standings(comp_name):
         if "away_team" in sub.columns:
             teams.update(sub["away_team"].dropna().astype(str).str.strip())
 
+    if base_comp == "United States/MLS":
+        teams = {resolve_mls_team_name(team) for team in teams if resolve_mls_team_name(team)}
+
     if not teams:
         return None
 
-    now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    entries = []
-    for pos, team in enumerate(sorted(teams), start=1):
-        entries.append({
-            "position": pos, "team": team,
-            "P": 0, "W": 0, "D": 0, "L": 0,
-            "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-        })
-    return {
-        "competition": comp_name,
-        "updated_at": now_utc,
-        "groups": [{"name": "Overall", "entries": entries}],
-        "source": "placeholder",
-    }
+    groups = build_structured_standings_groups(comp_name, sorted(teams))
+    if not groups:
+        return None
+    return package_real_standings(comp_name, groups, "placeholder")

@@ -1,12 +1,1 @@
-[
-  {
-    "status": "post",
-    "competition": "England/Premier League",
-    "home_team": "Arsenal",
-    "away_team": "Chelsea",
-    "home_score": 2,
-    "away_score": 1,
-    "kickoff_utc": "2026-07-08T19:00:00+00:00",
-    "match_id": "test-past-games-1"
-  }
-]
+[]

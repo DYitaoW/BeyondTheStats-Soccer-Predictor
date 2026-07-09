@@ -2,6 +2,7 @@ import argparse
 import difflib
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -33,6 +34,25 @@ TEAM_MAPPING_FILE = os.path.join(SHARED_PREDICTIONS_DIR, "team_name_mapping_mast
 LEGACY_GLOBAL_MAPPING_FILE = os.path.join(SHARED_PREDICTIONS_DIR, "upcoming_fixture_team_mapping.json")
 LEGACY_MLS_MAPPING_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_fixture_team_mapping.json")
 FOOTBALL_DATA_API_BASE = "https://api.football-data.org/v4"
+
+
+def rebuild_model_cache_once():
+    """Rebuild the global model cache in non-interactive mode."""
+    predict_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Predict_Match.py")
+    proc = subprocess.run(
+        [sys.executable, predict_script, "--build-cache-only"],
+        cwd=BASE_DIR,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=3600,
+    )
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        stdout = (proc.stdout or "").strip()
+        message = stderr or stdout or f"exit code {proc.returncode}"
+        raise RuntimeError(f"Auto-rebuild of model cache failed: {message}")
+
 
 # ESPN scoreboard API template for each competition
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
@@ -326,22 +346,19 @@ def build_prediction_context():
     matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
 
     if not os.path.exists(pm.MODEL_CACHE):
-        raise FileNotFoundError(
-            f"Model cache not found at {pm.MODEL_CACHE}. Run Predict_Match.py once first to build it."
-        )
+        print("[model-cache] cache missing; rebuilding model cache...")
+        rebuild_model_cache_once()
 
     try:
         bundle = joblib.load(pm.MODEL_CACHE)
     except Exception as exc:
-        raise RuntimeError(
-            f"Could not load model cache at {pm.MODEL_CACHE}. Rebuild it by running Predict_Match.py."
-        ) from exc
+        print(f"[model-cache] failed to load cache ({exc.__class__.__name__}); rebuilding...")
+        rebuild_model_cache_once()
+        bundle = joblib.load(pm.MODEL_CACHE)
 
     fingerprint = pm.data_fingerprint(season_files)
     if bundle.get("fingerprint") != fingerprint:
-        raise RuntimeError(
-            "Model cache is stale for current processed data. Run Predict_Match.py to rebuild before predicting matchweek."
-        )
+        print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
 
     required_keys = {
         "clf",

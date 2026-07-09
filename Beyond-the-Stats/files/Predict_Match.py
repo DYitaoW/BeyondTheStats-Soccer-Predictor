@@ -310,10 +310,17 @@ def coerce_feature_value(value, default=0.0):
     return float(value)
 
 
-def data_fingerprint(season_files):
+def data_fingerprint(season_files, processed_dir=PROCESSED_DIR):
     digest = hashlib.sha256()
     for rel_path in season_files:
         digest.update(rel_path.encode("utf-8"))
+        full_path = os.path.join(processed_dir, rel_path)
+        try:
+            stat = os.stat(full_path)
+            digest.update(str(stat.st_mtime_ns).encode("utf-8"))
+            digest.update(str(stat.st_size).encode("utf-8"))
+        except OSError:
+            digest.update(b"missing")
     return digest.hexdigest()
 
 
@@ -1217,7 +1224,13 @@ def main():
             cache_valid = cache_bundle.get("fingerprint") == fingerprint
             if not cache_valid:
                 bt = cache_bundle.get("build_time")
-                if bt is not None and (time.time() - bt) < 604800:
+                age_h = (time.time() - bt) / 3600.0 if bt is not None else None
+                age_s = f" (cache age {age_h:.1f}h)" if age_h is not None else ""
+                import sys
+                if "--build-cache-only" in sys.argv:
+                    print(f"[model-cache] fingerprint mismatch{age_s}; retraining models...")
+                else:
+                    print(f"[model-cache] fingerprint mismatch{age_s}; using cached models (retrain runs Tue/Fri)")
                     cache_valid = True
         except Exception:
             cache_bundle = None
