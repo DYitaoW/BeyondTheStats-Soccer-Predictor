@@ -82,11 +82,38 @@ class AveragedProbaClassifier:
 
 MLS_COMPETITION_CODE = "MLS"
 MLS_COMPETITION_NAME = "United States/MLS"
-MANUAL_TEAM_OVERRIDES = {}
+MANUAL_TEAM_OVERRIDES = {
+    "Atlanta United FC": "Atlanta Utd",
+    "Atlanta United": "Atlanta Utd",
+    "Los Angeles FC": "Los Angeles FC",
+    "LAFC": "Los Angeles FC",
+    "St. Louis CITY SC": "St. Louis City",
+    "St. Louis City SC": "St. Louis City",
+    "New York City FC": "New York City",
+    "New York Red Bulls": "New York RB",
+    "Sporting Kansas City": "Kansas City",
+    "Inter Miami CF": "Inter Miami",
+    "CF Montréal": "Montreal",
+    "CF Montreal": "Montreal",
+}
 TEAM_KEY_ALIASES = {
     "caosasuna": "osasuna",
     "uslecce": "lecce",
     "borussiadortmund": "dortmund",
+    "lafc": "losangelesfc",
+    "lagalaxy": "losangelesgalaxy",
+    "losangelesfc": "losangelesfc",
+    "losangelesgalaxy": "losangelesgalaxy",
+    "stlouiscity": "stlouiscity",
+    "stlouiscitysc": "stlouiscity",
+    "dcunited": "dcunited",
+    "newyorkcityfc": "newyorkcity",
+    "newyorkredbulls": "newyorkredbulls",
+    "sportingkansascity": "kansascity",
+    "intermiamicf": "intermiami",
+    "cfmontreal": "montreal",
+    "atlantaunitedfc": "atlantaunited",
+    "atlantaunited": "atlantaunited",
 }
 
 RESULT_COLUMNS = [
@@ -98,6 +125,10 @@ RESULT_COLUMNS = [
     "competition",
     "home_team",
     "away_team",
+    "display_home_team",
+    "display_away_team",
+    "schedule_only",
+    "prediction_quality",
     "predicted_result",
     "probability_reasoning",
     "prob_home",
@@ -276,39 +307,6 @@ def load_shared_mapping():
     return merged
 
 
-def resolve_live_team_name(raw_name, competition, context):
-    valid_names = context["available_teams"]
-
-    manual_override = MANUAL_TEAM_OVERRIDES.get(str(raw_name).strip())
-    if manual_override:
-        if manual_override in valid_names:
-            return manual_override
-        if manual_override in context["available_teams"]:
-            return manual_override
-
-    direct = pm.resolve_team_name(raw_name, valid_names)
-    if direct:
-        return direct
-
-    key = normalize_team_key(raw_name)
-    if not key:
-        return None
-
-    by_key = {normalize_team_key(team): team for team in valid_names}
-    if key in by_key:
-        return by_key[key]
-
-    contains = [team for team in valid_names if key in normalize_team_key(team)]
-    if len(contains) == 1:
-        return contains[0]
-
-    candidates = list(by_key.keys())
-    close = difflib.get_close_matches(key, candidates, n=1, cutoff=0.88)
-    if close:
-        return by_key[close[0]]
-    return None
-
-
 def canonical_names_by_competition(context):
     team_competition_map = context.get("team_competition_map", {})
     available_teams = context.get("available_teams", [])
@@ -335,6 +333,45 @@ def ensure_canonical_self_mappings(mapping, context):
     return updated, added
 
 
+def resolve_live_team_name(raw_name, competition, context):
+    team_competition_map = context["team_competition_map"]
+    comp_candidates = [team for team in context["available_teams"] if team_competition_map.get(team) == competition]
+    valid_names = comp_candidates if comp_candidates else context["available_teams"]
+
+    manual_override = MANUAL_TEAM_OVERRIDES.get(str(raw_name).strip())
+    if manual_override:
+        if manual_override in valid_names:
+            return manual_override
+        if manual_override in context["available_teams"]:
+            return manual_override
+
+    direct = pm.resolve_team_name(raw_name, valid_names)
+    if direct:
+        return direct
+
+    key = normalize_team_key(raw_name)
+    if not key:
+        return None
+
+    by_key = {normalize_team_key(team): team for team in valid_names}
+    if key in by_key:
+        return by_key[key]
+
+    contained_by_raw = [team for team in valid_names if normalize_team_key(team) and normalize_team_key(team) in key]
+    if len(contained_by_raw) == 1:
+        return contained_by_raw[0]
+
+    contains = [team for team in valid_names if key in normalize_team_key(team)]
+    if len(contains) == 1:
+        return contains[0]
+
+    candidates = list(by_key.keys())
+    close = difflib.get_close_matches(key, candidates, n=1, cutoff=0.88)
+    if close:
+        return by_key[close[0]]
+    return None
+
+
 def update_team_mapping_from_fixtures(fixtures, context, mapping):
     updated = dict(mapping)
     new_entries = 0
@@ -353,16 +390,19 @@ def update_team_mapping_from_fixtures(fixtures, context, mapping):
             api_name = str(row.get(side_col, "")).strip()
             if not api_name:
                 continue
+            resolved = resolve_live_team_name(api_name, competition, context)
+            target = resolved if resolved else ""
             existing = str(updated[competition].get(api_name, "")).strip()
             if not existing:
-                if api_name in canonical_names:
-                    updated[competition][api_name] = api_name
-                else:
-                    updated[competition][api_name] = ""
-                    blanks_added += 1
+                updated[competition][api_name] = target
                 new_entries += 1
-            elif existing:
-                continue
+                if not target:
+                    blanks_added += 1
+            elif existing != target and target:
+                updated[competition][api_name] = target
+                changed_entries += 1
+            elif not target and api_name in canonical_names:
+                updated[competition][api_name] = api_name
 
     return updated, new_entries, changed_entries, blanks_added
 
@@ -378,7 +418,9 @@ def apply_team_mapping_to_fixtures(fixtures, mapping, context):
         if direct:
             if direct in known_teams:
                 return direct
-            return ""
+        resolved = resolve_live_team_name(api_name, competition, context)
+        if resolved:
+            return resolved
         if api_name in known_teams:
             return api_name
         return ""
@@ -391,6 +433,8 @@ def apply_team_mapping_to_fixtures(fixtures, mapping, context):
         lambda row: mapped_name(row.get("competition", ""), row.get("away_team", "")),
         axis=1,
     )
+    mapped["display_home_team"] = mapped["home_team"]
+    mapped["display_away_team"] = mapped["away_team"]
     return mapped
 
 
@@ -1009,6 +1053,10 @@ def predict_fixture(row, context):
         "competition": competition,
         "home_team": home_team,
         "away_team": away_team,
+        "display_home_team": str(row.get("display_home_team", row.get("home_team", ""))).strip(),
+        "display_away_team": str(row.get("display_away_team", row.get("away_team", ""))).strip(),
+        "schedule_only": "0",
+        "prediction_quality": "prediction",
         "predicted_result": prediction,
         "probability_reasoning": pm.build_reasoning_string(
             home_team, away_team, competition, probabilities,
@@ -1027,6 +1075,68 @@ def predict_fixture(row, context):
         "pred_home_sot": round(pred_home_sot, 3),
         "pred_away_sot": round(pred_away_sot, 3),
         **goal_probs,
+        "actual_home_goals": None,
+        "actual_away_goals": None,
+        "actual_result": None,
+        "is_correct": None,
+        "settled_at_utc": None,
+        "display_home_team": str(row.get("display_home_team", row.get("home_team", ""))).strip(),
+        "display_away_team": str(row.get("display_away_team", row.get("away_team", ""))).strip(),
+        "schedule_only": "0",
+        "prediction_quality": "prediction",
+    }
+
+
+def build_schedule_only_row(row, context=None):
+    raw_home = str(row.get("home_team", "")).strip()
+    raw_away = str(row.get("away_team", "")).strip()
+    competition = str(row.get("competition", "")).strip()
+    match_date = row.get("match_date")
+    if match_date is None or pd.isna(match_date):
+        return None
+    match_date = pd.Timestamp(match_date).normalize()
+    home_team = str(row.get("mapped_home_team", "")).strip() or raw_home
+    away_team = str(row.get("mapped_away_team", "")).strip() or raw_away
+    if not home_team or not away_team:
+        home_team = raw_home
+        away_team = raw_away
+    if not home_team or not away_team or home_team == away_team:
+        return None
+    key = make_prediction_key(match_date, competition, home_team, away_team)
+    return {
+        "prediction_key": key,
+        "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+        "match_date": match_date.strftime("%Y-%m-%d"),
+        "match_datetime_utc": str(row.get("match_datetime_utc", "")).strip(),
+        "match_datetime_et": str(row.get("match_datetime_et", "")).strip(),
+        "competition": competition,
+        "home_team": home_team,
+        "away_team": away_team,
+        "display_home_team": raw_home,
+        "display_away_team": raw_away,
+        "schedule_only": "1",
+        "prediction_quality": "no_prediction",
+        "predicted_result": "",
+        "probability_reasoning": "Teams are not in the model database — fixture listed without odds.",
+        "prob_home": 0.0,
+        "prob_draw": 0.0,
+        "prob_away": 0.0,
+        "pred_home_goals": None,
+        "pred_away_goals": None,
+        "pred_home_shots": None,
+        "pred_away_shots": None,
+        "pred_home_sot": None,
+        "pred_away_sot": None,
+        "prob_home_goals_0": None,
+        "prob_home_goals_1plus": None,
+        "prob_home_goals_2plus": None,
+        "prob_away_goals_0": None,
+        "prob_away_goals_1plus": None,
+        "prob_away_goals_2plus": None,
+        "prob_both_score": None,
+        "prob_over_1_5": None,
+        "prob_over_2_5": None,
+        "prob_over_3_5": None,
         "actual_home_goals": None,
         "actual_away_goals": None,
         "actual_result": None,
@@ -1143,6 +1253,8 @@ def main():
     skipped = 0
     for _, fixture in fixtures.iterrows():
         pred = predict_fixture(fixture, context)
+        if pred is None:
+            pred = build_schedule_only_row(fixture, context)
         if pred is None:
             skipped += 1
             continue

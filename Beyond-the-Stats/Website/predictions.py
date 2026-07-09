@@ -896,6 +896,155 @@ def _format_percent_value(value):
         return "<1"
     return f"{v:.1f}"
 
+
+def _prediction_quality_message(quality: str) -> str:
+    messages = {
+        "prediction": "",
+        "provisional": "Provisional teams — prediction uses fallback league averages.",
+        "no_prediction": "No model prediction available for this fixture.",
+    }
+    return messages.get(quality, "")
+
+
+def _row_has_model_prediction(row, schedule_only: bool = False) -> bool:
+    if schedule_only:
+        return False
+    predicted = str(row.get("predicted_result", "")).strip().upper()
+    if predicted not in {"H", "D", "A"}:
+        return False
+    try:
+        total_prob = (
+            float(row.get("prob_home") or 0)
+            + float(row.get("prob_draw") or 0)
+            + float(row.get("prob_away") or 0)
+        )
+    except (TypeError, ValueError):
+        return False
+    return total_prob > 0.001
+
+
+def _infer_prediction_quality(row, schedule_only: bool = False) -> tuple[str, str]:
+    stored = str(row.get("prediction_quality", "")).strip().lower()
+    if stored in {"prediction", "provisional", "no_prediction"}:
+        return stored, _prediction_quality_message(stored)
+
+    if schedule_only or not _row_has_model_prediction(row, schedule_only=False):
+        return "no_prediction", _prediction_quality_message("no_prediction")
+
+    home_disp = str(row.get("display_home_team") or row.get("home_team") or "")
+    away_disp = str(row.get("display_away_team") or row.get("away_team") or "")
+    if "(P)" in home_disp or "(P)" in away_disp:
+        return "provisional", _prediction_quality_message("provisional")
+
+    reasoning = str(row.get("probability_reasoning") or "").lower()
+    if any(token in reasoning for token in ("unknown team", "unmapped", "not in database", "schedule only")):
+        return "no_prediction", _prediction_quality_message("no_prediction")
+
+    return "prediction", ""
+
+
+def _live_updates_eligible(competition: str, schedule_only: bool = False) -> bool:
+    if schedule_only:
+        return False
+    comp = str(competition or "").strip()
+    if not comp:
+        return False
+    aliases = config.competition_live_aliases(comp)
+    for alias in aliases:
+        espn_id = config.LIVE_SCORE_COMPETITIONS.get(alias)
+        if espn_id:
+            if alias in config.UEFA_LIVE_SCORE_COMPETITIONS and not config.uefa_live_scoring_allowed():
+                return False
+            return True
+    return False
+
+
+def _build_live_games_index() -> dict[tuple[str, str, str], dict]:
+    """Index in-memory live games by normalized team pair and competition alias."""
+    try:
+        from live_prediction import _normalize_team_for_live
+        from live_poller import _live_scores, _live_scores_lock
+    except Exception:
+        return {}
+
+    index: dict[tuple[str, str, str], dict] = {}
+    with _live_scores_lock:
+        for comp_name, comp_data in _live_scores.items():
+            for game in comp_data.get("games", []) or []:
+                home = _normalize_team_for_live(game.get("home_team"))
+                away = _normalize_team_for_live(game.get("away_team"))
+                if not home or not away:
+                    continue
+                for alias in config.competition_live_aliases(comp_name):
+                    index[(home, away, alias)] = game
+    return index
+
+
+def _find_live_game_for_row(row: dict, live_index: dict[tuple[str, str, str], dict]) -> dict | None:
+    try:
+        from live_prediction import _normalize_team_for_live
+    except Exception:
+        return None
+
+    home = _normalize_team_for_live(row.get("home_team"))
+    away = _normalize_team_for_live(row.get("away_team"))
+    if not home or not away:
+        return None
+
+    comp = str(row.get("competition", "")).strip()
+    for alias in config.competition_live_aliases(comp):
+        game = live_index.get((home, away, alias))
+        if game:
+            return game
+        game = live_index.get((away, home, alias))
+        if game:
+            return game
+    return None
+
+
+def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
+    live_index = _build_live_games_index()
+    for row in rows:
+        comp = str(row.get("competition", "")).strip()
+        schedule_only = bool(row.get("schedule_only"))
+        quality, note = _infer_prediction_quality(row, schedule_only=schedule_only)
+        row["prediction_quality"] = quality
+        row["has_prediction"] = quality in {"prediction", "provisional"}
+        row["prediction_note"] = note
+        if schedule_only and quality == "no_prediction":
+            row["winner_label"] = "No prediction"
+
+        eligible = _live_updates_eligible(comp, schedule_only=schedule_only)
+        row["live_updates_eligible"] = eligible
+        live_game = _find_live_game_for_row(row, live_index)
+        if not live_game:
+            row["live_updates"] = False
+            row["live_status"] = None
+            continue
+
+        status = str(live_game.get("status") or "").strip().lower()
+        uefa_blocked = (
+            any(alias in config.UEFA_LIVE_SCORE_COMPETITIONS for alias in config.competition_live_aliases(comp))
+            and not config.uefa_live_scoring_allowed()
+        )
+        if uefa_blocked:
+            row["live_updates"] = False
+            row["live_status"] = "final_only" if status == "post" else "qualifying"
+            if status == "post" and row.get("actual_home_goals") is None:
+                home_score = live_game.get("home_score")
+                away_score = live_game.get("away_score")
+                if home_score is not None and away_score is not None:
+                    row["actual_home_goals"] = home_score
+                    row["actual_away_goals"] = away_score
+            continue
+
+        row["live_updates"] = eligible and status in {"pre", "in"}
+        row["live_status"] = status or None
+        if status == "in" and live_game.get("live_prediction"):
+            row["live_prediction"] = live_game.get("live_prediction")
+    return rows
+
+
 def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
     """Load prediction rows from CSV filtered by date range.
     
@@ -946,6 +1095,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                 "actual_away_goals",
                 "schedule_only",
                 "live_tracking",
+                "prediction_quality",
                 "match_datetime_utc",
                 "match_datetime_et",
             }
@@ -964,6 +1114,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                     "actual_result": "string",
                     "schedule_only": "string",
                     "live_tracking": "string",
+                    "prediction_quality": "string",
                     "match_datetime_utc": "string",
                     "match_datetime_et": "string",
                 },
@@ -1087,6 +1238,8 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
             ph_raw, pdv_raw, pa_raw = 0.0, 0.0, 0.0
             ph, pdv, pa = 0.0, 0.0, 0.0
         schedule_only = str(row.get("schedule_only", "")).strip().lower() in {"1", "true", "yes"}
+        quality, note = _infer_prediction_quality(row, schedule_only=schedule_only)
+        has_prediction = quality in {"prediction", "provisional"}
         actual_home_goals = pd.to_numeric(row.get("actual_home_goals"), errors="coerce")
         actual_away_goals = pd.to_numeric(row.get("actual_away_goals"), errors="coerce")
         rows.append(
@@ -1101,7 +1254,14 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                 "home_team": home,
                 "away_team": away,
                 "schedule_only": schedule_only,
-                "winner_label": _winner_label(row["predicted_result"], home, away) if not schedule_only else "Schedule only",
+                "prediction_quality": quality,
+                "has_prediction": has_prediction,
+                "prediction_note": note,
+                "winner_label": (
+                    _winner_label(row["predicted_result"], home, away)
+                    if has_prediction
+                    else ("Schedule only" if schedule_only else "No prediction")
+                ),
                 "prob_home": ph,
                 "prob_draw": pdv,
                 "prob_away": pa,
@@ -1171,6 +1331,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         )
     from accuracy_tracker import _build_persistent_accuracy_stats
     persistent_stats, persistent_league_stats = _build_persistent_accuracy_stats(target_mode, rows)
+    rows = _annotate_upcoming_rows_with_live(rows)
     rows = [_sanitize_for_json(row) for row in rows]
     return (
         rows,

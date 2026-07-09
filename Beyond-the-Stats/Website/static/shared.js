@@ -1116,6 +1116,33 @@ if (!Number.isNaN(parsed)) {
 return "";
 }
 
+function predictionQualityLabel(row) {
+    const quality = String(row?.prediction_quality || "").toLowerCase();
+    if (quality === "provisional") return "Provisional";
+    if (quality === "no_prediction" || row?.has_prediction === false) return "No prediction";
+    return "Predicted";
+}
+
+function predictionQualityPillClass(row) {
+    const quality = String(row?.prediction_quality || "").toLowerCase();
+    if (quality === "provisional") return "quality-pill provisional-pill";
+    if (quality === "no_prediction" || row?.has_prediction === false) return "quality-pill no-prediction-pill";
+    return "quality-pill prediction-pill";
+}
+
+function liveUpdatesBadgeHtml(row) {
+    if (row?.live_updates) {
+        return `<div class="confidence-pill live-pill">Live</div>`;
+    }
+    if (row?.live_status === "qualifying") {
+        return `<div class="confidence-pill schedule-pill">Qualifying</div>`;
+    }
+    if (row?.live_updates_eligible) {
+        return `<div class="confidence-pill schedule-pill">No live</div>`;
+    }
+    return "";
+}
+
 function renderUpcoming(target, rows, selectedLeague, options = {}) {
     if (!rows.length) {
         target.innerHTML = "<p>No upcoming matches found.</p>";
@@ -1228,6 +1255,10 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                 
                 const article = document.createElement('article');
                 const scheduleOnly = Boolean(r.schedule_only);
+                const hasPrediction = Boolean(r.has_prediction) && !scheduleOnly;
+                const noPrediction = scheduleOnly || String(r.prediction_quality || "").toLowerCase() === "no_prediction" || !hasPrediction;
+                const qualityPill = `<div class="${predictionQualityPillClass(r)}">${escapeHtml(predictionQualityLabel(r))}</div>`;
+                const livePill = liveUpdatesBadgeHtml(r);
                 const hasFinalScore = r.actual_home_goals !== null && r.actual_home_goals !== undefined
                     && r.actual_away_goals !== null && r.actual_away_goals !== undefined;
                 const homeGoals = (r.pred_home_goals === null || r.pred_home_goals === undefined) ? "NA" : r.pred_home_goals;
@@ -1235,10 +1266,10 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                 const settled = String(r.actual_result || "").trim().match(/^[HDA]$/i);
                 const isCorrect = String(r.is_correct || "").trim().toLowerCase();
                 let rowClass = "";
-                let statusText = scheduleOnly
+                let statusText = noPrediction
                     ? (hasFinalScore ? "Final" : "Scheduled")
                     : "Pending";
-                if (!scheduleOnly && settled) {
+                if (!noPrediction && settled) {
                     if (isCorrect === "1" || isCorrect === "true") {
                         rowClass = "match-correct";
                         statusText = "Correct";
@@ -1246,12 +1277,12 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         rowClass = "match-wrong";
                         statusText = "Wrong";
                     }
-                } else if (!scheduleOnly && hasFinalScore) {
+                } else if (!noPrediction && hasFinalScore) {
                     statusText = "Final";
                 }
                 
                 article.className = `match-row kick-match-card ${rowClass}`;
-                if (scheduleOnly) {
+                if (noPrediction) {
                     article.innerHTML = `
                     <button class="match-toggle" type="button"
                         data-home-team="${escapeHtml(r.home_team)}"
@@ -1259,9 +1290,10 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
                         <div class="kick-head">
                             <div class="kick-league">${escapeHtml(r.competition)}</div>
-                            <div class="confidence-pill schedule-pill">Friendly</div>
+                            <div class="kick-head-pills">${qualityPill}${livePill}</div>
                         </div>
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
+                        ${r.prediction_note ? `<div class="match-meta prediction-note">${escapeHtml(r.prediction_note)}</div>` : ""}
                         ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
                         ${hasFinalScore
                             ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
@@ -1277,7 +1309,7 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
                         <div class="kick-head">
                             <div class="kick-league">${escapeHtml(r.competition)}</div>
-                            <div class="confidence-pill">${pctLabel(Math.max(Number(r.prob_home) || 0, Number(r.prob_draw) || 0, Number(r.prob_away) || 0))}% confidence</div>
+                            <div class="kick-head-pills">${qualityPill}${livePill}<div class="confidence-pill">${pctLabel(Math.max(Number(r.prob_home) || 0, Number(r.prob_draw) || 0, Number(r.prob_away) || 0))}% confidence</div></div>
                         </div>
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
                         <div class="match-meta">Prediction: <span class="winner-line">${escapeHtml(r.winner_label)}</span></div>

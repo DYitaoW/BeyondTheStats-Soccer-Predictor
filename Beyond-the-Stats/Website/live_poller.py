@@ -140,6 +140,27 @@ def _effective_poller_date():
     return now_et.date()
 
 
+def _uefa_live_scoring_allowed_for_comp(comp_name: str) -> bool:
+    comp = str(comp_name or "").strip()
+    if comp not in config.UEFA_LIVE_SCORE_COMPETITIONS:
+        return True
+    return config.uefa_live_scoring_allowed()
+
+
+def _filter_live_games_for_competition(comp_name: str, games: list[dict]) -> list[dict]:
+    """During UEFA qualifying, keep only final scores — no in-play live tracking."""
+    if _uefa_live_scoring_allowed_for_comp(comp_name):
+        return games
+    filtered = []
+    for game in games or []:
+        status = str(game.get("status") or "").strip().lower()
+        if status == "post":
+            cleaned = dict(game)
+            cleaned.pop("live_prediction", None)
+            filtered.append(cleaned)
+    return filtered
+
+
 def _get_todays_competitions(today_date=None):
     """Return {competition: [kickoff_et, ...]} for competitions with games today.
 
@@ -392,6 +413,7 @@ def _live_score_poller_loop():
                             games = ft.result()
                             if name == config.CLUB_FRIENDLIES_COMPETITION:
                                 games = [g for g in games if _is_chelsea_live_game(g)]
+                            games = _filter_live_games_for_competition(name, games)
                             if not games:
                                 continue
                             results[name] = {
@@ -623,7 +645,7 @@ def _live_score_poller_loop():
                 prematch_index = _build_live_prematch_index()
                 for comp_name in list(_live_scores.keys()):
                     for g in _live_scores[comp_name].get("games", []):
-                        if g.get("status") == "in":
+                        if g.get("status") == "in" and _uefa_live_scoring_allowed_for_comp(comp_name):
                             prematch = _match_prematch_record(
                                 g.get("home_team", ""), g.get("away_team", ""),
                                 comp_name, prematch_index,
@@ -632,7 +654,7 @@ def _live_score_poller_loop():
                             if lp is not None:
                                 g["live_prediction"] = lp
                         # Update cumulative momentum for in-progress games
-                        if g.get("status") == "in":
+                        if g.get("status") == "in" and _uefa_live_scoring_allowed_for_comp(comp_name):
                             _update_cumulative_momentum(g)
             except Exception:
                 import traceback

@@ -264,6 +264,10 @@ RESULT_COLUMNS = [
     "competition",
     "home_team",
     "away_team",
+    "display_home_team",
+    "display_away_team",
+    "schedule_only",
+    "prediction_quality",
     "predicted_result",
     "probability_reasoning",
     "prob_home",
@@ -593,6 +597,10 @@ def predict_fixture(row, context):
         "competition": competition,
         "home_team": home_team,
         "away_team": away_team,
+        "display_home_team": str(row.get("home_team", "")).strip(),
+        "display_away_team": str(row.get("away_team", "")).strip(),
+        "schedule_only": "0",
+        "prediction_quality": "prediction",
         "predicted_result": prediction,
         "probability_reasoning": pm.build_reasoning_string(
             home_team, away_team, competition, probabilities,
@@ -610,6 +618,58 @@ def predict_fixture(row, context):
         "pred_away_shots": round(pred_away_shots, 3),
         "pred_home_sot": round(pred_home_sot, 3),
         "pred_away_sot": round(pred_away_sot, 3),
+        "actual_home_goals": None,
+        "actual_away_goals": None,
+        "actual_result": None,
+        "is_correct": None,
+        "settled_at_utc": None,
+        "display_home_team": str(row.get("home_team", "")).strip(),
+        "display_away_team": str(row.get("away_team", "")).strip(),
+        "schedule_only": "0",
+        "prediction_quality": "prediction",
+    }
+
+
+def build_schedule_only_row(row, context=None):
+    raw_home = str(row.get("home_team", "")).strip()
+    raw_away = str(row.get("away_team", "")).strip()
+    competition = str(row.get("competition", "")).strip()
+    match_date = row.get("match_date")
+    if match_date is None or pd.isna(match_date):
+        return None
+    match_date = pd.Timestamp(match_date).normalize()
+    home_team = str(row.get("mapped_home_team", "")).strip() or raw_home
+    away_team = str(row.get("mapped_away_team", "")).strip() or raw_away
+    if not home_team or not away_team or home_team == away_team:
+        home_team = raw_home
+        away_team = raw_away
+    if not home_team or not away_team:
+        return None
+    key = make_prediction_key(match_date, competition, home_team, away_team)
+    return {
+        "prediction_key": key,
+        "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+        "match_date": match_date.strftime("%Y-%m-%d"),
+        "match_datetime_utc": str(row.get("match_datetime_utc", "")).strip(),
+        "match_datetime_et": str(row.get("match_datetime_et", "")).strip(),
+        "competition": competition,
+        "home_team": home_team,
+        "away_team": away_team,
+        "display_home_team": raw_home,
+        "display_away_team": raw_away,
+        "schedule_only": "1",
+        "prediction_quality": "no_prediction",
+        "predicted_result": "",
+        "probability_reasoning": "Teams are not in the model database — fixture listed without odds.",
+        "prob_home": 0.0,
+        "prob_draw": 0.0,
+        "prob_away": 0.0,
+        "pred_home_goals": None,
+        "pred_away_goals": None,
+        "pred_home_shots": None,
+        "pred_away_shots": None,
+        "pred_home_sot": None,
+        "pred_away_sot": None,
         "actual_home_goals": None,
         "actual_away_goals": None,
         "actual_result": None,
@@ -1637,21 +1697,52 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
     
     for cup_name, cup_data in sorted_cups:
         cup_window_days = cup_fixture_window_days(cup_data, window_days)
+        comp_name = cup_data["name"]
         print(f"\n--- Checking Source for: {cup_name} ({cup_window_days}-day fixture window) ---")
-         
-        # B. Try TheSportsDB (new)
-        fixtures = load_upcoming_matchweek_fixtures_from_thesportsdb(cup_window_days, cup_data['name'])
-        if not fixtures.empty:
-            all_fixtures.append(fixtures)
-            print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from TheSportsDB.")
+
+        espn_first = comp_name in {
+            "Spain/Copa del Rey",
+            "France/Coupe de France",
+            "Italy/Coppa Italia",
+            "Germany/DFB-Pokal",
+        }
+        skip_synthetic = comp_name in {
+            "Spain/Copa del Rey",
+            "France/Coupe de France",
+            "Italy/Coppa Italia",
+            "Germany/DFB-Pokal",
+        }
+
+        if espn_first:
+            fixtures = load_upcoming_matchweek_fixtures_from_espn(
+                cup_window_days,
+                comp_name,
+                cup_data["espn_id"],
+                lookahead_days=max(cup_window_days, 365),
+            )
+            if not fixtures.empty:
+                all_fixtures.append(fixtures)
+                print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from ESPN.")
+                continue
+            print(f"No ESPN fixtures for {cup_name}; skipping synthetic fallbacks.")
             continue
 
-        # Try ESPN as a secondary live source. This must stay outside any
-        # preseason/static fallback so broken ESPN IDs (400/404) remain visible
-        # in logs and tests instead of being silently masked.
+        # B. Try TheSportsDB (skip for cups with unreliable next-event feeds)
+        if comp_name not in {
+            "Spain/Copa del Rey",
+            "France/Coupe de France",
+            "Italy/Coppa Italia",
+            "Germany/DFB-Pokal",
+        }:
+            fixtures = load_upcoming_matchweek_fixtures_from_thesportsdb(cup_window_days, comp_name)
+            if not fixtures.empty:
+                all_fixtures.append(fixtures)
+                print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from TheSportsDB.")
+                continue
+
         fixtures = load_upcoming_matchweek_fixtures_from_espn(
             cup_window_days,
-            cup_data["name"],
+            comp_name,
             cup_data["espn_id"],
             lookahead_days=max(cup_window_days, 365),
         )
@@ -1660,10 +1751,11 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
             print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from ESPN.")
             continue
 
-        # Final offline/preseason fallback. This gives the 2026-27 offseason
-        # pipeline and API smoke tests deterministic fixtures even when real
-        # cup draws have not been finalized yet.
-        fixtures = load_preseason_cup_fixtures(cup_window_days, cup_data["name"])
+        if skip_synthetic:
+            print(f"No real fixtures found for {cup_name}; preseason fallback disabled.")
+            continue
+
+        fixtures = load_preseason_cup_fixtures(cup_window_days, comp_name)
         if not fixtures.empty:
             all_fixtures.append(fixtures)
             print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from preseason fallback.")
@@ -1716,6 +1808,8 @@ def main():
     skipped = 0
     for _, fixture in fixtures.iterrows():
         pred = predict_fixture(fixture, context)
+        if pred is None:
+            pred = build_schedule_only_row(fixture, context)
         if pred is None:
             skipped += 1
             continue
