@@ -1,14 +1,38 @@
 :root {
-  --bg: #e8edf5;
-  --bg-soft: #d4dcea;
-  --card: #f4f7fb;
-  --text: #0f172a;
-  --muted: #5b6b7f;
-  --border: #b8c5d6;
-  --primary: #3b6fd9;
-  --primary-strong: #2f5bb8;
-  --accent-warm: #e8a838;
-  --danger: #d9534f;
+  --bg: #f0f0f0;
+  --bg-soft: #e0e0e0;
+  --bg-elev: #e8e8e8;
+  --card: #ffffff;
+  --text: #111111;
+  --muted: #6b6b6b;
+  --border: #cccccc;
+  --primary: #1a1a1a;
+  --primary-strong: #000000;
+  --accent-warm: #4a4a4a;
+  --danger: #333333;
+  --surface-raised: #f7f7f7;
+  --surface-sunken: #e5e5e5;
+  --surface-inverse: #1a1a1a;
+  --surface-inverse-hover: #111111;
+  --prob-home: #1a1a1a;
+  --prob-draw: #757575;
+  --prob-away: #bdbdbd;
+  --zone-a: rgba(0, 0, 0, 0.14);
+  --zone-b: rgba(0, 0, 0, 0.20);
+  --zone-c: rgba(0, 0, 0, 0.10);
+  --zone-d: rgba(0, 0, 0, 0.16);
+  --zone-e: rgba(0, 0, 0, 0.12);
+  --zone-f: rgba(0, 0, 0, 0.08);
+  --match-correct-bg: #e8e8e8;
+  --match-correct-border: #4a4a4a;
+  --match-wrong-bg: #d8d8d8;
+  --match-wrong-border: #8a8a8a;
+  --error-bg: #e0e0e0;
+  --error-border: #8a8a8a;
+  --error-text: #1a1a1a;
+  --info-bg: rgba(0, 0, 0, 0.06);
+  --info-border: #6b6b6b;
+  --info-text: #1a1a1a;
   --card-bg: var(--card);
   --card-border: var(--border);
   --text-color: var(--text);
@@ -18,7 +42,7 @@
   --btn-border: transparent;
   --btn-hover-bg: var(--primary-strong);
   --btn-hover-text: #ffffff;
-  --btn-secondary-bg: rgba(244, 247, 251, 0.9);
+  --btn-secondary-bg: rgba(255, 255, 255, 0.92);
   --btn-secondary-text: var(--muted);
   --btn-secondary-border: var(--border);
   --btn-secondary-hover-bg: var(--primary);
@@ -26,44 +50,76 @@
   --input-bg: #ffffff;
   --input-text: var(--text);
   --input-border: var(--border);
-  --topbar-bg: #f4f7fb;
+  --topbar-bg: #ffffff;
   --topbar-border: var(--border);
-  --table-header-bg: #dce4f0;
+  --table-header-bg: #e8e8e8;
   --table-header-text: var(--text);
-  --sidebar-bg: #eef2f8;
-  --hero-accent: rgba(59, 111, 217, 0.12);
+  --sidebar-bg: #fafafa;
+  --hero-accent: rgba(0, 0, 0, 0.04);
+  --badge-bg: rgba(0, 0, 0, 0.06);
+  --badge-border: rgba(0, 0, 0, 0.18);
+  --highlight-bg: rgba(0, 0, 0, 0.08);
+  --position-odds-bar: linear-gradient(90deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.55));
 }
 
 body.dark-mode {
-  --bg: #0c1220;
-  --bg-soft: #131c2e;
-  --card: #172236;
-  --text: #e8eef8;
-  --muted: #8fa3bc;
-  --border: #2a3a52;
-  --primary: #5b8ef5;
-  --primary-strong: #4a7de0;
-  --accent-warm: #f0b429;
-  --danger: #ff8c8c;
+  --bg: #0a0a0a;
+  --bg-soft: #121212;
+  --bg-elev: #1f1f1f;
+  --card: #1a1a1a;
+  --text: #f5f5f5;
+  --muted: #a0a0a0;
+  --border: #333333;
+  --primary: #e8e8e8;
+  --primary-strong: #ffffff;
+  --accent-warm: #b0b0b0;
+  --danger: #cccccc;
+  --surface-raised: #222222;
+  --surface-sunken: #141414;
+  --surface-inverse: #111111;
+  --surface-inverse-hover: #0a0a0a;
+  --prob-home: #f5f5f5;
+  --prob-draw: #9e9e9e;
+  --prob-away: #5c5c5c;
+  --zone-a: rgba(255, 255, 255, 0.14);
+  --zone-b: rgba(255, 255, 255, 0.22);
+  --zone-c: rgba(255, 255, 255, 0.10);
+  --zone-d: rgba(255, 255, 255, 0.18);
+  --zone-e: rgba(255, 255, 255, 0.12);
+  --zone-f: rgba(255, 255, 255, 0.08);
+  --match-correct-bg: #1f1f1f;
+  --match-correct-border: #8a8a8a;
+  --match-wrong-bg: #2a2a2a;
+  --match-wrong-border: #5c5c5c;
+  --error-bg: #1f1f1f;
+  --error-border: #6b6b6b;
+  --error-text: #f0f0f0;
+  --info-bg: rgba(255, 255, 255, 0.06);
+  --info-border: #8a8a8a;
+  --info-text: #f0f0f0;
   --btn-bg: var(--primary);
-  --btn-text: #071428;
+  --btn-text: #0a0a0a;
   --btn-border: transparent;
   --btn-hover-bg: var(--primary-strong);
-  --btn-hover-text: #ffffff;
-  --btn-secondary-bg: rgba(23, 34, 54, 0.95);
+  --btn-hover-text: #0a0a0a;
+  --btn-secondary-bg: rgba(26, 26, 26, 0.95);
   --btn-secondary-text: var(--muted);
   --btn-secondary-border: var(--border);
   --btn-secondary-hover-bg: var(--primary);
-  --btn-secondary-hover-text: #071428;
-  --input-bg: #0f1728;
+  --btn-secondary-hover-text: #0a0a0a;
+  --input-bg: #111111;
   --input-text: var(--text);
   --input-border: var(--border);
-  --topbar-bg: rgba(12, 18, 32, 0.92);
+  --topbar-bg: rgba(10, 10, 10, 0.95);
   --topbar-border: var(--border);
-  --table-header-bg: #0f1728;
+  --table-header-bg: #222222;
   --table-header-text: var(--text);
-  --sidebar-bg: #131d30;
-  --hero-accent: rgba(91, 142, 245, 0.14);
+  --sidebar-bg: #141414;
+  --hero-accent: rgba(255, 255, 255, 0.06);
+  --badge-bg: rgba(255, 255, 255, 0.08);
+  --badge-border: rgba(255, 255, 255, 0.22);
+  --highlight-bg: rgba(255, 255, 255, 0.06);
+  --position-odds-bar: linear-gradient(90deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.55));
 }
 
 * {
@@ -119,9 +175,9 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: linear-gradient(90deg, rgba(240, 180, 41, 0.18), rgba(240, 180, 41, 0.08));
-  color: #f0b429;
-  border: 1px solid rgba(240, 180, 41, 0.4);
+  background: linear-gradient(90deg, var(--badge-bg), var(--hero-accent));
+  color: var(--text);
+  border: 1px solid var(--badge-border);
   border-radius: 10px;
   padding: 8px 14px;
   margin: 12px 0 4px;
@@ -142,9 +198,9 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #f0b429;
-  background: rgba(240, 180, 41, 0.08);
-  border: 1px solid rgba(240, 180, 41, 0.4);
+  color: var(--text);
+  background: var(--badge-bg);
+  border: 1px solid var(--badge-border);
   border-radius: 999px;
   padding: 6px 12px;
   font-size: 0.78rem;
@@ -297,9 +353,9 @@ body {
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 700;
-  color: var(--primary);
-  border: 1px solid rgba(91, 142, 245, 0.35);
-  background: rgba(91, 142, 245, 0.1);
+  color: var(--text);
+  border: 1px solid var(--badge-border);
+  background: var(--badge-bg);
 }
 
 h1 {
@@ -519,28 +575,28 @@ h1 {
 }
 
 .tab-btn.world-cup-highlight {
-  border-color: #f0b429;
-  color: #f0b429;
-  background: rgba(240, 180, 41, 0.08);
+  border-color: var(--primary);
+  color: var(--text);
+  background: var(--badge-bg);
   font-weight: 700;
   position: relative;
 }
 .tab-btn.world-cup-highlight:hover {
-  background: rgba(240, 180, 41, 0.18);
-  color: #f5c14b;
+  background: var(--highlight-bg);
+  color: var(--text);
 }
 .tab-btn.world-cup-highlight.active {
-  background: #f0b429;
-  color: #1a1300;
-  border-color: #f0b429;
+  background: var(--primary);
+  color: var(--btn-text);
+  border-color: var(--primary);
 }
 .tab-btn.world-cup-highlight::after {
   content: "NEW";
   position: absolute;
   top: -8px;
   right: -6px;
-  background: #f0b429;
-  color: #1a1300;
+  background: var(--primary);
+  color: var(--btn-text);
   font-size: 0.6rem;
   font-weight: 800;
   padding: 2px 5px;
@@ -550,8 +606,8 @@ h1 {
 }
 
 .position-odds-best {
-  background: rgba(91, 142, 245, 0.2);
-  color: #0b3b1f;
+  background: var(--highlight-bg);
+  color: var(--text);
   font-weight: 800;
 }
 
@@ -615,13 +671,13 @@ button:hover {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px;
-  background: #0e1620;
+  background: var(--surface-inverse);
   position: relative;
   color: var(--text);
 }
 
 .pick-card:hover {
-  background: #0a121b;
+  background: var(--surface-inverse-hover);
 }
 
 .pick-rank {
@@ -662,9 +718,9 @@ button:hover {
 }
 
 .error {
-  border-color: #5f2a2a;
-  color: #ffd1d1;
-  background: #2b1717;
+  border-color: var(--error-border);
+  color: var(--error-text);
+  background: var(--error-bg);
 }
 
 .match-row {
@@ -672,7 +728,7 @@ button:hover {
   border-radius: 10px;
   padding: 8px 10px;
   margin: 8px 0;
-  background: #101822;
+  background: var(--surface-inverse);
 }
 
 .day-title {
@@ -710,9 +766,9 @@ button:hover {
 
 .confidence-pill {
   border-radius: 999px;
-  border: 1px solid rgba(91, 142, 245, 0.4);
-  color: var(--primary);
-  background: rgba(91, 142, 245, 0.12);
+  border: 1px solid var(--badge-border);
+  color: var(--text);
+  background: var(--badge-bg);
   font-size: 0.75rem;
   padding: 2px 8px;
   font-weight: 700;
@@ -720,122 +776,122 @@ button:hover {
 
 /* Light mode polish for stats + predictions */
 body:not(.dark-mode) .hero-stat {
-  background: linear-gradient(180deg, #f6f8fc, #eef3f9);
-  border-color: #b8c7d7;
+  background: linear-gradient(180deg, var(--card), var(--surface-raised));
+  border-color: var(--border);
 }
 
 body:not(.dark-mode) .hero-stat-value {
-  color: #2f5bb8;
+  color: var(--text);
 }
 
 body:not(.dark-mode) .stat-chip {
-  background: #eef2f7;
-  color: #2b3a4a;
-  border-color: #b8c7d7;
+  background: var(--surface-raised);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 body:not(.dark-mode) .match-row {
-  background: #f7f9fc;
-  color: #0a1118;
-  border-color: #b8c7d7;
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 body:not(.dark-mode) .match-toggle:hover {
-  background: rgba(76, 170, 104, 0.08);
+  background: var(--highlight-bg);
 }
 
 body:not(.dark-mode) .confidence-pill {
-  border-color: rgba(47, 125, 79, 0.35);
-  color: #1e6a40;
-  background: rgba(47, 125, 79, 0.12);
+  border-color: var(--badge-border);
+  color: var(--text);
+  background: var(--badge-bg);
 }
 
 body:not(.dark-mode) .pick-card {
-  background: #f7f9fc;
-  color: #0a1118;
-  border-color: #b8c7d7;
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 body:not(.dark-mode) .pick-card:hover {
-  background: #eef3f9;
+  background: var(--surface-raised);
 }
 
 body:not(.dark-mode) .match-card {
-  background: #f7f9fc;
-  color: #0a1118;
-  border-color: #b8c7d7;
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 body:not(.dark-mode) .player-card {
-  background: #f7f9fc;
-  color: #0a1118;
-  border-color: #b8c7d7;
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 body:not(.dark-mode) .prediction-card {
-  background: #f7f9fc;
-  color: #0a1118;
-  border-color: #b8c7d7;
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 body:not(.dark-mode) .conference-title {
-  background: #eef2f7;
-  color: #0a1118;
-  border-color: #b8c7d7;
+  background: var(--surface-raised);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 body:not(.dark-mode) .world-cup-summary-item,
 body:not(.dark-mode) .world-cup-odds-card,
 body:not(.dark-mode) .world-cup-table-card,
 body:not(.dark-mode) .world-cup-match-card {
-  background: #f7f9fc;
-  color: #0a1118;
-  border-color: #b8c7d7;
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 body:not(.dark-mode) .world-cup-probabilities {
-  background: #d6dde7;
+  background: var(--surface-sunken);
 }
 
 body:not(.dark-mode) .probability-track {
-  background: #d6dde7;
+  background: var(--surface-sunken);
 }
 
 body:not(.dark-mode) .notification {
-  background: #ffffff;
-  color: #0a1118;
-  border-color: #b8c7d7;
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 body:not(.dark-mode) .position-odds-best {
-  background: rgba(76, 170, 104, 0.18);
-  color: #1e6a40;
+  background: var(--highlight-bg);
+  color: var(--text);
 }
 
 body:not(.dark-mode) .position-odds-cell {
-  background: rgba(15, 26, 36, 0.06);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .match-row.match-correct {
-  border-color: #3a7d51;
-  background: #122118;
+  border-color: var(--match-correct-border);
+  background: var(--match-correct-bg);
 }
 
 body:not(.dark-mode) .match-row.match-correct {
-  border-color: rgba(76, 170, 104, 0.55);
-  background: rgba(76, 170, 104, 0.12);
-  color: #0a1118;
+  border-color: var(--match-correct-border);
+  background: var(--match-correct-bg);
+  color: var(--text);
 }
 
 .match-row.match-wrong {
-  border-color: #824646;
-  background: #291718;
+  border-color: var(--match-wrong-border);
+  background: var(--match-wrong-bg);
 }
 
 body:not(.dark-mode) .match-row.match-wrong {
-  border-color: rgba(217, 83, 79, 0.55);
-  background: rgba(217, 83, 79, 0.12);
-  color: #0a1118;
+  border-color: var(--match-wrong-border);
+  background: var(--match-wrong-bg);
+  color: var(--text);
 }
 
 .match-toggle {
@@ -850,7 +906,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .match-toggle:hover {
-  background: rgba(91, 142, 245, 0.05);
+  background: var(--highlight-bg);
 }
 
 .matchup {
@@ -885,12 +941,24 @@ body:not(.dark-mode) .match-row.match-wrong {
   width: 100%;
   border-radius: 999px;
   overflow: hidden;
-  background: #2b3947;
+  background: var(--surface-sunken);
   margin: 7px 0;
 }
 
 .probability-track > div {
   height: 100%;
+}
+
+.probability-track > div:nth-child(1) {
+  background: var(--prob-home);
+}
+
+.probability-track > div:nth-child(2) {
+  background: var(--prob-draw);
+}
+
+.probability-track > div:nth-child(3) {
+  background: var(--prob-away);
 }
 
 .probability-labels {
@@ -920,7 +988,7 @@ body:not(.dark-mode) .match-row.match-wrong {
   border-radius: 999px;
   padding: 4px 10px;
   color: var(--muted);
-  background: #111922;
+  background: var(--surface-inverse);
   font-size: 0.8rem;
 }
 
@@ -955,37 +1023,37 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .table-first td {
-  background: rgba(81, 179, 104, 0.18);
+  background: var(--zone-a);
 }
 
 .table-bottom td {
-  background: rgba(179, 81, 81, 0.2);
+  background: var(--zone-b);
 }
 
 .table-playoff-orange td {
-  background: rgba(194, 142, 70, 0.2);
+  background: var(--zone-c);
 }
 
 .table-promo-blue td {
-  background: rgba(69, 115, 179, 0.22);
+  background: var(--zone-d);
 }
 
 .cup-top8-chip {
-  border-color: rgba(81, 179, 104, 0.45);
-  background: rgba(81, 179, 104, 0.18);
+  border-color: var(--border);
+  background: var(--zone-a);
 }
 
 .cup-playoff-chip {
-  border-color: rgba(69, 115, 179, 0.45);
-  background: rgba(69, 115, 179, 0.22);
+  border-color: var(--border);
+  background: var(--zone-d);
 }
 
 .table-playoff-purple td {
-  background: rgba(113, 78, 163, 0.23);
+  background: var(--zone-e);
 }
 
 .table-second-pink td {
-  background: rgba(174, 84, 122, 0.23);
+  background: var(--zone-f);
 }
 
 .bracket-container {
@@ -1006,7 +1074,7 @@ body:not(.dark-mode) .match-row.match-wrong {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #111922;
+  background: var(--surface-inverse);
   text-align: center;
   font-weight: 700;
 }
@@ -1025,7 +1093,7 @@ body:not(.dark-mode) .match-row.match-wrong {
   border-radius: 10px;
   padding: 9px;
   margin-bottom: 10px;
-  background: #111922;
+  background: var(--surface-inverse);
 }
 
 .match-card .match-title {
@@ -1079,7 +1147,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 .player-card {
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: #111922;
+  background: var(--surface-inverse);
   padding: 12px;
   text-align: center;
 }
@@ -1091,7 +1159,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 .player-stat-badge {
   display: inline-block;
   border-radius: 999px;
-  background: #233141;
+  background: var(--bg-elev);
   color: var(--text);
   padding: 3px 8px;
   font-size: 0.8rem;
@@ -1138,7 +1206,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 .prediction-card {
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: #111922;
+  background: var(--surface-inverse);
   padding: 10px;
   margin-bottom: 9px;
 }
@@ -1157,7 +1225,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 .world-cup-match-card {
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #111922;
+  background: var(--surface-inverse);
   padding: 12px;
 }
 
@@ -1193,7 +1261,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 .world-cup-round {
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #111922;
+  background: var(--surface-inverse);
   padding: 10px 12px;
   margin-bottom: 10px;
 }
@@ -1269,7 +1337,7 @@ body:not(.dark-mode) .match-row.match-wrong {
   left: 0;
   top: 0;
   bottom: 0;
-  background: linear-gradient(90deg, rgba(91, 142, 245, 0.55), rgba(91, 142, 245, 0.85));
+  background: var(--position-odds-bar);
   z-index: 0;
 }
 
@@ -1469,20 +1537,20 @@ body:not(.dark-mode) .match-row.match-wrong {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: #233141;
+  background: var(--bg-elev);
   margin-top: 10px;
 }
 
 .world-cup-probabilities span:nth-child(1) {
-  background: #5b8ef5;
+  background: var(--prob-home);
 }
 
 .world-cup-probabilities span:nth-child(2) {
-  background: #93a4b3;
+  background: var(--prob-draw);
 }
 
 .world-cup-probabilities span:nth-child(3) {
-  background: #7297ff;
+  background: var(--prob-away);
 }
 
 .pred-options {
@@ -1517,7 +1585,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .notification {
-  background: #0f1a24;
+  background: var(--surface-inverse);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1568,9 +1636,9 @@ body:not(.dark-mode) .match-row.match-wrong {
 
 
 .error-message {
-  color: #ff6b6b;
-  background-color: rgba(255, 107, 107, 0.1);
-  border-left: 4px solid #ff6b6b;
+  color: var(--error-text);
+  background-color: var(--error-bg);
+  border-left: 4px solid var(--error-border);
   padding: 12px;
   border-radius: 4px;
   margin: 8px 0;
@@ -1578,9 +1646,9 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .info-message {
-  color: #4ecdc4;
-  background-color: rgba(78, 205, 196, 0.1);
-  border-left: 4px solid #4ecdc4;
+  color: var(--info-text);
+  background-color: var(--info-bg);
+  border-left: 4px solid var(--info-border);
   padding: 12px;
   border-radius: 4px;
   margin: 8px 0;
