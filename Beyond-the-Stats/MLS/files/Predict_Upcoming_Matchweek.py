@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import unicodedata
 import time
@@ -625,8 +626,11 @@ def load_upcoming_fixtures_from_csv_source(source_df, competition_name, window_d
     fixtures = frame[["match_date", "competition", "home_team", "away_team"]].copy()
     fixtures["match_datetime_et"] = None
     fixtures = fixtures.sort_values(["match_date", "home_team", "away_team"]).reset_index(drop=True)
-    cutoff_date = calculate_fixture_window_end(window_days, start_date=today)
-    return fixtures[fixtures["match_date"] <= cutoff_date].reset_index(drop=True)
+    return season_calendar.filter_fixtures_to_bounds(
+        fixtures,
+        competition_name,
+        reference_date=today,
+    )
 
 
 def load_upcoming_matchweek_fixtures_from_raw_season_files(raw_dir, window_days):
@@ -690,13 +694,16 @@ def load_upcoming_matchweek_fixtures_from_csv_fallback(window_days):
     ).reset_index(drop=True)
 
 
-def load_upcoming_matchweek_fixtures_from_espn(window_days, lookahead_days=365):
+def load_upcoming_matchweek_fixtures_from_espn(window_days, lookahead_days=None):
     today = pd.Timestamp(datetime.now(UTC).date())
     rows = []
     seen = set()
 
     for competition_name, espn_id in REGIONAL_ESPN_COMPETITIONS.items():
-        for offset in range(0, max(1, lookahead_days + 1)):
+        scan_days = lookahead_days
+        if scan_days is None:
+            scan_days = season_calendar.espn_scan_day_count(competition_name, reference_date=today)
+        for offset in range(0, max(1, int(scan_days) + 1)):
             day = today + pd.Timedelta(days=offset)
             url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
             try:
@@ -760,15 +767,32 @@ def load_upcoming_matchweek_fixtures_from_espn(window_days, lookahead_days=365):
         return fixtures
 
     fixtures = fixtures.sort_values(["match_date", "competition", "home_team", "away_team"]).reset_index(drop=True)
-    cutoff_date = calculate_fixture_window_end(window_days, start_date=today)
-    fixtures = fixtures[fixtures["match_date"] <= cutoff_date].reset_index(drop=True)
-    return fixtures
+    bounded_frames = []
+    for competition_name in fixtures["competition"].dropna().unique():
+        comp_frame = fixtures[fixtures["competition"] == competition_name]
+        bounded_frames.append(
+            season_calendar.filter_fixtures_to_bounds(
+                comp_frame,
+                str(competition_name),
+                reference_date=today,
+            )
+        )
+    if not bounded_frames:
+        return fixtures.iloc[0:0].copy()
+    return pd.concat(bounded_frames, ignore_index=True).sort_values(
+        ["match_date", "competition", "home_team", "away_team"]
+    ).reset_index(drop=True)
 
 
 def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
     today = pd.Timestamp(datetime.now(UTC).date())
     headers = {"X-Auth-Token": api_token}
-    url = f"{FOOTBALL_DATA_API_BASE}/competitions/{MLS_COMPETITION_CODE}/matches?status=SCHEDULED"
+    date_params = season_calendar.football_data_api_date_params(
+        MLS_COMPETITION_NAME,
+        reference_date=today,
+    )
+    query = urllib.parse.urlencode({"status": "SCHEDULED", **date_params}, doseq=True)
+    url = f"{FOOTBALL_DATA_API_BASE}/competitions/{MLS_COMPETITION_CODE}/matches?{query}"
 
     try:
         data = fetch_json(url, headers=headers, timeout=45)
@@ -820,10 +844,11 @@ def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
         return fixtures
 
     fixtures = fixtures.sort_values(["match_date", "home_team", "away_team"]).reset_index(drop=True)
-    # Apply the same current-date window across API results.
-    cutoff_date = calculate_fixture_window_end(window_days, start_date=today)
-    fixtures = fixtures[fixtures["match_date"] <= cutoff_date].reset_index(drop=True)
-    return fixtures
+    return season_calendar.filter_fixtures_to_bounds(
+        fixtures,
+        MLS_COMPETITION_NAME,
+        reference_date=today,
+    )
 
 
 def dedupe_fixtures(fixtures: pd.DataFrame) -> pd.DataFrame:

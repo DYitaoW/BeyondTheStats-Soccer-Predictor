@@ -14,8 +14,13 @@ import joblib
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+
 import Download_Latest_Data as download_latest
 import Predict_Match as pm
+import season_calendar
 import UEFA_Data_Manager as uefa
 
 # --- CONFIGURATION CONSTANTS ---
@@ -60,7 +65,7 @@ EASTERN_TZ = ZoneInfo("America/New_York")
 
 # TheSportsDB API
 THESPORTSDB_API_BASE = "https://www.thesportsdb.com/api/v1/json/123"
-DEFAULT_CUP_FIXTURE_WINDOW_DAYS = 365
+DEFAULT_CUP_FIXTURE_WINDOW_DAYS = 180
 LEAGUES_CUP_COMPETITION = "CONCACAF/Leagues Cup"
 
 # Map cup names to TheSportsDB league IDs (these IDs must be correct for each cup)
@@ -138,70 +143,70 @@ CUP_COMPETITIONS = {
         "espn_id": "eng.fa",  # ESPN FA Cup
         "priority": 1,
         "api_source": "espn",
-        "fixture_window_days": 365,
+        "fixture_window_days": 180,
     },
     "Carabao Cup": {
         "name": "England/League Cup",
         "espn_id": "eng.league_cup",  # ESPN Carabao Cup (EFL Cup)
         "priority": 2,
         "api_source": "espn",
-        "fixture_window_days": 365,
+        "fixture_window_days": 180,
     },
     "UCL": {
         "name": "UEFA/Champions League",
         "espn_id": "uefa.champions",  # ESPN UCL
         "priority": 3,
         "api_source": "espn",
-        "fixture_window_days": 365,
+        "fixture_window_days": 180,
     },
     "UEL": {
         "name": "UEFA/Europa League",
         "espn_id": "uefa.europa",  # ESPN UEL
         "priority": 4,
         "api_source": "espn",
-        "fixture_window_days": 365,
+        "fixture_window_days": 180,
     },
     "UECL": {
         "name": "UEFA/Conference League",
         "espn_id": "uefa.europa.conf",  # ESPN UECL
         "priority": 5,
         "api_source": "espn",
-        "fixture_window_days": 365,
+        "fixture_window_days": 180,
     },
     "Coppa Italia": {
         "name": "Italy/Coppa Italia",
         "espn_id": "ita.coppa_italia",
         "priority": 6,
         "api_source": "espn",
-        "fixture_window_days": 365,
+        "fixture_window_days": 180,
     },
     "Copa del Rey": {
         "name": "Spain/Copa del Rey",
         "espn_id": "esp.copa_del_rey",
         "priority": 7,
         "api_source": "espn",
-        "fixture_window_days": 365,
+        "fixture_window_days": 180,
     },
     "DFB-Pokal": {
         "name": "Germany/DFB-Pokal",
         "espn_id": "ger.dfb_pokal",
         "priority": 8,
         "api_source": "espn",
-        "fixture_window_days": 365,
+        "fixture_window_days": 180,
     },
     "Coupe de France": {
         "name": "France/Coupe de France",
         "espn_id": "fra.coupe_de_france",
         "priority": 9,
         "api_source": "espn",
-        "fixture_window_days": 365,
+        "fixture_window_days": 180,
     },
     "Leagues Cup": {
         "name": LEAGUES_CUP_COMPETITION,
         "espn_id": "concacaf.leagues.cup",
         "priority": 10,
         "api_source": "espn",
-        "fixture_window_days": 365,
+        "fixture_window_days": 180,
     },
 }
 
@@ -833,12 +838,17 @@ def filter_to_next_fixture_window(fixtures, window_days, label):
     if frame.empty:
         return frame
 
-    first_fixture_date = frame["match_date"].min()
-    cutoff_date = calculate_fixture_window_end(window_days, start_date=first_fixture_date)
-    filtered = frame[frame["match_date"] <= cutoff_date].reset_index(drop=True)
+    today = pd.Timestamp(datetime.now(UTC).date()).normalize()
+    _, cutoff_date = season_calendar.cup_lookahead_bounds(
+        today,
+        lookahead_days=window_days,
+    )
+    filtered = frame[
+        (frame["match_date"] >= today) & (frame["match_date"] <= cutoff_date)
+    ].reset_index(drop=True)
     print(
-        f"{label}: First fixture {first_fixture_date.date()} anchors "
-        f"{window_days}-day cutoff at {cutoff_date.date()}."
+        f"{label}: Cup rolling window {today.date()} through {cutoff_date.date()} "
+        f"({window_days} days, {len(filtered)} fixtures)."
     )
     return filtered
 
@@ -1718,7 +1728,7 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
                 cup_window_days,
                 comp_name,
                 cup_data["espn_id"],
-                lookahead_days=max(cup_window_days, 365),
+                lookahead_days=max(cup_window_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS),
             )
             if not fixtures.empty:
                 all_fixtures.append(fixtures)
@@ -1744,7 +1754,7 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
             cup_window_days,
             comp_name,
             cup_data["espn_id"],
-            lookahead_days=max(cup_window_days, 365),
+            lookahead_days=max(cup_window_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS),
         )
         if not fixtures.empty:
             all_fixtures.append(fixtures)

@@ -1,14 +1,36 @@
-"""Team mapping diagnostics for manual ESPN → predictor name alignment."""
+"""Team mapping diagnostics for manual ESPN / API → predictor name alignment."""
 from __future__ import annotations
 
+import csv
 import json
 import os
+import sys
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 import config
 from competition_rules import normalize_team_key
 from espn_api import _fetch_espn_json
+
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+
+import season_calendar
+
+# Extra-league ESPN feeds not always present in LIVE_SCORE_COMPETITIONS.
+EXTRA_ESPN_COMPETITIONS = {
+    "Argentina/Primera Division": "arg.1",
+    "Brazil/Serie A": "bra.1",
+    "Japan/J1 League": "jpn.1",
+}
+
+UPCOMING_CSV_SOURCES = {
+    "global": config.GLOBAL_UPCOMING_FILE,
+    "mls": config.MLS_UPCOMING_FILE,
+    "extra": config.EXTRA_UPCOMING_FILE,
+    "cups": config.CUP_UPCOMING_FILE,
+}
 
 
 def _load_team_mapping_master() -> dict:
@@ -27,7 +49,7 @@ def _espn_competitions_for_scan() -> list[tuple[str, str]]:
     """Return unique (competition_name, espn_id) pairs for ESPN upcoming scans."""
     mapping_keys = set(_load_team_mapping_master().keys())
     by_espn: dict[str, str] = {}
-    for comp_name, espn_id in config.LIVE_SCORE_COMPETITIONS.items():
+    for comp_name, espn_id in {**config.LIVE_SCORE_COMPETITIONS, **EXTRA_ESPN_COMPETITIONS}.items():
         if not espn_id:
             continue
         existing = by_espn.get(espn_id)
@@ -37,6 +59,13 @@ def _espn_competitions_for_scan() -> list[tuple[str, str]]:
         if comp_name in mapping_keys and existing not in mapping_keys:
             by_espn[espn_id] = comp_name
     return sorted(by_espn.items(), key=lambda item: item[1].lower())
+
+
+def _default_league_lookahead_days() -> int:
+    """Season-length ESPN scan for European leagues (Jul through May)."""
+    today = date.today()
+    _, end = season_calendar.european_season_bounds(today)
+    return max(30, min(366, (end.date() - today).days + 1))
 
 
 def _extract_upcoming_teams_from_scoreboard(data: dict) -> tuple[set[str], int]:
@@ -75,11 +104,21 @@ def _extract_upcoming_teams_from_scoreboard(data: dict) -> tuple[set[str], int]:
 def _fetch_upcoming_espn_teams(competition: str, espn_id: str, lookahead_days: int) -> tuple[set[str], int]:
     """Scan ESPN scoreboards for upcoming (pre) fixtures and collect team display names."""
     today = date.today()
+    is_cup = "cup" in competition.lower() or competition.startswith("UEFA/") or competition.startswith("Europe/")
+    if is_cup:
+        _, end = season_calendar.cup_lookahead_bounds(today, lookahead_days=lookahead_days)
+    elif season_calendar.competition_uses_calendar_year(competition):
+        _, end = season_calendar.calendar_year_bounds(today)
+    else:
+        _, end = season_calendar.european_season_bounds(today)
     team_names: set[str] = set()
     fixture_count = 0
 
-    for offset in range(0, max(1, lookahead_days + 1)):
+    scan_days = max(1, min(int(lookahead_days), (end.date() - today).days + 1))
+    for offset in range(0, scan_days):
         day = today + timedelta(days=offset)
+        if day > end.date():
+            break
         url = f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard?dates={day.strftime('%Y%m%d')}"
         data = _fetch_espn_json(url)
         if not data:
@@ -89,6 +128,60 @@ def _fetch_upcoming_espn_teams(competition: str, espn_id: str, lookahead_days: i
         fixture_count += day_fixtures
 
     return team_names, fixture_count
+
+
+def _unmapped_from_upcoming_csv(path: str, master: dict) -> list[dict]:
+    """Collect API/display team names from an upcoming predictions CSV that still need mapping."""
+    if not path or not os.path.exists(path):
+        return []
+
+    rows_out: list[dict] = []
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                competition = str(row.get("competition", "")).strip()
+                if not competition:
+                    continue
+                comp_map = master.get(competition, {}) if isinstance(master.get(competition), dict) else {}
+                schedule_only = str(row.get("schedule_only", "")).strip() in {"1", "true", "True"}
+                for api_col, canonical_col in (
+                    ("display_home_team", "home_team"),
+                    ("display_away_team", "away_team"),
+                ):
+                    api_name = str(row.get(api_col, "")).strip()
+                    canonical = str(row.get(canonical_col, "")).strip()
+                    if not api_name:
+                        continue
+                    is_mapped, reason, mapped_to = _mapping_status(comp_map, api_name)
+                    if is_mapped and mapped_to == canonical and canonical:
+                        continue
+                    if schedule_only or not is_mapped:
+                        rows_out.append(
+                            {
+                                "competition": competition,
+                                "api_name": api_name,
+                                "canonical_in_csv": canonical,
+                                "reason": "schedule_only" if schedule_only else reason,
+                                "mapped_to": mapped_to,
+                                "source_file": os.path.basename(path),
+                            }
+                        )
+    except Exception:
+        return []
+    return rows_out
+
+
+def _dedupe_unmapped_rows(rows: list[dict]) -> list[dict]:
+    seen = set()
+    out = []
+    for row in rows:
+        key = (row.get("competition"), row.get("api_name"))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return sorted(out, key=lambda item: (str(item.get("competition", "")).lower(), str(item.get("api_name", "")).lower()))
 
 
 def _mapping_status(comp_map: dict, api_name: str) -> tuple[bool, str, str | None]:
@@ -103,11 +196,14 @@ def _mapping_status(comp_map: dict, api_name: str) -> tuple[bool, str, str | Non
 
 def build_unmapped_espn_payload(
     *,
-    lookahead_days: int = 30,
+    lookahead_days: int | None = None,
     competition_filter: str | None = None,
+    include_prediction_csv: bool = True,
 ) -> dict:
-    """Build payload of ESPN upcoming team names that still need manual mapping."""
-    lookahead_days = max(1, min(int(lookahead_days), 365))
+    """Build payload of upcoming API/ESPN team names that still need manual mapping."""
+    if lookahead_days is None:
+        lookahead_days = _default_league_lookahead_days()
+    lookahead_days = max(1, min(int(lookahead_days), 366))
     master = _load_team_mapping_master()
     competitions_for_scan = _espn_competitions_for_scan()
     competitions_out = []
@@ -118,7 +214,10 @@ def build_unmapped_espn_payload(
             continue
 
         comp_map = master.get(competition, {})
-        espn_teams, fixture_count = _fetch_upcoming_espn_teams(competition, espn_id, lookahead_days)
+        comp_lookahead = lookahead_days
+        if "cup" in competition.lower() or competition.startswith("UEFA/") or competition.startswith("Europe/"):
+            comp_lookahead = min(lookahead_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS)
+        espn_teams, fixture_count = _fetch_upcoming_espn_teams(competition, espn_id, comp_lookahead)
         unmapped_rows = []
         for api_name in sorted(espn_teams, key=str.lower):
             is_mapped, reason, mapped_to = _mapping_status(comp_map, api_name)
@@ -129,6 +228,7 @@ def build_unmapped_espn_payload(
                     "api_name": api_name,
                     "reason": reason,
                     "mapped_to": mapped_to,
+                    "source": "espn",
                 }
             )
 
@@ -145,18 +245,34 @@ def build_unmapped_espn_payload(
                 }
             )
 
+    csv_unmapped: list[dict] = []
+    if include_prediction_csv:
+        for source_label, csv_path in UPCOMING_CSV_SOURCES.items():
+            for row in _unmapped_from_upcoming_csv(csv_path, master):
+                row["pipeline"] = source_label
+                csv_unmapped.append(row)
+        csv_unmapped = _dedupe_unmapped_rows(csv_unmapped)
+        total_unmapped += len(csv_unmapped)
+
     return {
         "ok": True,
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "lookahead_days": lookahead_days,
         "competition_filter": competition_filter or None,
         "mapping_file": config.TEAM_NAME_DISPLAY_MAPPING_FILE,
+        "mapping_instructions": (
+            "Edit the JSON mapping file: each competition key maps API/ESPN display names "
+            "(keys) to canonical predictor team names (values). Leave a blank string for names "
+            "you have not resolved yet."
+        ),
         "summary": {
             "competitions_scanned": len(competitions_for_scan),
             "competitions_with_unmapped": len(competitions_out),
+            "csv_unmapped_count": len(csv_unmapped),
             "total_unmapped_teams": total_unmapped,
         },
         "competitions": competitions_out,
+        "unmapped_from_prediction_csv": csv_unmapped,
     }
 
 

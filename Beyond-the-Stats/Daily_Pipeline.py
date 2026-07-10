@@ -142,7 +142,13 @@ def parse_args():
     parser.add_argument("--skip-mls", action="store_true", help="Skip MLS pipeline steps.")
     parser.add_argument("--skip-extra", action="store_true", help="Skip extra-leagues pipeline steps.")
     parser.add_argument("--skip-global", action="store_true", help="Skip European/global pipeline steps.")
-    parser.add_argument("--window-days", type=int, default=365, help="Fixture window days for upcoming matchweek scripts.")
+    parser.add_argument("--window-days", type=int, default=365, help="Legacy league window days (season-aware bounds apply in predictors).")
+    parser.add_argument(
+        "--cup-window-days",
+        type=int,
+        default=180,
+        help="Rolling lookahead in days for cup upcoming fixture scripts.",
+    )
     parser.add_argument(
         "--national-window-days",
         type=int,
