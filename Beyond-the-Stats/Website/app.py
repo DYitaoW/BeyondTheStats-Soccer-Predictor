@@ -571,13 +571,15 @@ def api_teams():
 
 @app.get("/api/team-mappings/unmapped")
 def api_team_mappings_unmapped():
-    """List ESPN upcoming team names that are missing or blank in the mapping master."""
-    lookahead_days = request.args.get("lookahead_days", 30)
+    """List ESPN / API upcoming team names missing or blank in the mapping master."""
+    raw_lookahead = request.args.get("lookahead_days")
     competition = str(request.args.get("competition", "")).strip() or None
-    try:
-        lookahead_days = int(lookahead_days)
-    except (TypeError, ValueError):
-        lookahead_days = 30
+    lookahead_days = None
+    if raw_lookahead is not None and str(raw_lookahead).strip() != "":
+        try:
+            lookahead_days = int(raw_lookahead)
+        except (TypeError, ValueError):
+            lookahead_days = None
     return jsonify(
         build_unmapped_espn_payload(
             lookahead_days=lookahead_days,

@@ -36,6 +36,7 @@ import pandas as pd
 
 import pipeline_log
 import model_cache_util
+import season_calendar
 
 
 SP_DIR = Path(__file__).resolve().parent
@@ -86,7 +87,13 @@ def parse_args():
         "--window-days",
         type=int,
         default=365,
-        help="Fixture window days for upcoming matchweek scripts.",
+        help="Legacy fixture window days (league scripts use season-aware Jul–May / Jan–Dec bounds).",
+    )
+    parser.add_argument(
+        "--cup-window-days",
+        type=int,
+        default=season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS,
+        help="Rolling lookahead in days for cup upcoming fixture scripts (default: 180).",
     )
     parser.add_argument(
         "--national-window-days",
@@ -258,7 +265,7 @@ def _run_global_subpipeline(args, api_token):
     )
     sub["global_upcoming_cups"] = run_step(
         "[global] Upcoming cup predictions",
-        [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.window_days)],
+        [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.cup_window_days)],
         continue_on_error=args.continue_on_error,
     )
     national_process_cmd = [py, str(FILES_DIR / "Process_National_Team_Data.py"), "--world-cup-only"]

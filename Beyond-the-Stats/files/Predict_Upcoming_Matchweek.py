@@ -17,6 +17,7 @@ import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import unicodedata
 import time
@@ -27,6 +28,7 @@ import pandas as pd
 
 import Download_Latest_Data as download_latest
 import Predict_Match as pm
+import season_calendar
 import UEFA_Data_Manager as uefa
 
 
@@ -842,8 +844,14 @@ def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
     headers = {"X-Auth-Token": api_token}
     accessible_competitions = 0
 
-    for competition_code, competition_name in {**API_COMPETITIONS, **CUP_API_COMPETITIONS}.items():
-        url = f"{FOOTBALL_DATA_API_BASE}/competitions/{competition_code}/matches?status=SCHEDULED"
+    # League fixtures only — cups use Predict_Upcoming_Cups with a rolling window.
+    for competition_code, competition_name in API_COMPETITIONS.items():
+        date_params = season_calendar.football_data_api_date_params(competition_name, reference_date=today)
+        query = urllib.parse.urlencode(
+            {"status": "SCHEDULED", **date_params},
+            doseq=True,
+        )
+        url = f"{FOOTBALL_DATA_API_BASE}/competitions/{competition_code}/matches?{query}"
         try:
             data = fetch_json(url, headers=headers, timeout=45)
         except urllib.error.HTTPError as error:
@@ -898,10 +906,11 @@ def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
             continue
 
         comp_df = pd.DataFrame(comp_rows).sort_values(["match_date", "home_team", "away_team"])
-        
-        # Use a current-date window so late-week pulls keep the full Friday-to-Tuesday block.
-        cutoff_date = calculate_fixture_window_end(window_days)
-        comp_df = comp_df[comp_df["match_date"] <= cutoff_date]
+        comp_df = season_calendar.filter_fixtures_to_bounds(
+            comp_df,
+            competition_name,
+            reference_date=today,
+        )
         rows.extend(comp_df.to_dict("records"))
 
     fixtures = pd.DataFrame(rows)
@@ -954,13 +963,16 @@ def load_upcoming_matchweek_fixtures_from_raw(raw_dir, window_days):
         if future.empty:
             future = frame.copy()
 
-        # Reuse the same current-date window instead of anchoring to the first fixture date.
-        cutoff_date = calculate_fixture_window_end(window_days, start_date=today)
-        window = future[future["DateParsed"] <= cutoff_date]
+        window = season_calendar.filter_fixtures_to_bounds(
+            future.rename(columns={"DateParsed": "match_date"}),
+            competition,
+            reference_date=today,
+            date_column="match_date",
+        )
         for _, row in window.iterrows():
             rows.append(
                 {
-                    "match_date": row["DateParsed"].normalize(),
+                    "match_date": pd.Timestamp(row["match_date"]).normalize(),
                     "competition": competition,
                     "home_team": str(row["HomeTeam"]).strip(),
                     "away_team": str(row["AwayTeam"]).strip(),

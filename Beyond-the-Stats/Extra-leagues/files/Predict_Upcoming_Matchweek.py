@@ -21,6 +21,11 @@ import Predict_Match as pm
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_DIR = os.path.dirname(BASE_DIR)
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+
+import season_calendar
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_matchweek_predictions.csv")
@@ -57,11 +62,12 @@ def rebuild_model_cache_once():
         raise RuntimeError(f"Auto-rebuild of model cache failed: {message}")
 
 
-# Allow import of global pipeline modules (UEFA_Data_Manager, etc.)
+# Allow import of global pipeline modules (UEFA_Data_Manager, team mapping sync, etc.)
 _GLOBAL_FILES_DIR = os.path.join(os.path.dirname(BASE_DIR), "files")
 if _GLOBAL_FILES_DIR not in sys.path:
     sys.path.insert(0, _GLOBAL_FILES_DIR)
 
+import Predict_Upcoming_Matchweek as global_upcoming
 import UEFA_Data_Manager as uefa
 
 RESULT_COLUMNS = [
@@ -288,6 +294,25 @@ def latest_season_for_competition(season_teams, competition, fallback):
     return best_key or fallback
 
 
+def choose_prediction_season(home_team, away_team, competition, match_date, season_teams, fallback_season):
+    competition_latest = latest_season_for_competition(season_teams, competition, fallback_season)
+    fixture_year = -1
+    if match_date is not None:
+        try:
+            fixture_year = int(pd.Timestamp(match_date).year)
+        except Exception:
+            fixture_year = -1
+    if fixture_year > 0:
+        competition_latest = season_calendar.season_key_for_fixture_year(
+            competition, competition_latest, fixture_year
+        )
+    if home_team in season_teams.get(competition_latest, {}) and away_team in season_teams.get(
+        competition_latest, {}
+    ):
+        return competition_latest
+    return pm.choose_season_for_teams(home_team, away_team, season_teams, competition_latest)
+
+
 def inject_fallback_team(team_name, competition, season_key, context):
     """Ensure *team_name* exists in all context structures; fallback to UEFA
     data or minimal placeholders when it is not in the training data."""
@@ -358,16 +383,20 @@ def inject_fallback_team(team_name, competition, season_key, context):
         available.append(team_name)
 
 
-def predict_fixture(ctx, home_raw, away_raw, competition_hint):
+def predict_fixture(ctx, home_raw, away_raw, competition_hint, match_date=None):
     home_team = pm.resolve_team_name(home_raw, ctx["available_teams"])
     away_team = pm.resolve_team_name(away_raw, ctx["available_teams"])
 
     competition_fallback = latest_season_for_competition(
         ctx["season_teams"], competition_hint, ctx["latest_season"]
     )
-    prediction_season = pm.choose_season_for_teams(
-        home_team or home_raw, away_team or away_raw,
-        ctx["season_teams"], competition_fallback,
+    prediction_season = choose_prediction_season(
+        home_team or home_raw,
+        away_team or away_raw,
+        competition_hint,
+        match_date,
+        ctx["season_teams"],
+        competition_fallback,
     )
     season_key = prediction_season
 
@@ -469,7 +498,7 @@ def predict_fixture(ctx, home_raw, away_raw, competition_hint):
     }
 
 
-def upcoming_fixtures_from_raw(raw_path, window_days):
+def upcoming_fixtures_from_raw(raw_path, window_days, competition_name):
     try:
         df = pd.read_csv(raw_path)
     except Exception:
@@ -489,20 +518,29 @@ def upcoming_fixtures_from_raw(raw_path, window_days):
         res = str(row.get("Res", "")).strip().upper()
         hg = row.get("HG")
         ag = row.get("AG")
-        return res in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag)
+        if res in {"H", "D", "A"}:
+            return True
+        try:
+            return pd.notna(hg) and pd.notna(ag) and float(hg) >= 0 and float(ag) >= 0
+        except (TypeError, ValueError):
+            return False
 
     work = work[~work.apply(is_played, axis=1)].copy()
     if work.empty:
         return work
 
-    today = pd.Timestamp(datetime.utcnow().date())
+    today = pd.Timestamp(datetime.now(UTC).date())
     future = work[work["DateParsed"] >= today]
     if future.empty:
         future = work.copy()
 
-    # Use a current-date window so midweek pulls keep the full Friday-to-Tuesday slate.
-    window_end = calculate_fixture_window_end(window_days, start_date=today)
-    return future[future["DateParsed"] <= window_end].copy()
+    bounded = season_calendar.filter_fixtures_to_bounds(
+        future.assign(match_date=future["DateParsed"]),
+        competition_name,
+        reference_date=today,
+        date_column="match_date",
+    )
+    return bounded.rename(columns={"match_date": "DateParsed"}).copy()
 
 
 def fetch_json(url, timeout=30):
@@ -511,18 +549,22 @@ def fetch_json(url, timeout=30):
         return json.loads(response.read().decode("utf-8"))
 
 
-def upcoming_fixtures_from_espn(competition, window_days, lookahead_days=365):
+def upcoming_fixtures_from_espn(competition, window_days, lookahead_days=None):
     espn_id = EXTRA_ESPN_COMPETITIONS.get(competition)
     if not espn_id:
         return pd.DataFrame()
 
     today = pd.Timestamp(datetime.now(UTC).date())
-    cutoff = calculate_fixture_window_end(window_days, start_date=today)
+    if lookahead_days is None:
+        lookahead_days = season_calendar.espn_scan_day_count(competition, reference_date=today)
+    cutoff_end = season_calendar.fixture_search_bounds(competition, reference_date=today)[1]
     rows = []
     seen = set()
 
     for offset in range(0, max(1, int(lookahead_days) + 1)):
         day = today + pd.Timedelta(days=offset)
+        if day > cutoff_end:
+            break
         url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
         try:
             data = fetch_json(url, timeout=30)
@@ -535,7 +577,7 @@ def upcoming_fixtures_from_espn(competition, window_days, lookahead_days=365):
                 continue
             event_dt_et = event_date.tz_convert(EASTERN_TZ)
             match_date = event_dt_et.tz_localize(None).normalize()
-            if match_date < today or match_date > cutoff:
+            if match_date < today or match_date > cutoff_end:
                 continue
 
             competitions = event.get("competitions", [])
@@ -589,6 +631,14 @@ def merge_fixture_frames(*frames):
     return merged.sort_values(["DateParsed", "Home", "Away"]).reset_index(drop=True)
 
 
+def _mapping_context(ctx):
+    return {
+        "available_teams": ctx.get("available_teams", []),
+        "team_competition_map": ctx.get("team_comp_map", {}),
+        "season_teams": ctx.get("season_teams", {}),
+    }
+
+
 def main():
     args = parse_args()
     latest = latest_raw_file_per_competition(RAW_DATA_DIR)
@@ -596,49 +646,72 @@ def main():
         raise ValueError(f"No raw season files found in {RAW_DATA_DIR}")
 
     ctx = build_context()
+    mapping_ctx = _mapping_context(ctx)
+    fixture_frames = []
+    for competition, path in sorted(latest.items()):
+        raw_fixtures = upcoming_fixtures_from_raw(path, args.window_days, competition)
+        espn_fixtures = upcoming_fixtures_from_espn(competition, args.window_days)
+        merged = merge_fixture_frames(raw_fixtures, espn_fixtures)
+        if merged.empty:
+            continue
+        frame = merged.copy()
+        frame["competition"] = competition
+        frame["home_team"] = frame["Home"].astype(str).str.strip()
+        frame["away_team"] = frame["Away"].astype(str).str.strip()
+        frame["match_date"] = frame["DateParsed"]
+        fixture_frames.append(frame[["match_date", "competition", "home_team", "away_team"]])
+
+    if not fixture_frames:
+        print("No upcoming extra-league fixtures found.")
+        return
+
+    fixtures = pd.concat(fixture_frames, ignore_index=True)
+    team_mapping = global_upcoming.load_shared_mapping()
+    team_mapping, _canonical_added = global_upcoming.ensure_canonical_self_mappings(team_mapping, mapping_ctx)
+    team_mapping, _new_entries, _drift = global_upcoming.update_team_mapping_from_fixtures(
+        fixtures, mapping_ctx, team_mapping
+    )
+    global_upcoming.save_team_mapping(global_upcoming.TEAM_MAPPING_FILE, team_mapping)
+    fixtures = global_upcoming.apply_team_mapping_to_fixtures(fixtures, team_mapping, mapping_ctx)
+
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = []
-    for competition, path in sorted(latest.items()):
-        raw_fixtures = upcoming_fixtures_from_raw(path, args.window_days)
-        espn_fixtures = upcoming_fixtures_from_espn(competition, args.window_days)
-        fixtures = merge_fixture_frames(raw_fixtures, espn_fixtures)
-        if fixtures.empty:
+    for _, row in fixtures.iterrows():
+        match_date = pd.Timestamp(row["match_date"]).date()
+        home = str(row.get("mapped_home_team", "") or row.get("home_team", "")).strip()
+        away = str(row.get("mapped_away_team", "") or row.get("away_team", "")).strip()
+        competition = str(row.get("competition", "")).strip()
+        if not home or not away:
             continue
-        for _, row in fixtures.iterrows():
-            match_date = row["DateParsed"].date()
-            home = str(row.get("Home", "")).strip()
-            away = str(row.get("Away", "")).strip()
-            if not home or not away:
-                continue
-            pred = predict_fixture(ctx, home, away, competition)
-            if pred is None:
-                continue
-            rows.append(
-                {
-                    "prediction_key": make_prediction_key(match_date, competition, pred["home_team"], pred["away_team"]),
-                    "created_at_utc": created_at,
-                    "match_date": match_date.strftime("%Y-%m-%d"),
-                    "match_datetime_utc": "",
-                    "competition": competition,
-                    "home_team": pred["home_team"],
-                    "away_team": pred["away_team"],
-                    "predicted_result": pred["predicted_result"],
-                    "prob_home": pred["prob_home"],
-                    "prob_draw": pred["prob_draw"],
-                    "prob_away": pred["prob_away"],
-                    "pred_home_goals": pred["pred_home_goals"],
-                    "pred_away_goals": pred["pred_away_goals"],
-                    "pred_home_shots": pred["pred_home_shots"],
-                    "pred_away_shots": pred["pred_away_shots"],
-                    "pred_home_sot": pred["pred_home_sot"],
-                    "pred_away_sot": pred["pred_away_sot"],
-                    "actual_home_goals": "",
-                    "actual_away_goals": "",
-                    "actual_result": "",
-                    "is_correct": "",
-                    "settled_at_utc": "",
-                }
-            )
+        pred = predict_fixture(ctx, home, away, competition, match_date)
+        if pred is None:
+            continue
+        rows.append(
+            {
+                "prediction_key": make_prediction_key(match_date, competition, pred["home_team"], pred["away_team"]),
+                "created_at_utc": created_at,
+                "match_date": match_date.strftime("%Y-%m-%d"),
+                "match_datetime_utc": "",
+                "competition": competition,
+                "home_team": pred["home_team"],
+                "away_team": pred["away_team"],
+                "predicted_result": pred["predicted_result"],
+                "prob_home": pred["prob_home"],
+                "prob_draw": pred["prob_draw"],
+                "prob_away": pred["prob_away"],
+                "pred_home_goals": pred["pred_home_goals"],
+                "pred_away_goals": pred["pred_away_goals"],
+                "pred_home_shots": pred["pred_home_shots"],
+                "pred_away_shots": pred["pred_away_shots"],
+                "pred_home_sot": pred["pred_home_sot"],
+                "pred_away_sot": pred["pred_away_sot"],
+                "actual_home_goals": "",
+                "actual_away_goals": "",
+                "actual_result": "",
+                "is_correct": "",
+                "settled_at_utc": "",
+            }
+        )
 
     out = pd.DataFrame(rows, columns=RESULT_COLUMNS).astype("object")
     if not out.empty:

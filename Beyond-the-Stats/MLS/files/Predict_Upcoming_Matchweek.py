@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import unicodedata
 import time
@@ -26,6 +27,11 @@ import Predict_Match as pm
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_DIR = os.path.dirname(BASE_DIR)
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+
+import season_calendar
 MLS_FILES_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
@@ -451,6 +457,38 @@ def latest_season_for_competition(season_teams, competition, fallback):
     return best_key or fallback
 
 
+def choose_prediction_season(home_team, away_team, competition, match_date, season_teams, fallback_season):
+    """Prefer the latest competition season for upcoming fixtures, like European pre-season logic."""
+    competition_latest = latest_season_for_competition(season_teams, competition, fallback_season)
+    fixture_year = -1
+    if match_date is not None:
+        try:
+            fixture_year = int(pd.Timestamp(match_date).year)
+        except Exception:
+            fixture_year = -1
+    if fixture_year > 0:
+        competition_latest = season_calendar.season_key_for_fixture_year(
+            competition, competition_latest, fixture_year
+        )
+    if home_team in season_teams.get(competition_latest, {}) and away_team in season_teams.get(
+        competition_latest, {}
+    ):
+        return competition_latest
+    return pm.choose_season_for_teams(home_team, away_team, season_teams, competition_latest)
+
+
+def _csv_fixture_is_played(row):
+    res = str(row.get("Res", row.get("FTR", ""))).strip().upper()
+    hg = row.get("HG", row.get("FTHG"))
+    ag = row.get("AG", row.get("FTAG"))
+    if res in {"H", "D", "A"}:
+        return True
+    try:
+        return pd.notna(hg) and pd.notna(ag) and float(hg) >= 0 and float(ag) >= 0
+    except (TypeError, ValueError):
+        return False
+
+
 def mean_from_dicts(rows, key, default=0.0):
     if not rows:
         return float(default)
@@ -567,7 +605,7 @@ def fetch_json(url, headers=None, timeout=30):
 
 
 def load_upcoming_fixtures_from_csv_source(source_df, competition_name, window_days, today):
-    needed = {"Date", "Home", "Away", "HG", "AG"}
+    needed = {"Date", "Home", "Away"}
     if not needed.issubset(source_df.columns):
         return pd.DataFrame()
 
@@ -575,18 +613,52 @@ def load_upcoming_fixtures_from_csv_source(source_df, competition_name, window_d
     frame["match_date"] = pd.to_datetime(frame["Date"], dayfirst=False, format="mixed", errors="coerce").dt.normalize()
     frame = frame[frame["match_date"].notna()]
     frame = frame[frame["Home"].notna() & frame["Away"].notna()]
-    frame = frame[frame["HG"].isna() & frame["AG"].isna()]
-    frame = frame[frame["match_date"] >= today]
+    frame = frame[~frame.apply(_csv_fixture_is_played, axis=1)]
     if frame.empty:
         return pd.DataFrame()
 
-    frame = frame.rename(columns={"Home": "home_team", "Away": "away_team"})
+    future = frame[frame["match_date"] >= today]
+    if future.empty:
+        future = frame.copy()
+
+    frame = future.rename(columns={"Home": "home_team", "Away": "away_team"})
     frame["competition"] = competition_name
     fixtures = frame[["match_date", "competition", "home_team", "away_team"]].copy()
     fixtures["match_datetime_et"] = None
     fixtures = fixtures.sort_values(["match_date", "home_team", "away_team"]).reset_index(drop=True)
-    cutoff_date = calculate_fixture_window_end(window_days, start_date=today)
-    return fixtures[fixtures["match_date"] <= cutoff_date].reset_index(drop=True)
+    return season_calendar.filter_fixtures_to_bounds(
+        fixtures,
+        competition_name,
+        reference_date=today,
+    )
+
+
+def load_upcoming_matchweek_fixtures_from_raw_season_files(raw_dir, window_days):
+    """Load unplayed fixtures from the latest per-competition raw season CSV files."""
+    latest = find_latest_season_file_per_competition(raw_dir)
+    if not latest:
+        return pd.DataFrame()
+
+    today = pd.Timestamp(datetime.now(UTC).date())
+    rows = []
+    for competition, rel_path in sorted(latest.items()):
+        full_path = os.path.join(raw_dir, rel_path)
+        try:
+            frame = pd.read_csv(full_path)
+        except Exception:
+            try:
+                frame = pd.read_csv(full_path, encoding="latin-1", engine="python", on_bad_lines="skip")
+            except Exception:
+                continue
+        fixtures = load_upcoming_fixtures_from_csv_source(frame, competition, window_days, today)
+        if not fixtures.empty:
+            rows.extend(fixtures.to_dict("records"))
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values(
+        ["match_date", "competition", "home_team", "away_team"]
+    ).reset_index(drop=True)
 
 
 def load_upcoming_matchweek_fixtures_from_csv_fallback(window_days):
@@ -698,24 +770,42 @@ def load_upcoming_matchweek_fixtures_from_espn(
         return fixtures
 
     fixtures = fixtures.sort_values(["match_date", "competition", "home_team", "away_team"]).reset_index(drop=True)
-    cutoff_date = calculate_fixture_window_end(window_days, start_date=today)
-    fixtures = fixtures[fixtures["match_date"] <= cutoff_date].reset_index(drop=True)
-    return fixtures
+    bounded_frames = []
+    for competition_name in fixtures["competition"].dropna().unique():
+        comp_frame = fixtures[fixtures["competition"] == competition_name]
+        bounded_frames.append(
+            season_calendar.filter_fixtures_to_bounds(
+                comp_frame,
+                str(competition_name),
+                reference_date=today,
+            )
+        )
+    if not bounded_frames:
+        return fixtures.iloc[0:0].copy()
+    return pd.concat(bounded_frames, ignore_index=True).sort_values(
+        ["match_date", "competition", "home_team", "away_team"]
+    ).reset_index(drop=True)
 
 
 def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
     today = pd.Timestamp(datetime.now(UTC).date())
     headers = {"X-Auth-Token": api_token}
-    url = f"{FOOTBALL_DATA_API_BASE}/competitions/{MLS_COMPETITION_CODE}/matches?status=SCHEDULED"
+    date_params = season_calendar.football_data_api_date_params(
+        MLS_COMPETITION_NAME,
+        reference_date=today,
+    )
+    query = urllib.parse.urlencode({"status": "SCHEDULED", **date_params}, doseq=True)
+    url = f"{FOOTBALL_DATA_API_BASE}/competitions/{MLS_COMPETITION_CODE}/matches?{query}"
 
     try:
         data = fetch_json(url, headers=headers, timeout=45)
     except urllib.error.HTTPError as error:
-        if error.code == 401:
-            raise RuntimeError("football-data.org API token is invalid or missing permission.") from error
-        if error.code == 403:
-            print("football-data.org returned 403 for MLS. Falling back to football-data.co.uk source.")
-            return load_upcoming_matchweek_fixtures_from_csv_fallback(window_days)
+        if error.code in {401, 403}:
+            print(
+                f"football-data.org returned {error.code} for MLS. "
+                "Falling back to football-data.co.uk / ESPN sources."
+            )
+            return pd.DataFrame()
         raise RuntimeError(f"Could not fetch MLS fixtures from API (HTTP {error.code}).") from error
     except Exception as error:
         print(f"Could not fetch MLS fixtures from API ({error}). Falling back to football-data.co.uk source.")
@@ -757,10 +847,51 @@ def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
         return fixtures
 
     fixtures = fixtures.sort_values(["match_date", "home_team", "away_team"]).reset_index(drop=True)
-    # Apply the same current-date window across API results.
-    cutoff_date = calculate_fixture_window_end(window_days, start_date=today)
-    fixtures = fixtures[fixtures["match_date"] <= cutoff_date].reset_index(drop=True)
-    return fixtures
+    return season_calendar.filter_fixtures_to_bounds(
+        fixtures,
+        MLS_COMPETITION_NAME,
+        reference_date=today,
+    )
+
+
+def dedupe_fixtures(fixtures: pd.DataFrame) -> pd.DataFrame:
+    if fixtures.empty:
+        return fixtures
+
+    frame = fixtures.copy()
+    frame["_fixture_key"] = frame.apply(
+        lambda row: (
+            str(row.get("competition", "")).strip(),
+            pd.Timestamp(row.get("match_date")).strftime("%Y-%m-%d"),
+            normalize_team_key(row.get("home_team", "")),
+            normalize_team_key(row.get("away_team", "")),
+        ),
+        axis=1,
+    )
+    frame = frame.sort_values("match_datetime_et", na_position="last")
+    frame = frame.drop_duplicates(subset=["_fixture_key"], keep="last")
+    return frame.drop(columns=["_fixture_key"]).reset_index(drop=True)
+
+
+def filter_liga_mx_active_tournament(fixtures: pd.DataFrame) -> pd.DataFrame:
+    """Keep only Liga MX fixtures from the active Apertura/Clausura tournament."""
+    if fixtures.empty:
+        return fixtures
+
+    active = season_calendar.active_liga_mx_tournament_label()
+    if not active:
+        return fixtures
+
+    keep_mask = []
+    for _, row in fixtures.iterrows():
+        competition = str(row.get("competition", "")).strip()
+        if competition != "Mexico/Liga MX":
+            keep_mask.append(True)
+            continue
+        label = season_calendar.liga_mx_tournament_label_for_date(row.get("match_date"))
+        keep_mask.append(label == active)
+
+    return fixtures[keep_mask].reset_index(drop=True)
 
 
 def load_upcoming_matchweek_fixtures(api_token, window_days):
@@ -798,9 +929,11 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
         print("Fixture source: ESPN scoreboard API")
         return fixtures
 
-    fixtures = load_upcoming_matchweek_fixtures_from_csv_fallback(window_days)
-    if not fixtures.empty:
-        print("Fixture source: football-data.co.uk CSV fallback")
+    fixtures = pd.concat(frames, ignore_index=True)
+    fixtures = dedupe_fixtures(fixtures)
+    fixtures = filter_liga_mx_active_tournament(fixtures)
+    for source in sources:
+        print(f"Fixture source: {source}")
     return fixtures
 
 
@@ -983,7 +1116,14 @@ def predict_fixture(row, context):
 
     season_teams = context["season_teams"]
     competition_season = latest_season_for_competition(season_teams, competition, context["latest_season"])
-    prediction_season = pm.choose_season_for_teams(home_team, away_team, season_teams, competition_season)
+    prediction_season = choose_prediction_season(
+        home_team,
+        away_team,
+        competition,
+        match_date,
+        season_teams,
+        competition_season,
+    )
     inject_fallback_team(home_team, competition, prediction_season, context)
     inject_fallback_team(away_team, competition, prediction_season, context)
     prediction_start_year = pm.parse_start_year_from_key(prediction_season)
@@ -1265,7 +1405,10 @@ def main():
 
     fixtures = load_upcoming_matchweek_fixtures(args.api_token, args.window_days)
     if fixtures.empty:
-        print("No upcoming matchweek fixtures returned by API.")
+        print(
+            "No upcoming fixtures found from API, ESPN, CSV download, or raw season files. "
+            "Run with --refresh-download or check Raw_Data for current-season mlsstat/mexstat files."
+        )
         return
 
     context = build_prediction_context()

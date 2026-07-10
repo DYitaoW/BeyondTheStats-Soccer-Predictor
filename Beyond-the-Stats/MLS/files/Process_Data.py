@@ -1,10 +1,18 @@
 """Process MLS raw data — same logic as global ``Process_Data`` but for MLS competitions."""
 import os
 import re
+import sys
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
+
+MLS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_DIR = os.path.dirname(MLS_DIR)
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+
+import season_calendar
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -103,9 +111,11 @@ def first_existing_value(row, candidates, default=0.0):
     return float(default)
 
 
-def has_minimum_rows(df, season_start_year):
+def has_minimum_rows(df, season_start_year, file_name=""):
     current_year = datetime.now().year
-    in_progress = season_start_year == (current_year - 1)
+    in_progress = season_calendar.is_in_progress_season(
+        season_start_year, file_name, current_year=current_year
+    )
     minimum = CURRENT_SEASON_MIN_ROWS if in_progress else MIN_ROWS
     return len(df) >= minimum
 
@@ -216,7 +226,7 @@ def process_one_file(rel_path):
         return False, rel_path, "skipped_invalid_name"
 
     raw_df = read_csv_fast(file_path)
-    if not has_minimum_rows(raw_df, season_start_year):
+    if not has_minimum_rows(raw_df, season_start_year, os.path.basename(rel_path)):
         return False, rel_path, "skipped_insufficient_data"
 
     processed_df = convert_mls_raw_to_standard(raw_df)
