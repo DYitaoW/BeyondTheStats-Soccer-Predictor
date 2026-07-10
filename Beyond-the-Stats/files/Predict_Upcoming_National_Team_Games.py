@@ -9,6 +9,7 @@ import threading
 
 import pandas as pd
 
+import football_data_api as fda
 import Process_National_Team_Data as national
 
 
@@ -196,9 +197,13 @@ def fetch_football_data_upcoming_fixtures(api_token, window_days, world_cup_only
     end = today + timedelta(days=max(0, int(window_days)))
     headers = {"X-Auth-Token": api_token}
     wanted_names = set(competition_configs(world_cup_only=world_cup_only).keys())
-    for competition_code, competition_name in national.FOOTBALL_DATA_COMPETITIONS.items():
-        if competition_name not in wanted_names:
-            continue
+    api_competitions = [
+        (code, name)
+        for code, name in national.FOOTBALL_DATA_COMPETITIONS.items()
+        if name in wanted_names
+    ]
+    for index, (competition_code, competition_name) in enumerate(api_competitions):
+        fda.wait_between_competition_requests(competition_name, is_first=index == 0)
         query = urllib.parse.urlencode(
             {
                 "dateFrom": today.strftime("%Y-%m-%d"),
@@ -208,7 +213,7 @@ def fetch_football_data_upcoming_fixtures(api_token, window_days, world_cup_only
         )
         url = f"{national.FOOTBALL_DATA_API_BASE}/competitions/{competition_code}/matches?{query}"
         try:
-            payload = national.fetch_json(url, headers=headers, timeout=45)
+            payload = fda.fetch_json(url, headers=headers, timeout=45, competition_name=competition_name)
         except urllib.error.HTTPError as error:
             if error.code == 401:
                 raise RuntimeError("football-data.org API token is invalid.") from error
