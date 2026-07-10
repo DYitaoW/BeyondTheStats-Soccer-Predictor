@@ -25,6 +25,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+import team_mapping_groups as tmg
+
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GLOBAL_PREDICTIONS_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv")
@@ -642,29 +644,32 @@ def drop_completed_rows(frame, today=None):
 def resolve_espn_team_name(raw_name, competition, mapping_by_competition, predicted_team_names):
     raw = str(raw_name or "").strip()
     if not raw:
-        return ""
-    comp_map = mapping_by_competition.get(competition, {}) if isinstance(mapping_by_competition, dict) else {}
+        return "", False
 
-    direct = str(comp_map.get(raw, "")).strip()
-    if direct:
-        return direct, True
+    canonical, _source = tmg.lookup_mapped_name(raw, competition, mapping_by_competition)
+    if canonical:
+        return canonical, True
 
-    raw_key = normalize_team_key(raw)
+    predicted_team_names = set(predicted_team_names or [])
+    raw_key = tmg.normalize_team_key(raw)
 
-    # Try normalized lookup against mapping keys.
-    for map_key, map_val in comp_map.items():
-        if normalize_team_key(map_key) == raw_key:
-            mapped = str(map_val).strip()
-            if mapped:
-                return mapped, True
+    # Normalized lookup across all related country/international mapping sections.
+    for source_comp in tmg.mapping_lookup_competitions(competition, mapping_by_competition):
+        comp_map = mapping_by_competition.get(source_comp, {})
+        if not isinstance(comp_map, dict):
+            continue
+        for map_key, map_val in comp_map.items():
+            if tmg.normalize_team_key(map_key) == raw_key:
+                mapped = str(map_val).strip()
+                if mapped:
+                    return mapped, True
 
-    # Direct match against prediction team names.
     if raw in predicted_team_names:
         return raw, True
 
     by_key = {}
     for team in predicted_team_names:
-        by_key.setdefault(normalize_team_key(team), []).append(team)
+        by_key.setdefault(tmg.normalize_team_key(team), []).append(team)
     candidates = by_key.get(raw_key, [])
     if len(candidates) == 1:
         return candidates[0], True

@@ -21,6 +21,7 @@ if PROJECT_DIR not in sys.path:
 import Download_Latest_Data as download_latest
 import Predict_Match as pm
 import season_calendar
+import team_mapping_groups as tmg
 import UEFA_Data_Manager as uefa
 
 # --- CONFIGURATION CONSTANTS ---
@@ -944,8 +945,8 @@ def resolve_leagues_cup_team(raw_name, mapping, context):
     return None
 
 
-def resolve_live_team_name(raw_name, competition, context):
-    valid_names = context["available_teams"]
+def resolve_live_team_name(raw_name, competition, context, mapping=None):
+    valid_names = tmg.candidate_teams_for_competition(competition, context)
 
     manual_override = MANUAL_TEAM_OVERRIDES.get(str(raw_name).strip())
     if manual_override:
@@ -954,27 +955,16 @@ def resolve_live_team_name(raw_name, competition, context):
         if manual_override in context["available_teams"]:
             return manual_override
 
+    if mapping is not None:
+        canonical, _source = tmg.lookup_mapped_name(raw_name, competition, mapping)
+        if canonical and canonical in context["available_teams"]:
+            return canonical
+
     direct = pm.resolve_team_name(raw_name, valid_names)
     if direct:
         return direct
 
-    key = normalize_team_key(raw_name)
-    if not key:
-        return None
-
-    by_key = {normalize_team_key(team): team for team in valid_names}
-    if key in by_key:
-        return by_key[key]
-
-    contains = [team for team in valid_names if key in normalize_team_key(team)]
-    if len(contains) == 1:
-        return contains[0]
-
-    candidates = list(by_key.keys())
-    close = difflib.get_close_matches(key, candidates, n=1, cutoff=0.88)
-    if close:
-        return by_key[close[0]]
-    return None
+    return tmg.fuzzy_resolve_team_name(raw_name, valid_names)
 
 
 def canonical_names_by_competition(context):
@@ -1023,12 +1013,19 @@ def update_team_mapping_from_fixtures(fixtures, context, mapping):
                 continue
             existing = str(updated[competition].get(api_name, "")).strip()
             if not existing:
-                if api_name in canonical_names:
-                    updated[competition][api_name] = api_name
-                else:
-                    updated[competition][api_name] = ""
-                    blanks_added += 1
+                resolved = resolve_live_team_name(api_name, competition, context, mapping=updated)
+                target = resolved if resolved else (api_name if api_name in canonical_names else "")
+                tmg.store_team_mapping(
+                    updated,
+                    competition,
+                    api_name,
+                    target,
+                    propagate_country=True,
+                    propagate_international=tmg.is_international_competition(competition),
+                )
                 new_entries += 1
+                if not target:
+                    blanks_added += 1
             elif existing:
                 continue
 
@@ -1042,21 +1039,17 @@ def apply_team_mapping_to_fixtures(fixtures, mapping, context):
     def mapped_name(competition, api_name):
         competition = str(competition).strip()
         api_name = str(api_name).strip()
-        direct = str(mapping.get(competition, {}).get(api_name, "")).strip()
-        if direct:
-            if direct in known_teams:
-                return direct
-            return ""
+        canonical, _source = tmg.lookup_mapped_name(api_name, competition, mapping)
+        if canonical and canonical in known_teams:
+            return canonical
         if api_name in known_teams:
             return api_name
         if api_name in context.get("preseason_known_teams", set()):
             return api_name
         if competition in UEFA_CUP_COMPETITIONS:
-            # UEFA qualifying/preseason fixtures often include clubs that are
-            # not in the trained database yet. Preserve the API name so
-            # inject_fallback_team() can synthesize stats from UEFA country
-            # coefficients, league context, domestic table data, and squad
-            # values rather than skipping the fixture outright.
+            resolved = resolve_live_team_name(api_name, competition, context, mapping=mapping)
+            if resolved:
+                return resolved
             return api_name
         if competition in CROSS_LEAGUE_CUP_COMPETITIONS:
             resolved = resolve_leagues_cup_team(api_name, mapping, context)
@@ -1064,9 +1057,12 @@ def apply_team_mapping_to_fixtures(fixtures, mapping, context):
                 return resolved
             return api_name
         if competition in AUTO_RESOLVE_CUP_COMPETITIONS:
-            resolved = resolve_live_team_name(api_name, competition, context)
+            resolved = resolve_live_team_name(api_name, competition, context, mapping=mapping)
             if resolved:
                 return resolved
+        resolved = resolve_live_team_name(api_name, competition, context, mapping=mapping)
+        if resolved:
+            return resolved
         return ""
 
     mapped["mapped_home_team"] = mapped.apply(

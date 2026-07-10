@@ -29,6 +29,7 @@ import pandas as pd
 import Download_Latest_Data as download_latest
 import Predict_Match as pm
 import season_calendar
+import team_mapping_groups as tmg
 import UEFA_Data_Manager as uefa
 
 
@@ -417,10 +418,9 @@ def append_only_mapping_from_fixtures(fixtures, context, mapping):
     return normalized, added, blanks_added
 
 
-def resolve_live_team_name(raw_name, competition, context):
+def resolve_live_team_name(raw_name, competition, context, mapping=None):
     team_competition_map = context["team_competition_map"]
-    comp_candidates = [team for team in context["available_teams"] if team_competition_map.get(team) == competition]
-    valid_names = comp_candidates if comp_candidates else context["available_teams"]
+    valid_names = tmg.candidate_teams_for_competition(competition, context)
 
     manual_override = MANUAL_TEAM_OVERRIDES.get(str(raw_name).strip())
     if manual_override:
@@ -429,32 +429,17 @@ def resolve_live_team_name(raw_name, competition, context):
         if manual_override in context["available_teams"]:
             return manual_override
 
+    if mapping is not None:
+        canonical, _source = tmg.lookup_mapped_name(raw_name, competition, mapping)
+        if canonical and canonical in context["available_teams"]:
+            return canonical
+
     direct = pm.resolve_team_name(raw_name, valid_names)
     if direct:
         return direct
 
-    key = normalize_team_key(raw_name)
-    if not key:
-        return None
-
-    by_key = {normalize_team_key(team): team for team in valid_names}
-    if key in by_key:
-        return by_key[key]
-
-    # Catch API names like "Newcastle United FC" when the canonical project name is just "Newcastle".
-    contained_by_raw = [team for team in valid_names if normalize_team_key(team) and normalize_team_key(team) in key]
-    if len(contained_by_raw) == 1:
-        return contained_by_raw[0]
-
-    contains = [team for team in valid_names if key in normalize_team_key(team)]
-    if len(contains) == 1:
-        return contains[0]
-
-    candidates = list(by_key.keys())
-    close = difflib.get_close_matches(key, candidates, n=1, cutoff=0.88)
-    if close:
-        return by_key[close[0]]
-    return None
+    resolved = tmg.fuzzy_resolve_team_name(raw_name, valid_names)
+    return resolved
 
 
 def update_team_mapping_from_fixtures(fixtures, context, mapping):
@@ -462,6 +447,14 @@ def update_team_mapping_from_fixtures(fixtures, context, mapping):
     new_entries = 0
     changed_entries = 0
     valid_names = set(context.get("available_teams", []))
+    country_teams_cache: dict[str, set[str]] = {}
+
+    def country_team_set(competition: str) -> set[str]:
+        if competition not in country_teams_cache:
+            country_teams_cache[competition] = set(
+                tmg.candidate_teams_for_competition(competition, context)
+            )
+        return country_teams_cache[competition]
 
     # Keep only API names that appear in the current fixture pull for each competition.
     api_names_by_comp = {}
@@ -490,11 +483,15 @@ def update_team_mapping_from_fixtures(fixtures, context, mapping):
             mapped_value = str(mapped_name).strip()
             if api_key not in allowed_api_names:
                 continue
-            if mapped_value in valid_names:
+            if mapped_value in valid_names or mapped_value in country_team_set(competition):
                 cleaned[api_key] = mapped_value
             else:
-                resolved = resolve_live_team_name(api_key, competition, context)
-                cleaned[api_key] = resolved if resolved else ""
+                cross, _source = tmg.lookup_mapped_name(api_key, competition, updated)
+                if cross and cross in valid_names:
+                    cleaned[api_key] = cross
+                else:
+                    resolved = resolve_live_team_name(api_key, competition, context, mapping=updated)
+                    cleaned[api_key] = resolved if resolved else ""
         updated[competition] = cleaned
 
     for _, row in fixtures.iterrows():
@@ -507,14 +504,29 @@ def update_team_mapping_from_fixtures(fixtures, context, mapping):
             api_name = str(row.get(side_col, "")).strip()
             if not api_name:
                 continue
-            resolved = resolve_live_team_name(api_name, competition, context)
+            resolved = resolve_live_team_name(api_name, competition, context, mapping=updated)
             target = resolved if resolved else ""
 
             existing = str(updated[competition].get(api_name, "")).strip()
             if not existing:
-                updated[competition][api_name] = target
+                tmg.store_team_mapping(
+                    updated,
+                    competition,
+                    api_name,
+                    target,
+                    propagate_country=True,
+                    propagate_international=tmg.is_international_competition(competition),
+                )
                 new_entries += 1
-            elif existing != target:
+            elif existing != target and target:
+                tmg.store_team_mapping(
+                    updated,
+                    competition,
+                    api_name,
+                    target,
+                    propagate_country=True,
+                    propagate_international=tmg.is_international_competition(competition),
+                )
                 changed_entries += 1
 
     return updated, new_entries, changed_entries
@@ -527,13 +539,14 @@ def apply_team_mapping_to_fixtures(fixtures, mapping, context):
     def mapped_name(competition, api_name):
         competition = str(competition)
         api_name = str(api_name)
-        comp_map = mapping.get(competition, {})
 
-        direct = str(comp_map.get(api_name, "")).strip()
-        if direct:
-            if direct in known_teams:
-                return direct
-            return ""
+        canonical, _source = tmg.lookup_mapped_name(api_name, competition, mapping)
+        if canonical and canonical in known_teams:
+            return canonical
+
+        resolved = resolve_live_team_name(api_name, competition, context, mapping=mapping)
+        if resolved and resolved in known_teams:
+            return resolved
 
         # If API name already matches canonical raw-data team name, use it.
         if api_name in known_teams:

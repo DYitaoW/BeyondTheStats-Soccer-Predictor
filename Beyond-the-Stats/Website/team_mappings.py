@@ -17,6 +17,7 @@ if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 import season_calendar
+import team_mapping_groups as tmg
 
 # Extra-league ESPN feeds not always present in LIVE_SCORE_COMPETITIONS.
 EXTRA_ESPN_COMPETITIONS = {
@@ -153,7 +154,7 @@ def _unmapped_from_upcoming_csv(path: str, master: dict) -> list[dict]:
                     canonical = str(row.get(canonical_col, "")).strip()
                     if not api_name:
                         continue
-                    is_mapped, reason, mapped_to = _mapping_status(comp_map, api_name)
+                    is_mapped, reason, mapped_to = _mapping_status(comp_map, api_name, competition, master)
                     if is_mapped and mapped_to == canonical and canonical:
                         continue
                     if schedule_only or not is_mapped:
@@ -184,8 +185,12 @@ def _dedupe_unmapped_rows(rows: list[dict]) -> list[dict]:
     return sorted(out, key=lambda item: (str(item.get("competition", "")).lower(), str(item.get("api_name", "")).lower()))
 
 
-def _mapping_status(comp_map: dict, api_name: str) -> tuple[bool, str, str | None]:
-    """Return (is_mapped, reason, mapped_to) for one ESPN API team name."""
+def _mapping_status(comp_map: dict, api_name: str, competition: str, master: dict) -> tuple[bool, str, str | None]:
+    """Return (is_mapped, reason, mapped_to) for one API team name."""
+    canonical, source = tmg.lookup_mapped_name(api_name, competition, master)
+    if canonical:
+        return True, f"mapped_via_{source}", canonical
+
     if not isinstance(comp_map, dict) or api_name not in comp_map:
         return False, "missing", None
     mapped_to = str(comp_map.get(api_name, "")).strip()
@@ -220,7 +225,7 @@ def build_unmapped_espn_payload(
         espn_teams, fixture_count = _fetch_upcoming_espn_teams(competition, espn_id, comp_lookahead)
         unmapped_rows = []
         for api_name in sorted(espn_teams, key=str.lower):
-            is_mapped, reason, mapped_to = _mapping_status(comp_map, api_name)
+            is_mapped, reason, mapped_to = _mapping_status(comp_map, api_name, competition, master)
             if is_mapped:
                 continue
             unmapped_rows.append(
