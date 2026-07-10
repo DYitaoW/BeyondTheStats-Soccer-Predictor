@@ -110,6 +110,9 @@ def enforce_mutation_auth(f):
         if _mutation_auth_ok():
             return f()
 
+        if request.path in {"/api/refresh", "/api/retrain"} and _refresh_auth_ok():
+            return f()
+
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     return wrapper
 
@@ -180,6 +183,8 @@ def register_auth_handlers(app):
             return None
 
         if _mutation_auth_ok():
+            return None
+        if request.path in {"/api/refresh", "/api/retrain"} and _refresh_auth_ok():
             return None
 
         return jsonify({"ok": False, "error": "Unauthorized"}), 401

@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections import defaultdict
@@ -1842,51 +1843,70 @@ def run_live_results_updater():
         print(f"[startup] Live updater error: {exc}")
 
 
-def _run_full_pipeline_once():
-    """Run full data/model refresh pipeline and reload in-memory predictor contexts."""
-    global _ctx_global, _ctx_mls, _ctx_extra, _last_pipeline_run
-    if not os.path.exists(config.RUN_ALL_PIPELINE):
-        print(f"[refresh] Pipeline runner not found: {config.RUN_ALL_PIPELINE}")
-        return False
-    try:
-        proc = subprocess.run(
-            [sys.executable, config.RUN_ALL_PIPELINE],
-            cwd=config.PROJECT_DIR,
-            timeout=3600,
-            check=False,
-        )
-        if proc.returncode != 0:
-            print(f"[refresh] Daily pipeline failed with rc={proc.returncode}.")
-            _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
-            _save_last_refresh()
-            return False
-        print("[refresh] Daily pipeline finished successfully.")
-    except subprocess.TimeoutExpired:
-        print("[refresh] Daily pipeline timed out after 3600s.")
-        return False
-    except Exception as exc:
-        print(f"[refresh] Daily pipeline error: {exc}")
-        return False
-
-    _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
-    _save_last_refresh()
+def _invalidate_prediction_caches(*, reload_contexts: bool = False) -> None:
+    """Clear in-memory predictor state and Redis API caches after a pipeline run."""
+    global _ctx_global, _ctx_mls, _ctx_extra
     with _ctx_lock:
         _ctx_global = None
         _ctx_mls = None
         _ctx_extra = None
     _static_predictions_cache.clear()
     _static_team_cache.clear()
-    from accuracy_tracker import update_accuracy_history_files
-    update_accuracy_history_files()
-    if not config.STATIC_PREDICTIONS:
+    try:
+        from cache import _cache_clear_pattern
+        _cache_clear_pattern()
+    except Exception:
+        pass
+    try:
+        from standings import _clear_all_real_data_caches
+        _clear_all_real_data_caches()
+    except Exception:
+        pass
+    if reload_contexts and not config.STATIC_PREDICTIONS:
         try:
-            # Warm both contexts so API requests do not pay first-load penalty.
             get_context("global")
             get_context("mls")
             get_context("extra")
             print("[refresh] Model contexts reloaded successfully.")
         except Exception as exc:
             print(f"[refresh] Context reload warning: {exc}")
+
+
+def _run_full_pipeline_once(*, full_retrain: bool = True):
+    """Run data/model refresh pipeline and reload in-memory predictor contexts."""
+    global _last_pipeline_run
+    if not os.path.exists(config.RUN_ALL_PIPELINE):
+        print(f"[refresh] Pipeline runner not found: {config.RUN_ALL_PIPELINE}")
+        return False
+    cmd = [sys.executable, config.RUN_ALL_PIPELINE]
+    if not full_retrain:
+        cmd.append("--skip-model-train")
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=config.PROJECT_DIR,
+            timeout=3600,
+            check=False,
+        )
+        if proc.returncode != 0:
+            print(f"[refresh] Pipeline failed with rc={proc.returncode}.")
+            _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
+            _save_last_refresh()
+            return False
+        print(f"[refresh] Pipeline finished successfully (full_retrain={full_retrain}).")
+    except subprocess.TimeoutExpired:
+        print("[refresh] Pipeline timed out after 3600s.")
+        return False
+    except Exception as exc:
+        print(f"[refresh] Pipeline error: {exc}")
+        return False
+
+    _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
+    _save_last_refresh()
+    _save_last_data_refresh()
+    _invalidate_prediction_caches(reload_contexts=True)
+    from accuracy_tracker import update_accuracy_history_files
+    update_accuracy_history_files()
     return True
 
 
@@ -2212,10 +2232,10 @@ def _json_safe_row(row: dict) -> dict:
 
 
 def archive_todays_games_to_past_games_file() -> int:
-    """Copy today's enriched upcoming rows into past_games.json.
+    """Upsert recent enriched completed rows into past_games.json.
 
     Uses the same enriched row shape as ``/api/upcoming/*`` so
-    ``/api/past-games`` can serve identical payloads for the current date.
+    ``/api/past-games`` can serve identical payloads for the retained window.
     Intended to run at the end of the daily pipeline after predictions
     are refreshed and results are settled.
     """
@@ -2246,7 +2266,7 @@ def archive_todays_games_to_past_games_file() -> int:
             continue
         for row in rows:
             date_iso = _past_row_date_iso(row)
-            if date_iso != today_str:
+            if not date_iso or date_iso < cutoff_str or date_iso > today_str:
                 continue
             if _is_placeholder_game(row):
                 continue
@@ -2258,17 +2278,18 @@ def archive_todays_games_to_past_games_file() -> int:
             stored["match_date_iso"] = date_iso
             all_rows.append(stored)
 
-    if not all_rows:
-        print("[past-games] No rows for today to archive.")
-        return 0
-
     existing_by_key: dict[str, dict] = {}
     if os.path.exists(config.PAST_GAMES_FILE):
         try:
             with open(config.PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
                 existing = json.load(fh)
-        except Exception:
-            existing = []
+            if not isinstance(existing, list):
+                raise ValueError("past_games.json must contain a JSON list")
+        except Exception as exc:
+            # A damaged archive must never be replaced with only the current
+            # run's rows. Leave it untouched for recovery.
+            print(f"[past-games] Refusing to overwrite unreadable archive: {exc}")
+            return 0
     else:
         existing = []
 
@@ -2293,15 +2314,30 @@ def archive_todays_games_to_past_games_file() -> int:
             inserted += 1
 
     before = len(existing_by_key)
-    merged = [r for r in existing_by_key.values() if _past_row_date_iso(r) >= cutoff_str]
+    # Keep rows whose date cannot be parsed rather than deleting potentially
+    # recoverable records. Valid rows expire only before the previous full week.
+    merged = [
+        r for r in existing_by_key.values()
+        if not _past_row_date_iso(r) or _past_row_date_iso(r) >= cutoff_str
+    ]
     pruned = before - len(merged)
 
     os.makedirs(os.path.dirname(config.PAST_GAMES_FILE), exist_ok=True)
-    with open(config.PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
-        json.dump(merged, fh, indent=2, ensure_ascii=False, default=str)
+    fd, temporary_path = tempfile.mkstemp(
+        prefix=".past-games-", suffix=".json", dir=os.path.dirname(config.PAST_GAMES_FILE)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(merged, fh, indent=2, ensure_ascii=False, default=str)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temporary_path, config.PAST_GAMES_FILE)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
 
     print(
-        f"[past-games] Archived {len(all_rows)} today row(s) "
+        f"[past-games] Archived {len(all_rows)} recent row(s) "
         f"({inserted} new, {replaced} replaced), pruned {pruned} old "
         f"→ past_games.json ({len(merged)} total)"
     )

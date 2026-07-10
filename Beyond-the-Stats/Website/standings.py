@@ -2,8 +2,12 @@
 import json
 import os
 import re
+import tempfile
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+import fcntl
 
 import pandas as pd
 
@@ -174,10 +178,147 @@ def _load_live_score_history():
     return filtered
 
 
+_live_history_write_lock = threading.Lock()
+
+
+def _live_history_cutoff(as_of=None):
+    """Start of the previous full week (Monday), in Eastern time."""
+    today = as_of or datetime.now(ZoneInfo("America/New_York")).date()
+    current_week_start = today - timedelta(days=today.weekday())
+    return current_week_start - timedelta(days=7)
+
+
+def _live_history_game_date(game):
+    for field in ("kickoff_utc", "match_datetime_utc", "completed_at", "match_date_iso", "match_date"):
+        raw = str(game.get(field, "") or "").strip()
+        if not raw:
+            continue
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+            try:
+                return datetime.strptime(raw, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+        try:
+            parsed = pd.to_datetime(raw, utc=True, errors="coerce")
+            if pd.notna(parsed):
+                return parsed.tz_convert("America/New_York").date()
+        except Exception:
+            continue
+    return None
+
+
+def _live_history_game_key(game):
+    match_id = str(game.get("match_id", "") or "").strip()
+    if match_id:
+        return f"id:{match_id}"
+    game_date = _live_history_game_date(game)
+    competition = str(game.get("competition", "") or "").strip().lower()
+    home = str(game.get("home_team", "") or "").strip().lower()
+    away = str(game.get("away_team", "") or "").strip().lower()
+    if game_date and home and away:
+        return f"fixture:{game_date.isoformat()}|{competition}|{home}|{away}"
+    return ""
+
+
+def _read_live_history_strict():
+    if not os.path.exists(config.LIVE_SCORE_HISTORY_FILE):
+        return []
+    with open(config.LIVE_SCORE_HISTORY_FILE, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, list):
+        raise ValueError("live score history must be a JSON list")
+    return [row for row in payload if isinstance(row, dict)]
+
+
+def _atomic_write_live_history(games):
+    directory = os.path.dirname(config.LIVE_SCORE_HISTORY_FILE)
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary_path = tempfile.mkstemp(prefix=".live-score-history-", suffix=".json", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(games, handle, indent=2, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, config.LIVE_SCORE_HISTORY_FILE)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+
+
+def _upsert_live_score_history(games, as_of=None):
+    """Append/update history without allowing an empty poll to erase the file.
+
+    Writes are process- and cross-process locked, atomic, deduplicated, and
+    retain the current week plus the previous full week. Rows with no parseable
+    date are kept rather than silently discarded.
+    """
+    incoming = [dict(game) for game in (games or []) if isinstance(game, dict)]
+    if not incoming:
+        return {"inserted": 0, "updated": 0, "pruned": 0, "total": len(_load_live_score_history())}
+
+    lock_path = f"{config.LIVE_SCORE_HISTORY_FILE}.lock"
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    with _live_history_write_lock:
+        with open(lock_path, "a+", encoding="utf-8") as lock_handle:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            try:
+                existing = _read_live_history_strict()
+                by_key = {}
+                keyless = []
+                for row in existing:
+                    key = _live_history_game_key(row)
+                    if key:
+                        by_key[key] = row
+                    else:
+                        keyless.append(row)
+
+                inserted = 0
+                updated = 0
+                for row in incoming:
+                    key = _live_history_game_key(row)
+                    if not key:
+                        keyless.append(row)
+                        inserted += 1
+                        continue
+                    if key in by_key:
+                        merged = dict(by_key[key])
+                        merged.update({k: v for k, v in row.items() if v not in (None, "")})
+                        by_key[key] = merged
+                        updated += 1
+                    else:
+                        by_key[key] = row
+                        inserted += 1
+
+                cutoff = _live_history_cutoff(as_of)
+                combined = list(by_key.values()) + keyless
+                retained = [
+                    row for row in combined
+                    if _live_history_game_date(row) is None or _live_history_game_date(row) >= cutoff
+                ]
+                pruned = len(combined) - len(retained)
+                retained.sort(
+                    key=lambda row: str(
+                        row.get("kickoff_utc")
+                        or row.get("match_datetime_utc")
+                        or row.get("completed_at")
+                        or ""
+                    ),
+                    reverse=True,
+                )
+                _atomic_write_live_history(retained)
+                return {
+                    "inserted": inserted,
+                    "updated": updated,
+                    "pruned": pruned,
+                    "total": len(retained),
+                }
+            finally:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
 def _save_live_score_history(games):
-    os.makedirs(os.path.dirname(config.LIVE_SCORE_HISTORY_FILE), exist_ok=True)
-    with open(config.LIVE_SCORE_HISTORY_FILE, "w") as f:
-        json.dump(games, f, indent=2)
+    """Compatibility wrapper: merge supplied rows instead of replacing history."""
+    return _upsert_live_score_history(games)
 
 
 BELGIAN_REGULAR_LIMIT = 30  # 16 teams × 2 rounds
@@ -717,6 +858,14 @@ def _clear_leaders_cache(comp_name):
     """Force next fetch of *comp_name* leaders to hit ESPN."""
     with _real_leaders_lock:
         _real_leaders.pop(comp_name, None)
+
+
+def _clear_all_real_data_caches():
+    """Drop all in-memory ESPN standings/leaders caches (e.g. after pipeline refresh)."""
+    with _real_tables_lock:
+        _real_tables.clear()
+    with _real_leaders_lock:
+        _real_leaders.clear()
 
 def _fill_placeholder_tables(data):
     """Fill ``data["tables"]`` with zero-stat team entries from league_teams.json

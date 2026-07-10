@@ -40,9 +40,10 @@ from standings import (
     _clear_standings_cache,
     _compute_standings_from_history,
     _load_live_score_history,
+    _live_history_cutoff,
     _real_tables,
     _real_tables_lock,
-    _save_live_score_history,
+    _upsert_live_score_history,
 )
 
 _live_scores: dict[str, dict] = {}
@@ -121,9 +122,7 @@ def _merge_completed_to_history():
         _clear_standings_cache(comp)
         _clear_leaders_cache(comp)
     if new_games:
-        history.extend(new_games)
-        history.sort(key=lambda x: x.get("kickoff_utc", ""), reverse=True)
-        _save_live_score_history(history)
+        _upsert_live_score_history(new_games)
     # Track predictions for newly completed games against our CSV predictions.
     if new_games:
         _track_prediction_results(new_games)
@@ -138,6 +137,46 @@ def _effective_poller_date():
     if now_et.hour < 2:
         return (now_et - timedelta(days=1)).date()
     return now_et.date()
+
+
+def _backfill_recent_live_score_history():
+    """Recover the retained history window from ESPN at poller startup."""
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    date_range = f"{_live_history_cutoff(today).strftime('%Y%m%d')}-{today.strftime('%Y%m%d')}"
+    competitions = {}
+    for comp_name, espn_id in config.LIVE_SCORE_COMPETITIONS.items():
+        if espn_id and espn_id not in competitions:
+            competitions[espn_id] = comp_name
+
+    completed = []
+    if competitions:
+        with ThreadPoolExecutor(max_workers=min(8, len(competitions))) as pool:
+            futures = {
+                pool.submit(_fetch_competition_scores, comp_name, espn_id, date_range): comp_name
+                for espn_id, comp_name in competitions.items()
+            }
+            for future in as_completed(futures):
+                comp_name = futures[future]
+                try:
+                    games = future.result()
+                except Exception:
+                    continue
+                for game in games:
+                    if str(game.get("status", "")).strip().lower() != "post":
+                        continue
+                    entry = dict(game)
+                    entry.setdefault("competition", comp_name)
+                    entry.setdefault("completed_at", datetime.now(timezone.utc).isoformat())
+                    completed.append(entry)
+
+    if completed:
+        result = _upsert_live_score_history(completed, as_of=today)
+        print(
+            "[live-history] ESPN retained-window backfill: "
+            f"{len(completed)} final(s), {result['inserted']} inserted, "
+            f"{result['updated']} updated, {result['total']} total."
+        )
+    return len(completed)
 
 
 def _uefa_live_scoring_allowed_for_comp(comp_name: str) -> bool:
@@ -389,6 +428,11 @@ def _live_score_poller_loop():
     todays_comps = {}
     active_comps = {}
     results = {}
+    try:
+        _backfill_recent_live_score_history()
+    except Exception:
+        import traceback
+        traceback.print_exc()
     while True:
         try:
             poll_date = _effective_poller_date()
@@ -442,25 +486,29 @@ def _live_score_poller_loop():
                     # Save any in-progress games that started yesterday but
                     # haven't finished yet so they persist in history.
                     now_utc = datetime.now(timezone.utc)
+                    pending_history = []
                     for comp_name, comp_data in list(_live_scores.items()):
                         for g in comp_data.get("games", []):
                             if g.get("status") not in ("post", "in"):
                                 continue
-                            mid = g.get("match_id")
-                            if not mid:
-                                continue
-                            history = _load_live_score_history()
-                            historic_ids = {h["match_id"] for h in history if h.get("match_id")}
-                            if mid not in historic_ids:
-                                entry = dict(g)
-                                entry.setdefault("competition", comp_name)
-                                entry.setdefault("completed_at", now_utc.isoformat())
-                                history.append(entry)
-                                _save_live_score_history(history)
-                    _live_scores.clear()
-                    with _live_summary_cache_lock:
-                        _live_summary_cache.clear()
-                    _live_score_poller_loop._poller_date = _poller_day_str
+                            entry = dict(g)
+                            entry.setdefault("competition", comp_name)
+                            entry.setdefault("completed_at", now_utc.isoformat())
+                            pending_history.append(entry)
+                    try:
+                        if pending_history:
+                            _upsert_live_score_history(pending_history)
+                        # An empty day performs no write. Only clear the
+                        # in-memory day after any pending rows were persisted.
+                        _live_scores.clear()
+                        with _live_summary_cache_lock:
+                            _live_summary_cache.clear()
+                        _live_score_poller_loop._poller_date = _poller_day_str
+                    except Exception:
+                        # Keep yesterday's in-memory data and retry next cycle;
+                        # never trade a persistence error for data loss.
+                        import traceback
+                        traceback.print_exc()
                 # Merge new results into existing so finished games persist.
                 for comp_name, comp_data in results.items():
                     new_games = comp_data.get("games", [])
