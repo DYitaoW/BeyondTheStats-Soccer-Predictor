@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections import defaultdict
@@ -2231,10 +2232,10 @@ def _json_safe_row(row: dict) -> dict:
 
 
 def archive_todays_games_to_past_games_file() -> int:
-    """Copy today's enriched upcoming rows into past_games.json.
+    """Upsert recent enriched completed rows into past_games.json.
 
     Uses the same enriched row shape as ``/api/upcoming/*`` so
-    ``/api/past-games`` can serve identical payloads for the current date.
+    ``/api/past-games`` can serve identical payloads for the retained window.
     Intended to run at the end of the daily pipeline after predictions
     are refreshed and results are settled.
     """
@@ -2265,7 +2266,7 @@ def archive_todays_games_to_past_games_file() -> int:
             continue
         for row in rows:
             date_iso = _past_row_date_iso(row)
-            if date_iso != today_str:
+            if not date_iso or date_iso < cutoff_str or date_iso > today_str:
                 continue
             if _is_placeholder_game(row):
                 continue
@@ -2277,17 +2278,18 @@ def archive_todays_games_to_past_games_file() -> int:
             stored["match_date_iso"] = date_iso
             all_rows.append(stored)
 
-    if not all_rows:
-        print("[past-games] No rows for today to archive.")
-        return 0
-
     existing_by_key: dict[str, dict] = {}
     if os.path.exists(config.PAST_GAMES_FILE):
         try:
             with open(config.PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
                 existing = json.load(fh)
-        except Exception:
-            existing = []
+            if not isinstance(existing, list):
+                raise ValueError("past_games.json must contain a JSON list")
+        except Exception as exc:
+            # A damaged archive must never be replaced with only the current
+            # run's rows. Leave it untouched for recovery.
+            print(f"[past-games] Refusing to overwrite unreadable archive: {exc}")
+            return 0
     else:
         existing = []
 
@@ -2312,15 +2314,30 @@ def archive_todays_games_to_past_games_file() -> int:
             inserted += 1
 
     before = len(existing_by_key)
-    merged = [r for r in existing_by_key.values() if _past_row_date_iso(r) >= cutoff_str]
+    # Keep rows whose date cannot be parsed rather than deleting potentially
+    # recoverable records. Valid rows expire only before the previous full week.
+    merged = [
+        r for r in existing_by_key.values()
+        if not _past_row_date_iso(r) or _past_row_date_iso(r) >= cutoff_str
+    ]
     pruned = before - len(merged)
 
     os.makedirs(os.path.dirname(config.PAST_GAMES_FILE), exist_ok=True)
-    with open(config.PAST_GAMES_FILE, "w", encoding="utf-8") as fh:
-        json.dump(merged, fh, indent=2, ensure_ascii=False, default=str)
+    fd, temporary_path = tempfile.mkstemp(
+        prefix=".past-games-", suffix=".json", dir=os.path.dirname(config.PAST_GAMES_FILE)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(merged, fh, indent=2, ensure_ascii=False, default=str)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temporary_path, config.PAST_GAMES_FILE)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
 
     print(
-        f"[past-games] Archived {len(all_rows)} today row(s) "
+        f"[past-games] Archived {len(all_rows)} recent row(s) "
         f"({inserted} new, {replaced} replaced), pruned {pruned} old "
         f"→ past_games.json ({len(merged)} total)"
     )

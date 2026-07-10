@@ -228,6 +228,50 @@ _ALL_UPCOMING_SOURCES = [
 ]
 
 
+def _regional_espn_schedule_fallback(existing_rows):
+    """Add schedule-only MLS/Liga MX rows when the generated MLS CSV is absent/empty."""
+    rows = list(existing_rows or [])
+    present = {
+        str(row.get("competition", "")).strip()
+        for row in rows
+        if str(row.get("competition", "")).strip()
+    }
+    for competition in ("United States/MLS", "Mexico/Liga MX"):
+        if competition in present:
+            continue
+        espn_id = config.LIVE_SCORE_COMPETITIONS.get(competition)
+        if not espn_id:
+            continue
+        try:
+            games = _fetch_competition_schedule(competition, espn_id, days_forward=365) or []
+        except Exception:
+            games = []
+        for game in games:
+            if str(game.get("status", "")).strip().lower() not in ("", "pre"):
+                continue
+            match_date = str(game.get("match_date", "") or "").strip()
+            home = _team_name_for_display(game.get("home_team", ""))
+            away = _team_name_for_display(game.get("away_team", ""))
+            if not match_date or not home or not away:
+                continue
+            rows.append({
+                "match_id": str(game.get("match_id", "") or ""),
+                "match_date": match_date,
+                "match_date_iso": match_date,
+                "match_datetime_et": str(game.get("kickoff_utc", "") or ""),
+                "competition": competition,
+                "home_team": home,
+                "away_team": away,
+                "schedule_only": True,
+                "has_prediction": False,
+                "prediction_quality": "no_prediction",
+                "prediction_note": "Fixture available; prediction pending team/model mapping.",
+                "live_updates": False,
+                "live_status": "scheduled",
+            })
+    return rows
+
+
 def _exclude_upcoming_only_rows(rows):
     """Drop competitions that have a dedicated upcoming source only."""
     blocked = config.UPCOMING_ONLY_COMPETITIONS | config.LEAGUE_API_EXCLUDED_COMPETITIONS
@@ -706,6 +750,21 @@ def api_upcoming(mode):
                 comp = ls.get("competition", "")
                 if comp and comp not in combined_league_stats:
                     combined_league_stats[comp] = ls
+        # The generated MLS source can be missing after an upstream provider
+        # returns no fixtures. Do not make both regional leagues disappear:
+        # expose ESPN schedule-only fixtures until predictions are regenerated.
+        all_rows = _regional_espn_schedule_fallback(all_rows)
+        seen_keys = set()
+        deduped_rows = []
+        for row in all_rows:
+            ck = "|".join(
+                str(row.get(k, "")).strip().lower()
+                for k in ("match_date_iso", "competition", "home_team", "away_team")
+            )
+            if ck and ck not in seen_keys:
+                seen_keys.add(ck)
+                deduped_rows.append(row)
+        all_rows = deduped_rows
         # Re-sort aggregated rows: date → league → time
         all_rows.sort(key=lambda r: (
             _row_date_iso(r),
@@ -727,6 +786,8 @@ def api_upcoming(mode):
         return jsonify({"ok": False, "error": f"Unknown mode: {mode}"}), 400
     csv_path, source_mode = entry
     rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode)
+    if mode == "mls":
+        rows = _regional_espn_schedule_fallback(rows)
     leagues = sorted({r.get("competition", "") for r in rows if r.get("competition")})
     return jsonify({
         "ok": True,
