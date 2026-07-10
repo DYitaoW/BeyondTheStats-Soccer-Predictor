@@ -73,6 +73,7 @@ from predictions import (
     _format_percent_value,
     _get_static_predictions,
     _is_placeholder_game,
+    _invalidate_prediction_caches,
     _load_all_fixtures_by_competition,
     _load_context,
     _load_current_season_tables,
@@ -941,17 +942,25 @@ def api_refresh():
 
     refresh_fn = app.config.get("_backend_refresh")
     if callable(refresh_fn):
-        refresh_fn(trigger="api", full_retrain=False)
+        started = refresh_fn(trigger="api", full_retrain=False)
+        if not started:
+            return jsonify({
+                "ok": False,
+                "queued": False,
+                "mode": "backend",
+                "full_retrain": False,
+                "error": "Pipeline already running or could not start.",
+            }), 409
         return jsonify({"ok": True, "queued": True, "mode": "backend", "full_retrain": False})
 
-    started = _run_full_pipeline_once()
+    started = _run_full_pipeline_once(full_retrain=False)
     return jsonify({
         "ok": bool(started),
         "queued": False,
         "mode": "inline",
-        "full_retrain": True,
-        "message": "Pipeline finished inline (no BackendServer hook registered).",
-    })
+        "full_retrain": False,
+        "message": "Light refresh finished inline (no BackendServer hook registered).",
+    }), (200 if started else 500)
 
 
 @app.post("/api/retrain")
@@ -966,7 +975,15 @@ def api_retrain():
 
     refresh_fn = app.config.get("_backend_refresh")
     if callable(refresh_fn):
-        refresh_fn(trigger="api-retrain", full_retrain=True)
+        started = refresh_fn(trigger="api-retrain", full_retrain=True)
+        if not started:
+            return jsonify({
+                "ok": False,
+                "queued": False,
+                "mode": "backend",
+                "full_retrain": True,
+                "error": "Pipeline already running or could not start.",
+            }), 409
         return jsonify({
             "ok": True,
             "queued": True,
@@ -975,14 +992,14 @@ def api_retrain():
             "message": "Full model retrain queued.",
         })
 
-    started = _run_full_pipeline_once()
+    started = _run_full_pipeline_once(full_retrain=True)
     return jsonify({
         "ok": bool(started),
         "queued": False,
         "mode": "inline",
         "full_retrain": True,
         "message": "Full retrain finished inline (no BackendServer hook registered).",
-    })
+    }), (200 if started else 500)
 
 
 @app.get("/api/mobile/feed")
