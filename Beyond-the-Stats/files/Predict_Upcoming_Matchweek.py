@@ -27,6 +27,7 @@ import joblib
 import pandas as pd
 
 import Download_Latest_Data as download_latest
+import football_data_api as fda
 import Predict_Match as pm
 import season_calendar
 import team_mapping_groups as tmg
@@ -844,11 +845,8 @@ def find_latest_season_file_per_competition(raw_dir):
     return {competition: rel_path for competition, (_, rel_path) in latest.items()}
 
 
-def fetch_json(url, headers=None, timeout=30):
-    request = urllib.request.Request(url, headers=headers or {})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = response.read().decode("utf-8")
-    return json.loads(payload)
+def fetch_json(url, headers=None, timeout=30, competition_name=""):
+    return fda.fetch_json(url, headers=headers, timeout=timeout, competition_name=competition_name)
 
 
 def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
@@ -858,7 +856,8 @@ def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
     accessible_competitions = 0
 
     # League fixtures only — cups use Predict_Upcoming_Cups with a rolling window.
-    for competition_code, competition_name in API_COMPETITIONS.items():
+    for index, (competition_code, competition_name) in enumerate(API_COMPETITIONS.items()):
+        fda.wait_between_competition_requests(competition_name, is_first=index == 0)
         date_params = season_calendar.football_data_api_date_params(competition_name, reference_date=today)
         query = urllib.parse.urlencode(
             {"status": "SCHEDULED", **date_params},
@@ -866,7 +865,7 @@ def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
         )
         url = f"{FOOTBALL_DATA_API_BASE}/competitions/{competition_code}/matches?{query}"
         try:
-            data = fetch_json(url, headers=headers, timeout=45)
+            data = fetch_json(url, headers=headers, timeout=45, competition_name=competition_name)
         except urllib.error.HTTPError as error:
             if error.code == 401:
                 raise RuntimeError("football-data.org API token is invalid or missing permission.") from error
@@ -1030,10 +1029,13 @@ def load_finished_matches_from_api(api_token):
     results = {}
     headers = {"X-Auth-Token": api_token}
 
-    for competition_code, competition_name in {**API_COMPETITIONS, **CUP_API_COMPETITIONS}.items():
+    for index, (competition_code, competition_name) in enumerate(
+        {**API_COMPETITIONS, **CUP_API_COMPETITIONS}.items()
+    ):
+        fda.wait_between_competition_requests(competition_name, is_first=index == 0)
         url = f"{FOOTBALL_DATA_API_BASE}/competitions/{competition_code}/matches?status=FINISHED"
         try:
-            data = fetch_json(url, headers=headers, timeout=45)
+            data = fetch_json(url, headers=headers, timeout=45, competition_name=competition_name)
         except urllib.error.HTTPError as error:
             if error.code == 401:
                 print("Warning: API token invalid or missing permission. Falling back to CSV results.")
@@ -1097,10 +1099,11 @@ def load_top_scorers_from_api(api_token):
     scorers_by_competition = {}
     headers = {"X-Auth-Token": api_token}
 
-    for competition_code, competition_name in API_COMPETITIONS.items():
+    for index, (competition_code, competition_name) in enumerate(API_COMPETITIONS.items()):
+        fda.wait_between_competition_requests(competition_name, is_first=index == 0)
         url = f"{FOOTBALL_DATA_API_BASE}/competitions/{competition_code}/scorers"
         try:
-            data = fetch_json(url, headers=headers, timeout=45)
+            data = fetch_json(url, headers=headers, timeout=45, competition_name=competition_name)
         except urllib.error.HTTPError as error:
             if error.code in {401, 403, 404, 429}:
                 continue
