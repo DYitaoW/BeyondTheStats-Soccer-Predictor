@@ -54,10 +54,9 @@ def rebuild_model_cache_once():
     """Rebuild the MLS model cache in non-interactive mode."""
     predict_script = os.path.join(MLS_FILES_DIR, "Predict_Match.py")
     proc = subprocess.run(
-        [sys.executable, predict_script],
+        [sys.executable, predict_script, "--build-cache-only"],
         cwd=BASE_DIR,
         text=True,
-        input="n\nq\n",
         capture_output=True,
         check=False,
         timeout=3600,
