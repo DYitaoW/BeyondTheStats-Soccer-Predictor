@@ -26,6 +26,11 @@ from datetime import UTC, datetime
 import joblib
 import pandas as pd
 
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_DIR = os.path.dirname(_THIS_DIR)
+if _PROJECT_DIR not in sys.path:
+    sys.path.insert(0, _PROJECT_DIR)
+
 import Download_Latest_Data as download_latest
 import football_data_api as fda
 import Predict_Match as pm
@@ -73,19 +78,8 @@ API_COMPETITIONS = {
     "BL2": "Germany/Bundesliga 2",
     "FL1": "France/Ligue 1",
     "PPL": "Portugal/Liga Portugal",
-    # Additional leagues with UCL-participating teams
-    "DED": "Netherlands/Eredivisie",
-    "ABL": "Austria/Bundesliga",
-    "GSL": "Greece/Super League",
-    "TIP": "Norway/Eliteserien",
-    "RL1": "Romania/Liga I",
-    "ALL": "Sweden/Allsvenskan",
     # Switzerland, Denmark, Ukraine, Croatia, Hungary, Israel: UEFA/cup fallback only
     # (see config.LEAGUE_API_EXCLUDED_COMPETITIONS — not in domestic API_COMPETITIONS)
-    # Extra leagues (already tracked via Extra-leagues pipeline)
-    "BJL": "Belgium/First Division A",
-    "TSL": "Turkey/Super Lig",
-    "SPL": "Scotland/Premiership",
 }
 
 # Cup fixtures come from football-data.org only and share the global upcoming feed.
@@ -1326,6 +1320,9 @@ def predict_fixture(row, context):
     raw_away = row["away_team"]
     competition = row["competition"]
     match_date = row["match_date"]
+
+    if pm.is_placeholder_team(raw_home) or pm.is_placeholder_team(raw_away):
+        return None
 
     home_team = str(row.get("mapped_home_team", "")).strip()
     away_team = str(row.get("mapped_away_team", "")).strip()

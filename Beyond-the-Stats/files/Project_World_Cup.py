@@ -26,6 +26,11 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_DIR = os.path.dirname(_THIS_DIR)
+if _PROJECT_DIR not in sys.path:
+    sys.path.insert(0, _PROJECT_DIR)
+
 import Predict_Upcoming_National_Team_Games as upcoming_national
 import Process_National_Team_Data as national
 

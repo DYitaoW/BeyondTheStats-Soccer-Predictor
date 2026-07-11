@@ -469,6 +469,9 @@ def predict_fixture(row, context):
     match_datetime_utc = str(row.get("match_datetime_utc", "")).strip()
     match_datetime_et = str(row.get("match_datetime_et", "")).strip()
 
+    if pm.is_placeholder_team(raw_home) or pm.is_placeholder_team(raw_away):
+        return None
+
     home_team = str(row.get("mapped_home_team", "")).strip()
     away_team = str(row.get("mapped_away_team", "")).strip()
     if not home_team or not away_team or home_team == away_team:

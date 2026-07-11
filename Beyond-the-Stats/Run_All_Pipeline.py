@@ -316,14 +316,13 @@ def _run_mls_subpipeline(args, api_token):
         continue_on_error=args.continue_on_error,
         timeout=1200,
     )
-    if _should_build_model_cache(args, "mls", MLS_FILES_DIR / "Predict_Match.py")[0]:
-        sub["mls_build_model_cache"] = run_step(
-            "[mls] Build model cache (non-interactive)",
-            [py, str(MLS_FILES_DIR / "Predict_Match.py")],
-            continue_on_error=args.continue_on_error,
-            input_text="n\nq\n",
-            timeout=3600,
-        )
+    sub["mls_build_model_cache"] = run_step(
+        "[mls] Build model cache (non-interactive)",
+        [py, str(MLS_FILES_DIR / "Predict_Match.py")],
+        continue_on_error=args.continue_on_error,
+        input_text="n\nq\n",
+        timeout=3600,
+    )
     mls_upcoming_cmd = [py, str(MLS_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)]
     if api_token:
         mls_upcoming_cmd += ["--api-token", api_token]
@@ -399,7 +398,8 @@ def _run_shared_post_steps(args, api_token):
             py,
             "-c",
             (
-                "import importlib.util; "
+                "import importlib.util; import sys; "
+                "sys.path.insert(0, 'Beyond-the-Stats/Website'); "
                 "p=r'Beyond-the-Stats/Website/app.py'; "
                 "s=importlib.util.spec_from_file_location('webapp', p); "
                 "m=importlib.util.module_from_spec(s); "

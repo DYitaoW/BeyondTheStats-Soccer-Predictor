@@ -289,6 +289,9 @@ class BackendServer:
 
         Returns True when a new subprocess was started, False when skipped.
         """
+        # Reap any finished pipeline before checking the lock
+        self._reap_pipeline()
+
         if wait_for_lock:
             # Scheduled runs: wait for lock (up to 10 min) so daily 2 AM run isn't skipped
             if not self._pipeline_lock.acquire(blocking=True, timeout=600):
@@ -365,6 +368,17 @@ class BackendServer:
             finally:
                 if proc.stdout and not proc.stdout.closed:
                     proc.stdout.close()
+                # Reap immediately when the process exits (don't wait for scheduler tick)
+                try:
+                    rc = proc.wait(timeout=5)
+                except Exception:
+                    rc = proc.poll()
+                if rc is not None:
+                    try:
+                        self._pipeline_done(proc)
+                    except Exception:
+                        LOG.exception("[pipeline] _pipeline_done in reader failed")
+                    self._pipeline_proc = None
 
         t = threading.Thread(target=_reader, daemon=True)
         t.start()
