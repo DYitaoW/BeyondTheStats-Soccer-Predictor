@@ -1391,6 +1391,11 @@ def main():
 
     available_teams = sorted(set(matches["HomeTeam"].dropna()) | set(matches["AwayTeam"].dropna()))
 
+    import sys
+    if "--build-cache-only" in sys.argv:
+        print(f"Model cache ready: {MODEL_CACHE} (backend={backend})")
+        return
+
     print("\nMatch Predictor\n")
     print(f"Model backend: {backend}")
     print("Enter teams for prediction. Team 1 is always the home team.")

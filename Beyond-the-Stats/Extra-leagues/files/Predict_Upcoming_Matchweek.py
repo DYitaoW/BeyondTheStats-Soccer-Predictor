@@ -71,10 +71,9 @@ def rebuild_model_cache_once():
 
     predict_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Predict_Match.py")
     proc = subprocess.run(
-        [sys.executable, predict_script],
+        [sys.executable, predict_script, "--build-cache-only"],
         cwd=BASE_DIR,
         text=True,
-        input="n\nq\n",
         capture_output=True,
         check=False,
         timeout=3600,
