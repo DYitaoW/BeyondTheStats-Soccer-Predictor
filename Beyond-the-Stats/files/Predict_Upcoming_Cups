@@ -37,8 +37,6 @@ PRESEASON_CUP_FIXTURES_FILE = os.path.join(PRESEASON_DIR, "2026_27_cup_fixture_f
 PRESEASON_LEAGUE_FALLBACK_FILE = os.path.join(PRESEASON_DIR, "2026_27_league_team_fallback.json")
 SHARED_PREDICTIONS_DIR = PREDICTIONS_DIR
 TEAM_MAPPING_FILE = os.path.join(SHARED_PREDICTIONS_DIR, "team_name_mapping_master.json")
-LEGACY_GLOBAL_MAPPING_FILE = os.path.join(SHARED_PREDICTIONS_DIR, "upcoming_fixture_team_mapping.json")
-LEGACY_MLS_MAPPING_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_fixture_team_mapping.json")
 FOOTBALL_DATA_API_BASE = "https://api.football-data.org/v4"
 
 
@@ -910,20 +908,7 @@ def save_team_mapping(path, mapping):
 
 
 def load_shared_mapping():
-    shared = load_team_mapping(TEAM_MAPPING_FILE)
-    if shared:
-        return shared
-    merged = {}
-    for legacy in [LEGACY_GLOBAL_MAPPING_FILE, LEGACY_MLS_MAPPING_FILE]:
-        legacy_map = load_team_mapping(legacy)
-        for competition, names in legacy_map.items():
-            merged.setdefault(competition, {})
-            for api_name, mapped_name in names.items():
-                if api_name not in merged[competition]:
-                    merged[competition][api_name] = mapped_name
-    if merged:
-        save_team_mapping(TEAM_MAPPING_FILE, merged)
-    return merged
+    return load_team_mapping(TEAM_MAPPING_FILE)
 
 
 def resolve_leagues_cup_team(raw_name, mapping, context):

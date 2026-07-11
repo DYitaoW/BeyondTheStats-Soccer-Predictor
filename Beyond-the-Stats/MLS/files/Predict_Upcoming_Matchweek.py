@@ -39,8 +39,6 @@ PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_matchweek_predictions.csv")
 SHARED_PREDICTIONS_DIR = PREDICTIONS_DIR
 TEAM_MAPPING_FILE = os.path.join(SHARED_PREDICTIONS_DIR, "team_name_mapping_master.json")
-LEGACY_GLOBAL_MAPPING_FILE = os.path.join(SHARED_PREDICTIONS_DIR, "upcoming_fixture_team_mapping.json")
-LEGACY_MLS_MAPPING_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_fixture_team_mapping.json")
 FOOTBALL_DATA_API_BASE = "https://api.football-data.org/v4"
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
@@ -298,20 +296,7 @@ def save_team_mapping(path, mapping):
 
 
 def load_shared_mapping():
-    shared = load_team_mapping(TEAM_MAPPING_FILE)
-    if shared:
-        return shared
-    merged = {}
-    for legacy in [LEGACY_GLOBAL_MAPPING_FILE, LEGACY_MLS_MAPPING_FILE]:
-        legacy_map = load_team_mapping(legacy)
-        for competition, names in legacy_map.items():
-            merged.setdefault(competition, {})
-            for api_name, mapped_name in names.items():
-                if api_name not in merged[competition]:
-                    merged[competition][api_name] = mapped_name
-    if merged:
-        save_team_mapping(TEAM_MAPPING_FILE, merged)
-    return merged
+    return load_team_mapping(TEAM_MAPPING_FILE)
 
 
 def canonical_names_by_competition(context):

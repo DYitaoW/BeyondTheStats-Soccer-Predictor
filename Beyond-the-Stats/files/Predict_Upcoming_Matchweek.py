@@ -39,8 +39,6 @@ RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_matchweek_predictions.csv")
 TEAM_MAPPING_FILE = os.path.join(PREDICTIONS_DIR, "team_name_mapping_master.json")
-LEGACY_GLOBAL_MAPPING_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_fixture_team_mapping.json")
-LEGACY_MLS_MAPPING_FILE = os.path.join(BASE_DIR, "MLS", "Data", "Predictions", "upcoming_fixture_team_mapping.json")
 TEAM_DATA_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
 SCORERS_FILE = os.path.join(TEAM_DATA_DIR, "current_season_top_scorers.json")
 FOOTBALL_DATA_API_BASE = "https://api.football-data.org/v4"
@@ -336,21 +334,7 @@ def save_team_mapping(path, mapping):
 
 
 def load_shared_mapping():
-    shared = load_team_mapping(TEAM_MAPPING_FILE)
-    if shared:
-        return shared
-    # One-time migration path so existing manual work is preserved.
-    merged = {}
-    for legacy in [LEGACY_GLOBAL_MAPPING_FILE, LEGACY_MLS_MAPPING_FILE]:
-        legacy_map = load_team_mapping(legacy)
-        for competition, names in legacy_map.items():
-            merged.setdefault(competition, {})
-            for api_name, mapped_name in names.items():
-                if api_name not in merged[competition]:
-                    merged[competition][api_name] = mapped_name
-    if merged:
-        save_team_mapping(TEAM_MAPPING_FILE, merged)
-    return merged
+    return load_team_mapping(TEAM_MAPPING_FILE)
 
 
 def canonical_names_by_competition(context):
