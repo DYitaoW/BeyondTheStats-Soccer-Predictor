@@ -535,10 +535,7 @@ def _load_context(pm_mod):
     bundle = joblib.load(pm_mod.MODEL_CACHE)
     fingerprint = pm_mod.data_fingerprint(season_files)
     if bundle.get("fingerprint") != fingerprint:
-        raise RuntimeError(
-            "Model cache is stale for current processed data. "
-            "Run the daily pipeline or Predict_Match.py to rebuild."
-        )
+        print(f"[predictions] Model cache fingerprint mismatch; using cached models (full retrain runs Tue/Fri)")
 
     overall_teams = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "overall_teams.json"))
     season_teams = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "season_teams.json"))

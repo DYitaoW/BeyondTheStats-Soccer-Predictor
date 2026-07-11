@@ -318,9 +318,8 @@ def _run_mls_subpipeline(args, api_token):
     )
     sub["mls_build_model_cache"] = run_step(
         "[mls] Build model cache (non-interactive)",
-        [py, str(MLS_FILES_DIR / "Predict_Match.py")],
+        [py, str(MLS_FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
         continue_on_error=args.continue_on_error,
-        input_text="n\nq\n",
         timeout=3600,
     )
     mls_upcoming_cmd = [py, str(MLS_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)]
