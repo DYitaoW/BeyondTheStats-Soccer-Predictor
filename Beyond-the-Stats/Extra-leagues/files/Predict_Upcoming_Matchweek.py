@@ -27,6 +27,7 @@ if PROJECT_DIR not in sys.path:
 
 import season_calendar
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
+GLOBAL_RAW_DATA_DIR = os.path.join(os.path.dirname(BASE_DIR), "Data", "Raw_Data")
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_matchweek_predictions.csv")
 
@@ -38,7 +39,30 @@ EXTRA_ESPN_COMPETITIONS = {
     "Argentina/Primera Division": "arg.1",
     "Brazil/Serie A": "bra.1",
     "Japan/J1 League": "jpn.1",
+    "Netherlands/Eredivisie": "ned.1",
+    "Belgium/First Division A": "bel.1",
+    "Scotland/Premiership": "sco.1",
+    "Turkey/Super Lig": "tur.1",
 }
+
+# All competitions handled by the extra-leagues pipeline.
+# Data lives in either Extra-leagues/Data/Raw_Data/ or (for European leagues)
+# the global Data/Raw_Data/ directory, which is scanned at prediction time.
+EXTRA_COMPETITIONS = frozenset({
+    "Argentina/Primera Division",
+    "Brazil/Serie A",
+    "Japan/J1 League",
+    "Netherlands/Eredivisie",
+    "Austria/Bundesliga",
+    "Greece/Super League",
+    "Norway/Eliteserien",
+    "Romania/Liga I",
+    "Sweden/Allsvenskan",
+    "Belgium/First Division A",
+    "Turkey/Super Lig",
+    "Scotland/Premiership",
+    "Poland/Ekstraklasa",
+})
 
 
 def rebuild_model_cache_once():
@@ -384,6 +408,9 @@ def inject_fallback_team(team_name, competition, season_key, context):
 
 
 def predict_fixture(ctx, home_raw, away_raw, competition_hint, match_date=None):
+    if pm.is_placeholder_team(home_raw) or pm.is_placeholder_team(away_raw):
+        return None
+
     home_team = pm.resolve_team_name(home_raw, ctx["available_teams"])
     away_team = pm.resolve_team_name(away_raw, ctx["available_teams"])
 
@@ -641,9 +668,12 @@ def _mapping_context(ctx):
 
 def main():
     args = parse_args()
-    latest = latest_raw_file_per_competition(RAW_DATA_DIR)
+    all_latest = {}
+    for root in [RAW_DATA_DIR, GLOBAL_RAW_DATA_DIR]:
+        all_latest.update(latest_raw_file_per_competition(root))
+    latest = {comp: p for comp, p in all_latest.items() if comp in EXTRA_COMPETITIONS}
     if not latest:
-        raise ValueError(f"No raw season files found in {RAW_DATA_DIR}")
+        raise ValueError(f"No raw season files found for extra-league competitions in {RAW_DATA_DIR} or {GLOBAL_RAW_DATA_DIR}")
 
     ctx = build_context()
     mapping_ctx = _mapping_context(ctx)

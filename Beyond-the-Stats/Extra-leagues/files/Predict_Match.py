@@ -818,12 +818,25 @@ def load_training_matches(processed_dir):
     return pd.concat(frames, ignore_index=True), season_files
 
 
+def is_placeholder_team(name):
+    text = str(name or "").lower().strip()
+    if not text:
+        return True
+    tokens = [
+        "group ", "winner", "runner", "third place", "round of",
+        "quarterfinal", "quarter-final", "semifinal", "semi-final",
+        "final", "playoff ", "qualifier", "tbd", "to be determined",
+    ]
+    return any(t in text for t in tokens)
+
+
 def resolve_team_name(raw_name, valid_names):
     if not raw_name:
         return None
 
     def normalize(name):
         name = name.lower().strip()
+
         name = name.replace("&", "and")
         name = re.sub(r"[^a-z0-9]+", "", name)
         return name
