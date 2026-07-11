@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from collections import defaultdict, deque
 
 import pandas as pd
@@ -75,6 +76,289 @@ WORLD_CUP_PROJECTION_FILE = os.path.join(
 
 _mls_name_cache: dict[str, str] | None = None
 _wc_group_cache: dict[str, str] | None = None
+
+# Batch games cache: single-pass load avoids N× file I/O
+_ALL_GAMES_BY_COMPETITION: dict[str, list[dict]] | None = None
+_ALL_GAMES_CACHE_TIME: float = 0
+_ALL_GAMES_CACHE_TTL: float = 120  # seconds
+
+
+def _batch_load_all_games() -> dict[str, list[dict]]:
+    """Load all completed games from every source in a single pass.
+
+    Returns a dict {competition_name: [game_dict, ...]} so callers never
+    need to re-read files per competition.
+    """
+    by_comp: dict[str, list[dict]] = defaultdict(list)
+    seen_by_comp: dict[str, set] = defaultdict(set)
+
+    # ── 1. Live-score history file ───────────────────────────────
+    history = []
+    if os.path.exists(config.LIVE_SCORE_HISTORY_FILE):
+        try:
+            with open(config.LIVE_SCORE_HISTORY_FILE, "r", encoding="utf-8") as handle:
+                history = json.load(handle)
+        except Exception:
+            history = []
+    for g in history:
+        comp = g.get("competition", "")
+        if not comp or g.get("status") != "post":
+            continue
+        _append_game(by_comp[comp], seen_by_comp[comp], g)
+
+    # ── 2. Live poller in-memory scores ──────────────────────────
+    try:
+        from live_poller import _live_scores, _live_scores_lock
+
+        with _live_scores_lock:
+            for comp_data in _live_scores.values():
+                for g in comp_data.get("games", []):
+                    if g.get("status") != "post":
+                        continue
+                    entry = dict(g)
+                    comp = entry.get("competition", "")
+                    if comp:
+                        _append_game(by_comp[comp], seen_by_comp[comp], entry)
+    except Exception:
+        pass
+
+    # ── 3. past_games.json ───────────────────────────────────────
+    if os.path.exists(config.PAST_GAMES_FILE):
+        try:
+            with open(config.PAST_GAMES_FILE, "r", encoding="utf-8") as handle:
+                past = json.load(handle)
+        except Exception:
+            past = []
+        if isinstance(past, list):
+            for g in past:
+                comp = str(g.get("competition", "")).strip()
+                if not comp:
+                    continue
+                try:
+                    hs = int(float(g.get("actual_home_goals") or g.get("home_score")))
+                    aws = int(float(g.get("actual_away_goals") or g.get("away_score")))
+                except (TypeError, ValueError):
+                    continue
+                _append_game(by_comp[comp], seen_by_comp[comp], {
+                    "competition": comp,
+                    "home_team": str(g.get("home_team", "")).strip(),
+                    "away_team": str(g.get("away_team", "")).strip(),
+                    "home_score": hs,
+                    "away_score": aws,
+                    "status": "post",
+                    "round": str(g.get("round", "") or g.get("stage", "")).strip(),
+                    "stage": str(g.get("stage", "")).strip(),
+                    "group": str(g.get("group", "")).strip(),
+                    "match_date": str(g.get("match_date", "")).strip()[:10],
+                    "match_datetime_utc": str(g.get("match_datetime_utc", "")).strip(),
+                    "source": "past_games",
+                })
+
+    # ── 4. Settled CSVs — batch read every file once ─────────────
+    csv_paths = [
+        config.GLOBAL_UPCOMING_FILE,
+        config.MLS_UPCOMING_FILE,
+        config.EXTRA_UPCOMING_FILE,
+        config.CUP_UPCOMING_FILE,
+        config.NATIONAL_UPCOMING_FILE,
+        config.CUP_COMPLETED_FILE,
+        config.ALL_UPCOMING_FILE,
+        os.path.join(config.PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv"),
+    ]
+    for path in csv_paths:
+        if not path or not os.path.exists(path):
+            continue
+        try:
+            frame = pd.read_csv(path, dtype=str)
+        except Exception:
+            continue
+        if frame.empty or "competition" not in frame.columns:
+            continue
+        for comp_name, group in frame.groupby(
+            frame["competition"].astype(str).str.strip()
+        ):
+            if not comp_name:
+                continue
+            for _, row in group.iterrows():
+                actual = str(row.get("actual_result", "")).strip().upper()
+                if actual not in {"H", "D", "A"}:
+                    continue
+                try:
+                    hs = int(float(row.get("actual_home_goals")))
+                    aws = int(float(row.get("actual_away_goals")))
+                except (TypeError, ValueError):
+                    continue
+                _append_game(by_comp[comp_name], seen_by_comp[comp_name], {
+                    "competition": comp_name,
+                    "home_team": str(row.get("home_team", "")).strip(),
+                    "away_team": str(row.get("away_team", "")).strip(),
+                    "home_score": hs,
+                    "away_score": aws,
+                    "status": "post",
+                    "round": str(row.get("round", "") or row.get("stage", "")).strip(),
+                    "stage": str(row.get("stage", "")).strip(),
+                    "group": str(row.get("group", "")).strip(),
+                    "match_date": str(row.get("match_date", "")).strip()[:10],
+                    "match_datetime_utc": str(row.get("match_datetime_utc", "")).strip(),
+                    "source": "csv",
+                })
+
+    # ── 5. National-team CSV ─────────────────────────────────────
+    if os.path.exists(NATIONAL_MATCHES_CSV):
+        try:
+            nat_frame = pd.read_csv(NATIONAL_MATCHES_CSV, dtype=str)
+        except Exception:
+            nat_frame = None
+        if nat_frame is not None and not nat_frame.empty and "competition" in nat_frame.columns:
+            for comp_name, group in nat_frame.groupby(
+                nat_frame["competition"].astype(str).str.strip()
+            ):
+                if not comp_name:
+                    continue
+                for _, row in group.iterrows():
+                    status = str(row.get("status", "")).upper()
+                    if "FULL_TIME" not in status and "FINAL" not in status:
+                        continue
+                    try:
+                        hs = int(float(row.get("FTHG")))
+                        aws = int(float(row.get("FTAG")))
+                    except (TypeError, ValueError):
+                        continue
+                    stage = str(row.get("stage", "")).strip()
+                    _append_game(by_comp[comp_name], seen_by_comp[comp_name], {
+                        "competition": comp_name,
+                        "home_team": str(row.get("home_team", "")).strip(),
+                        "away_team": str(row.get("away_team", "")).strip(),
+                        "home_score": hs,
+                        "away_score": aws,
+                        "status": "post",
+                        "round": stage,
+                        "stage": stage,
+                        "match_date": str(row.get("match_date", "")).strip()[:10],
+                        "match_datetime_utc": str(row.get("match_datetime_utc", "")).strip(),
+                        "source": "national_csv",
+                    })
+
+    # ── 6. World Cup projection JSON ─────────────────────────────
+    wc_comp = "FIFA/World Cup"
+    if os.path.exists(WORLD_CUP_PROJECTION_FILE):
+        try:
+            with open(WORLD_CUP_PROJECTION_FILE, "r", encoding="utf-8") as handle:
+                wc_payload = json.load(handle)
+        except Exception:
+            wc_payload = None
+        if isinstance(wc_payload, dict):
+            fixtures = wc_payload.get("group_fixtures") or []
+            if isinstance(fixtures, list):
+                for fixture in fixtures:
+                    if not isinstance(fixture, dict):
+                        continue
+                    actual = str(fixture.get("actual_result", "")).strip().upper()
+                    if actual not in {"H", "D", "A"}:
+                        continue
+                    try:
+                        hs_wc = int(float(fixture.get("home_goals", fixture.get("actual_home_goals"))))
+                        aws_wc = int(float(fixture.get("away_goals", fixture.get("actual_away_goals"))))
+                    except (TypeError, ValueError):
+                        continue
+                    group = str(fixture.get("group", "")).strip()
+                    _append_game(by_comp[wc_comp], seen_by_comp[wc_comp], {
+                        "competition": wc_comp,
+                        "home_team": str(fixture.get("home_team", "")).strip(),
+                        "away_team": str(fixture.get("away_team", "")).strip(),
+                        "home_score": hs_wc,
+                        "away_score": aws_wc,
+                        "status": "post",
+                        "round": f"Group Stage - Group {group}" if group else "Group Stage",
+                        "stage": "group-stage",
+                        "group": group,
+                        "match_date": str(fixture.get("match_date", "")).strip()[:10],
+                        "match_datetime_utc": str(fixture.get("match_datetime_utc", "")).strip(),
+                        "source": "wc_projection",
+                    })
+
+    # ── 7. MLS season CSV ────────────────────────────────────────
+    _batch_mls_or_liga_mx(by_comp, seen_by_comp, "United States/MLS",
+                          _find_latest_mls_season_file(), resolve_mls_team_name)
+
+    # ── 8. Liga MX season CSV ────────────────────────────────────
+    _batch_mls_or_liga_mx(by_comp, seen_by_comp, config.LIGA_MX_COMPETITION,
+                          _find_latest_liga_mx_season_file())
+
+    # ── 9. MLS team name resolution (all sources, not just CSV) ──
+    for g in by_comp.get("United States/MLS", []):
+        g["home_team"] = resolve_mls_team_name(g.get("home_team", ""))
+        g["away_team"] = resolve_mls_team_name(g.get("away_team", ""))
+
+    return dict(by_comp)
+
+
+def _batch_mls_or_liga_mx(
+    by_comp: dict,
+    seen_by_comp: dict,
+    comp_name: str,
+    path: str | None,
+    team_resolver=None,
+) -> None:
+    """Reusable helper for MLS / Liga MX season CSV loading."""
+    if not path:
+        return
+    try:
+        frame = pd.read_csv(path, dtype=str)
+    except Exception:
+        return
+    if frame.empty:
+        return
+
+    processed = "HomeTeam" in frame.columns and "FTHG" in frame.columns
+    for _, row in frame.iterrows():
+        if processed:
+            home_raw = row.get("HomeTeam")
+            away_raw = row.get("AwayTeam")
+            result = str(row.get("FTR", "")).strip().upper()
+            home_goals = row.get("FTHG")
+            away_goals = row.get("FTAG")
+        else:
+            home_raw = row.get("Home")
+            away_raw = row.get("Away")
+            result = str(row.get("Res", "")).strip().upper()
+            home_goals = row.get("HG")
+            away_goals = row.get("AG")
+
+        if result not in {"H", "D", "A"}:
+            continue
+        try:
+            hs = int(float(home_goals))
+            aws = int(float(away_goals))
+        except (TypeError, ValueError):
+            continue
+
+        if team_resolver:
+            home = team_resolver(home_raw)
+            away = team_resolver(away_raw)
+        else:
+            home = str(home_raw or "").strip()
+            away = str(away_raw or "").strip()
+        if not home or not away:
+            continue
+
+        date_raw = str(row.get("Date", "")).strip()
+        match_date = ""
+        if date_raw:
+            parsed = pd.to_datetime(date_raw, errors="coerce", dayfirst=(not processed))
+            if pd.notna(parsed):
+                match_date = parsed.strftime("%Y-%m-%d")
+
+        _append_game(by_comp[comp_name], seen_by_comp[comp_name], {
+            "competition": comp_name,
+            "home_team": home,
+            "away_team": away,
+            "home_score": hs,
+            "away_score": aws,
+            "status": "post",
+            "match_date": match_date,
+            "source": f"season_csv:{os.path.basename(path)}",
+        })
 
 
 def resolve_competition_query(comp_name: str) -> tuple[str, str | None]:
@@ -743,55 +1027,22 @@ def match_winner_team(game: dict) -> str | None:
 
 
 def collect_competition_games(comp_name: str) -> list[dict]:
-    """Gather completed results for a competition from all historical sources."""
-    base_comp, _view = resolve_competition_query(comp_name)
-    games: list[dict] = []
-    seen: set[tuple] = set()
+    """Gather completed results for a competition from all historical sources.
 
-    history = []
-    if os.path.exists(config.LIVE_SCORE_HISTORY_FILE):
-        try:
-            with open(config.LIVE_SCORE_HISTORY_FILE, "r", encoding="utf-8") as handle:
-                history = json.load(handle)
-        except Exception:
-            history = []
-    try:
-        from live_poller import _live_scores, _live_scores_lock
-
-        with _live_scores_lock:
-            for comp_data in _live_scores.values():
-                for g in comp_data.get("games", []):
-                    if g.get("status") != "post":
-                        continue
-                    entry = dict(g)
-                    entry.setdefault("competition", comp_name)
-                    if entry.get("competition") == base_comp:
-                        _append_game(games, seen, entry)
-    except Exception:
-        pass
-
-    for g in history:
-        if g.get("competition") != base_comp or g.get("status") != "post":
-            continue
-        _append_game(games, seen, g)
-
-    for source_rows in (
-        _past_games(base_comp),
-        _csv_settled_games(base_comp),
-        _national_csv_games(base_comp),
-        _world_cup_projection_games(base_comp),
-        _mls_season_csv_games(base_comp),
-        _liga_mx_season_csv_games(base_comp),
+    Uses a process-lifetime batch cache (TTL-sec) so that all source files
+    are read **once** instead of once per competition — critical when the
+    caller iterates over dozens of leagues.
+    """
+    global _ALL_GAMES_BY_COMPETITION, _ALL_GAMES_CACHE_TIME
+    now = time.time()
+    if (
+        _ALL_GAMES_BY_COMPETITION is None
+        or (now - _ALL_GAMES_CACHE_TIME) > _ALL_GAMES_CACHE_TTL
     ):
-        for g in source_rows:
-            _append_game(games, seen, g)
-
-    if base_comp == "United States/MLS":
-        for g in games:
-            g["home_team"] = resolve_mls_team_name(g.get("home_team", ""))
-            g["away_team"] = resolve_mls_team_name(g.get("away_team", ""))
-
-    return games
+        _ALL_GAMES_BY_COMPETITION = _batch_load_all_games()
+        _ALL_GAMES_CACHE_TIME = now
+    base_comp, _view = resolve_competition_query(comp_name)
+    return _ALL_GAMES_BY_COMPETITION.get(base_comp, [])
 
 
 def filter_games_by_stage(games: list[dict], comp_name: str, stage: str) -> list[dict]:

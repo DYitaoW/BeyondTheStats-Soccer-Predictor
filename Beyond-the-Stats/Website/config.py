@@ -57,6 +57,10 @@ CURRENT_SEASON_TEAMS_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "cu
 MOBILE_FEED_FILE = os.path.join(PROJECT_DIR, "Output", "mobile_app_feed.json")
 WORLD_CUP_PROJECTION_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
 
+# ── Live Activities (iOS 16.1+) ──────────────────────────────────────
+
+LIVE_ACTIVITIES_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "live_activities.json")
+
 UPCOMING_CSV_FILES = {
     "global": GLOBAL_UPCOMING_FILE,
     "mls": MLS_UPCOMING_FILE,

@@ -471,12 +471,17 @@ def _live_score_poller_loop():
 
             # Snapshot previous game statuses before merging (for detecting new completions).
             prev_statuses = {}
+            prev_scores: dict[str, tuple[int | None, int | None]] = {}
             with _live_scores_lock:
                 for comp_name, comp_data in _live_scores.items():
                     for g in comp_data.get("games", []):
                         mid = g.get("match_id")
                         if mid:
                             prev_statuses[mid] = (comp_name, g.get("status", ""))
+                            prev_scores[mid] = (
+                                g.get("home_score"),
+                                g.get("away_score"),
+                            )
 
             with _live_scores_lock:
                 # Day boundary: save ALL games (not just completed) then clear.
@@ -563,6 +568,64 @@ def _live_score_poller_loop():
                     if table:
                         with _real_tables_lock:
                             _real_tables[comp_name] = table
+            except Exception:
+                import traceback
+                traceback.print_exc()
+
+            # ── Live Activity updates (iOS 16.1+) ─────────────────────
+            # Send push updates when match scores change and end pushes
+            # when matches finish.
+            try:
+                import live_activities as _la
+                from notifications import _apns_notification_queue
+
+                with _live_scores_lock:
+                    for comp_name, comp_data in _live_scores.items():
+                        for g in comp_data.get("games", []):
+                            mid = g.get("match_id")
+                            if not mid:
+                                continue
+                            cur_status = g.get("status", "")
+                            prev = prev_statuses.get(mid)
+                            prev_home, prev_away = prev_scores.get(mid, (None, None))
+                            cur_home = g.get("home_score")
+                            cur_away = g.get("away_score")
+                            cur_minute = g.get("clock") or g.get("match_minute") or 0
+                            # Match ended
+                            if prev and prev[1] != "post" and cur_status == "post":
+                                activities = _la.for_match(mid, comp_name)
+                                for entry in activities:
+                                    _apns_notification_queue.append({
+                                        "type": "liveactivity",
+                                        "token": entry["activity_token"],
+                                        "event": "end",
+                                        "content_state": {
+                                            "home_score": cur_home,
+                                            "away_score": cur_away,
+                                            "status": "finished",
+                                        },
+                                    })
+                                _la.unregister_by_match(mid, comp_name)
+                            # Score changed or went live
+                            elif cur_status in ("in", "post") and (
+                                prev_home != cur_home or prev_away != cur_away
+                            ):
+                                activities = _la.for_match(mid, comp_name)
+                                if not activities:
+                                    continue
+                                state = {
+                                    "home_score": cur_home,
+                                    "away_score": cur_away,
+                                    "status": cur_status,
+                                    "match_minute": cur_minute,
+                                }
+                                for entry in activities:
+                                    _apns_notification_queue.append({
+                                        "type": "liveactivity",
+                                        "token": entry["activity_token"],
+                                        "event": "update",
+                                        "content_state": state,
+                                    })
             except Exception:
                 import traceback
                 traceback.print_exc()

@@ -110,11 +110,12 @@ Beyond-the-Stats/Data/pipeline_latest.log
 
 # Team name mappings (used by Website + Update_Live_Prediction_Results)
 !Beyond-the-Stats/Data/Predictions/team_name_mapping_master.json
-!Beyond-the-Stats/Data/Predictions/upcoming_fixture_team_mapping.json
 !Beyond-the-Stats/Data/Predictions/espn_team_names_seen.json
 !Beyond-the-Stats/Data/Predictions/espn_cup_names_seen.json
-!Beyond-the-Stats/MLS/Data/Predictions/upcoming_fixture_team_mapping.json
 !Data/Predictions/team_name_mapping_master.json
+# Season roster files (manually filled, not auto-generated)
+!Beyond-the-Stats/Data/Predictions/league_teams.json
+!Beyond-the-Stats/Data/Predictions/current_season_teams.json
 
 # FIFA rankings + national-team API sources
 !Beyond-the-Stats/Data/National_Team_Data/all_team_rankings.json

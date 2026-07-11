@@ -2,6 +2,7 @@
 import time
 import threading
 from collections import deque
+from datetime import datetime, timezone
 
 import httpx
 
@@ -81,6 +82,73 @@ def _send_apns_notification(device_token: str, title: str, body: str, badge: int
         return False
 
 
+# ── Live Activity pushes (iOS 16.1+) ─────────────────────────────────
+
+
+def _send_live_activity_push(
+    activity_token: str,
+    event: str,
+    content_state: dict,
+    timestamp: int | None = None,
+) -> bool:
+    """Send a Live Activity push (update or end) to a single activity token.
+
+    Parameters
+    ----------
+    activity_token : str
+        The push token received from the Live Activity instance.
+    event : ``"update"`` or ``"end"``
+    content_state : dict
+        The widget's ``ContentState`` fields (home_score, away_score, …).
+    timestamp : int, optional
+        Epoch seconds for ``aps.timestamp``. Defaults to current time.
+
+    ``event="end"`` signals Apple to dismiss the Live Activity after the
+    content state is displayed.
+    """
+    token = _generate_apns_token()
+    if not token:
+        return False
+    apns_host = "api.sandbox.push.apple.com" if config.APNS_USE_SANDBOX else "api.push.apple.com"
+    url = f"https://{apns_host}/3/device/{activity_token}"
+    if timestamp is None:
+        timestamp = int(time.time())
+    payload = {
+        "aps": {
+            "timestamp": timestamp,
+            "event": event,
+            "content-state": content_state,
+        }
+    }
+    try:
+        with httpx.Client(http2=True, timeout=10.0) as client:
+            resp = client.post(
+                url,
+                json=payload,
+                headers={
+                    "authorization": f"bearer {token}",
+                    "apns-topic": f"{config.APNS_BUNDLE_ID}.push-type.liveactivity",
+                    "apns-push-type": "liveactivity",
+                },
+            )
+            return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def send_live_activity_update(activity_token: str, content_state: dict) -> bool:
+    """Update a Live Activity with new content state data."""
+    return _send_live_activity_push(activity_token, "update", content_state)
+
+
+def send_live_activity_end(activity_token: str, content_state: dict | None = None) -> bool:
+    """Dismiss a Live Activity (iOS removes the widget)."""
+    return _send_live_activity_push(activity_token, "end", content_state or {})
+
+
+# ── Worker ───────────────────────────────────────────────────────────
+
+
 def _apns_worker():
     """Background thread that drains the notification queue to APNs."""
     while True:
@@ -89,12 +157,21 @@ def _apns_worker():
         except IndexError:
             item = None
         if item:
-            _send_apns_notification(
-                device_token=item["token"],
-                title=item["title"],
-                body=item["body"],
-                badge=item.get("badge", 0),
-            )
+            ptype = item.get("type", "alert")
+            if ptype == "liveactivity":
+                _send_live_activity_push(
+                    activity_token=item["token"],
+                    event=item.get("event", "update"),
+                    content_state=item.get("content_state", {}),
+                    timestamp=item.get("timestamp"),
+                )
+            else:
+                _send_apns_notification(
+                    device_token=item["token"],
+                    title=item["title"],
+                    body=item["body"],
+                    badge=item.get("badge", 0),
+                )
         else:
             time.sleep(2.0)
 

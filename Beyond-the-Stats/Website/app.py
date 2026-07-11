@@ -63,8 +63,11 @@ from notifications import (
     _notifications,
     device_tokens,
     ios_device_tokens,
+    send_live_activity_update,
+    send_live_activity_end,
     start_apns_worker,
 )
+import live_activities
 from league_data import build_league_data_payload
 from team_mappings import build_predictor_teams_payload, build_unmapped_espn_payload
 from predictions import (
@@ -1267,6 +1270,112 @@ def api_register_device():
     else:
         device_tokens.add(token)
     return jsonify({"ok": True, "registered": True})
+
+
+# ── Live Activity endpoints (iOS 16.1+) ──────────────────────────────
+
+
+@app.post("/api/live-activities/register")
+def api_register_live_activity():
+    """Register a Live Activity push token for a specific match.
+
+    The iOS app calls this after ``Activity.request(…)`` returns a
+    push token so the server can send real-time score updates.
+
+    Body:
+        activity_token (str, required) — push token from the Live Activity
+        device_token  (str, optional) — device push token (for management)
+        match_id      (str, required) — match identifier
+        competition   (str, required) — competition name
+    """
+    if not _mutation_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    activity_token = str(payload.get("activity_token", "")).strip()
+    match_id = str(payload.get("match_id", "")).strip()
+    competition = str(payload.get("competition", "")).strip()
+    if not activity_token or not match_id or not competition:
+        return jsonify({"ok": False, "error": "activity_token, match_id, and competition required"}), 400
+    device_token = str(payload.get("device_token", "")).strip()
+    ok = live_activities.register(activity_token, device_token, match_id, competition)
+    return jsonify({"ok": True, "registered": ok, "total": len(live_activities.all_activities())})
+
+
+@app.post("/api/live-activities/unregister")
+def api_unregister_live_activity():
+    """Remove a Live Activity registration (e.g. when dismissed on device)."""
+    if not _mutation_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    activity_token = str(payload.get("activity_token", "")).strip()
+    if not activity_token:
+        return jsonify({"ok": False, "error": "activity_token required"}), 400
+    ok = live_activities.unregister(activity_token)
+    return jsonify({"ok": True, "removed": ok})
+
+
+@app.post("/api/live-activities/update")
+def api_update_live_activity():
+    """Manually push a content-state update to all Live Activities for a match.
+
+    Body:
+        match_id    (str, required)
+        competition (str, required)
+        content_state (dict, required) — fields matching the iOS ContentState
+    """
+    if not _mutation_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    match_id = str(payload.get("match_id", "")).strip()
+    competition = str(payload.get("competition", "")).strip()
+    content_state = payload.get("content_state")
+    if not match_id or not competition or not isinstance(content_state, dict):
+        return jsonify({"ok": False, "error": "match_id, competition, and content_state required"}), 400
+    activities = live_activities.for_match(match_id, competition)
+    sent = 0
+    for entry in activities:
+        _apns_notification_queue.append({
+            "type": "liveactivity",
+            "token": entry["activity_token"],
+            "event": "update",
+            "content_state": content_state,
+        })
+        sent += 1
+    return jsonify({"ok": True, "sent": sent})
+
+
+@app.post("/api/live-activities/end")
+def api_end_live_activity():
+    """End/dismiss Live Activities for a match.
+
+    Body:
+        match_id      (str, required)
+        competition   (str, required)
+        content_state (dict, optional) — final state before dismissal
+    """
+    if not _mutation_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    match_id = str(payload.get("match_id", "")).strip()
+    competition = str(payload.get("competition", "")).strip()
+    if not match_id or not competition:
+        return jsonify({"ok": False, "error": "match_id and competition required"}), 400
+    content_state = payload.get("content_state", {})
+    if not isinstance(content_state, dict):
+        content_state = {}
+    activities = live_activities.for_match(match_id, competition)
+    sent = 0
+    for entry in activities:
+        _apns_notification_queue.append({
+            "type": "liveactivity",
+            "token": entry["activity_token"],
+            "event": "end",
+            "content_state": content_state,
+        })
+        sent += 1
+    live_activities.unregister_by_match(match_id, competition)
+    return jsonify({"ok": True, "sent": sent, "deregistered": True})
+
 
 
 @app.get("/api/live-scores")

@@ -32,8 +32,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GLOBAL_PREDICTIONS_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 MLS_PREDICTIONS_FILE = os.path.join(BASE_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 SHARED_MAPPING_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "team_name_mapping_master.json")
-LEGACY_GLOBAL_MAPPING_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "upcoming_fixture_team_mapping.json")
-LEGACY_MLS_MAPPING_FILE = os.path.join(BASE_DIR, "MLS", "Data", "Predictions", "upcoming_fixture_team_mapping.json")
 ESPN_NAMES_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "espn_team_names_seen.json")
 ACCURACY_TOTALS_FILE = os.path.join(BASE_DIR, "Website", "files", "accuracy_totals.json")
 PAST_GAMES_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "past_games.json")
@@ -251,20 +249,7 @@ def update_accuracy_totals_from_frame(totals, frame):
 
 
 def load_shared_mapping():
-    shared = load_mapping(SHARED_MAPPING_FILE)
-    if shared:
-        return shared
-    merged = {}
-    for legacy in [LEGACY_GLOBAL_MAPPING_FILE, LEGACY_MLS_MAPPING_FILE]:
-        legacy_map = load_mapping(legacy)
-        for competition, values in legacy_map.items():
-            merged.setdefault(competition, {})
-            for api_name, mapped_name in (values or {}).items():
-                if api_name not in merged[competition]:
-                    merged[competition][api_name] = mapped_name
-    if merged:
-        save_mapping(SHARED_MAPPING_FILE, merged)
-    return merged
+    return load_mapping(SHARED_MAPPING_FILE)
 
 
 def load_predictions(path):
