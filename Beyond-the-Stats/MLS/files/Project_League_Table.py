@@ -921,7 +921,8 @@ def project_liga_mx_competition(ctx, competition, raw_file):
                 continue
             supplemental.append(row)
         if supplemental:
-            df = pd.concat([df, pd.DataFrame(supplemental)], ignore_index=True, sort=False)
+            supp_df = pd.DataFrame(supplemental).dropna(axis=1, how="all")
+            df = pd.concat([df, supp_df], ignore_index=True, sort=False)
 
     df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
     df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]

@@ -1706,6 +1706,12 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
             "Italy/Coppa Italia",
             "Germany/DFB-Pokal",
         }
+        # UEFA cups: ESPN has more reliable future fixtures than TheSportsDB free tier
+        espn_uefa = comp_name in {
+            "UEFA/Champions League",
+            "UEFA/Europa League",
+            "UEFA/Conference League",
+        }
 
         if espn_first:
             fixtures = load_upcoming_matchweek_fixtures_from_espn(
@@ -1721,7 +1727,20 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
             print(f"No ESPN fixtures for {cup_name}; skipping synthetic fallbacks.")
             continue
 
-        # B. Try TheSportsDB (skip for cups with unreliable next-event feeds)
+        # UEFA cups: ESPN has more reliable future fixtures than TheSportsDB free tier
+        if espn_uefa:
+            fixtures = load_upcoming_matchweek_fixtures_from_espn(
+                cup_window_days,
+                comp_name,
+                cup_data["espn_id"],
+                lookahead_days=max(cup_window_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS),
+            )
+            if not fixtures.empty:
+                all_fixtures.append(fixtures)
+                print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from ESPN.")
+                continue
+
+        # B. Try TheSportsDB (skip for espn_first cups; UEFA cups try it as fallback after ESPN)
         if comp_name not in {
             "Spain/Copa del Rey",
             "France/Coupe de France",
@@ -1734,16 +1753,18 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
                 print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from TheSportsDB.")
                 continue
 
-        fixtures = load_upcoming_matchweek_fixtures_from_espn(
-            cup_window_days,
-            comp_name,
-            cup_data["espn_id"],
-            lookahead_days=max(cup_window_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS),
-        )
-        if not fixtures.empty:
-            all_fixtures.append(fixtures)
-            print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from ESPN.")
-            continue
+        # C. Try ESPN (primary fallback for non-espn_first competitions)
+        if not espn_uefa:
+            fixtures = load_upcoming_matchweek_fixtures_from_espn(
+                cup_window_days,
+                comp_name,
+                cup_data["espn_id"],
+                lookahead_days=max(cup_window_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS),
+            )
+            if not fixtures.empty:
+                all_fixtures.append(fixtures)
+                print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from ESPN.")
+                continue
 
         if skip_synthetic:
             print(f"No real fixtures found for {cup_name}; preseason fallback disabled.")

@@ -45,6 +45,28 @@ EXTRA_ESPN_COMPETITIONS = {
     "Argentina/Primera Division": "arg.1",
     "Brazil/Serie A": "bra.1",
     "Japan/J1 League": "jpn.1",
+    "Netherlands/Eredivisie": "ned.1",
+    "Belgium/First Division A": "bel.1",
+    "Scotland/Premiership": "sco.1",
+    "Turkey/Super Lig": "tur.1",
+    "Austria/Bundesliga": "aut.1",
+    "Switzerland/Super League": "sui.1",
+    "Greece/Super League": "gre.1",
+    "Denmark/Superliga": "den.1",
+    "Ukraine/Premier League": "ukr.1",
+    "Norway/Eliteserien": "nor.1",
+    "Croatia/HNL": "cro.1",
+    "Romania/Liga I": "rou.1",
+    "Sweden/Allsvenskan": "swe.1",
+    "Hungary/NB I": "hun.1",
+    "Israel/Premier League": "isr.1",
+    "Czech Republic/First League": "cze.1",
+    "Poland/Ekstraklasa": "pol.1",
+    "Serbia/SuperLiga": "srb.1",
+    "Cyprus/First Division": "cyp.1",
+    "Slovakia/Super Liga": "svk.1",
+    "Slovenia/PrvaLiga": "svn.1",
+    "Bulgaria/First League": "bul.1",
 }
 
 
@@ -459,7 +481,8 @@ def project_competition(ctx, competition, raw_file):
                 continue
             supplemental.append(row)
         if supplemental:
-            df = pd.concat([df, pd.DataFrame(supplemental)], ignore_index=True, sort=False)
+            supp_df = pd.DataFrame(supplemental).dropna(axis=1, how="all")
+            df = pd.concat([df, supp_df], ignore_index=True, sort=False)
 
     df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
     df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]

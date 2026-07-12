@@ -11,15 +11,16 @@ The same tiebreaker logic from ``Process_Data`` is applied within simulations
 so projected standings correctly break ties per-league rules.
 """
 import argparse
-import os
 import json
-import multiprocessing as mp
-from collections import defaultdict
-from datetime import datetime
+import os
 import random
 import subprocess
 import sys
 import time
+import urllib.request
+from collections import defaultdict
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import joblib
 import pandas as pd
@@ -35,6 +36,96 @@ OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
 OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
 RNG = random.Random()
 SIMULATION_RUNS = 2500
+ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
+EASTERN_TZ = ZoneInfo("America/New_York")
+
+ESPN_LEAGUE_IDS = {
+    "England/Premier League": "eng.1",
+    "England/Championship": "eng.2",
+    "Spain/La Liga": "esp.1",
+    "Spain/La Liga 2": "esp.2",
+    "Italy/Serie A": "ita.1",
+    "Italy/Serie B": "ita.2",
+    "Germany/Bundesliga": "ger.1",
+    "Germany/Bundesliga 2": "ger.2",
+    "France/Ligue 1": "fra.1",
+    "France/Ligue 2": "fra.2",
+    "Portugal/Liga Portugal": "por.1",
+}
+
+
+def fetch_json(url, timeout=20):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def load_future_fixtures_from_espn(competition, year=None):
+    espn_id = ESPN_LEAGUE_IDS.get(competition)
+    if not espn_id:
+        return pd.DataFrame()
+
+    target_year = int(year or datetime.now(UTC).year)
+    start = pd.Timestamp(f"{target_year}-01-01")
+    end = pd.Timestamp(f"{target_year}-12-31")
+    today = pd.Timestamp(datetime.now(UTC).date())
+    rows = []
+    seen = set()
+    day = start
+    while day <= end:
+        url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
+        try:
+            data = fetch_json(url, timeout=20)
+        except Exception:
+            day += timedelta(days=1)
+            continue
+
+        for event in data.get("events", []) or []:
+            event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
+            if pd.isna(event_date):
+                continue
+            match_date = event_date.tz_convert(EASTERN_TZ).tz_localize(None).normalize()
+            if match_date.year != target_year or match_date < today:
+                continue
+
+            competitions = event.get("competitions", [])
+            if not competitions:
+                continue
+            comp0 = competitions[0] or {}
+            status_state = (
+                ((comp0.get("status") or {}).get("type") or {}).get("state", "")
+            ).strip().lower()
+            if status_state and status_state not in {"pre"}:
+                continue
+
+            home_team = ""
+            away_team = ""
+            for competitor in comp0.get("competitors", []) or []:
+                team_name = ((competitor.get("team") or {}).get("displayName") or "").strip()
+                side = str(competitor.get("homeAway", "")).strip().lower()
+                if side == "home":
+                    home_team = team_name
+                elif side == "away":
+                    away_team = team_name
+            if not home_team or not away_team:
+                continue
+
+            key = (match_date.strftime("%Y-%m-%d"), home_team, away_team)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "Date": match_date.strftime("%Y-%m-%d"),
+                "HomeTeam": home_team,
+                "AwayTeam": away_team,
+                "FTHG": None,
+                "FTAG": None,
+                "FTR": "",
+            })
+
+        day += timedelta(days=1)
+
+    return pd.DataFrame(rows)
 
 
 def rebuild_model_cache_once():
@@ -441,7 +532,27 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         future_pairs.append((home, away))
         future_dates.append(row["DateParsed"].date().isoformat() if pd.notna(row["DateParsed"]) else "")
 
-    # If the feed only has played matches, synthesize missing league fixtures so
+    # Try ESPN API for full-season upcoming fixtures (more accurate than CSV or synthetic)
+    espn_fixtures = load_future_fixtures_from_espn(competition)
+    if not espn_fixtures.empty:
+        espn_count = 0
+        for _, row in espn_fixtures.iterrows():
+            raw_home = str(row["HomeTeam"]).strip()
+            raw_away = str(row["AwayTeam"]).strip()
+            if not raw_home or not raw_away:
+                continue
+            home = pm.resolve_team_name(raw_home, ctx["available_teams"]) or raw_home
+            away = pm.resolve_team_name(raw_away, ctx["available_teams"]) or raw_away
+            if (home, away) in seen_pairs:
+                continue
+            seen_pairs.add((home, away))
+            future_pairs.append((home, away))
+            future_dates.append(str(row.get("Date", "")))
+            espn_count += 1
+        if espn_count:
+            print(f"  ESPN: loaded {espn_count} future fixtures for {competition}")
+
+    # If no future fixtures at all, synthesize missing league fixtures so
     # the projection represents a full double round-robin season.
     for home in teams:
         resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home

@@ -16,6 +16,7 @@ import argparse
 import difflib
 import json
 import os
+import sys
 import tempfile
 import urllib.request
 import unicodedata

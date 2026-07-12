@@ -215,7 +215,7 @@ def convert_raw_to_standard(df):
         out["_Country"] = df["Country"]
     if "League" in df.columns:
         out["_League"] = df["League"]
-    out["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    out["Date"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
     out["HomeTeam"] = df["Home"].astype(str).str.strip()
     out["AwayTeam"] = df["Away"].astype(str).str.strip()
     out["FTHG"] = pd.to_numeric(df["HG"], errors="coerce")
