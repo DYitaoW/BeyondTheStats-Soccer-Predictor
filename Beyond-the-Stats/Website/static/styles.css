@@ -1,14 +1,15 @@
 :root {
-  --bg: #e8edf5;
-  --bg-soft: #d4dcea;
-  --card: #f4f7fb;
-  --text: #0f172a;
-  --muted: #5b6b7f;
-  --border: #b8c5d6;
-  --primary: #3b6fd9;
-  --primary-strong: #2f5bb8;
-  --accent-warm: #e8a838;
-  --danger: #d9534f;
+  --bg: #eaedef;
+  --bg-soft: #d5dadf;
+  --card: #f5f6f7;
+  --text: #11161c;
+  --muted: #5c6873;
+  --border: #b8c0c8;
+  --primary: #5c6873;
+  --primary-strong: #4b5660;
+  --accent-warm: #b8943b;
+  --danger: #c94f4b;
+  --green-pct: #287a49;
   --card-bg: var(--card);
   --card-border: var(--border);
   --text-color: var(--text);
@@ -18,7 +19,7 @@
   --btn-border: transparent;
   --btn-hover-bg: var(--primary-strong);
   --btn-hover-text: #ffffff;
-  --btn-secondary-bg: rgba(244, 247, 251, 0.9);
+  --btn-secondary-bg: rgba(245, 246, 247, 0.9);
   --btn-secondary-text: var(--muted);
   --btn-secondary-border: var(--border);
   --btn-secondary-hover-bg: var(--primary);
@@ -26,44 +27,45 @@
   --input-bg: #ffffff;
   --input-text: var(--text);
   --input-border: var(--border);
-  --topbar-bg: #f4f7fb;
+  --topbar-bg: #f5f6f7;
   --topbar-border: var(--border);
-  --table-header-bg: #dce4f0;
+  --table-header-bg: #dce0e5;
   --table-header-text: var(--text);
-  --sidebar-bg: #eef2f8;
-  --hero-accent: rgba(59, 111, 217, 0.12);
+  --sidebar-bg: #eef1f3;
+  --hero-accent: rgba(92, 104, 115, 0.10);
 }
 
 body.dark-mode {
-  --bg: #0c1220;
-  --bg-soft: #131c2e;
-  --card: #172236;
-  --text: #e8eef8;
-  --muted: #8fa3bc;
-  --border: #2a3a52;
-  --primary: #5b8ef5;
-  --primary-strong: #4a7de0;
-  --accent-warm: #f0b429;
-  --danger: #ff8c8c;
+  --bg: #0f1115;
+  --bg-soft: #181b21;
+  --card: #1d2128;
+  --text: #e3e7ed;
+  --muted: #8f9aa8;
+  --border: #2d333c;
+  --primary: #8f9aa8;
+  --primary-strong: #7a8594;
+  --accent-warm: #c9a345;
+  --danger: #f07575;
+  --green-pct: #48b065;
   --btn-bg: var(--primary);
-  --btn-text: #071428;
+  --btn-text: #0f1115;
   --btn-border: transparent;
   --btn-hover-bg: var(--primary-strong);
   --btn-hover-text: #ffffff;
-  --btn-secondary-bg: rgba(23, 34, 54, 0.95);
+  --btn-secondary-bg: rgba(29, 33, 40, 0.95);
   --btn-secondary-text: var(--muted);
   --btn-secondary-border: var(--border);
   --btn-secondary-hover-bg: var(--primary);
-  --btn-secondary-hover-text: #071428;
-  --input-bg: #0f1728;
+  --btn-secondary-hover-text: #0f1115;
+  --input-bg: #14171d;
   --input-text: var(--text);
   --input-border: var(--border);
-  --topbar-bg: rgba(12, 18, 32, 0.92);
+  --topbar-bg: rgba(15, 17, 21, 0.92);
   --topbar-border: var(--border);
-  --table-header-bg: #0f1728;
+  --table-header-bg: #14171d;
   --table-header-text: var(--text);
-  --sidebar-bg: #131d30;
-  --hero-accent: rgba(91, 142, 245, 0.14);
+  --sidebar-bg: #181b22;
+  --hero-accent: rgba(143, 154, 168, 0.12);
 }
 
 * {
@@ -297,9 +299,9 @@ body {
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 700;
-  color: var(--primary);
-  border: 1px solid rgba(91, 142, 245, 0.35);
-  background: rgba(91, 142, 245, 0.1);
+  color: var(--muted);
+  border: 1px solid rgba(92, 104, 115, 0.3);
+  background: rgba(92, 104, 115, 0.08);
 }
 
 h1 {
@@ -331,7 +333,7 @@ h1 {
   display: block;
   font-size: 1.4rem;
   font-weight: 800;
-  color: var(--primary);
+  color: var(--green-pct);
 }
 
 .hero-stat-label {
@@ -409,7 +411,7 @@ h1 {
 .home-league-pct {
   font-weight: 800;
   font-size: 0.85rem;
-  color: var(--primary);
+  color: var(--green-pct);
   white-space: nowrap;
 }
 
@@ -550,8 +552,8 @@ h1 {
 }
 
 .position-odds-best {
-  background: rgba(91, 142, 245, 0.2);
-  color: #0b3b1f;
+  background: rgba(72, 176, 101, 0.18);
+  color: var(--green-pct);
   font-weight: 800;
 }
 
@@ -714,8 +716,8 @@ button:hover {
 .quality-pill,
 .live-pill {
   border-radius: 999px;
-  border: 1px solid rgba(91, 142, 245, 0.35);
-  background: rgba(91, 142, 245, 0.1);
+  border: 1px solid rgba(92, 104, 115, 0.35);
+  background: rgba(92, 104, 115, 0.08);
   color: var(--text);
   font-size: 0.72rem;
   padding: 2px 8px;
@@ -731,9 +733,9 @@ button:hover {
 }
 
 .live-pill {
-  border-color: var(--primary);
-  color: var(--primary);
-  background: rgba(91, 142, 245, 0.12);
+  border-color: var(--green-pct);
+  color: var(--green-pct);
+  background: rgba(72, 176, 101, 0.12);
 }
 
 .prediction-note {
@@ -748,9 +750,9 @@ button:hover {
 
 .confidence-pill {
   border-radius: 999px;
-  border: 1px solid rgba(91, 142, 245, 0.4);
-  color: var(--primary);
-  background: rgba(91, 142, 245, 0.12);
+  border: 1px solid rgba(72, 176, 101, 0.4);
+  color: var(--green-pct);
+  background: rgba(72, 176, 101, 0.12);
   font-size: 0.75rem;
   padding: 2px 8px;
   font-weight: 700;
@@ -763,13 +765,13 @@ body:not(.dark-mode) .hero-stat {
 }
 
 body:not(.dark-mode) .hero-stat-value {
-  color: #2f5bb8;
+  color: var(--green-pct);
 }
 
 body:not(.dark-mode) .stat-chip {
-  background: #eef2f7;
+  background: #eef1f3;
   color: #2b3a4a;
-  border-color: #b8c7d7;
+  border-color: #b8c0c8;
 }
 
 body:not(.dark-mode) .match-row {
@@ -779,13 +781,13 @@ body:not(.dark-mode) .match-row {
 }
 
 body:not(.dark-mode) .match-toggle:hover {
-  background: rgba(76, 170, 104, 0.08);
+  background: rgba(92, 104, 115, 0.08);
 }
 
 body:not(.dark-mode) .confidence-pill {
-  border-color: rgba(47, 125, 79, 0.35);
-  color: #1e6a40;
-  background: rgba(47, 125, 79, 0.12);
+  border-color: rgba(40, 122, 73, 0.35);
+  color: var(--green-pct);
+  background: rgba(40, 122, 73, 0.12);
 }
 
 body:not(.dark-mode) .pick-card {
@@ -846,8 +848,8 @@ body:not(.dark-mode) .notification {
 }
 
 body:not(.dark-mode) .position-odds-best {
-  background: rgba(76, 170, 104, 0.18);
-  color: #1e6a40;
+  background: rgba(40, 122, 73, 0.18);
+  color: var(--green-pct);
 }
 
 body:not(.dark-mode) .position-odds-cell {
@@ -888,7 +890,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .match-toggle:hover {
-  background: rgba(91, 142, 245, 0.05);
+  background: rgba(92, 104, 115, 0.06);
 }
 
 .matchup {
@@ -940,7 +942,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .probability-track > div:nth-child(3) {
-  background: #7297ff;
+  background: #8f9aa8;
 }
 
 .probability-labels {
@@ -1096,7 +1098,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .match-card .team.winner {
-  color: var(--primary);
+  color: var(--text);
   font-weight: 700;
 }
 
@@ -1107,7 +1109,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .mls-cup-card {
-  border: 1px solid var(--primary);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
   text-align: center;
@@ -1115,7 +1117,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 
 .mls-cup-winner {
   margin-top: 8px;
-  color: var(--primary);
+  color: var(--text);
   font-weight: 800;
   font-size: 1.12rem;
 }
@@ -1319,7 +1321,7 @@ body:not(.dark-mode) .match-row.match-wrong {
   left: 0;
   top: 0;
   bottom: 0;
-  background: linear-gradient(90deg, rgba(91, 142, 245, 0.55), rgba(91, 142, 245, 0.85));
+  background: linear-gradient(90deg, rgba(92, 104, 115, 0.45), rgba(92, 104, 115, 0.7));
   z-index: 0;
 }
 
@@ -1474,7 +1476,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 
 .qualified-row td:first-child,
 .winner-team {
-  color: var(--primary);
+  color: var(--text);
   font-weight: 800;
 }
 
@@ -1503,7 +1505,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .match-card-score strong {
-  color: var(--primary);
+  color: var(--text);
   font-size: 1.15rem;
   white-space: nowrap;
 }
@@ -1524,7 +1526,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .world-cup-probabilities span:nth-child(1) {
-  background: #5b8ef5;
+  background: #55d37a;
 }
 
 .world-cup-probabilities span:nth-child(2) {
@@ -1532,7 +1534,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .world-cup-probabilities span:nth-child(3) {
-  background: #7297ff;
+  background: #8f9aa8;
 }
 
 .pred-options {
