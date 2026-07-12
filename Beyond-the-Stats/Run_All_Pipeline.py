@@ -352,9 +352,8 @@ def _run_extra_subpipeline(args, api_token):
     if _should_build_model_cache(args, "extra", EXTRA_FILES_DIR / "Predict_Match.py")[0]:
         sub["extra_build_model_cache"] = run_step(
             "[extra] Build model cache (non-interactive)",
-            [py, str(EXTRA_FILES_DIR / "Predict_Match.py")],
+            [py, str(EXTRA_FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
             continue_on_error=args.continue_on_error,
-            input_text="n\nq\n",
             timeout=3600,
         )
     sub["extra_upcoming_matchweek"] = run_step(
