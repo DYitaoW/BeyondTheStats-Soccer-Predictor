@@ -128,7 +128,6 @@ LIVE_SCORE_COMPETITIONS = {
     "Portugal/Liga Portugal": "por.1",
     "Netherlands/Eredivisie": "ned.1",
     "United States/MLS": "usa.1",
-    "Mexico/Liga MX": "mex.1",
     "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
     # Domestic cups
     "England/FA Cup": "eng.fa",
@@ -151,30 +150,33 @@ LIVE_SCORE_COMPETITIONS = {
     # National team & World Cup
     "FIFA/World Cup": "fifa.world",
     "FIFA/Friendly": "fifa.friendly",
-    # Belgian, Scottish & Turkish (for live table tracking)
+    # Mexico/Liga MX, Belgium/First Division A, Scotland/Premiership, Turkey/Super Lig
+    # are result-only (post-match fetch, no in-play polling).
+    "Mexico/Liga MX": "mex.1",
     "Belgium/First Division A": "bel.1",
     "Scotland/Premiership": "sco.1",
     "Turkey/Super Lig": "tur.1",
-    # Extra leagues (predicted but not live-polled — no ESPN ID)
-    "Austria/Bundesliga": None,
-    "Switzerland/Super League": None,
-    "Greece/Super League": None,
-    "Denmark/Superliga": None,
-    "Ukraine/Premier League": None,
-    "Norway/Eliteserien": None,
-    "Croatia/HNL": None,
-    "Romania/Liga I": None,
-    "Sweden/Allsvenskan": None,
-    "Hungary/NB I": None,
-    "Israel/Premier League": None,
-    "Czech Republic/First League": None,
-    "Poland/Ekstraklasa": None,
-    "Serbia/SuperLiga": None,
-    "Cyprus/First Division": None,
-    "Slovakia/Super Liga": None,
-    "Slovenia/PrvaLiga": None,
-    "Bulgaria/First League": None,
+    # Extra leagues — result-only (post-match fetch, no in-play polling).
+    "Austria/Bundesliga": "aut.1",
+    "Switzerland/Super League": "sui.1",
+    "Greece/Super League": "gre.1",
+    "Denmark/Superliga": "den.1",
+    "Ukraine/Premier League": "ukr.1",
+    "Norway/Eliteserien": "nor.1",
+    "Croatia/HNL": "cro.1",
+    "Romania/Liga I": "rou.1",
+    "Sweden/Allsvenskan": "swe.1",
+    "Hungary/NB I": "hun.1",
+    "Israel/Premier League": "isr.1",
+    "Czech Republic/First League": "cze.1",
+    "Poland/Ekstraklasa": "pol.1",
+    "Serbia/SuperLiga": "srb.1",
+    "Cyprus/First Division": "cyp.1",
+    "Slovakia/Super Liga": "svk.1",
+    "Slovenia/PrvaLiga": "svn.1",
+    "Bulgaria/First League": "bul.1",
 }
+
 
 # UEFA club competitions: show qualifying fixtures in upcoming, but defer
 # in-play live scoring until the main group/league phase (September).
@@ -186,6 +188,41 @@ UEFA_LIVE_SCORE_COMPETITIONS = frozenset({
     "Europe/Champions League",
     "Europe/Europa League",
     "Europe/Conference League",
+})
+
+# Competitions that should only get post-match result fetch (no in-play polling).
+# These are polled during idle cycles, 5-15 min after expected match end (~110 min after start).
+RESULT_ONLY_COMPETITIONS = frozenset({
+    "Mexico/Liga MX",
+    "Belgium/First Division A",
+    "Scotland/Premiership",
+    "Turkey/Super Lig",
+    "Austria/Bundesliga",
+    "Switzerland/Super League",
+    "Greece/Super League",
+    "Denmark/Superliga",
+    "Ukraine/Premier League",
+    "Norway/Eliteserien",
+    "Croatia/HNL",
+    "Romania/Liga I",
+    "Sweden/Allsvenskan",
+    "Hungary/NB I",
+    "Israel/Premier League",
+    "Czech Republic/First League",
+    "Poland/Ekstraklasa",
+    "Serbia/SuperLiga",
+    "Cyprus/First Division",
+    "Slovakia/Super Liga",
+    "Slovenia/PrvaLiga",
+    "Bulgaria/First League",
+})
+
+# Second-division leagues: only poll for HT result and FT result (no in-play tracking).
+REDUCED_POLLING_COMPETITIONS = frozenset({
+    "Spain/La Liga 2",
+    "Italy/Serie B",
+    "Germany/Bundesliga 2",
+    "France/Ligue 2",
 })
 
 # Domestic cups that should prefer ESPN fixtures and skip synthetic fallbacks.

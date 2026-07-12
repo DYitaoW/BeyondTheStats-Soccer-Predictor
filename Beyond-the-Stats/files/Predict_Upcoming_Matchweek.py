@@ -1232,9 +1232,11 @@ def build_prediction_context():
     }
     missing = sorted(k for k in required_keys if k not in bundle)
     if missing:
-        raise RuntimeError(
-            "Model cache is missing required fields: " + ", ".join(missing) + ". Re-run Predict_Match.py."
-        )
+        print(f"[model-cache] cache missing required fields ({', '.join(missing)}); rebuilding...")
+        if os.path.exists(pm.MODEL_CACHE):
+            os.remove(pm.MODEL_CACHE)
+        rebuild_model_cache_once()
+        bundle = joblib.load(pm.MODEL_CACHE)
 
     overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
     season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))
