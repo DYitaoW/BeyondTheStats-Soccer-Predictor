@@ -101,6 +101,12 @@ RESULT_COLUMNS = [
     "competition",
     "home_team",
     "away_team",
+    "display_home_team",
+    "display_away_team",
+    "unmapped_teams",
+    "is_neutral_site",
+    "schedule_only",
+    "prediction_quality",
     "predicted_result",
     "prob_home",
     "prob_draw",
@@ -523,6 +529,12 @@ def predict_fixture(ctx, home_raw, away_raw, competition_hint, match_date=None):
     return {
         "home_team": home_team,
         "away_team": away_team,
+        "display_home_team": home_team,
+        "display_away_team": away_team,
+        "unmapped_teams": "",
+        "is_neutral_site": "0",
+        "schedule_only": "0",
+        "prediction_quality": "prediction",
         "competition": competition_display,
         "predicted_result": prediction,
         "prob_home": round(probabilities["H"], 6),
@@ -534,12 +546,7 @@ def predict_fixture(ctx, home_raw, away_raw, competition_hint, match_date=None):
         "pred_away_shots": round(away_shots, 3),
         "pred_home_sot": round(home_sot, 3),
         "pred_away_sot": round(away_sot, 3),
-        "probability_reasoning": pm.build_reasoning_string(
-            home_team, away_team, competition_display, probabilities,
-            float(aligned_home), float(aligned_away),
-            season_coeff=season_coeff,
-            randomizer_delta=max_delta,
-        ),
+        "probability_reasoning": "",
         **goal_probs,
     }
 
@@ -727,33 +734,86 @@ def main():
     rows = []
     for _, row in fixtures.iterrows():
         match_date = pd.Timestamp(row["match_date"]).date()
-        home = str(row.get("mapped_home_team", "") or row.get("home_team", "")).strip()
-        away = str(row.get("mapped_away_team", "") or row.get("away_team", "")).strip()
+        mapped_home = str(row.get("mapped_home_team", "")).strip()
+        mapped_away = str(row.get("mapped_away_team", "")).strip()
+        raw_home = str(row.get("home_team", "")).strip()
+        raw_away = str(row.get("away_team", "")).strip()
+        display_home = str(row.get("display_home_team", "")).strip() or raw_home
+        display_away = str(row.get("display_away_team", "")).strip() or raw_away
         competition = str(row.get("competition", "")).strip()
-        if not home or not away:
+        if not raw_home or not raw_away:
             continue
-        pred = predict_fixture(ctx, home, away, competition, match_date)
-        if pred is None:
-            continue
+        if mapped_home and mapped_away:
+            home = mapped_home
+            away = mapped_away
+            pred = predict_fixture(ctx, home, away, competition, match_date)
+            if pred is None:
+                continue
+            unmapped_teams = ""
+            schedule_only = "0"
+            prediction_quality = pred.get("prediction_quality", "prediction")
+            predicted_result = pred["predicted_result"]
+            prob_home = pred["prob_home"]
+            prob_draw = pred["prob_draw"]
+            prob_away = pred["prob_away"]
+            pred_home_goals = pred["pred_home_goals"]
+            pred_away_goals = pred["pred_away_goals"]
+            pred_home_shots = pred["pred_home_shots"]
+            pred_away_shots = pred["pred_away_shots"]
+            pred_home_sot = pred["pred_home_sot"]
+            pred_away_sot = pred["pred_away_sot"]
+            probability_reasoning = pred.get("probability_reasoning", "")
+            goal_prob_fields = {k: pred[k] for k in ["prob_home_goals_0","prob_home_goals_1plus","prob_home_goals_2plus","prob_away_goals_0","prob_away_goals_1plus","prob_away_goals_2plus","prob_both_score","prob_over_1_5","prob_over_2_5","prob_over_3_5"] if k in pred}
+        else:
+            home = raw_home
+            away = raw_away
+            unmapped = []
+            if not mapped_home:
+                unmapped.append(raw_home)
+            if not mapped_away:
+                unmapped.append(raw_away)
+            unmapped_teams = ",".join(unmapped)
+            schedule_only = "1"
+            prediction_quality = "no_prediction"
+            predicted_result = ""
+            prob_home = 0.0
+            prob_draw = 0.0
+            prob_away = 0.0
+            pred_home_goals = None
+            pred_away_goals = None
+            pred_home_shots = None
+            pred_away_shots = None
+            pred_home_sot = None
+            pred_away_sot = None
+            probability_reasoning = "Teams are not in the model database — fixture listed without odds."
+            goal_prob_fields = {k: None for k in ["prob_home_goals_0","prob_home_goals_1plus","prob_home_goals_2plus","prob_away_goals_0","prob_away_goals_1plus","prob_away_goals_2plus","prob_both_score","prob_over_1_5","prob_over_2_5","prob_over_3_5"]}
         rows.append(
             {
-                "prediction_key": make_prediction_key(match_date, competition, pred["home_team"], pred["away_team"]),
+                "prediction_key": make_prediction_key(match_date, competition, home, away),
                 "created_at_utc": created_at,
                 "match_date": match_date.strftime("%Y-%m-%d"),
                 "match_datetime_utc": "",
                 "competition": competition,
-                "home_team": pred["home_team"],
-                "away_team": pred["away_team"],
-                "predicted_result": pred["predicted_result"],
-                "prob_home": pred["prob_home"],
-                "prob_draw": pred["prob_draw"],
-                "prob_away": pred["prob_away"],
-                "pred_home_goals": pred["pred_home_goals"],
-                "pred_away_goals": pred["pred_away_goals"],
-                "pred_home_shots": pred["pred_home_shots"],
-                "pred_away_shots": pred["pred_away_shots"],
-                "pred_home_sot": pred["pred_home_sot"],
-                "pred_away_sot": pred["pred_away_sot"],
+                "home_team": home,
+                "away_team": away,
+                "display_home_team": display_home,
+                "display_away_team": display_away,
+                "unmapped_teams": unmapped_teams,
+                "is_neutral_site": "0",
+                "schedule_only": schedule_only,
+                "prediction_quality": prediction_quality,
+                "predicted_result": predicted_result,
+                "prob_home": prob_home,
+                "prob_draw": prob_draw,
+                "prob_away": prob_away,
+                "pred_home_goals": pred_home_goals,
+                "pred_away_goals": pred_away_goals,
+                "pred_home_shots": pred_home_shots,
+                "pred_away_shots": pred_away_shots,
+                "pred_home_sot": pred_home_sot,
+                "pred_away_sot": pred_away_sot,
+                "probability_reasoning": probability_reasoning,
+                **goal_prob_fields,
                 "actual_home_goals": "",
                 "actual_away_goals": "",
                 "actual_result": "",

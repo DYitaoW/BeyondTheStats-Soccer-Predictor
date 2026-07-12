@@ -318,15 +318,7 @@ def predict_chelsea_fixture(home_team, away_team, context):
         "pred_away_shots": round(float(context["away_shot_reg"].predict(X)[0]), 3) if context.get("away_shot_reg") else "",
         "pred_home_sot": round(float(context["home_sot_reg"].predict(X)[0]), 3) if context.get("home_sot_reg") else "",
         "pred_away_sot": round(float(context["away_sot_reg"].predict(X)[0]), 3) if context.get("away_sot_reg") else "",
-        "probability_reasoning": pm.build_reasoning_string(
-            home_team,
-            away_team,
-            CLUB_FRIENDLIES_COMPETITION,
-            probs,
-            float(phg),
-            float(pag),
-            season_coeff=season_coeff,
-        ),
+        "probability_reasoning": "",
     }
 
 

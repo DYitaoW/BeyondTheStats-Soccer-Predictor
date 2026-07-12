@@ -47,6 +47,7 @@ let tableViewMode = "standings";
 let tablePositionOddsMode = false;
 let activeCupProjectionCompetition = "UEFA/Champions League";
 let activeCupProjectionView = "table";
+let _liveRefreshIntervalId = null;
 const upcomingCache = { global: [], mls: [], extra: [], cups: [], friendlies: [] };
 const upcomingStatsCache = {
 global: { stats: null, league_stats: [] },
@@ -1590,6 +1591,28 @@ if (isCupMode) {
 }
 renderUpcoming(target, rows, selectedLeague);
 renderTopPicks();
+if (typeof _liveRefreshIntervalId === "number") {
+    clearInterval(_liveRefreshIntervalId);
+}
+if (!isCupMode && !isFriendliesMode) {
+    _liveRefreshIntervalId = setInterval(async () => {
+        const source = typeof currentUpcomingSource === "function" ? currentUpcomingSource() : mode;
+        const newResp = await fetch(url);
+        const newData = await newResp.json().catch(() => ({}));
+        if (!newResp.ok || !newData.ok) return;
+        const newRows = newData.rows || [];
+        upcomingCache[source] = newRows;
+        upcomingStatsCache[source] = {
+            stats: newData.stats || null,
+            league_stats: newData.league_stats || [],
+        };
+        const filterVal = globalLeagueFilter ? globalLeagueFilter.value : "";
+        renderUpcoming(target, newRows, filterVal);
+        const payload = upcomingStatsCache[source];
+        if (typeof renderStats === "function" && statsTarget) {
+            renderStats(statsTarget, payload.stats, payload.league_stats, filterVal);
+        }
+    }, 60000);
 }
 
 

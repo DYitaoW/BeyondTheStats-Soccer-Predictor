@@ -524,7 +524,8 @@ def project_competition(ctx, competition, raw_file):
     df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]
     df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
 
-    teams = sorted(set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip()))
+    raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
+    teams = sorted({pm.resolve_team_name(t, ctx["available_teams"]) or t for t in raw_teams})
     table = init_table(teams)
     future_rows = []
     future_predictions = []

@@ -777,13 +777,17 @@ def api_upcoming(mode):
             str(r.get("match_datetime_et", "") or r.get("match_datetime_utc", "")),
             str(r.get("home_team", "")),
         ))
-        leagues = sorted({r.get("competition", "") for r in all_rows if r.get("competition")})
+        league_names = sorted({r.get("competition", "") for r in all_rows if r.get("competition")})
+        available_leagues = [
+            {"name": name, "live_score_tier": config.get_live_score_tier(name)}
+            for name in league_names
+        ]
         return jsonify({
             "ok": True,
             "rows": all_rows,
             "stats": combined_stats,
             "league_stats": list(combined_league_stats.values()),
-            "available_leagues": leagues,
+            "available_leagues": available_leagues,
         })
 
     entry = _UPCOMING_MODE_MAP.get(mode)
@@ -793,13 +797,17 @@ def api_upcoming(mode):
     rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode)
     if mode == "mls":
         rows = _regional_espn_schedule_fallback(rows)
-    leagues = sorted({r.get("competition", "") for r in rows if r.get("competition")})
+    league_names = sorted({r.get("competition", "") for r in rows if r.get("competition")})
+    available_leagues = [
+        {"name": name, "live_score_tier": config.get_live_score_tier(name)}
+        for name in league_names
+    ]
     return jsonify({
         "ok": True,
         "rows": rows,
         "stats": stats,
         "league_stats": league_stats,
-        "available_leagues": leagues,
+        "available_leagues": available_leagues,
     })
 
 

@@ -177,12 +177,18 @@ def _apns_worker():
 
 
 def start_apns_worker():
-    """Start the APNs background worker once."""
+    """Start the APNs background worker once.
+
+    The worker drains the notification queue for Live Activities even when
+    APNs credentials are missing — items simply log a warning instead of
+    failing silently.
+    """
     global _apns_worker_started
     if _apns_worker_started:
         return
-    if not config.APNS_KEY_FILE or not config.APNS_KEY_ID or not config.APNS_TEAM_ID or not config.APNS_BUNDLE_ID:
-        return
+    has_creds = bool(config.APNS_KEY_FILE and config.APNS_KEY_ID and config.APNS_TEAM_ID and config.APNS_BUNDLE_ID)
+    if not has_creds:
+        pass
     _apns_worker_started = True
     t = threading.Thread(target=_apns_worker, daemon=True, name="apns-worker")
     t.start()

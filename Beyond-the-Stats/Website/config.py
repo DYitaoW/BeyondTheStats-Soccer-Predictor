@@ -537,3 +537,33 @@ ALLOWED_ORIGINS = {
     for o in os.environ.get("ALLOWED_ORIGINS", "").split(",")
     if o.strip()
 } or {"http://localhost:5000", "http://127.0.0.1:5000"}
+
+
+def get_live_score_tier(competition: str) -> str:
+    """Return the live-score polling tier for a competition.
+
+    ``"full"``
+        Full in-play polling via ESPN.
+    ``"reduced"``
+        HT / FT only (second divisions, UEFA pre-main-stage).
+    ``"result_only"``
+        Post-match result fetch only (no in-play polling).
+    ``"none"``
+        Not covered by live-score polling at all.
+    """
+    if competition in REDUCED_POLLING_COMPETITIONS:
+        return "reduced"
+    if competition in RESULT_ONLY_COMPETITIONS:
+        return "result_only"
+    if competition in UEFA_LIVE_SCORE_COMPETITIONS:
+        from datetime import date
+        try:
+            main_start = date.fromisoformat(UEFA_MAIN_STAGE_LIVE_FROM)
+            if date.today() < main_start:
+                return "reduced"
+        except Exception:
+            pass
+        return "full"
+    if competition in LIVE_SCORE_COMPETITIONS:
+        return "full"
+    return "none"

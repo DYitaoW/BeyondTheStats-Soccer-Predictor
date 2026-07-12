@@ -171,6 +171,8 @@ function renderHomeUpcoming(data) {
     renderUpcoming(homeUpcomingList, rows, "", { includePast: true, groupByLeague: true });
 }
 
+let _homeRefreshId = null;
+
 async function loadHomeUpcoming(start = isoToday(), end = start) {
     if (!homeUpcomingList) return;
     homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">Loading matches...</p>";
@@ -194,6 +196,14 @@ async function loadHomeUpcoming(start = isoToday(), end = start) {
             homeDateToggle.textContent = formatDateButton(data.start_date || start, data.end_date || end);
         }
         renderHomeUpcoming(data);
+        if (_homeRefreshId) clearInterval(_homeRefreshId);
+        _homeRefreshId = setInterval(async () => {
+            const refreshResp = await fetch(`/api/home/upcoming?${params.toString()}`);
+            const refreshData = await refreshResp.json().catch(() => ({}));
+            if (refreshResp.ok && refreshData?.ok) {
+                renderHomeUpcoming(refreshData);
+            }
+        }, 60000);
     } catch (_error) {
         homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">Failed to load upcoming matches.</p>";
     }
