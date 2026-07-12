@@ -7,7 +7,18 @@ import threading
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
+def _acquire_file_lock(lock_handle):
+    if fcntl:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+
+def _release_file_lock(lock_handle):
+    if fcntl:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
 import pandas as pd
 
@@ -260,7 +271,7 @@ def _upsert_live_score_history(games, as_of=None):
     os.makedirs(os.path.dirname(lock_path), exist_ok=True)
     with _live_history_write_lock:
         with open(lock_path, "a+", encoding="utf-8") as lock_handle:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            _acquire_file_lock(lock_handle)
             try:
                 existing = _read_live_history_strict()
                 by_key = {}
@@ -313,7 +324,7 @@ def _upsert_live_score_history(games, as_of=None):
                     "total": len(retained),
                 }
             finally:
-                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                _release_file_lock(lock_handle)
 
 
 def _save_live_score_history(games):

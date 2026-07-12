@@ -1381,6 +1381,7 @@ def main():
         home_sot_reg = regs["home_sot_reg"]
         away_sot_reg = regs["away_sot_reg"]
         goal_prob_models = train_all_goal_prob_models(X, matches)
+        import traceback
         try:
             joblib.dump(
                 {
@@ -1401,7 +1402,7 @@ def main():
                 MODEL_CACHE,
             )
         except Exception:
-            pass
+            traceback.print_exc()
 
     available_teams = sorted(set(matches["HomeTeam"].dropna()) | set(matches["AwayTeam"].dropna()))
 

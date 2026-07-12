@@ -1387,7 +1387,8 @@ def main():
                 MODEL_CACHE,
             )
         except Exception:
-            pass
+            import traceback
+            traceback.print_exc()
 
     available_teams = sorted(set(matches["HomeTeam"].dropna()) | set(matches["AwayTeam"].dropna()))
 
