@@ -472,14 +472,31 @@ def project_competition(ctx, competition, raw_file):
             if home and away and ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag):
                 played_keys.add(tuple(sorted([home, away])))
         supplemental = []
+        unresolved = []
         for _, row in espn_future.iterrows():
-            home = str(row.get("HomeTeam", "")).strip()
-            away = str(row.get("AwayTeam", "")).strip()
+            raw_home = str(row.get("HomeTeam", "")).strip()
+            raw_away = str(row.get("AwayTeam", "")).strip()
+            home = pm.resolve_team_name(raw_home, ctx["available_teams"])
+            away = pm.resolve_team_name(raw_away, ctx["available_teams"])
+            if not home:
+                unresolved.append(raw_home)
+            if not away:
+                unresolved.append(raw_away)
             if not home or not away:
                 continue
             if tuple(sorted([home, away])) in played_keys:
                 continue
-            supplemental.append(row)
+            supplemental.append({
+                "Date": row.get("Date", ""),
+                "HomeTeam": home,
+                "AwayTeam": away,
+                "FTHG": None,
+                "FTAG": None,
+                "FTR": "",
+            })
+        if unresolved:
+            msg = f"  ESPN: {len(unresolved)} team name(s) in {competition} could not be resolved — add to team_name_mapping_master.json: {sorted(set(unresolved))}"
+            print(f"[WARN] {msg}")
         if supplemental:
             supp_df = pd.DataFrame(supplemental).dropna(axis=1, how="all")
             df = pd.concat([df, supp_df], ignore_index=True, sort=False)

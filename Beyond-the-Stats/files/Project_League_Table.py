@@ -536,19 +536,29 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
     espn_fixtures = load_future_fixtures_from_espn(competition)
     if not espn_fixtures.empty:
         espn_count = 0
+        unresolved = []
         for _, row in espn_fixtures.iterrows():
             raw_home = str(row["HomeTeam"]).strip()
             raw_away = str(row["AwayTeam"]).strip()
             if not raw_home or not raw_away:
                 continue
-            home = pm.resolve_team_name(raw_home, ctx["available_teams"]) or raw_home
-            away = pm.resolve_team_name(raw_away, ctx["available_teams"]) or raw_away
+            home = pm.resolve_team_name(raw_home, ctx["available_teams"])
+            away = pm.resolve_team_name(raw_away, ctx["available_teams"])
+            if not home:
+                unresolved.append(raw_home)
+            if not away:
+                unresolved.append(raw_away)
+            if not home or not away:
+                continue
             if (home, away) in seen_pairs:
                 continue
             seen_pairs.add((home, away))
             future_pairs.append((home, away))
             future_dates.append(str(row.get("Date", "")))
             espn_count += 1
+        if unresolved:
+            msg = f"  ESPN: {len(unresolved)} team name(s) in {competition} could not be resolved — add to team_name_mapping_master.json: {sorted(set(unresolved))}"
+            print(f"[WARN] {msg}")
         if espn_count:
             print(f"  ESPN: loaded {espn_count} future fixtures for {competition}")
 

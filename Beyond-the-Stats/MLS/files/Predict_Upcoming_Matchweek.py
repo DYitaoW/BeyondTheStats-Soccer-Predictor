@@ -1005,6 +1005,8 @@ def build_prediction_context():
     missing = sorted(k for k in required_keys if k not in bundle)
     if missing:
         print(f"[model-cache] cache missing required fields ({', '.join(missing)}); rebuilding...")
+        if os.path.exists(pm.MODEL_CACHE):
+            os.remove(pm.MODEL_CACHE)
         rebuild_model_cache_once()
         bundle = joblib.load(pm.MODEL_CACHE)
 

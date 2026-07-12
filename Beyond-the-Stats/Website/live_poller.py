@@ -54,6 +54,9 @@ _live_summary_cache_lock = threading.Lock()
 _last_friendlies_sync_ts = 0.0
 _FRIENDLIES_SYNC_INTERVAL_S = 900
 
+_last_deferred_poll_ts = 0.0
+_DEFERRED_POLL_INTERVAL_S = 300
+
 
 def _load_friendlies_sync_module():
     script_path = os.path.join(config.FILES_DIR, "Update_Club_Friendlies.py")
@@ -365,7 +368,7 @@ def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
         pass
 
 
-def _compute_poll_interval(now, results, active_comps, todays_comps):
+def _compute_poll_interval(now, results, live_comps, todays_comps):
     """Return the sleep interval in seconds before the next poll cycle.
 
     - 60 seconds  if any game is in-progress or just kicked off (past 90 min),
@@ -438,18 +441,27 @@ def _live_score_poller_loop():
             poll_date = _effective_poller_date()
             today_str = poll_date.strftime("%Y%m%d")
             todays_comps = _get_todays_competitions(today_date=poll_date)
-            active_comps = {}
+            available = {}
             for comp in todays_comps:
                 eid = config.LIVE_SCORE_COMPETITIONS.get(comp)
                 if eid:
-                    active_comps[comp] = eid
+                    available[comp] = eid
+
+            # Split into live (full polling) and deferred (result-only/reduced).
+            live_comps = {}
+            deferred_comps = {}
+            for comp, eid in available.items():
+                if comp in config.RESULT_ONLY_COMPETITIONS or comp in config.REDUCED_POLLING_COMPETITIONS:
+                    deferred_comps[comp] = eid
+                else:
+                    live_comps[comp] = eid
 
             results = {}
-            if active_comps:
-                with ThreadPoolExecutor(max_workers=min(8, len(active_comps))) as pool:
+            if live_comps:
+                with ThreadPoolExecutor(max_workers=min(8, len(live_comps))) as pool:
                     ft_to_name = {
                         pool.submit(_fetch_competition_scores, name, eid, today_str): name
-                        for name, eid in active_comps.items()
+                        for name, eid in live_comps.items()
                     }
                     for ft in as_completed(ft_to_name):
                         name = ft_to_name[ft]
@@ -482,6 +494,43 @@ def _live_score_poller_loop():
                                 g.get("home_score"),
                                 g.get("away_score"),
                             )
+
+            # ── Deferred polling: result-only + reduced frequency comps ──
+            global _last_deferred_poll_ts
+            now_ts = time.time()
+            if deferred_comps and (now_ts - _last_deferred_poll_ts) >= _DEFERRED_POLL_INTERVAL_S:
+                _last_deferred_poll_ts = now_ts
+                for comp_name, espn_id in deferred_comps.items():
+                    try:
+                        games = _fetch_competition_scores(comp_name, espn_id, today_str)
+                        if comp_name in config.REDUCED_POLLING_COMPETITIONS:
+                            # Reduced-polling leagues: keep only HT (minute ~45) or FT (post).
+                            filtered = []
+                            for g in games:
+                                status = g.get("status", "")
+                                if status == "post":
+                                    filtered.append(g)
+                                elif status == "in":
+                                    minute = g.get("clock") or g.get("match_minute") or 0
+                                    try:
+                                        minute = int(minute)
+                                    except (ValueError, TypeError):
+                                        minute = 0
+                                    if 40 <= minute <= 50 or minute >= 85:
+                                        filtered.append(g)
+                            games = filtered
+                        else:
+                            # Result-only: keep only completed games.
+                            games = [g for g in games if g.get("status") == "post"]
+                        if games:
+                            results.setdefault(comp_name, {
+                                "competition": comp_name,
+                                "games": games,
+                                "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+                            })
+                    except Exception:
+                        import traceback
+                        traceback.print_exc()
 
             with _live_scores_lock:
                 # Day boundary: save ALL games (not just completed) then clear.
@@ -777,7 +826,10 @@ def _live_score_poller_loop():
         _sync_friendlies_results_if_due()
 
         now = datetime.now()
-        interval = _compute_poll_interval(now, results, active_comps, todays_comps)
+        # Exclude deferred comps from interval calc so they don't force 60s polling.
+        live_results = {k: v for k, v in results.items() if k not in config.RESULT_ONLY_COMPETITIONS and k not in config.REDUCED_POLLING_COMPETITIONS}
+        live_todays = {k: v for k, v in todays_comps.items() if k not in config.RESULT_ONLY_COMPETITIONS and k not in config.REDUCED_POLLING_COMPETITIONS}
+        interval = _compute_poll_interval(now, live_results, live_comps, live_todays)
         time.sleep(interval)
 
 
