@@ -223,6 +223,24 @@ def build_context():
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
         print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
 
+    required_keys = {
+        "clf",
+        "result_label_encoder",
+        "home_goal_reg",
+        "away_goal_reg",
+        "home_shot_reg",
+        "away_shot_reg",
+        "home_sot_reg",
+        "away_sot_reg",
+        "train_columns",
+        "goal_prob_models",
+    }
+    missing = sorted(k for k in required_keys if k not in bundle)
+    if missing:
+        print(f"[model-cache] cache missing required fields ({', '.join(missing)}); rebuilding...")
+        rebuild_model_cache_once()
+        bundle = joblib.load(pm.MODEL_CACHE)
+
     overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
     season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))
     head_to_head = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "head_to_head.json"))

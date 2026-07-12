@@ -125,16 +125,15 @@ RESULT_COLUMNS = [
     "created_at_utc",
     "match_date",
     "match_datetime_utc",
-    "match_datetime_et",
     "competition",
     "home_team",
     "away_team",
     "display_home_team",
     "display_away_team",
+    "is_neutral_site",
     "schedule_only",
     "prediction_quality",
     "predicted_result",
-    "probability_reasoning",
     "prob_home",
     "prob_draw",
     "prob_away",
@@ -144,6 +143,7 @@ RESULT_COLUMNS = [
     "pred_away_shots",
     "pred_home_sot",
     "pred_away_sot",
+    "probability_reasoning",
     "prob_home_goals_0",
     "prob_home_goals_1plus",
     "prob_home_goals_2plus",
@@ -1004,9 +1004,9 @@ def build_prediction_context():
     }
     missing = sorted(k for k in required_keys if k not in bundle)
     if missing:
-        raise RuntimeError(
-            "Model cache is missing required fields: " + ", ".join(missing) + ". Re-run Predict_Match.py."
-        )
+        print(f"[model-cache] cache missing required fields ({', '.join(missing)}); rebuilding...")
+        rebuild_model_cache_once()
+        bundle = joblib.load(pm.MODEL_CACHE)
 
     overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
     season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))
@@ -1196,27 +1196,22 @@ def predict_fixture(row, context):
     pred_away_sot = max(0.0, float(context["away_sot_reg"].predict(X_match)[0]))
 
     key = make_prediction_key(match_date, competition, home_team, away_team)
+    display_home = str(row.get("display_home_team", row.get("home_team", ""))).strip()
+    display_away = str(row.get("display_away_team", row.get("away_team", ""))).strip()
     return {
         "prediction_key": key,
         "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
         "match_date": match_date.strftime("%Y-%m-%d"),
         "match_datetime_utc": match_datetime_utc,
-        "match_datetime_et": match_datetime_et,
         "competition": competition,
         "home_team": home_team,
         "away_team": away_team,
-        "display_home_team": str(row.get("display_home_team", row.get("home_team", ""))).strip(),
-        "display_away_team": str(row.get("display_away_team", row.get("away_team", ""))).strip(),
+        "display_home_team": display_home,
+        "display_away_team": display_away,
+        "is_neutral_site": "0",
         "schedule_only": "0",
         "prediction_quality": "prediction",
         "predicted_result": prediction,
-        "probability_reasoning": pm.build_reasoning_string(
-            home_team, away_team, competition, probabilities,
-            float(aligned_home), float(aligned_away),
-            season_coeff=season_coeff,
-            randomizer_delta=pm.MLS_RANDOMIZER_MAX_DELTA,
-            is_cup=False,
-        ),
         "prob_home": round(probabilities["H"], 6),
         "prob_draw": round(probabilities["D"], 6),
         "prob_away": round(probabilities["A"], 6),
@@ -1226,16 +1221,19 @@ def predict_fixture(row, context):
         "pred_away_shots": round(pred_away_shots, 3),
         "pred_home_sot": round(pred_home_sot, 3),
         "pred_away_sot": round(pred_away_sot, 3),
+        "probability_reasoning": pm.build_reasoning_string(
+            home_team, away_team, competition, probabilities,
+            float(aligned_home), float(aligned_away),
+            season_coeff=season_coeff,
+            randomizer_delta=pm.MLS_RANDOMIZER_MAX_DELTA,
+            is_cup=False,
+        ),
         **goal_probs,
         "actual_home_goals": None,
         "actual_away_goals": None,
         "actual_result": None,
         "is_correct": None,
         "settled_at_utc": None,
-        "display_home_team": str(row.get("display_home_team", row.get("home_team", ""))).strip(),
-        "display_away_team": str(row.get("display_away_team", row.get("away_team", ""))).strip(),
-        "schedule_only": "0",
-        "prediction_quality": "prediction",
     }
 
 
@@ -1260,12 +1258,12 @@ def build_schedule_only_row(row, context=None):
         "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
         "match_date": match_date.strftime("%Y-%m-%d"),
         "match_datetime_utc": str(row.get("match_datetime_utc", "")).strip(),
-        "match_datetime_et": str(row.get("match_datetime_et", "")).strip(),
         "competition": competition,
         "home_team": home_team,
         "away_team": away_team,
         "display_home_team": raw_home,
         "display_away_team": raw_away,
+        "is_neutral_site": "0",
         "schedule_only": "1",
         "prediction_quality": "no_prediction",
         "predicted_result": "",

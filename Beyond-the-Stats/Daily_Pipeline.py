@@ -33,6 +33,7 @@ Key differences from ``Run_All_Pipeline``:
 - Decides full vs. light refresh based on backend ``weekly_model_refresh_days`` (Tue/Fri)
 """
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -879,14 +880,14 @@ def main():
         finally:
             _write_pipeline_status(step_results)
 
-        try:
-            build_mobile_app_feed(pipeline_ok, step_results, DEFAULT_FEED_FILE)
-            publish_to_output()
-        except Exception as exc:
-            print(f"[WARN] Mobile feed generation failed: {exc}")
-        finally:
-            if tee is not None:
-                pipeline_log.deactivate_stdout_tee()
+        # Mobile feed generation disabled (not currently used)
+        # try:
+        #     build_mobile_app_feed(pipeline_ok, step_results, DEFAULT_FEED_FILE)
+        #     publish_to_output()
+        # except Exception as exc:
+        #     print(f"[WARN] Mobile feed generation failed: {exc}")
+        if tee is not None:
+            pipeline_log.deactivate_stdout_tee()
 
         _write_pipeline_timestamp()
         _iter_elapsed = time.monotonic() - _iter_start
