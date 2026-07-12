@@ -898,7 +898,8 @@ def _format_percent_value(value):
 def _prediction_quality_message(quality: str) -> str:
     messages = {
         "prediction": "",
-        "provisional": "Provisional teams — prediction uses fallback league averages.",
+        "provisional": "",
+        "fallback": "Fallback league averages used for unmapped cup teams.",
         "no_prediction": "No model prediction available for this fixture.",
     }
     return messages.get(quality, "")
@@ -923,7 +924,7 @@ def _row_has_model_prediction(row, schedule_only: bool = False) -> bool:
 
 def _infer_prediction_quality(row, schedule_only: bool = False) -> tuple[str, str]:
     stored = str(row.get("prediction_quality", "")).strip().lower()
-    if stored in {"prediction", "provisional", "no_prediction"}:
+    if stored in {"prediction", "provisional", "fallback", "no_prediction"}:
         return stored, _prediction_quality_message(stored)
 
     if schedule_only or not _row_has_model_prediction(row, schedule_only=False):
@@ -1237,7 +1238,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
             ph, pdv, pa = 0.0, 0.0, 0.0
         schedule_only = str(row.get("schedule_only", "")).strip().lower() in {"1", "true", "yes"}
         quality, note = _infer_prediction_quality(row, schedule_only=schedule_only)
-        has_prediction = quality in {"prediction", "provisional"}
+        has_prediction = quality in {"prediction", "provisional", "fallback"}
         actual_home_goals = pd.to_numeric(row.get("actual_home_goals"), errors="coerce")
         actual_away_goals = pd.to_numeric(row.get("actual_away_goals"), errors="coerce")
         rows.append(
@@ -1251,6 +1252,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
                 "competition": str(row["competition"]),
                 "home_team": home,
                 "away_team": away,
+                "unmapped_teams": str(row.get("unmapped_teams", "")).strip(),
                 "schedule_only": schedule_only,
                 "prediction_quality": quality,
                 "has_prediction": has_prediction,
