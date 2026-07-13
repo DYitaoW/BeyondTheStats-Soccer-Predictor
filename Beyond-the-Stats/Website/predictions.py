@@ -1044,7 +1044,7 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
     return rows
 
 
-def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
+def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=None):
     """Load prediction rows from CSV filtered by date range.
     
     Args:
@@ -1052,6 +1052,10 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         mode: Source mode ("global", "mls", "extra", "cups", "national").
         date_range: ``"upcoming"`` — today onward, all future fixtures (default).
                     ``"completed"`` — previous full prediction week to yesterday.
+        window_days: If set, only load rows within ``window_days`` from today
+                     (e.g. ``14`` for a 2-week window).  Applied after the
+                     ``date_range`` lower bound to create a tight window,
+                     reducing the number of rows that need form/strength processing.
     """
     from accuracy_tracker import _compute_accuracy_stats, _compute_league_accuracy_stats
 
@@ -1162,6 +1166,11 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming"):
         # Upcoming: today onward (full season — no upper date bound)
         lo = pd.Timestamp(today_et)
         frame = frame[frame["parsed_date"] >= lo].reset_index(drop=True)
+
+    # Optional tight window: only keep rows within window_days of today
+    if window_days and not frame.empty:
+        hi = pd.Timestamp(today_et + timedelta(days=int(window_days)))
+        frame = frame[frame["parsed_date"] <= hi].reset_index(drop=True)
     
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)

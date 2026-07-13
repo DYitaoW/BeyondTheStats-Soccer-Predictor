@@ -198,12 +198,13 @@ async function loadHomeUpcoming(start = isoToday(), end = start) {
         renderHomeUpcoming(data);
         if (_homeRefreshId) clearInterval(_homeRefreshId);
         _homeRefreshId = setInterval(async () => {
+            if (document.hidden) return;
             const refreshResp = await fetch(`/api/home/upcoming?${params.toString()}`);
             const refreshData = await refreshResp.json().catch(() => ({}));
             if (refreshResp.ok && refreshData?.ok) {
                 renderHomeUpcoming(refreshData);
             }
-        }, 60000);
+        }, 120000);
     } catch (_error) {
         homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">Failed to load upcoming matches.</p>";
     }

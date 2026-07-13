@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import urllib.request
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -41,6 +42,64 @@ RNG = random.Random()
 SIMULATION_RUNS = 2500
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
+SHARED_MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "Predictions", "team_name_mapping_master.json")
+
+
+def _sibling_competitions(competition, mapping):
+    """Return competition keys to search when ``competition`` has no mapping.
+
+    For UEFA competitions, checks every competition in the mapping (since any
+    European league's teams can appear in Champions/Europa/Conference League).
+    For country-specific competitions, checks sibling leagues in the same
+    country (e.g. ``England/Premier League`` → also check ``England/Championship``).
+    """
+    country = competition.split("/")[0] if "/" in competition else competition
+    if country.upper().startswith("UEFA"):
+        return [k for k in mapping if isinstance(mapping.get(k), dict)]
+    return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
+
+
+def _append_mapping_if_missing(competition, unresolved_names, valid_names):
+    if not unresolved_names or not os.path.exists(SHARED_MAPPING_FILE):
+        return
+    try:
+        with open(SHARED_MAPPING_FILE, "r", encoding="utf-8") as fh:
+            mapping = json.load(fh)
+    except Exception:
+        return
+    if not isinstance(mapping, dict):
+        return
+    comp_section = mapping.setdefault(competition, {})
+    siblings = _sibling_competitions(competition, mapping)
+    added = 0
+    for raw_name in sorted(set(unresolved_names)):
+        if raw_name in comp_section:
+            continue
+        candidate = None
+        for sibling_comp in siblings:
+            sibling_section = mapping.get(sibling_comp, {})
+            if isinstance(sibling_section, dict) and raw_name in sibling_section:
+                mapped = sibling_section[raw_name]
+                if mapped and mapped in valid_names:
+                    candidate = mapped
+                    break
+        if not candidate:
+            stripped = re.sub(
+                r"\s+(FC|AFC|United|City|CF|IF|SC|AG|AS|OFK|FK|NK|HNK|UD|CD|RC|CR|Club|Atl[eé]tico)\s*$",
+                "", raw_name, flags=re.IGNORECASE
+            ).strip()
+            candidate = pm.resolve_team_name(stripped, valid_names) or pm.resolve_team_name(raw_name, valid_names)
+        if candidate and candidate in valid_names:
+            comp_section[raw_name] = candidate
+        else:
+            comp_section[raw_name] = ""
+        added += 1
+    if added:
+        with open(SHARED_MAPPING_FILE, "w", encoding="utf-8") as fh:
+            json.dump(mapping, fh, indent=2, ensure_ascii=False)
+        print(f"  Mapping: auto-added {added} entry/ies to {SHARED_MAPPING_FILE}")
+
+
 EXTRA_ESPN_COMPETITIONS = {
     "Argentina/Primera Division": "arg.1",
     "Brazil/Serie A": "bra.1",
@@ -516,6 +575,7 @@ def project_competition(ctx, competition, raw_file):
         if unresolved:
             msg = f"  ESPN: {len(unresolved)} team name(s) in {competition} could not be resolved — add to team_name_mapping_master.json: {sorted(set(unresolved))}"
             print(f"[WARN] {msg}")
+            _append_mapping_if_missing(competition, unresolved, ctx["available_teams"])
         if supplemental:
             supp_df = pd.DataFrame(supplemental).dropna(axis=1, how="all")
             df = pd.concat([df, supp_df], ignore_index=True, sort=False)

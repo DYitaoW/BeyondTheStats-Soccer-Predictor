@@ -52,6 +52,19 @@ MAX_SUBPIPELINE_WORKERS = 3
 LAST_REFRESH_FILE = SP_DIR / "Data" / "last_refresh.json"
 PIPELINE_STATUS_FILE = SP_DIR / "Data" / "pipeline_status.json"
 
+_KNOWN_WORLD_CUP_WINDOWS = [
+    (datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 7, 25, tzinfo=UTC)),
+    (datetime(2030, 5, 1, tzinfo=UTC), datetime(2030, 7, 31, tzinfo=UTC)),
+]
+
+
+def _world_cup_is_active():
+    today = datetime.now(UTC)
+    for start, end in _KNOWN_WORLD_CUP_WINDOWS:
+        if start <= today <= end:
+            return True
+    return False
+
 # Upcoming CSV paths for archival to past_games.json
 GLOBAL_UPCOMING_FILE = SP_DIR / "Data" / "Predictions" / "upcoming_matchweek_predictions.csv"
 MLS_UPCOMING_FILE = SP_DIR / "MLS" / "Data" / "Predictions" / "upcoming_matchweek_predictions.csv"
@@ -268,36 +281,39 @@ def _run_global_subpipeline(args, api_token):
         [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.cup_window_days)],
         continue_on_error=args.continue_on_error,
     )
-    national_process_cmd = [py, str(FILES_DIR / "Process_National_Team_Data.py"), "--world-cup-only"]
-    if args.skip_model_train:
-        national_process_cmd.append("--skip-squad-values")
-    sub["national_world_cup_model"] = run_step(
-        "[global] National team World Cup model",
-        national_process_cmd,
-        continue_on_error=args.continue_on_error,
-    )
-    national_upcoming_cmd = [
-        py,
-        str(FILES_DIR / "Predict_Upcoming_National_Team_Games.py"),
-        "--world-cup-only",
-        "--window-days",
-        str(args.national_window_days),
-    ]
-    if api_token:
-        national_upcoming_cmd += ["--api-token", api_token]
-    sub["upcoming_world_cup_predictions"] = run_step(
-        "[global] Upcoming World Cup predictions",
-        national_upcoming_cmd,
-        continue_on_error=args.continue_on_error,
-    )
-    world_cup_project_cmd = [py, str(FILES_DIR / "Project_World_Cup.py")]
-    if api_token:
-        world_cup_project_cmd += ["--api-token", api_token]
-    sub["projected_world_cup"] = run_step(
-        "[global] Projected World Cup groups and bracket",
-        world_cup_project_cmd,
-        continue_on_error=args.continue_on_error,
-    )
+    if _world_cup_is_active():
+        national_process_cmd = [py, str(FILES_DIR / "Process_National_Team_Data.py"), "--world-cup-only"]
+        if args.skip_model_train:
+            national_process_cmd.append("--skip-squad-values")
+        sub["national_world_cup_model"] = run_step(
+            "[global] National team World Cup model",
+            national_process_cmd,
+            continue_on_error=args.continue_on_error,
+        )
+        national_upcoming_cmd = [
+            py,
+            str(FILES_DIR / "Predict_Upcoming_National_Team_Games.py"),
+            "--world-cup-only",
+            "--window-days",
+            str(args.national_window_days),
+        ]
+        if api_token:
+            national_upcoming_cmd += ["--api-token", api_token]
+        sub["upcoming_world_cup_predictions"] = run_step(
+            "[global] Upcoming World Cup predictions",
+            national_upcoming_cmd,
+            continue_on_error=args.continue_on_error,
+        )
+        world_cup_project_cmd = [py, str(FILES_DIR / "Project_World_Cup.py")]
+        if api_token:
+            world_cup_project_cmd += ["--api-token", api_token]
+        sub["projected_world_cup"] = run_step(
+            "[global] Projected World Cup groups and bracket",
+            world_cup_project_cmd,
+            continue_on_error=args.continue_on_error,
+        )
+    else:
+        print("[skip] No active World Cup window — skipping World Cup steps")
     return sub
 
 
