@@ -152,11 +152,9 @@ def verify_apple_identity_token(identity_token: str, client_id: str | None = Non
 
         kty = apple_key.get("kty", "RSA")
         if kty == "EC":
-            from jwt.algorithms import ECAlgorithm
-            public_key = ECAlgorithm.from_jwk(json.dumps(apple_key))
+            public_key = jwt.algorithms.ECAlgorithm.from_jwk(json.dumps(apple_key))
         else:
-            from jwt.algorithms import RSAAlgorithm
-            public_key = RSAAlgorithm.from_jwk(json.dumps(apple_key))
+            public_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(apple_key))
 
         payload = jwt.decode(
             identity_token,
