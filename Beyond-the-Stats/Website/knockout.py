@@ -35,14 +35,9 @@ _KNOCKOUT_STAGE_KEY_ALIASES = {
 def _build_knockout_framework(comp_name):
     """Return bracket topology for knockout competitions.
 
-    Returns a dict with ``knockout_rounds`` (round descriptors with match
-    slots and feeding information) and optionally ``bracket_map`` (how
-    round slots connect to subsequent rounds), or an empty dict for
-    unknown competitions.
-
-    The ``feeds_to`` field in round-level matchups tells the frontend
-    which round-name + slot the winners feed into, enabling bracket
-    rendering without hardcoded knowledge of the competition format.
+    Returns a list of round descriptors with match slots, feeding
+    information (``feeds_to``), and ordering for bracket rendering.
+    For unknown competitions returns an empty list.
     """
     uefa_rounds = {
         "UEFA/Champions League": [
@@ -98,7 +93,49 @@ def _build_knockout_framework(comp_name):
             {"name": "Third Place", "order": 5, "matches_count": 1},
             {"name": "Final", "order": 6, "matches_count": 1},
         ],
+        "United States/MLS": [
+            {"name": "First Round", "order": 1, "matches_count": 8,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Conference Semifinals", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Conference Semifinals", "slot": 1}},
+                 {"slot": 3, "feeds_to": {"round": "Conference Semifinals", "slot": 2}},
+                 {"slot": 4, "feeds_to": {"round": "Conference Semifinals", "slot": 2}},
+                 {"slot": 5, "feeds_to": {"round": "Conference Semifinals", "slot": 3}},
+                 {"slot": 6, "feeds_to": {"round": "Conference Semifinals", "slot": 3}},
+                 {"slot": 7, "feeds_to": {"round": "Conference Semifinals", "slot": 4}},
+                 {"slot": 8, "feeds_to": {"round": "Conference Semifinals", "slot": 4}},
+             ]},
+            {"name": "Conference Semifinals", "order": 2, "matches_count": 4,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Conference Finals", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Conference Finals", "slot": 1}},
+                 {"slot": 3, "feeds_to": {"round": "Conference Finals", "slot": 2}},
+                 {"slot": 4, "feeds_to": {"round": "Conference Finals", "slot": 2}},
+             ]},
+            {"name": "Conference Finals", "order": 3, "matches_count": 2,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "MLS Cup", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "MLS Cup", "slot": 1}},
+             ]},
+            {"name": "MLS Cup", "order": 4, "matches_count": 1},
+        ],
     }
+
+    def _domestic_cup_framework(stages, two_leg_rounds=None):
+        """Build framework for a domestic cup from its stage list.
+
+        Computes match counts assuming single-elimination: the round k
+        positions before the final has 2^k matches.
+        """
+        result = []
+        total_stages = len(stages)
+        for order, stage in enumerate(stages, 1):
+            positions_after = total_stages - order
+            matches = 2 ** positions_after if positions_after >= 0 else 1
+            entry = {"name": stage, "order": order, "matches_count": matches}
+            result.append(entry)
+        return result
+
     frameworks = {}
     for c in ("UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
               "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
@@ -109,6 +146,18 @@ def _build_knockout_framework(comp_name):
             uefa_key = "UEFA/" + c.split("/", 1)[1]
             if uefa_key in uefa_rounds:
                 frameworks[c] = uefa_rounds[uefa_key]
+    for c, fmt in config._CUP_FORMATS.items():
+        stages = fmt.get("stages") or []
+        if stages and c not in frameworks:
+            frameworks[c] = _domestic_cup_framework(stages, fmt.get("two_leg_rounds"))
+
+    mls_views = {"United States/MLS", "United States/MLS - Eastern Conference",
+                 "United States/MLS - Western Conference", "United States/MLS - Supporters Shield Table"}
+    if comp_name in mls_views:
+        return uefa_rounds.get("United States/MLS", [])
+    for mv in mls_views:
+        if mv not in frameworks:
+            frameworks[mv] = uefa_rounds.get("United States/MLS", [])
     return frameworks.get(comp_name, [])
 
 

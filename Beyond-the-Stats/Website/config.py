@@ -58,6 +58,10 @@ CURRENT_SEASON_TEAMS_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "cu
 MOBILE_FEED_FILE = os.path.join(PROJECT_DIR, "Output", "mobile_app_feed.json")
 WORLD_CUP_PROJECTION_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
 
+# ── League-Data Cache (pre-computed at pipeline / cached on read) ──
+
+LEAGUE_DATA_DIR = os.path.join(PROJECT_DIR, "Output", "LeagueData")
+
 # ── Live Activities (iOS 16.1+) ──────────────────────────────────────
 
 LIVE_ACTIVITIES_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "live_activities.json")
@@ -530,6 +534,14 @@ APNS_KEY_ID = os.environ.get("APNS_KEY_ID", "")
 APNS_TEAM_ID = os.environ.get("APNS_TEAM_ID", "")
 APNS_BUNDLE_ID = os.environ.get("APNS_BUNDLE_ID", "")
 APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "true").strip().lower() in ("1", "true")
+
+# ── Apple Sign In ────────────────────────────────────────────────
+
+# iOS app's bundle ID (or Service ID) — used as the `aud` when verifying
+# Apple identity tokens.  Must match the client_id configured in the
+# Apple Developer portal for Sign In with Apple.
+APPLE_CLIENT_ID = os.environ.get("APPLE_CLIENT_ID", "").strip()
+USERS_FILE = os.path.join(PROJECT_DIR, "Data", "users.json")
 
 # ── CORS & Security ───────────────────────────────────────────────
 

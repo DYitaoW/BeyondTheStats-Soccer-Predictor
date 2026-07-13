@@ -598,6 +598,380 @@ def api_team_mappings_predictor_teams():
     return jsonify(build_predictor_teams_payload())
 
 
+# ═══════════════════════════════════════════════════════════════════
+#  AUTH — Apple Sign In
+# ═══════════════════════════════════════════════════════════════════
+
+
+def _require_user():
+    """Extract session user from Authorization header.
+
+    Requires ``Authorization: Bearer <session_jwt>``.
+
+    Returns ``(sub, user_dict)`` or ``(None, error_response)``.
+    """
+    from apple_auth import decode_session_jwt, check_and_refresh_tier
+
+    auth = request.headers.get("Authorization", "").strip()
+    if not auth.lower().startswith("bearer "):
+        return None, (jsonify({"ok": False, "error": "Missing or invalid Authorization header"}), 401)
+    token = auth[7:].strip()
+    if not token:
+        return None, (jsonify({"ok": False, "error": "Empty token"}), 401)
+    session = decode_session_jwt(token)
+    if not session:
+        return None, (jsonify({"ok": False, "error": "Invalid or expired session"}), 401)
+    sub = session.get("sub", "")
+    if not sub:
+        return None, (jsonify({"ok": False, "error": "Invalid session payload"}), 401)
+    user = check_and_refresh_tier(sub)
+    if not user:
+        return None, (jsonify({"ok": False, "error": "User not found"}), 401)
+    return sub, user
+
+
+def _require_tier(min_tier: str):
+    """Decorator factory that requires a minimum tier on a protected endpoint.
+
+    Usage::
+
+        @app.get("/api/premium-feature")
+        @_require_tier("premium")
+        def api_premium():
+            sub, user = _require_user()
+            ...
+    """
+    def decorator(f):
+        from functools import wraps
+        from apple_auth import require_tier
+
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            result = _require_user()
+            if result[0] is None:
+                return result[1]
+            sub, user = result
+            ok, err = require_tier(user, min_tier)
+            if not ok:
+                return jsonify({"ok": False, "error": err}), 403
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+@app.post("/api/auth/apple")
+def api_auth_apple():
+    """Verify Apple identity token and return a session JWT.
+
+    Body (JSON):
+        identity_token  (str, required) — Apple-provided identity token
+        client_id       (str, optional) — iOS bundle id (defaults to env)
+
+    Response:
+        ok, session_token, user
+    """
+    payload = request.get_json(silent=True) or {}
+    identity_token = str(payload.get("identity_token", "")).strip()
+    if not identity_token:
+        return jsonify({"ok": False, "error": "identity_token required"}), 400
+
+    from apple_auth import verify_apple_identity_token, get_or_create_user, create_session_jwt
+
+    client_id = str(payload.get("client_id", "")).strip() or config.APPLE_CLIENT_ID or None
+    apple_payload = verify_apple_identity_token(identity_token, client_id)
+    if not apple_payload:
+        return jsonify({"ok": False, "error": "Invalid identity token"}), 401
+
+    sub = apple_payload.get("sub", "")
+    if not sub:
+        return jsonify({"ok": False, "error": "Token missing subject"}), 401
+
+    user = get_or_create_user(sub)
+    session_token = create_session_jwt(sub, user.get("tier", "free"))
+    if not session_token:
+        return jsonify({"ok": False, "error": "Server misconfigured (missing FLASK_SECRET_KEY)"}), 500
+
+    return jsonify({
+        "ok": True,
+        "session_token": session_token,
+        "user": user,
+    })
+
+
+@app.get("/api/auth/me")
+def api_auth_me():
+    """Return the current user's data."""
+    result = _require_user()
+    if result[0] is None:
+        return result[1]
+    sub, user = result
+    return jsonify({"ok": True, "user": user})
+
+
+@app.patch("/api/auth/preferences")
+def api_auth_preferences():
+    """Update user preferences (teams/leagues followed, widget/Live Activity settings).
+
+    Body (JSON, all optional):
+        teams_followed         (list[str])
+        leagues_followed       (list[str])
+        widget_settings        (dict)
+        live_activity_settings (dict)
+
+    Returns the updated user object.
+    """
+    result = _require_user()
+    if result[0] is None:
+        return result[1]
+    sub, _user = result
+
+    from apple_auth import update_user
+
+    body = request.get_json(silent=True) or {}
+    kwargs = {}
+    for key in ("teams_followed", "leagues_followed", "widget_settings", "live_activity_settings"):
+        if key in body:
+            kwargs[key] = body[key]
+
+    if not kwargs:
+        return jsonify({"ok": False, "error": "No valid fields to update"}), 400
+
+    updated = update_user(sub, **kwargs)
+    if not updated:
+        return jsonify({"ok": False, "error": "User not found"}), 404
+
+    return jsonify({"ok": True, "user": updated})
+
+
+@app.post("/api/auth/purchase")
+def api_auth_purchase():
+    """Verify an App Store receipt and apply purchases/subscriptions.
+
+    Body (JSON):
+        receipt_data  (str, required) — base64-encoded appStoreReceipt
+
+    Response:
+        ok, user (updated), new_purchases (list of applied product IDs)
+    """
+    result = _require_user()
+    if result[0] is None:
+        return result[1]
+    sub, _user = result
+
+    body = request.get_json(silent=True) or {}
+    receipt_data = str(body.get("receipt_data", "")).strip()
+    if not receipt_data:
+        return jsonify({"ok": False, "error": "receipt_data required"}), 400
+    if len(receipt_data) > 200000:
+        return jsonify({"ok": False, "error": "receipt_data too large"}), 400
+
+    from apple_auth import verify_app_store_receipt, apply_purchases
+
+    parsed = verify_app_store_receipt(receipt_data)
+    if not parsed:
+        return jsonify({"ok": False, "error": "Invalid receipt"}), 400
+
+    updated = apply_purchases(sub, parsed)
+    if not updated:
+        return jsonify({"ok": False, "error": "User not found"}), 404
+
+    new_pids = [
+        tx["product_id"] for tx in (parsed.get("transactions") or [])
+        if tx.get("product_id")
+    ]
+    return jsonify({
+        "ok": True,
+        "user": updated,
+        "new_purchases": new_pids,
+    })
+
+
+@app.get("/api/auth/products")
+def api_auth_products():
+    """Return available subscription and consumable product definitions."""
+    from apple_auth import SUBSCRIPTION_PRODUCTS, CONSUMABLE_PRODUCTS
+
+    subscriptions = [
+        {
+            "product_id": pid,
+            "tier": info["tier"],
+            "credits_monthly_cap": info["credits_monthly_cap"],
+            "price": info.get("price", 0),
+        }
+        for pid, info in SUBSCRIPTION_PRODUCTS.items()
+    ]
+    consumables = [
+        {
+            "product_id": pid,
+            "credits": info["credits"],
+            "price": info.get("price", 0),
+        }
+        for pid, info in CONSUMABLE_PRODUCTS.items()
+    ]
+    return jsonify({
+        "ok": True,
+        "subscriptions": subscriptions,
+        "consumables": consumables,
+    })
+
+
+@app.post("/api/auth/apple-notifications")
+def api_apple_notifications():
+    """Receive Apple server-to-server notification V2 for subscription state changes.
+
+    Apple sends these when subscriptions renew, expire, get refunded, etc.
+    This endpoint is called directly by Apple's servers — no auth header.
+
+    Body (JSON):
+        signedPayload  (str) — JWS-signed notification payload
+
+    Responds with HTTP 200 to acknowledge receipt.
+    """
+    body = request.get_json(silent=True) or {}
+    signed_payload = str(body.get("signedPayload", "")).strip()
+    if not signed_payload:
+        return jsonify({"ok": False, "error": "Missing signedPayload"}), 400
+
+    from apple_auth import verify_apple_signed_payload, process_apple_notification
+
+    payload = verify_apple_signed_payload(signed_payload)
+    if not payload:
+        return jsonify({"ok": False, "error": "Invalid signature"}), 401
+
+    result = process_apple_notification(payload)
+    if not result.get("ok"):
+        app.logger.warning("Apple notification processing warning: %s", result.get("error"))
+
+    return jsonify({"ok": True, "result": result})
+
+
+@app.get("/api/auth/credits")
+def api_auth_credits():
+    """Return the current user's credit balance."""
+    result = _require_user()
+    if result[0] is None:
+        return result[1]
+    sub, _user = result
+
+    from apple_auth import get_user
+    user = get_user(sub)
+    return jsonify({
+        "ok": True,
+        "credits": user.get("credits", 0) if user else 0,
+        "credits_purchased": user.get("credits_purchased", 0) if user else 0,
+    })
+
+
+@app.patch("/api/auth/tier")
+def api_auth_tier():
+    """Manually set a user's tier (admin only — requires mutation token).
+
+    Body (JSON):
+        sub    (str, required) — the user's Apple sub
+        tier   (str, required) — e.g. "free", "premium"
+
+    Response:
+        ok, user
+    """
+    if not _mutation_auth_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    target_sub = str(body.get("sub", "")).strip()
+    new_tier = str(body.get("tier", "")).strip()
+    if not target_sub or not new_tier:
+        return jsonify({"ok": False, "error": "sub and tier required"}), 400
+    from apple_auth import update_user
+    updated = update_user(target_sub, tier=new_tier)
+    if not updated:
+        return jsonify({"ok": False, "error": "User not found"}), 404
+    return jsonify({"ok": True, "user": updated})
+
+
+@app.post("/api/auth/credits/decrement")
+def api_auth_credits_decrement():
+    """Decrement credits for the current user.
+
+    Body (JSON):
+        amount  (int, optional) — number of credits to use (default 1, max 100)
+
+    Response:
+        ok, success (bool), credits (remaining balance)
+    """
+    result = _require_user()
+    if result[0] is None:
+        return result[1]
+    sub, _user = result
+
+    body = request.get_json(silent=True) or {}
+    try:
+        amount = max(1, min(100, int(body.get("amount", 1))))
+    except (TypeError, ValueError):
+        amount = 1
+
+    from apple_auth import decrement_credits
+    success, balance = decrement_credits(sub, amount)
+    if not success:
+        return jsonify({"ok": True, "success": False, "credits": balance, "error": "Insufficient credits"}), 402
+    return jsonify({"ok": True, "success": True, "credits": balance})
+
+
+@app.post("/api/auth/check-access")
+def api_auth_check_access():
+    """Check if the user can access a feature (tier + credits gate).
+
+    Body (JSON):
+        min_tier      (str, optional) — minimum tier required (default "free")
+        credit_cost   (int, optional) — number of credits needed (default 0)
+
+    Response:
+        ok, allowed (bool), user, error (str | None),
+        credits (current balance)
+    """
+    result = _require_user()
+    if result[0] is None:
+        return result[1]
+    sub, user = result
+
+    body = request.get_json(silent=True) or {}
+    min_tier = str(body.get("min_tier", "free")).strip()
+    credit_cost = 0
+    try:
+        credit_cost = max(0, int(body.get("credit_cost", 0)))
+    except (TypeError, ValueError):
+        credit_cost = 0
+
+    from apple_auth import require_tier, require_credits
+
+    tier_ok, tier_err = require_tier(user, min_tier)
+    if not tier_ok:
+        return jsonify({
+            "ok": True,
+            "allowed": False,
+            "error": tier_err,
+            "user": user,
+            "credits": user.get("credits", 0),
+        })
+
+    if credit_cost > 0:
+        cred_ok, cred_err = require_credits(user, credit_cost)
+        if not cred_ok:
+            return jsonify({
+                "ok": True,
+                "allowed": False,
+                "error": cred_err,
+                "user": user,
+                "credits": user.get("credits", 0),
+            })
+
+    return jsonify({
+        "ok": True,
+        "allowed": True,
+        "error": None,
+        "user": user,
+        "credits": user.get("credits", 0),
+    })
+
+
 @app.get("/api/help")
 def api_help():
     """Return a listing of every /api/ route with a short description."""
@@ -629,6 +1003,15 @@ def api_help():
         ("/api/notifications", "GET", "List notification subscriptions"),
         ("/api/notifications", "POST", "Send a test notification"),
         ("/api/notifications/register", "POST", "Register push notification token"),
+        ("/api/auth/apple", "POST", "Sign in with Apple (exchange identity token for session JWT)"),
+        ("/api/auth/me", "GET", "Return current user data (requires session token)"),
+        ("/api/auth/preferences", "PATCH", "Update user preferences (teams/leagues followed, widget settings)"),
+        ("/api/auth/purchase", "POST", "Verify App Store receipt and apply purchases/subscriptions"),
+        ("/api/auth/products", "GET", "List available subscription and consumable products"),
+        ("/api/auth/credits", "GET", "Return current credit balance"),
+        ("/api/auth/credits/decrement", "POST", "Decrement credits (use a prediction/feature)"),
+        ("/api/auth/check-access", "POST", "Check tier + credits before using a feature (?min_tier=, ?credit_cost=)"),
+        ("/api/auth/tier", "PATCH", "Admin: manually set a user's tier (requires mutation token)"),
         ("/api/mobile/feed", "GET", "Mobile home feed"),
         ("/api/mobile/widget", "GET", "Mobile widget data"),
         ("/api/feedback", "POST", "Submit user feedback"),
@@ -2370,9 +2753,6 @@ def api_league_data(competition):
          "real": {"standings": {"groups": [...], "standings_layout": "...", ...}},
          "bracket": {"projected": {...}, "knockout": {...}, "odds_knockout": {...}},
          "fixtures": [...]}
-
-    Legacy top-level keys (``predicted_table``, ``real_table``, etc.) are kept
-    as mirrors of the nested fields for existing clients.
     """
     comp = competition.strip()
 
@@ -2381,6 +2761,11 @@ def api_league_data(competition):
             "ok": False,
             "error": f"Competition not available in league APIs: {comp}",
         }), 404
+
+    from league_data import _load_league_data_from_cache
+    cached = _load_league_data_from_cache(comp)
+    if cached is not None:
+        return jsonify(cached)
 
     return jsonify(build_league_data_payload(comp))
 

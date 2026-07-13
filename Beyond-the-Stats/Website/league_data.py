@@ -6,6 +6,9 @@ rules (MLS conferences, Liga MX tournaments, cup knockouts) are described in
 """
 from __future__ import annotations
 
+import json
+import os
+
 import config
 from competition_rules import (
     build_structured_standings_groups,
@@ -16,6 +19,7 @@ from competition_rules import (
 )
 from knockout import (
     _build_cup_knockout_payload,
+    _build_knockout_framework,
     _enrich_league_data_cup_fields,
     _gather_competition_cup_matches,
 )
@@ -32,6 +36,57 @@ from standings import (
     _load_league_teams,
     _UEFA_COMPETITIONS,
 )
+
+
+_MLS_EAST_TEAMS = {
+    "Atlanta Utd", "CF Montreal", "Charlotte", "Chicago Fire",
+    "Columbus Crew", "DC United", "FC Cincinnati", "Inter Miami",
+    "Nashville SC", "New England Revolution", "New York City",
+    "New York Red Bulls", "Orlando City", "Philadelphia Union", "Toronto FC",
+}
+_MLS_WEST_TEAMS = {
+    "Austin FC", "Colorado Rapids", "FC Dallas", "Houston Dynamo",
+    "Los Angeles Galaxy", "Los Angeles FC", "Minnesota United",
+    "Portland Timbers", "Real Salt Lake", "San Diego FC",
+    "San Jose Earthquakes", "Seattle Sounders", "Sporting Kansas City",
+    "St. Louis City", "Vancouver Whitecaps",
+}
+
+
+def _slugify_competition(competition):
+    out = (competition or "").strip().lower()
+    out = out.replace("/", "_").replace(" ", "_").replace("-", "_")
+    out = out.replace(".", "").replace(",", "").replace("'", "")
+    while "__" in out:
+        out = out.replace("__", "_")
+    return out.strip("_") or "unknown"
+
+
+def _league_data_cache_path(comp_name):
+    slug = _slugify_competition(comp_name)
+    return os.path.join(config.LEAGUE_DATA_DIR, f"{slug}.json")
+
+
+def _load_league_data_from_cache(comp_name):
+    path = _league_data_cache_path(comp_name)
+    if os.path.exists(path):
+        try:
+            diff = os.path.getmtime(path)
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def _write_league_data_cache(comp_name, payload):
+    path = _league_data_cache_path(comp_name)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2, default=str)
+    except Exception:
+        pass
 
 
 MLS_PREDICTED_GROUP_NAMES = (
@@ -196,25 +251,124 @@ def _load_fixtures(comp_name: str) -> list[dict]:
     return []
 
 
+def _generate_mls_playoff_bracket():
+    """Generate MLS playoff bracket from current projected conference positions.
+
+    First round is 1v8, 2v7, 3v6, 4v5 per conference (static format).
+    Later rounds use TBD placeholders. Topology (feeds_to) is included.
+    """
+    east_rows = _load_projected_competition_table("United States/MLS - Eastern Conference")
+    west_rows = _load_projected_competition_table("United States/MLS - Western Conference")
+    east_rows = [r for r in (east_rows or []) if r.get("team")]
+    west_rows = [r for r in (west_rows or []) if r.get("team")]
+    east_rows.sort(key=lambda r: int(r.get("position", 999)))
+    west_rows.sort(key=lambda r: int(r.get("position", 999)))
+
+    first_round = []
+    for conf_name, conf_rows, offset in [
+        ("East", east_rows, 0),
+        ("West", west_rows, 4),
+    ]:
+        if len(conf_rows) < 8:
+            continue
+        pairings = [(0, 7), (1, 6), (2, 5), (3, 4)]
+        for slot_idx, (hi, lo) in enumerate(pairings):
+            home = conf_rows[hi].get("team", "")
+            away = conf_rows[lo].get("team", "")
+            if home and away:
+                first_round.append({
+                    "slot": offset + slot_idx + 1,
+                    "home_team": home,
+                    "away_team": away,
+                    "home_seed": hi + 1,
+                    "away_seed": lo + 1,
+                    "conference": conf_name,
+                })
+
+    if not first_round:
+        return {"knockout_rounds": []}
+
+    rounds = [
+        {
+            "name": "First Round",
+            "order": 1,
+            "matches_count": len(first_round),
+            "matchups": [
+                {"slot": i + 1, "feeds_to": {
+                    "round": "Conference Semifinals",
+                    "slot": ((i) // 2) + 1,
+                }}
+                for i in range(len(first_round))
+            ],
+        },
+        {
+            "name": "Conference Semifinals",
+            "order": 2,
+            "matches_count": len(first_round) // 2,
+            "matchups": [
+                {"slot": i + 1, "feeds_to": {
+                    "round": "Conference Finals",
+                    "slot": (i // 2) + 1,
+                }}
+                for i in range(len(first_round) // 2)
+            ],
+        },
+        {
+            "name": "Conference Finals",
+            "order": 3,
+            "matches_count": 2,
+            "matchups": [
+                {"slot": 1, "feeds_to": {"round": "MLS Cup", "slot": 1}},
+                {"slot": 2, "feeds_to": {"round": "MLS Cup", "slot": 1}},
+            ],
+        },
+        {"name": "MLS Cup", "order": 4, "matches_count": 1},
+    ]
+
+    return {
+        "rounds": [
+            {"name": "First Round", "matches": first_round},
+            {"name": "Conference Semifinals", "matches": [
+                {"slot": i + 1, "home_team": "TBD", "away_team": "TBD"}
+                for i in range(len(first_round) // 2)
+            ]},
+            {"name": "Conference Finals", "matches": [
+                {"slot": 1, "home_team": "TBD", "away_team": "TBD"},
+                {"slot": 2, "home_team": "TBD", "away_team": "TBD"},
+            ]},
+            {"name": "MLS Cup", "matches": [
+                {"slot": 1, "home_team": "TBD", "away_team": "TBD"},
+            ]},
+        ],
+        "knockout_rounds": rounds,
+    }
+
+
 def _build_bracket_section(comp_name: str) -> dict:
     bracket = {
         "projected": None,
         "knockout": None,
         "odds_knockout": None,
         "real_knockout": None,
+        "knockout_rounds": None,
     }
     base_comp, _view = resolve_competition_query(comp_name)
 
     if base_comp == "United States/MLS" or comp_name.startswith("United States/MLS"):
-        projected = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
-        if isinstance(projected, dict) and projected:
-            bracket["projected"] = projected
+        mls_playoff = _generate_mls_playoff_bracket()
+        if mls_playoff.get("rounds"):
+            bracket["projected"] = mls_playoff
+            bracket["knockout_rounds"] = mls_playoff.get("knockout_rounds")
         return bracket
 
     cup_fmt = config._CUP_FORMATS.get(base_comp) or config._CUP_FORMATS.get(comp_name)
     is_cup = bool(cup_fmt) or base_comp in _UEFA_COMPETITIONS or comp_name in _UEFA_COMPETITIONS
     if not is_cup:
         return bracket
+
+    ko_framework = _build_knockout_framework(base_comp) or _build_knockout_framework(comp_name)
+    if ko_framework:
+        bracket["knockout_rounds"] = ko_framework
 
     projected_brackets = _load_json_payload(config.CUP_PROJECTED_BRACKET_FILE)
     if isinstance(projected_brackets, dict):
@@ -293,12 +447,10 @@ def _enrich_mls_payload(comp: str, payload: dict) -> dict:
         view_payload = mls_winners[view_key]
         for key in ("winner_probabilities", "winners_odds", "champion", "simulations_run"):
             if view_payload.get(key) is not None:
-                payload[key] = view_payload[key]
                 if key == "winner_probabilities":
                     payload["predicted"]["winner"]["probabilities"] = view_payload[key]
                 elif key == "winners_odds":
                     payload["predicted"]["winners_odds"] = view_payload[key]
-                    payload["winners_odds"] = view_payload[key]
                 elif key == "champion":
                     payload["predicted"]["winner"]["champion"] = view_payload[key]
                 elif key == "simulations_run":
@@ -306,10 +458,18 @@ def _enrich_mls_payload(comp: str, payload: dict) -> dict:
 
     bracket_file = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
     if isinstance(bracket_file, dict) and bracket_file:
-        payload["bracket"]["projected"] = bracket_file
+        cup_probs = bracket_file.get("mls_cup_winner_probabilities") or {}
+        if cup_probs:
+            payload["predicted"]["winner"]["probabilities"] = {
+                k: round(float(v), 2) for k, v in cup_probs.items() if float(v or 0) > 0
+            }
         cup_data = bracket_file.get("mls_cup") or {}
         if cup_data.get("winner"):
+            payload["predicted"]["winner"]["champion"] = cup_data.get("winner")
             payload["mls_cup_winner"] = cup_data.get("winner")
+        sims = bracket_file.get("simulations_run", 0)
+        if sims:
+            payload["predicted"]["winner"]["simulations_run"] = sims
 
     if not payload.get("fixtures"):
         payload["fixtures"] = _load_fixtures(comp)
@@ -319,6 +479,11 @@ def _enrich_mls_payload(comp: str, payload: dict) -> dict:
 def build_league_data_payload(comp_name: str) -> dict:
     """Build the canonical league-data API payload for one competition."""
     comp = str(comp_name or "").strip()
+
+    cached = _load_league_data_from_cache(comp)
+    if cached is not None:
+        return cached
+
     fmt = competition_format_spec(comp)
 
     comp_table = _load_projected_competition_table(comp)
@@ -351,6 +516,7 @@ def build_league_data_payload(comp_name: str) -> dict:
         "position_odds": position_odds,
     }
 
+    is_mls = str(comp or "").startswith("United States/MLS")
     payload: dict = {
         "ok": True,
         "competition": comp,
@@ -359,19 +525,19 @@ def build_league_data_payload(comp_name: str) -> dict:
         "real": {"standings": real_standings},
         "bracket": bracket,
         "fixtures": fixtures,
-        # Legacy mirrors
-        "predicted_table": predicted_table,
-        "position_odds": {
-            "simple": position_odds["simple"],
-            "detailed": position_odds["detailed"],
-        },
-        "winners_odds": winners_odds,
-        "real_table": real_standings,
     }
 
-    for key in ("winner_probabilities", "champion", "simulations_run"):
-        if winner_fields.get(key) is not None:
-            payload[key] = winner_fields[key]
+    if not is_mls:
+        payload["predicted_table"] = predicted_table
+        payload["position_odds"] = {
+            "simple": position_odds["simple"],
+            "detailed": position_odds["detailed"],
+        }
+        payload["winners_odds"] = winners_odds
+        payload["real_table"] = real_standings
+        for key in ("winner_probabilities", "champion", "simulations_run"):
+            if winner_fields.get(key) is not None:
+                payload[key] = winner_fields[key]
 
     payload = _enrich_league_data_cup_fields(comp, payload)
     if payload.get("knockout"):
@@ -391,4 +557,7 @@ def build_league_data_payload(comp_name: str) -> dict:
     payload["predicted"] = predicted
 
     payload = _enrich_mls_payload(comp, payload)
+
+    _write_league_data_cache(comp, payload)
+
     return payload
