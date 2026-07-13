@@ -773,12 +773,16 @@ def api_upcoming(mode):
                 return False
         return True
 
+    # 4week mode: include past games + ALL competitions (friendlies, excluded leagues, etc.)
+    four_week_mode = window_include_past
+    date_range = "all" if four_week_mode else "upcoming"
+
     if mode == "global":
         # Prefer the pipeline-generated merged CSV (single read) over
         # loading all 6 individual source CSVs.
-        if os.path.exists(config.ALL_UPCOMING_FILE):
+        if os.path.exists(config.ALL_UPCOMING_FILE) and not four_week_mode:
             all_rows, combined_stats, combined_league_stats = \
-                _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", window_days=window_days)
+                _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", date_range=date_range, window_days=window_days)
             combined_stats = dict(combined_stats or {})
             combined_league_stats = {ls.get("competition", ""): ls for ls in (combined_league_stats or []) if ls.get("competition")}
         else:
@@ -787,13 +791,14 @@ def api_upcoming(mode):
             combined_league_stats = {}
             seen_keys = set()
             for source, csv_path in _ALL_UPCOMING_SOURCES:
-                rows, _st, _ls = _load_upcoming_rows(csv_path, source, window_days=window_days)
+                rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range=date_range, window_days=window_days)
                 for r in rows:
                     comp = str(r.get("competition", "")).strip()
-                    if comp in config.UPCOMING_ONLY_COMPETITIONS:
-                        continue
-                    if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
-                        continue
+                    if not four_week_mode:
+                        if comp in config.UPCOMING_ONLY_COMPETITIONS:
+                            continue
+                        if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                            continue
                     ck = "|".join(
                         str(r.get(k, "")).strip().lower()
                         for k in ("match_date_iso", "competition", "home_team", "away_team")
@@ -849,7 +854,7 @@ def api_upcoming(mode):
     if not entry:
         return jsonify({"ok": False, "error": f"Unknown mode: {mode}"}), 400
     csv_path, source_mode = entry
-    rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode, window_days=window_days)
+    rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode, date_range=date_range, window_days=window_days)
     if mode == "mls":
         rows = _regional_espn_schedule_fallback(rows)
     if is_filtered:
