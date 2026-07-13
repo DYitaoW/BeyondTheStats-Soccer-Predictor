@@ -131,6 +131,33 @@ def _find_apple_key(kid: str) -> dict | None:
     return None
 
 
+def _jwk_to_public_key(alg: str, jwk_dict: dict):
+    """Convert a JWK dict to a cryptography public key matching *alg*.
+
+    PyJWT 2.x provides ``RSAAlgorithm.from_jwk`` / ``ECAlgorithm.from_jwk``
+    class methods, but there is no generic dispatcher — we map *alg* to the
+    correct class manually.
+    """
+    import jwt.algorithms as _algs
+
+    _ALG_TO_CLS = {
+        "RS256": _algs.RSAAlgorithm,
+        "RS384": _algs.RSAAlgorithm,
+        "RS512": _algs.RSAAlgorithm,
+        "PS256": _algs.RSAPSSAlgorithm,
+        "PS384": _algs.RSAPSSAlgorithm,
+        "PS512": _algs.RSAPSSAlgorithm,
+        "ES256": _algs.ECAlgorithm,
+        "ES256K": _algs.ECAlgorithm,
+        "ES384": _algs.ECAlgorithm,
+        "ES512": _algs.ECAlgorithm,
+    }
+    algo_cls = _ALG_TO_CLS.get(alg)
+    if algo_cls is None:
+        raise ValueError(f"Unsupported algorithm: {alg}")
+    return algo_cls.from_jwk(json.dumps(jwk_dict))
+
+
 def verify_apple_identity_token(identity_token: str, client_id: str | None = None) -> dict | None:
     """Verify an Apple identity token, return the payload dict or None."""
     client_id = client_id or os.environ.get("APPLE_CLIENT_ID", "")
@@ -150,11 +177,10 @@ def verify_apple_identity_token(identity_token: str, client_id: str | None = Non
             print(f"[apple-auth] no JWK found for kid={kid}")
             return None
 
-        # Pass the JWK dict directly — PyJWT's Algorithm.prepare_key
-        # handles both RSA (kty="RSA") and EC (kty="EC") keys automatically.
+        public_key = _jwk_to_public_key(alg, apple_key)
         payload = jwt.decode(
             identity_token,
-            apple_key,
+            public_key,
             algorithms=[alg],
             audience=client_id,
             issuer="https://appleid.apple.com",
