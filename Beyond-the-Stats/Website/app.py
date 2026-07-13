@@ -731,11 +731,19 @@ def api_upcoming(mode):
 
     Optional query parameters for filtering (``global`` mode only):
       ``month`` (str) — ISO month prefix like ``"2026-07"``
-      ``window`` (str) — ``"2week"`` filters to today + 14 days
+      ``window`` (str) — ``"2week"`` (today + 14d), ``"4week"`` (prev week + today + 21d)
     """
     month = str(request.args.get("month", "")).strip()
     window = str(request.args.get("window", "")).strip()
-    window_days = 14 if window == "2week" else None
+    if window == "4week":
+        window_days = 28
+        window_include_past = True
+    elif window == "2week":
+        window_days = 14
+        window_include_past = False
+    else:
+        window_days = None
+        window_include_past = False
     is_filtered = bool(month or window)
 
     def _match_window(date_iso: str) -> bool:
@@ -747,9 +755,21 @@ def api_upcoming(mode):
                 d = datetime.strptime(str(date_iso)[:10], "%Y-%m-%d").date()
             except (ValueError, TypeError):
                 return False
-            today = datetime.now(timezone.utc).date()
-            cutoff = today + timedelta(days=window_days)
-            if d < today or d > cutoff:
+            if window_include_past:
+                # Calendar-week mode: previous Mon-Sun + current + next 2 weeks
+                try:
+                    from zoneinfo import ZoneInfo
+                    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+                except Exception:
+                    today_et = datetime.now(timezone.utc).date()
+                current_week_start = today_et - timedelta(days=today_et.weekday())
+                lower = current_week_start - timedelta(days=7)
+                cutoff = current_week_start + timedelta(days=20)
+            else:
+                today = datetime.now(timezone.utc).date()
+                lower = today
+                cutoff = today + timedelta(days=window_days)
+            if d < lower or d > cutoff:
                 return False
         return True
 
