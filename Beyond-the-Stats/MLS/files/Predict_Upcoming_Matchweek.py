@@ -125,6 +125,7 @@ RESULT_COLUMNS = [
     "created_at_utc",
     "match_date",
     "match_datetime_utc",
+    "match_datetime_et",
     "competition",
     "home_team",
     "away_team",
@@ -741,6 +742,7 @@ def load_upcoming_matchweek_fixtures_from_espn(
                 {
                     "match_date": match_date,
                     "match_datetime_et": event_dt_et.isoformat(),
+                    "match_datetime_utc": event_date.isoformat(),
                     "competition": competition_name,
                     "home_team": home_team,
                     "away_team": away_team,
@@ -818,6 +820,7 @@ def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
             {
                 "match_date": match_date,
                 "match_datetime_et": match_dt_et.isoformat(),
+                "match_datetime_utc": parsed.isoformat(),
                 "competition": MLS_COMPETITION_NAME,
                 "home_team": home_team,
                 "away_team": away_team,

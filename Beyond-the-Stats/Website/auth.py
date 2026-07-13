@@ -7,12 +7,19 @@ import config
 
 
 def _client_ip():
-    """Return best-effort client IP, respecting trusted proxy forwarding headers."""
-    forwarded_for = request.headers.get("X-Forwarded-For", "")
-    if forwarded_for:
-        first_ip = forwarded_for.split(",")[0].strip()
-        if first_ip:
-            return first_ip
+    """Return the originating client IP.
+
+    Uses ``request.remote_addr`` (the actual TCP connection source) for
+    rate-limiting to prevent spoofing.  When running behind a trusted
+    reverse-proxy set ``TRUST_X_FORWARDED_FOR=1`` in the environment to
+    instead read ``X-Forwarded-For``.
+    """
+    if config.TRUST_X_FORWARDED_FOR:
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        if forwarded_for:
+            first_ip = forwarded_for.split(",")[0].strip()
+            if first_ip:
+                return first_ip
     return request.remote_addr or "unknown"
 
 
@@ -86,78 +93,6 @@ def _mutation_auth_ok():
 
 _api_rate_lock = threading.Lock()
 _api_rate_events_by_ip = {}
-
-
-def enforce_mutation_auth(f):
-    """Decorator to block backend-changing API calls without valid mutation secret."""
-    def wrapper():
-        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
-            return f()
-
-        protected_paths = {
-            "/api/notifications",
-            "/api/notifications/register",
-            "/api/feedback",
-            "/api/predict",
-            "/api/predict/mls",
-            "/api/predict/extra",
-            "/api/refresh",
-            "/api/retrain",
-        }
-        if request.path not in protected_paths:
-            return f()
-
-        if _mutation_auth_ok():
-            return f()
-
-        if request.path in {"/api/refresh", "/api/retrain"} and _refresh_auth_ok():
-            return f()
-
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    return wrapper
-
-
-def enforce_api_rate_limit(f):
-    """Decorator to apply a per-IP rolling one-minute cap for all API routes."""
-    def wrapper():
-        if not request.path.startswith("/api/"):
-            return f()
-
-        now = time.time()
-        cutoff = now - 60.0
-        ip = _client_ip()
-        limit = max(1, config.API_RATE_LIMIT_PER_MINUTE)
-        retry_after = 60
-
-        with _api_rate_lock:
-            events = _api_rate_events_by_ip.setdefault(ip, deque())
-            while events and events[0] <= cutoff:
-                events.popleft()
-
-            if len(events) >= limit:
-                retry_after = int(max(1, 60 - (now - events[0])))
-                print(
-                    f"[rate-limit] {ip} hit {limit} req/min cap on "
-                    f"{request.path} (retry_after={retry_after}s)"
-                )
-                return jsonify(
-                    {
-                        "ok": False,
-                        "error": "Rate limit exceeded. Try again later.",
-                        "retry_after_seconds": retry_after,
-                        "limit_per_minute": limit,
-                    }
-                ), 429
-
-            events.append(now)
-
-            # Best-effort memory cleanup for IPs that have no recent events.
-            stale_ips = [key for key, queue in _api_rate_events_by_ip.items() if not queue or queue[-1] <= cutoff]
-            for key in stale_ips:
-                _api_rate_events_by_ip.pop(key, None)
-
-        return f()
-    return wrapper
 
 
 def register_auth_handlers(app):

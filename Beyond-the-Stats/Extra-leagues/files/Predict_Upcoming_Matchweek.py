@@ -610,6 +610,7 @@ def upcoming_fixtures_from_espn(competition, window_days, lookahead_days=None):
     today = pd.Timestamp(datetime.now(UTC).date())
     if lookahead_days is None:
         lookahead_days = season_calendar.espn_scan_day_count(competition, reference_date=today)
+    lookahead_days = min(int(lookahead_days), int(window_days))
     cutoff_end = season_calendar.fixture_search_bounds(competition, reference_date=today)[1]
     rows = []
     seen = set()

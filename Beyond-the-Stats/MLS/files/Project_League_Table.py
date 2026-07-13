@@ -809,9 +809,9 @@ def load_future_fixtures_from_espn(competition, espn_id=LIGA_MX_ESPN_ID, year=No
     from datetime import UTC
 
     target_year = int(year or datetime.now().year)
-    start = pd.Timestamp(f"{target_year}-01-01")
-    end = pd.Timestamp(f"{target_year}-12-31")
     today = pd.Timestamp(datetime.now(UTC).date())
+    start = today
+    end = pd.Timestamp(f"{target_year}-12-31")
     rows = []
     seen = set()
     day = start

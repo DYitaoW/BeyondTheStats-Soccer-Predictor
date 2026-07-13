@@ -37,12 +37,14 @@ import csv
 import hashlib
 import json
 import os
+import random
 import re
 import signal
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime, timedelta
+import urllib.request
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pipeline_log
@@ -78,6 +80,171 @@ _EUROPEAN_COUNTRIES = frozenset({
     "Lithuania", "Latvia", "Estonia", "Belarus",
     "UEFA",
 })
+
+# Competitions with knockout stages (for randomized simulation & real brackets).
+_CUP_COMPETITIONS = frozenset({
+    "England/FA Cup", "England/League Cup",
+    "Italy/Coppa Italia", "Spain/Copa del Rey",
+    "Germany/DFB-Pokal", "France/Coupe de France",
+    "United States/US Open Cup", "CONCACAF/Leagues Cup",
+    "FIFA/World Cup",
+})
+
+_ROUND_STAGE_MAP = {
+    "final": "final", "finale": "final",
+    "quarterfinals": "quarterfinals", "quarter-finals": "quarterfinals",
+    "quarter_finals": "quarterfinals", "quarter": "quarterfinals",
+    "semifinals": "semifinals", "semi-finals": "semifinals",
+    "semi_finals": "semifinals", "semi": "semifinals",
+    "round_of_16": "round_of_16", "round of 16": "round_of_16",
+    "round_of_32": "round_of_32", "round of 32": "round_of_32",
+    "group_stage": "group_stage", "group stage": "group_stage",
+    "league_phase": "league_phase", "league phase": "league_phase",
+    "third_place": "third_place", "third place": "third_place",
+}
+
+
+def _is_knockout_format(comp_name: str) -> bool:
+    """Return True for cup/knockout competition names."""
+    if not comp_name:
+        return False
+    if comp_name in _CUP_COMPETITIONS:
+        return True
+    if any(phrase in comp_name for phrase in
+           ["Champions League", "Europa League", "Conference League"]):
+        return True
+    if "/Cup" in comp_name or " Cup" in comp_name or "World Cup" in comp_name:
+        return True
+    return False
+
+
+def _round_to_stage_key(round_name: str) -> str:
+    """Normalize a round label into a canonical stage key (e.g. 'quarterfinals')."""
+    key = round_name.strip().lower()
+    key = re.sub(r"['\u2019]", "", key)
+    key = key.replace("-", "_").replace(" ", "_")
+    if key in _ROUND_STAGE_MAP:
+        return _ROUND_STAGE_MAP[key]
+    m = re.match(r"round_?of_?(\d+)", key)
+    if m:
+        return f"round_of_{m.group(1)}"
+    ordinal_map = {
+        "first": "1", "second": "2", "third": "3", "fourth": "4",
+        "fifth": "5", "sixth": "6", "seventh": "7", "eighth": "8",
+        "ninth": "9", "tenth": "10",
+    }
+    m = re.match(r"(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)_round", key)
+    if m and m.group(1) in ordinal_map:
+        return f"round_{ordinal_map[m.group(1)]}"
+    return key
+
+
+def _discover_cup_teams(comp_name, upcoming_rows, completed_rows):
+    """Extract unique team names for a cup comp from prediction CSVs."""
+    teams = set()
+    for row in list(upcoming_rows) + list(completed_rows):
+        if row.get("competition", "").strip() == comp_name:
+            ht = row.get("home_team", "").strip()
+            at = row.get("away_team", "").strip()
+            if ht:
+                teams.add(ht)
+            if at:
+                teams.add(at)
+    return sorted(teams)
+
+
+def _run_randomized_cup_simulation(teams, num_simulations=10000):
+    """Monte Carlo knockout simulation — random pairings each round, 50/50 winners.
+
+    Returns {team_name: win_pct} for teams that won at least once.
+    """
+    wins = {t: 0 for t in teams}
+    team_list = list(teams)
+    n = len(team_list)
+    num_rounds = max(1, (n - 1).bit_length())
+    total_slots = 1 << num_rounds
+
+    for _ in range(num_simulations):
+        shuffled = team_list.copy()
+        random.shuffle(shuffled)
+        current = shuffled + [None] * (total_slots - n)
+
+        for _ in range(num_rounds):
+            nxt = []
+            for i in range(0, len(current), 2):
+                t1 = current[i]
+                t2 = current[i + 1] if i + 1 < len(current) else None
+                if t1 is None and t2 is None:
+                    continue
+                if t1 is None:
+                    nxt.append(t2)
+                elif t2 is None:
+                    nxt.append(t1)
+                else:
+                    nxt.append(t1 if random.random() < 0.5 else t2)
+            if not nxt:
+                break
+            if len(nxt) == 1:
+                w = nxt[0]
+                if w:
+                    wins[w] += 1
+                break
+            current = nxt
+
+    return {t: round(c / num_simulations * 100, 2)
+            for t, c in wins.items() if c > 0}
+
+
+def _build_real_knockout_for_comp(live_games, comp_name):
+    """Build real_knockout dict from completed matches in live_score_history."""
+    comp_matches = [
+        g for g in live_games
+        if g.get("competition", "").strip().lower() == comp_name.lower()
+        and g.get("status") == "post"
+    ]
+    if not comp_matches:
+        return None
+
+    rounds = {}
+    for g in comp_matches:
+        rnd = g.get("round", "").strip()
+        if not rnd:
+            continue
+        rounds.setdefault(rnd, []).append(g)
+
+    real_ko = {}
+    for rnd, matches in rounds.items():
+        stage_key = _round_to_stage_key(rnd)
+        ko_matches = []
+        for g in matches:
+            hs = g.get("home_score")
+            a_s = g.get("away_score")
+            try:
+                hs_i = int(hs) if hs is not None else None
+                a_s_i = int(a_s) if a_s is not None else None
+            except (ValueError, TypeError):
+                hs_i, a_s_i = None, None
+
+            if hs_i is not None and a_s_i is not None and hs_i != a_s_i:
+                winner = g.get("home_team") if hs_i > a_s_i else g.get("away_team")
+            else:
+                winner = None
+
+            ko_matches.append({
+                "home_team": g.get("home_team", ""),
+                "away_team": g.get("away_team", ""),
+                "winner": winner,
+                "home_score": hs_i,
+                "away_score": a_s_i,
+                "status": g.get("status", "post"),
+                "match_date": g.get("match_date", ""),
+                "from_live": True,
+            })
+        if ko_matches:
+            real_ko[stage_key] = ko_matches
+
+    return real_ko if real_ko else None
+
 
 MOBILE_FEED_SCHEMA_VERSION = 1
 
@@ -650,6 +817,53 @@ def _publish_all_upcoming(output_dir, source_paths):
     return out_path
 
 
+def _publish_windowed_upcoming(output_dir, source_paths):
+    """Write Output/Upcoming/four_week_window.csv (prev week → next 2 weeks)."""
+    from zoneinfo import ZoneInfo
+    all_rows = []
+    for src in source_paths:
+        if not src or not src.exists():
+            continue
+        all_rows.extend(_read_csv(src))
+    if not all_rows:
+        return None
+
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    current_week_start = today_et - timedelta(days=today_et.weekday())
+    window_start = current_week_start - timedelta(days=7)
+    window_end = current_week_start + timedelta(days=20)
+
+    seen = set()
+    filtered = []
+    for r in all_rows:
+        key = (
+            r.get("competition", "").strip(),
+            r.get("home_team", "").strip(),
+            r.get("away_team", "").strip(),
+            r.get("match_date", "").strip(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            d = datetime.strptime(str(r.get("match_date", ""))[:10], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        if d < window_start or d > window_end:
+            continue
+        filtered.append(r)
+
+    out_dir = output_dir / "Upcoming"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "four_week_window.csv"
+    with out_path.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=_UPCOMING_CSV_FIELDS)
+        w.writeheader()
+        for r in filtered:
+            w.writerow({k: r.get(k, "") for k in _UPCOMING_CSV_FIELDS})
+    return out_path
+
+
 def _publish_world_cup(output_dir):
     """Copy world_cup_projection.json to Output/National/world_cup.json."""
     src = PREDICTIONS_DIR / "world_cup_projection.json"
@@ -663,6 +877,484 @@ def _publish_world_cup(output_dir):
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2, default=str)
     return out_path
+
+
+_MLS_EAST_TEAMS = {
+    "Atlanta Utd", "CF Montreal", "Charlotte", "Chicago Fire",
+    "Columbus Crew", "DC United", "FC Cincinnati", "Inter Miami",
+    "Nashville SC", "New England Revolution", "New York City",
+    "New York Red Bulls", "Orlando City", "Philadelphia Union", "Toronto FC",
+}
+_MLS_WEST_TEAMS = {
+    "Austin FC", "Colorado Rapids", "FC Dallas", "Houston Dynamo",
+    "Los Angeles Galaxy", "Los Angeles FC", "Minnesota United",
+    "Portland Timbers", "Real Salt Lake", "San Diego FC",
+    "San Jose Earthquakes", "Seattle Sounders", "Sporting Kansas City",
+    "St. Louis City", "Vancouver Whitecaps",
+}
+
+
+def _load_json(path):
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
+def _enrich_with_cup_data(payload, cup_brackets):
+    comp = payload.get("competition", "")
+    bracket = cup_brackets.get(comp, {}) if isinstance(cup_brackets, dict) else {}
+    payload["has_knockout_data"] = bool(bracket.get("rounds") or bracket.get("knockout"))
+    payload["has_winner_odds"] = bool(bracket.get("winner_probabilities"))
+    if bracket.get("winner_probabilities"):
+        payload["winner_probabilities"] = bracket["winner_probabilities"]
+    if bracket.get("champion"):
+        payload["champion"] = bracket["champion"]
+    if bracket.get("simulations_run"):
+        payload["simulations_run"] = bracket["simulations_run"]
+    if bracket.get("rounds"):
+        payload["rounds"] = bracket["rounds"]
+    if bracket.get("knockout"):
+        payload["knockout"] = bracket["knockout"]
+    if bracket.get("groups"):
+        payload["groups"] = bracket["groups"]
+    return payload
+
+
+def _enrich_mls_data(payload, mls_bracket, mls_table_path):
+    if not mls_bracket:
+        return payload
+    comp = payload.get("competition", "")
+    if comp == "United States/MLS":
+        cup_probs = mls_bracket.get("mls_cup_winner_probabilities") or {}
+        payload["has_knockout_data"] = True
+        payload["has_winner_odds"] = True
+        payload["winner_probabilities"] = cup_probs
+        payload["champion"] = max(cup_probs, key=cup_probs.get) if cup_probs else None
+        payload["simulations_run"] = mls_bracket.get("simulations_run", 0)
+        payload["knockout"] = {
+            "rounds": mls_bracket.get("rounds", []),
+            "mls_cup": mls_bracket.get("mls_cup", {}),
+            "wildcard": mls_bracket.get("wildcard", {}),
+            "round_one": mls_bracket.get("round_one", []),
+            "conference_semifinals": mls_bracket.get("conference_semifinals", []),
+            "conference_finals": mls_bracket.get("conference_finals", []),
+        }
+        # Compute Supporters Shield, East/West winner probabilities from table rows
+        teams = payload.get("teams", [])
+        shield_odds = {}
+        east_odds = {}
+        west_odds = {}
+        for t in teams:
+            name = t.get("team", "")
+            win_league = t.get("win_league_pct", 0)
+            if win_league and win_league > 0:
+                shield_odds[name] = round(win_league * 100, 2)
+            pos_odds = t.get("position_odds", {})
+            # Eastern Conference: positions 1-9 typically
+            east_candidates = [name for name in shield_odds if name in _MLS_EAST_TEAMS]
+            west_candidates = [name for name in shield_odds if name in _MLS_WEST_TEAMS]
+        if shield_odds:
+            payload["supporters_shield_odds"] = dict(sorted(shield_odds.items(), key=lambda x: -x[1]))
+        # Re-read MLS table CSV for conference-specific odds
+        if mls_table_path and mls_table_path.exists():
+            mls_rows = _read_csv(mls_table_path)
+            for r in mls_rows:
+                tn = r.get("team", "").strip()
+                wp = _row_to_float(r.get("win_league_pct"))
+                if wp <= 0:
+                    continue
+                if tn in _MLS_EAST_TEAMS:
+                    east_odds[tn] = round(wp * 100, 2)
+                elif tn in _MLS_WEST_TEAMS:
+                    west_odds[tn] = round(wp * 100, 2)
+        if east_odds:
+            payload["east_winner_odds"] = dict(sorted(east_odds.items(), key=lambda x: -x[1]))
+        if west_odds:
+            payload["west_winner_odds"] = dict(sorted(west_odds.items(), key=lambda x: -x[1]))
+    elif comp in ("United States/MLS - Eastern Conference", "United States/MLS - Western Conference"):
+        payload["has_knockout_data"] = True
+        payload["has_winner_odds"] = True
+        conf_key = "east" if "Eastern" in comp else "west"
+        odds_key = f"{conf_key}_winner_odds"
+        if mls_bracket.get(odds_key):
+            payload["winner_probabilities"] = mls_bracket[odds_key]
+            payload["champion"] = max(mls_bracket[odds_key], key=mls_bracket[odds_key].get) if mls_bracket[odds_key] else None
+    elif comp == "United States/MLS - Supporters Shield Table":
+        payload["has_winner_odds"] = True
+        if mls_bracket.get("supporters_shield_odds"):
+            payload["winner_probabilities"] = mls_bracket["supporters_shield_odds"]
+            payload["champion"] = max(mls_bracket["supporters_shield_odds"], key=mls_bracket["supporters_shield_odds"].get) if mls_bracket["supporters_shield_odds"] else None
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# Player event tracking — goals, assists, yellow/red cards per comp per season
+# ---------------------------------------------------------------------------
+
+_PLAYER_STATS_DIR = SP_DIR / "Data" / "PlayerStats"
+_ESPN_STATS_IDS = {
+    "England/Premier League": "eng.1",
+    "England/Championship": "eng.2",
+    "Spain/La Liga": "esp.1",
+    "Spain/La Liga 2": "esp.2",
+    "Italy/Serie A": "ita.1",
+    "Italy/Serie B": "ita.2",
+    "Germany/Bundesliga": "ger.1",
+    "Germany/Bundesliga 2": "ger.2",
+    "France/Ligue 1": "fra.1",
+    "France/Ligue 2": "fra.2",
+    "Portugal/Liga Portugal": "por.1",
+    "Netherlands/Eredivisie": "ned.1",
+    "United States/MLS": "usa.1",
+    "Mexico/Liga MX": "mex.1",
+    "Belgium/First Division A": "bel.1",
+    "Scotland/Premiership": "sco.1",
+    "Turkey/Super Lig": "tur.1",
+    "UEFA/Champions League": "uefa.champions",
+    "UEFA/Europa League": "uefa.europa",
+    "UEFA/Conference League": "uefa.europa.conf",
+    "Europe/Champions League": "uefa.champions",
+    "Europe/Europa League": "uefa.europa",
+    "Europe/Conference League": "uefa.europa.conf",
+    "England/FA Cup": "eng.fa",
+    "England/League Cup": "eng.efl",
+    "Germany/DFB-Pokal": "ger.dfb_pokal",
+    "Spain/Copa del Rey": "esp.copa_del_rey",
+    "Italy/Coppa Italia": "ita.coppa",
+    "France/Coupe de France": "fra.coupe_de_france",
+    "Argentina/Primera Division": "arg.1",
+    "Brazil/Serie A": "bra.1",
+    "Japan/J1 League": "jpn.1",
+    "Austria/Bundesliga": "aut.1",
+    "Switzerland/Super League": "sui.1",
+    "Greece/Super League": "gre.1",
+    "Denmark/Superliga": "den.1",
+    "Ukraine/Premier League": "ukr.1",
+    "Norway/Eliteserien": "nor.1",
+    "Croatia/HNL": "cro.1",
+    "Romania/Liga I": "rou.1",
+    "Sweden/Allsvenskan": "swe.1",
+    "Hungary/NB I": "hun.1",
+    "Israel/Premier League": "isr.1",
+    "Czech Republic/First League": "cze.1",
+    "Poland/Ekstraklasa": "pol.1",
+    "Serbia/SuperLiga": "srb.1",
+    "Cyprus/First Division": "cyp.1",
+    "Slovakia/Super Liga": "svk.1",
+    "Slovenia/PrvaLiga": "svn.1",
+    "Bulgaria/First League": "bul.1",
+}
+
+
+def _comp_stats_path(comp_name):
+    slug = comp_name.replace("/", "_").replace(" ", "_").lower()
+    _PLAYER_STATS_DIR.mkdir(parents=True, exist_ok=True)
+    return _PLAYER_STATS_DIR / f"{slug}.json"
+
+
+def _load_comp_player_stats(comp_name):
+    path = _comp_stats_path(comp_name)
+    if path.exists():
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            pass
+    return {"season": "", "players": {}, "processed_ids": [], "updated_at": ""}
+
+
+def _save_comp_player_stats(comp_name, data):
+    path = _comp_stats_path(comp_name)
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2, default=str)
+
+
+def _current_season():
+    now = datetime.now()
+    return f"{now.year - 1}-{now.year}" if now.month < 8 else f"{now.year}-{now.year + 1}"
+
+
+def _extract_match_player_events(match):
+    """Return {player: {team, goals, assists, yellow_cards, red_cards}} from one match."""
+    events = {}
+    home = match.get("home_team", "")
+    away = match.get("away_team", "")
+
+    def _side_to_team(side):
+        return home if side == "home" else away
+
+    def _inc(player, team, key):
+        if not player or not team:
+            return
+        if player not in events:
+            events[player] = {"team": team, "goals": 0, "assists": 0, "yellow_cards": 0, "red_cards": 0}
+        events[player][key] += 1
+
+    for g in match.get("goalscorers") or []:
+        _inc(g.get("scorer", ""), _side_to_team(g.get("team", "")), "goals")
+    for a in match.get("assists") or []:
+        _inc(a.get("assister", ""), _side_to_team(a.get("team", "")), "assists")
+    for y in match.get("yellow_cards") or []:
+        _inc(y.get("player", ""), _side_to_team(y.get("team", "")), "yellow_cards")
+    for r in match.get("red_cards") or []:
+        _inc(r.get("player", ""), _side_to_team(r.get("team", "")), "red_cards")
+
+    return events
+
+
+def _process_player_stats(live_history, existing_stats):
+    """Process completed matches incrementally, return updated existing_stats in-place."""
+    season = _current_season()
+    for match in live_history:
+        if match.get("status") != "post":
+            continue
+        mid = str(match.get("match_id", "")).strip()
+        if not mid:
+            mid = f"fixture:{match.get('match_date', '')}|{match.get('competition', '')}|{match.get('home_team', '')}|{match.get('away_team', '')}"
+        comp = match.get("competition", "")
+        if not comp:
+            continue
+
+        if comp not in existing_stats:
+            existing_stats[comp] = {"season": "", "players": {}, "processed_ids": [], "updated_at": ""}
+        st = existing_stats[comp]
+
+        if mid in st.get("processed_ids", []):
+            continue
+        if st.get("season") != season:
+            st["season"] = season
+            st["players"] = {}
+            st["processed_ids"] = []
+
+        match_events = _extract_match_player_events(match)
+        for player_name, stats in match_events.items():
+            if player_name not in st["players"]:
+                st["players"][player_name] = {"team": stats["team"], "goals": 0, "assists": 0, "yellow_cards": 0, "red_cards": 0}
+            else:
+                st["players"][player_name]["team"] = stats["team"]
+            for key in ("goals", "assists", "yellow_cards", "red_cards"):
+                st["players"][player_name][key] += stats[key]
+
+        st.setdefault("processed_ids", []).append(mid)
+        st["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    return existing_stats
+
+
+def _leaders_from_player_stats(comp_stats, top_n=30):
+    """Build leaders categories dict from per-competition player stats."""
+    players = comp_stats.get("players", {})
+    buckets = {"goals": [], "assists": [], "yellow_cards": [], "red_cards": []}
+    for pname, pstats in players.items():
+        for cat in buckets:
+            val = pstats.get(cat, 0)
+            if val > 0:
+                buckets[cat].append({"player": pname, "team": pstats.get("team", ""), "value": val})
+
+    cat_labels = {"goals": "Goals", "assists": "Assists", "yellow_cards": "Yellow Cards", "red_cards": "Red Cards"}
+    categories = {}
+    for cat, label in cat_labels.items():
+        entries = sorted(buckets[cat], key=lambda x: -x["value"])[:top_n]
+        if entries:
+            categories[cat] = {
+                "label": label,
+                "entries": [{"rank": i + 1, **e} for i, e in enumerate(entries)],
+            }
+    return categories
+
+
+def _fetch_espn_leaders_for_comp(comp_name, espn_id, timeout=15, top_n=30):
+    """Fetch ESPN season leaders and return categories dict (or None)."""
+    base = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+    now = datetime.now()
+    seasons = [str(now.year)]
+    if now.month < 8:
+        seasons.append(str(now.year - 1))
+    data = None
+    for s in seasons:
+        url = f"{base}/{espn_id}/statistics/leaders?season={s}"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode())
+            if data and data.get("leaders"):
+                break
+        except Exception:
+            continue
+    if not data or not data.get("leaders"):
+        return None
+
+    cat_map = {"goals": "goals", "assists": "assists", "yellowCards": "yellow_cards", "redCards": "red_cards"}
+    categories = {}
+    for cat in data.get("leaders", []):
+        abbr = cat.get("abbreviation", "")
+        our_cat = cat_map.get(abbr)
+        if not our_cat:
+            continue
+        entries = []
+        for rank, entry in enumerate((cat.get("leaders") or [])[:top_n], 1):
+            athlete = entry.get("athlete") or {}
+            team_info = athlete.get("team") or {}
+            pname = str(athlete.get("displayName", "") or "")
+            tname = str(team_info.get("displayName", "") or "")
+            raw = entry.get("value", entry.get("displayValue", ""))
+            try:
+                val = int(float(raw))
+            except (ValueError, TypeError):
+                val = 0
+            if pname:
+                entries.append({"rank": rank, "player": pname, "team": tname, "value": val})
+        if entries:
+            label = {"goals": "Goals", "assists": "Assists", "yellow_cards": "Yellow Cards", "red_cards": "Red Cards"}.get(our_cat, our_cat)
+            categories[our_cat] = {"label": label, "entries": entries}
+
+    return categories if categories else None
+
+
+def _merge_espn_leaders_into_stats(comp_stats, espn_categories):
+    """Fill zero-value categories from ESPN leaders data (preserves incremental counts)."""
+    players = comp_stats.setdefault("players", {})
+    changed = False
+    cat_reverse = {"goals": "goals", "assists": "assists", "yellow_cards": "yellow_cards", "red_cards": "red_cards"}
+    for our_cat, espn_cat in cat_reverse.items():
+        cat_data = espn_categories.get(espn_cat) if isinstance(espn_categories, dict) else None
+        if not cat_data:
+            continue
+        for entry in cat_data.get("entries", []):
+            pname = entry.get("player", "")
+            tname = entry.get("team", "")
+            val = entry.get("value", 0)
+            if not pname or not isinstance(val, (int, float)) or val <= 0:
+                continue
+            if pname not in players:
+                players[pname] = {"team": tname, "goals": 0, "assists": 0, "yellow_cards": 0, "red_cards": 0}
+                players[pname][our_cat] = int(val)
+                changed = True
+            elif players[pname].get(our_cat, 0) == 0:
+                players[pname][our_cat] = int(val)
+                changed = True
+    return comp_stats, changed
+
+
+def build_player_standings():
+    """Main entry: process live_score_history, optionally fetch ESPN leaders, save per-comp files.
+
+    Returns dict of {comp_name: leaders_categories} for enrichment.
+    """
+    # ── 1. Load live history ──
+    hist_file = SP_DIR / "Data" / "live_score_history.json"
+    live_history = _load_json(hist_file) if hist_file.exists() else []
+    live_history = live_history if isinstance(live_history, list) else []
+
+    # ── 2. Load existing per-comp stats ──
+    existing = {}
+    hist_comps = set()
+    for m in live_history:
+        c = m.get("competition", "")
+        if c:
+            hist_comps.add(c)
+    for comp in hist_comps:
+        existing[comp] = _load_comp_player_stats(comp)
+
+    # ── 3. Incremental processing ──
+    _process_player_stats(live_history, existing)
+
+    # ── 4. Try ESPN bulk fetch for each competition ──
+    for comp in hist_comps:
+        espn_id = _ESPN_STATS_IDS.get(comp)
+        if not espn_id:
+            continue
+        st = existing.get(comp, {})
+        espn_cats = _fetch_espn_leaders_for_comp(comp, espn_id)
+        if espn_cats:
+            merged, changed = _merge_espn_leaders_into_stats(st, espn_cats)
+            if changed:
+                existing[comp] = merged
+
+    # ── 5. Persist and build leaders output ──
+    leaders_by_comp = {}
+    for comp in hist_comps:
+        st = existing.get(comp, {})
+        if st.get("players"):
+            _save_comp_player_stats(comp, st)
+            cats = _leaders_from_player_stats(st)
+            if cats:
+                leaders_by_comp[comp] = {
+                    "updated_at": st.get("updated_at", ""),
+                    "season": st.get("season", ""),
+                    "categories": cats,
+                }
+    return leaders_by_comp
+
+
+def _publish_enriched_competition_data(output_dir, cup_brackets_path, mls_bracket_path, mls_table_path, written):
+    """Enrich per-competition JSON files with winner odds, knockout data, metadata."""
+    cup_brackets = _load_json(cup_brackets_path) if cup_brackets_path and cup_brackets_path.exists() else {}
+    mls_bracket = _load_json(mls_bracket_path) if mls_bracket_path and mls_bracket_path.exists() else {}
+
+    # Sources for real knockout brackets and cup team discovery
+    live_history_file = SP_DIR / "Data" / "live_score_history.json"
+    live_history = _load_json(live_history_file) if live_history_file.exists() else []
+    live_history = live_history if isinstance(live_history, list) else []
+    cup_upcoming = _read_csv(PREDICTIONS_DIR / "upcoming_cup_predictions.csv")
+    cup_completed = _read_csv(PREDICTIONS_DIR / "completed_cup_predictions.csv")
+
+    # Player standings leaders (computed earlier if build_player_standings was called)
+    player_leaders = written.get("_player_leaders", {})
+
+    enriched_count = 0
+    for region in ("Europe", "Other"):
+        league_dir = output_dir / region / LEAGUE_RESULT_SUBDIR
+        if not league_dir.exists():
+            continue
+        for json_path in sorted(league_dir.glob("*.json")):
+            payload = _load_json(json_path)
+            if not payload or not isinstance(payload, dict):
+                continue
+            payload["has_knockout_data"] = False
+            payload["has_winner_odds"] = False
+            comp = payload.get("competition", "")
+            _enrich_with_cup_data(payload, cup_brackets)
+            _enrich_mls_data(payload, mls_bracket, mls_table_path)
+            # Compute win_league_pct-based winner odds if not already set
+            if not payload.get("has_winner_odds") and payload.get("teams"):
+                wp_odds = {}
+                for t in payload["teams"]:
+                    wp = t.get("win_league_pct", 0)
+                    if wp and wp > 0:
+                        wp_odds[t.get("team", "")] = round(wp * 100, 2)
+                if wp_odds:
+                    payload["has_winner_odds"] = True
+                    payload["winner_probabilities"] = dict(sorted(wp_odds.items(), key=lambda x: -x[1]))
+                    payload["champion"] = max(wp_odds, key=wp_odds.get) if wp_odds else None
+            # Randomized Monte Carlo simulation for cups without bracket data
+            if not payload.get("has_winner_odds") and _is_knockout_format(comp):
+                teams = [t.get("team", "") for t in (payload.get("teams") or []) if t.get("team", "")]
+                if len(teams) < 2:
+                    teams = _discover_cup_teams(comp, cup_upcoming, cup_completed)
+                if len(teams) >= 2:
+                    rnd_odds = _run_randomized_cup_simulation(teams)
+                    if rnd_odds:
+                        payload["has_winner_odds"] = True
+                        payload["winner_probabilities"] = dict(
+                            sorted(rnd_odds.items(), key=lambda x: -x[1])
+                        )
+                        payload["champion"] = max(rnd_odds, key=rnd_odds.get)
+                        payload["simulations_run"] = 10000
+            # Real knockout bracket from live score history
+            real_ko = _build_real_knockout_for_comp(live_history, comp)
+            if real_ko:
+                payload["real_knockout"] = real_ko
+            # Player leaders from incremental event tracking
+            comp_leaders = player_leaders.get(comp)
+            if comp_leaders:
+                payload["leaders"] = comp_leaders
+            with json_path.open("w", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False, indent=2, default=str)
+            enriched_count += 1
+    return enriched_count
 
 
 def _create_empty_teamstat_dirs(output_dir):
@@ -721,6 +1413,22 @@ def publish_to_output(output_dir=None):
     combined = _publish_all_upcoming(output_dir, upcoming_sources + nat_sources + friendlies_sources)
     if combined:
         written["combined"]["all_upcoming"] = str(combined)
+
+    windowed = _publish_windowed_upcoming(output_dir, upcoming_sources + nat_sources + friendlies_sources)
+    if windowed:
+        written["combined"]["four_week_window"] = str(windowed)
+
+    # Build per-competition player standings from live-score events + ESPN leaders
+    player_leaders = build_player_standings()
+    written["_player_leaders"] = player_leaders
+
+    _publish_enriched_competition_data(
+        output_dir,
+        PREDICTIONS_DIR / "projected_cup_brackets.json",
+        MLS_PREDICTIONS_DIR / "projected_mls_playoff_bracket.json",
+        MLS_PREDICTIONS_DIR / "projected_league_tables.csv",
+        written,
+    )
 
     _create_empty_teamstat_dirs(output_dir)
 

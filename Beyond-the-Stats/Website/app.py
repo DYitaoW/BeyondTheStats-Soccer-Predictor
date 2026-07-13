@@ -138,6 +138,7 @@ _feedback_lock = threading.Lock()
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = config._SECRET_KEY or None
+app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024  # 1 MB request body limit
 
 auth.register_auth_handlers(app)
 
@@ -727,34 +728,66 @@ def api_upcoming(mode):
          "league_stats": [...], "available_leagues": [...]}
 
     The ``global`` mode aggregates rows from **all** sources.
+
+    Optional query parameters for filtering (``global`` mode only):
+      ``month`` (str) — ISO month prefix like ``"2026-07"``
+      ``window`` (str) — ``"2week"`` filters to today + 14 days
     """
+    month = str(request.args.get("month", "")).strip()
+    window = str(request.args.get("window", "")).strip()
+    window_days = 14 if window == "2week" else None
+    is_filtered = bool(month or window)
+
+    def _match_window(date_iso: str) -> bool:
+        if month:
+            if not str(date_iso).startswith(month):
+                return False
+        if window_days:
+            try:
+                d = datetime.strptime(str(date_iso)[:10], "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                return False
+            today = datetime.now(timezone.utc).date()
+            cutoff = today + timedelta(days=window_days)
+            if d < today or d > cutoff:
+                return False
+        return True
+
     if mode == "global":
-        all_rows = []
-        combined_stats = {"correct_total": 0, "total_predictions": 0, "pending_total": 0, "accuracy_pct": 0.0}
-        combined_league_stats = {}
-        seen_keys = set()
-        for source, csv_path in _ALL_UPCOMING_SOURCES:
-            rows, _st, _ls = _load_upcoming_rows(csv_path, source)
-            for r in rows:
-                comp = str(r.get("competition", "")).strip()
-                if comp in config.UPCOMING_ONLY_COMPETITIONS:
-                    continue
-                if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
-                    continue
-                ck = "|".join(
-                    str(r.get(k, "")).strip().lower()
-                    for k in ("match_date_iso", "competition", "home_team", "away_team")
-                )
-                if ck and ck not in seen_keys:
-                    seen_keys.add(ck)
-                    all_rows.append(r)
-            for k, v in (_st or {}).items():
-                if k not in combined_stats or isinstance(v, (int, float)):
-                    combined_stats[k] = (combined_stats.get(k, 0) if isinstance(v, (int, float)) else 0) + (v if isinstance(v, (int, float)) else 0)
-            for ls in (_ls or []):
-                comp = ls.get("competition", "")
-                if comp and comp not in combined_league_stats:
-                    combined_league_stats[comp] = ls
+        # Prefer the pipeline-generated merged CSV (single read) over
+        # loading all 6 individual source CSVs.
+        if os.path.exists(config.ALL_UPCOMING_FILE):
+            all_rows, combined_stats, combined_league_stats = \
+                _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", window_days=window_days)
+            combined_stats = dict(combined_stats or {})
+            combined_league_stats = {ls.get("competition", ""): ls for ls in (combined_league_stats or []) if ls.get("competition")}
+        else:
+            all_rows = []
+            combined_stats = {"correct_total": 0, "total_predictions": 0, "pending_total": 0, "accuracy_pct": 0.0}
+            combined_league_stats = {}
+            seen_keys = set()
+            for source, csv_path in _ALL_UPCOMING_SOURCES:
+                rows, _st, _ls = _load_upcoming_rows(csv_path, source, window_days=window_days)
+                for r in rows:
+                    comp = str(r.get("competition", "")).strip()
+                    if comp in config.UPCOMING_ONLY_COMPETITIONS:
+                        continue
+                    if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                        continue
+                    ck = "|".join(
+                        str(r.get(k, "")).strip().lower()
+                        for k in ("match_date_iso", "competition", "home_team", "away_team")
+                    )
+                    if ck and ck not in seen_keys:
+                        seen_keys.add(ck)
+                        all_rows.append(r)
+                for k, v in (_st or {}).items():
+                    if k not in combined_stats or isinstance(v, (int, float)):
+                        combined_stats[k] = (combined_stats.get(k, 0) if isinstance(v, (int, float)) else 0) + (v if isinstance(v, (int, float)) else 0)
+                for ls in (_ls or []):
+                    comp = ls.get("competition", "")
+                    if comp and comp not in combined_league_stats:
+                        combined_league_stats[comp] = ls
         # The generated MLS source can be missing after an upstream provider
         # returns no fixtures. Do not make both regional leagues disappear:
         # expose ESPN schedule-only fixtures until predictions are regenerated.
@@ -770,6 +803,8 @@ def api_upcoming(mode):
                 seen_keys.add(ck)
                 deduped_rows.append(row)
         all_rows = deduped_rows
+        if is_filtered:
+            all_rows = [r for r in all_rows if _match_window(str(r.get("match_date_iso", "")))]
         # Re-sort aggregated rows: date → league → time
         all_rows.sort(key=lambda r: (
             _row_date_iso(r),
@@ -794,9 +829,11 @@ def api_upcoming(mode):
     if not entry:
         return jsonify({"ok": False, "error": f"Unknown mode: {mode}"}), 400
     csv_path, source_mode = entry
-    rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode)
+    rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode, window_days=window_days)
     if mode == "mls":
         rows = _regional_espn_schedule_fallback(rows)
+    if is_filtered:
+        rows = [r for r in rows if _match_window(str(r.get("match_date_iso", "")))]
     league_names = sorted({r.get("competition", "") for r in rows if r.get("competition")})
     available_leagues = [
         {"name": name, "live_score_tier": config.get_live_score_tier(name)}
@@ -837,13 +874,28 @@ def api_home_upcoming():
     start_date = min(max(start_date, window_start), window_end)
     end_date = min(max(end_date, window_start), window_end)
 
-    # Aggregate the same sources as /api/upcoming/global so MLS, cups, and
-    # friendlies are not dropped when Output/Upcoming/all_upcoming.csv is stale.
+    # Prefer the merged CSV over loading all 6 individual sources.
+    if os.path.exists(config.ALL_UPCOMING_FILE):
+        merged_rows, _, _ = _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", date_range="all")
+        feed = merged_rows
+    else:
+        feed = []
+        seen_keys = set()
+        for source, csv_path in _ALL_UPCOMING_SOURCES:
+            rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
+            for row in rows:
+                key = "|".join(
+                    str(row.get(field, "")).strip().lower()
+                    for field in ("match_date_iso", "competition", "home_team", "away_team")
+                )
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                feed.append(row)
+
     all_rows = []
     seen_keys = set()
-    for source, csv_path in _ALL_UPCOMING_SOURCES:
-        rows, _stats, _league_stats = _load_upcoming_rows(csv_path, source, date_range="all")
-        for row in rows:
+    for row in feed:
             comp = str(row.get("competition", "")).strip()
             if comp in config.UPCOMING_ONLY_COMPETITIONS:
                 continue
@@ -1229,6 +1281,11 @@ def api_push_notification():
     body = str(payload.get("body", "")).strip()
     if not title or not body:
         return jsonify({"ok": False, "error": "title and body required"}), 400
+    badge = payload.get("badge", 0)
+    try:
+        badge = max(0, int(badge))
+    except (TypeError, ValueError):
+        badge = 0
     _notifications.append({
         "id": len(_notifications),
         "title": title,
@@ -1242,7 +1299,7 @@ def api_push_notification():
             "token": device_token,
             "title": title,
             "body": body,
-            "badge": payload.get("badge", 0),
+            "badge": badge,
         })
     return jsonify({"ok": True})
 
@@ -1272,6 +1329,8 @@ def api_register_device():
     token = str(payload.get("token", "")).strip()
     if not token:
         return jsonify({"ok": False, "error": "token required"}), 400
+    if len(token) > 512:
+        return jsonify({"ok": False, "error": "token too long"}), 400
     platform = str(payload.get("platform", "generic")).strip().lower()
     if platform == "ios":
         ios_device_tokens.add(token)
@@ -1304,7 +1363,11 @@ def api_register_live_activity():
     competition = str(payload.get("competition", "")).strip()
     if not activity_token or not match_id or not competition:
         return jsonify({"ok": False, "error": "activity_token, match_id, and competition required"}), 400
+    if len(activity_token) > 1024 or len(match_id) > 256 or len(competition) > 256:
+        return jsonify({"ok": False, "error": "input too long"}), 400
     device_token = str(payload.get("device_token", "")).strip()
+    if len(device_token) > 512:
+        return jsonify({"ok": False, "error": "device_token too long"}), 400
     ok = live_activities.register(activity_token, device_token, match_id, competition)
     return jsonify({"ok": True, "registered": ok, "total": len(live_activities.all_activities())})
 
@@ -1318,6 +1381,8 @@ def api_unregister_live_activity():
     activity_token = str(payload.get("activity_token", "")).strip()
     if not activity_token:
         return jsonify({"ok": False, "error": "activity_token required"}), 400
+    if len(activity_token) > 1024:
+        return jsonify({"ok": False, "error": "activity_token too long"}), 400
     ok = live_activities.unregister(activity_token)
     return jsonify({"ok": True, "removed": ok})
 
@@ -1339,6 +1404,8 @@ def api_update_live_activity():
     content_state = payload.get("content_state")
     if not match_id or not competition or not isinstance(content_state, dict):
         return jsonify({"ok": False, "error": "match_id, competition, and content_state required"}), 400
+    if len(match_id) > 256 or len(competition) > 256:
+        return jsonify({"ok": False, "error": "input too long"}), 400
     activities = live_activities.for_match(match_id, competition)
     sent = 0
     for entry in activities:
@@ -1368,6 +1435,8 @@ def api_end_live_activity():
     competition = str(payload.get("competition", "")).strip()
     if not match_id or not competition:
         return jsonify({"ok": False, "error": "match_id and competition required"}), 400
+    if len(match_id) > 256 or len(competition) > 256:
+        return jsonify({"ok": False, "error": "input too long"}), 400
     content_state = payload.get("content_state", {})
     if not isinstance(content_state, dict):
         content_state = {}
@@ -1616,7 +1685,6 @@ def api_past_games():
     except (ValueError, TypeError):
         per_page = 50
 
-    cutoff = _week_based_cutoff()
     prediction_lookup = _build_past_game_prediction_lookup()
 
     # ── 1. Rows from persistent archive ────────────────────────────
@@ -1624,8 +1692,6 @@ def api_past_games():
     archive = _load_json_payload(config.PAST_GAMES_FILE)
     if isinstance(archive, list):
         for r in archive:
-            if _past_row_date_iso(r) < cutoff:
-                continue
             if _is_placeholder_game(r):
                 continue
             _enrich_json_past_row(r)
@@ -1641,7 +1707,7 @@ def api_past_games():
                 by_key[ck] = r
 
     # ── 2. Completed games from live scores (today + recent) ───────
-    for r in _collect_live_past_game_rows(cutoff):
+    for r in _collect_live_past_game_rows("2000-01-01"):
         r = _merge_prediction_onto_past_row(r, prediction_lookup)
         ck = "|".join(
             [
@@ -1664,8 +1730,6 @@ def api_past_games():
     ):
         rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
         for r in rows:
-            if _past_row_date_iso(r) < cutoff:
-                continue
             # Only include actually settled games — skip placeholders
             if str(r.get("actual_result", "")).strip().upper() not in {"H", "D", "A"}:
                 continue
@@ -1701,10 +1765,6 @@ def api_past_games():
         "total": total,
         "page": page,
         "per_page": per_page,
-        "date_window": {
-            "from": cutoff,
-            "to": datetime.now(ZoneInfo("America/New_York")).date().isoformat(),
-        },
     })
 
 

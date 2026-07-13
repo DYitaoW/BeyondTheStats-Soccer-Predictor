@@ -1596,6 +1596,7 @@ if (typeof _liveRefreshIntervalId === "number") {
 }
 if (!isCupMode && !isFriendliesMode) {
     _liveRefreshIntervalId = setInterval(async () => {
+        if (document.hidden) return;
         const source = typeof currentUpcomingSource === "function" ? currentUpcomingSource() : mode;
         const newResp = await fetch(url);
         const newData = await newResp.json().catch(() => ({}));
@@ -1612,7 +1613,7 @@ if (!isCupMode && !isFriendliesMode) {
         if (typeof renderStats === "function" && statsTarget) {
             renderStats(statsTarget, payload.stats, payload.league_stats, filterVal);
         }
-    }, 60000);
+    }, 120000);
 }
 
 

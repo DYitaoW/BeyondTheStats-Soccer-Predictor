@@ -36,6 +36,8 @@ PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
 TEAM_DATA_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
 MODEL_CACHE = os.path.join(TEAM_DATA_DIR, "model_cache.pkl")
 SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})\.csv$", re.IGNORECASE)
+MAPPING_FILE = os.path.join(os.path.dirname(BASE_DIR), "Data", "Predictions", "team_name_mapping_master.json")
+_name_mapping_cache = None
 MIN_START_YEAR = 2002
 
 # MLS tuning: higher parity than major European leagues with a meaningful home edge.
@@ -824,6 +826,33 @@ def is_placeholder_team(name):
     return any(t in text for t in tokens)
 
 
+def _load_name_mapping():
+    global _name_mapping_cache
+    if _name_mapping_cache is not None:
+        return _name_mapping_cache
+    if not os.path.exists(MAPPING_FILE):
+        _name_mapping_cache = {}
+        return _name_mapping_cache
+    try:
+        with open(MAPPING_FILE, "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except Exception:
+        _name_mapping_cache = {}
+        return _name_mapping_cache
+    if not isinstance(raw, dict):
+        _name_mapping_cache = {}
+        return _name_mapping_cache
+    flat = {}
+    for comp, entries in raw.items():
+        if not isinstance(entries, dict):
+            continue
+        for display_name, canonical_name in entries.items():
+            if display_name and canonical_name:
+                flat[display_name.strip().lower()] = canonical_name.strip()
+    _name_mapping_cache = flat
+    return flat
+
+
 def resolve_team_name(raw_name, valid_names):
     if not raw_name:
         return None
@@ -861,6 +890,11 @@ def resolve_team_name(raw_name, valid_names):
     direct = alias_map.get(key)
     if direct:
         return direct
+
+    mapping = _load_name_mapping()
+    mapped = mapping.get(raw_name.strip().lower())
+    if mapped and mapped in valid_names:
+        return mapped
 
     candidates = [team for team in valid_names if key and key in normalize(team)]
     if len(candidates) == 1:

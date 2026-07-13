@@ -39,6 +39,64 @@ SIMULATION_RUNS = 2500
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
+MAPPING_FILE = os.path.join(OUT_DIR, "team_name_mapping_master.json")
+
+
+def _sibling_competitions(competition, mapping):
+    """Return competition keys to search when ``competition`` has no mapping.
+
+    For UEFA competitions, checks every competition in the mapping (since any
+    European league's teams can appear in Champions/Europa/Conference League).
+    For country-specific competitions, checks sibling leagues in the same
+    country (e.g. ``England/Premier League`` → also check ``England/Championship``).
+    """
+    country = competition.split("/")[0] if "/" in competition else competition
+    if country.upper().startswith("UEFA"):
+        return [k for k in mapping if isinstance(mapping.get(k), dict)]
+    return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
+
+
+def _append_mapping_if_missing(competition, unresolved_names, valid_names):
+    if not unresolved_names or not os.path.exists(MAPPING_FILE):
+        return
+    try:
+        with open(MAPPING_FILE, "r", encoding="utf-8") as fh:
+            mapping = json.load(fh)
+    except Exception:
+        return
+    if not isinstance(mapping, dict):
+        return
+    comp_section = mapping.setdefault(competition, {})
+    siblings = _sibling_competitions(competition, mapping)
+    added = 0
+    for raw_name in sorted(set(unresolved_names)):
+        if raw_name in comp_section:
+            continue
+        candidate = None
+        for sibling_comp in siblings:
+            sibling_section = mapping.get(sibling_comp, {})
+            if isinstance(sibling_section, dict) and raw_name in sibling_section:
+                mapped = sibling_section[raw_name]
+                if mapped and mapped in valid_names:
+                    candidate = mapped
+                    break
+        if not candidate:
+            stripped = re.sub(
+                r"\s+(FC|AFC|United|City|CF|IF|SC|AG|AS|OFK|FK|NK|HNK|UD|CD|RC|CR|Club|Atl[eé]tico)\s*$",
+                "", raw_name, flags=re.IGNORECASE
+            ).strip()
+            candidate = pm.resolve_team_name(stripped, valid_names) or pm.resolve_team_name(raw_name, valid_names)
+        if candidate and candidate in valid_names:
+            comp_section[raw_name] = candidate
+        else:
+            comp_section[raw_name] = ""
+        added += 1
+    if added:
+        with open(MAPPING_FILE, "w", encoding="utf-8") as fh:
+            json.dump(mapping, fh, indent=2, ensure_ascii=False)
+        print(f"  Mapping: auto-added {added} entry/ies to {MAPPING_FILE}")
+
+
 ESPN_LEAGUE_IDS = {
     "England/Premier League": "eng.1",
     "England/Championship": "eng.2",
@@ -66,9 +124,9 @@ def load_future_fixtures_from_espn(competition, year=None):
         return pd.DataFrame()
 
     target_year = int(year or datetime.now(UTC).year)
-    start = pd.Timestamp(f"{target_year}-01-01")
-    end = pd.Timestamp(f"{target_year}-12-31")
     today = pd.Timestamp(datetime.now(UTC).date())
+    start = today
+    end = pd.Timestamp(f"{target_year}-12-31")
     rows = []
     seen = set()
     day = start
@@ -396,8 +454,11 @@ def coerce_scoreline(pred_result, base_hg, base_ag):
 
 
 def run_monte_carlo(teams, base_table, future_predictions, runs, competition=None, real_matches=None):
-    stat_sums = {team: defaultdict(float) for team in teams}
-    position_counts = {team: defaultdict(int) for team in teams}
+    stat_sums = defaultdict(lambda: defaultdict(float))
+    position_counts = defaultdict(lambda: defaultdict(int))
+    for team in teams:
+        stat_sums[team]
+        position_counts[team]
 
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
@@ -560,6 +621,7 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         if unresolved:
             msg = f"  ESPN: {len(unresolved)} team name(s) in {competition} could not be resolved — add to team_name_mapping_master.json: {sorted(set(unresolved))}"
             print(f"[WARN] {msg}")
+            _append_mapping_if_missing(competition, unresolved, ctx["available_teams"])
         if espn_count:
             print(f"  ESPN: loaded {espn_count} future fixtures for {competition}")
 

@@ -25,6 +25,7 @@ ACCURACY_TOTALS_FILE = os.path.join(WEBSITE_FILES_DIR, "accuracy_totals.json")
 
 GLOBAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 ALL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv")
+FOUR_WEEK_WINDOW_FILE = os.path.join(PROJECT_DIR, "Output", "Upcoming", "four_week_window.csv")
 CUP_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_cup_predictions.csv")
 CUP_COMPLETED_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "completed_cup_predictions.csv")
 MLS_UPCOMING_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
@@ -531,6 +532,8 @@ APNS_BUNDLE_ID = os.environ.get("APNS_BUNDLE_ID", "")
 APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "true").strip().lower() in ("1", "true")
 
 # ── CORS & Security ───────────────────────────────────────────────
+
+TRUST_X_FORWARDED_FOR = os.environ.get("TRUST_X_FORWARDED_FOR", "0").strip().lower() in {"1", "true", "yes"}
 
 ALLOWED_ORIGINS = {
     o.strip()

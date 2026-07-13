@@ -385,6 +385,8 @@ def _parse_espn_live_event(event):
             winner_team = away_team_name
 
         goalscorers = []
+        assists = []
+        yellow_cards = []
         red_cards = []
         details = comp_data.get("details") or []
         home_team_id = str(home.get("id", ""))
@@ -399,6 +401,22 @@ def _parse_espn_live_event(event):
                     "scorer": str(athlete.get("displayName", d.get("text", ""))),
                     "minute": str(d.get("clock", {}).get("displayValue", "")),
                     "type": str(d.get("type", {}).get("text", "")),
+                })
+                # Assisters are athletes[1+] in scoring plays
+                for assister in athletes[1:]:
+                    if assister and assister.get("displayName"):
+                        assists.append({
+                            "team": side,
+                            "assister": str(assister.get("displayName", "")),
+                            "minute": str(d.get("clock", {}).get("displayValue", "")),
+                        })
+            elif d.get("yellowCard"):
+                athletes = d.get("athletesInvolved") or [{}]
+                athlete = athletes[0] if athletes else {}
+                yellow_cards.append({
+                    "team": side,
+                    "player": str(athlete.get("displayName", "")),
+                    "minute": str(d.get("clock", {}).get("displayValue", "")),
                 })
             elif d.get("redCard"):
                 athletes = d.get("athletesInvolved") or [{}]
@@ -449,6 +467,8 @@ def _parse_espn_live_event(event):
             "kickoff_utc": _utc_to_et(raw_date),
             "match_date": match_date_str,
             "goalscorers": goalscorers,
+            "assists": assists,
+            "yellow_cards": yellow_cards,
             "red_cards": red_cards,
         }
         if home_stats:
