@@ -45,6 +45,55 @@ LIGA_MX_COMPETITION = "Mexico/Liga MX"
 LIGA_MX_ESPN_ID = "mex.1"
 RNG = random.Random()
 SIMULATION_RUNS = 2500
+MAPPING_FILE = os.path.join(OUT_DIR, "team_name_mapping_master.json")
+
+
+def _sibling_competitions(competition, mapping):
+    country = competition.split("/")[0] if "/" in competition else competition
+    if country.upper().startswith("UEFA"):
+        return [k for k in mapping if isinstance(mapping.get(k), dict)]
+    return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
+
+
+def _append_mapping_if_missing(competition, unresolved_names, valid_names):
+    if not unresolved_names or not os.path.exists(MAPPING_FILE):
+        return
+    try:
+        with open(MAPPING_FILE, "r", encoding="utf-8") as fh:
+            mapping = json.load(fh)
+    except Exception:
+        return
+    if not isinstance(mapping, dict):
+        return
+    comp_section = mapping.setdefault(competition, {})
+    siblings = _sibling_competitions(competition, mapping)
+    added = 0
+    for raw_name in sorted(set(unresolved_names)):
+        if raw_name in comp_section:
+            continue
+        candidate = None
+        for sibling_comp in siblings:
+            sibling_section = mapping.get(sibling_comp, {})
+            if isinstance(sibling_section, dict) and raw_name in sibling_section:
+                mapped = sibling_section[raw_name]
+                if mapped and mapped in valid_names:
+                    candidate = mapped
+                    break
+        if not candidate:
+            stripped = re.sub(
+                r"\s+(FC|AFC|United|City|CF|IF|SC|AG|AS|OFK|FK|NK|HNK|UD|CD|RC|CR|Club|Atl[eé]tico)\s*$",
+                "", raw_name, flags=re.IGNORECASE
+            ).strip()
+            candidate = pm.resolve_team_name(stripped, valid_names) or pm.resolve_team_name(raw_name, valid_names)
+        if candidate and candidate in valid_names:
+            comp_section[raw_name] = candidate
+        else:
+            comp_section[raw_name] = ""
+        added += 1
+    if added:
+        with open(MAPPING_FILE, "w", encoding="utf-8") as fh:
+            json.dump(mapping, fh, indent=2, ensure_ascii=False)
+        print(f"  Mapping: auto-added {added} entry/ies to {MAPPING_FILE}")
 
 EASTERN_CONFERENCE_TEAMS = {
     "Atlanta Utd",
@@ -510,11 +559,11 @@ def coerce_scoreline(pred_result, base_hg, base_ag):
 
 
 def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, conference_lookup, runs, ctx=None):
-    stat_sums = {team: defaultdict(float) for team in canonical_teams}
-    league_pos_counts = {team: defaultdict(int) for team in canonical_teams}
-    east_pos_counts = {team: defaultdict(int) for team in canonical_teams}
-    west_pos_counts = {team: defaultdict(int) for team in canonical_teams}
-    cup_win_counts = {team: 0 for team in canonical_teams}
+    stat_sums = defaultdict(lambda: defaultdict(float))
+    league_pos_counts = defaultdict(lambda: defaultdict(int))
+    east_pos_counts = defaultdict(lambda: defaultdict(int))
+    west_pos_counts = defaultdict(lambda: defaultdict(int))
+    cup_win_counts = defaultdict(int)
 
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
@@ -872,8 +921,8 @@ def load_future_fixtures_from_espn(competition, espn_id=LIGA_MX_ESPN_ID, year=No
 
 
 def run_monte_carlo_standard(teams, base_table, future_predictions, runs):
-    stat_sums = {team: defaultdict(float) for team in teams}
-    position_counts = {team: defaultdict(int) for team in teams}
+    stat_sums = defaultdict(lambda: defaultdict(float))
+    position_counts = defaultdict(lambda: defaultdict(int))
 
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
@@ -934,12 +983,19 @@ def project_liga_mx_competition(ctx, competition, raw_file):
     future_rows = []
     future_predictions = []
     seen_pairs = set()
+    unresolved = []
 
     for _, row in df.iterrows():
-        home = str(row.get("HomeTeam", "")).strip()
-        away = str(row.get("AwayTeam", "")).strip()
-        if not home or not away:
+        raw_home = str(row.get("HomeTeam", "")).strip()
+        raw_away = str(row.get("AwayTeam", "")).strip()
+        if not raw_home or not raw_away:
             continue
+        home = pm.resolve_team_name(raw_home, ctx["available_teams"]) or raw_home
+        away = pm.resolve_team_name(raw_away, ctx["available_teams"]) or raw_away
+        if home == raw_home and raw_home not in teams:
+            unresolved.append(raw_home)
+        if away == raw_away and raw_away not in teams:
+            unresolved.append(raw_away)
         ftr = str(row.get("FTR", "")).strip().upper()
         hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
         ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
@@ -978,6 +1034,10 @@ def project_liga_mx_competition(ctx, competition, raw_file):
                 "prob_away": round(probs["A"], 6),
             }
         )
+
+    if unresolved:
+        print(f"  Liga MX: {len(set(unresolved))} unresolved team name(s): {sorted(set(unresolved))}")
+        _append_mapping_if_missing(competition, unresolved, ctx["available_teams"])
 
     stat_sums, position_counts = run_monte_carlo_standard(
         teams, table, future_predictions, SIMULATION_RUNS
