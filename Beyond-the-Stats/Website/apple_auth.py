@@ -131,36 +131,6 @@ def _find_apple_key(kid: str) -> dict | None:
     return None
 
 
-def _jwk_to_public_key(alg: str, jwk_dict: dict):
-    """Convert a JWK dict to a cryptography public key.
-
-    Builds the key directly from the JWK fields using ``cryptography``,
-    completely avoiding PyJWT's algorithm internals (which can vary
-    between versions).
-    """
-    import base64 as _b64
-    from cryptography.hazmat.primitives.asymmetric import rsa, ec
-
-    kty = jwk_dict.get("kty", "RSA")
-
-    def _b64i(s: str) -> int:
-        s = s + "=" * (4 - len(s) % 4) if len(s) % 4 else s
-        return int.from_bytes(_b64.urlsafe_b64decode(s), "big")
-
-    if kty == "EC":
-        crv = jwk_dict.get("crv", "P-256")
-        x = _b64i(jwk_dict["x"])
-        y = _b64i(jwk_dict["y"])
-        curve_map = {"P-256": ec.SECP256R1(), "P-384": ec.SECP384R1(), "P-521": ec.SECP521R1()}
-        curve = curve_map.get(crv, ec.SECP256R1())
-        return ec.EllipticCurvePublicNumbers(x, y, curve).public_key()
-
-    # Default: RSA
-    n = _b64i(jwk_dict["n"])
-    e = _b64i(jwk_dict["e"])
-    return rsa.RSAPublicNumbers(e, n).public_key()
-
-
 def verify_apple_identity_token(identity_token: str, client_id: str | None = None) -> dict | None:
     """Verify an Apple identity token, return the payload dict or None."""
     client_id = client_id or os.environ.get("APPLE_CLIENT_ID", "")
@@ -180,7 +150,16 @@ def verify_apple_identity_token(identity_token: str, client_id: str | None = Non
             print(f"[apple-auth] no JWK found for kid={kid}")
             return None
 
-        public_key = _jwk_to_public_key(alg, apple_key)
+        # Build the public key from the JWK using PyJWT's standard utility.
+        # PyJWT's RSAAlgorithm.from_jwk / ECAlgorithm.from_jwk require
+        # the ``cryptography`` package to be installed.
+        import jwt.algorithms
+        kty = apple_key.get("kty", "RSA")
+        if kty == "EC":
+            public_key = jwt.algorithms.ECAlgorithm.from_jwk(json.dumps(apple_key))
+        else:
+            public_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(apple_key))
+
         payload = jwt.decode(
             identity_token,
             public_key,
@@ -189,14 +168,10 @@ def verify_apple_identity_token(identity_token: str, client_id: str | None = Non
             issuer="https://appleid.apple.com",
         )
         return payload
-    except jwt.ImmatureSignatureError as e:
-        print(f"[apple-auth] token not yet valid (ImmatureSignatureError): {e}")
-    except jwt.ExpiredSignatureError as e:
-        print(f"[apple-auth] token expired: {e}")
+    except jwt.ExpiredSignatureError:
+        print("[apple-auth] token expired")
     except jwt.InvalidAudienceError as e:
-        print(f"[apple-auth] audience mismatch — token aud does not match client_id='{client_id}': {e}")
-    except jwt.InvalidIssuerError as e:
-        print(f"[apple-auth] issuer mismatch: {e}")
+        print(f"[apple-auth] audience mismatch — check APPLE_CLIENT_ID matches the token's aud: {e}")
     except jwt.PyJWTError as e:
         print(f"[apple-auth] jwt decode failed: {type(e).__name__}: {e}")
     except Exception as e:

@@ -9,5 +9,6 @@ numpy>=1.24,<2.0
 xgboost>=1.7,<3.0  # optional: GPU training fallback
 psutil>=5.9,<6.0  # optional: per-process RSS for the Backend memory monitor
 httpx>=0.27,<1.0  # HTTP/2 client for ESPN WebSocket/SSE fallback, APNs, webhooks
-pyjwt>=2.8,<3.0  # ES256 JWT signing for APNs auth
+pyjwt>=2.8,<3.0  # JWT for Apple Sign-In + APNs auth
+cryptography>=41,<50  # RSA/EC key support for PyJWT (required for Apple identity token verification)
 redis>=5.0,<9.0  # optional: API response caching when REDIS_URL is set
