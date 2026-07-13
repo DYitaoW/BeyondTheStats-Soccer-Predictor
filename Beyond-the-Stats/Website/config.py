@@ -541,6 +541,14 @@ APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "true").strip().lower() in
 # Apple identity tokens.  Must match the client_id configured in the
 # Apple Developer portal for Sign In with Apple.
 APPLE_CLIENT_ID = os.environ.get("APPLE_CLIENT_ID", "").strip()
+
+# Comma-separated list of Apple `sub` values that should be treated as
+# admins (e.g. "001234.abc123def456.0000,005678.ghi789jkl012.0000").
+# These users can call mutation endpoints (like /api/auth/tier) via
+# their normal session JWT without needing X-Admin-Token.
+_RAW_ADMIN_SUBS = os.environ.get("APPLE_ADMIN_SUBS", "").strip()
+ADMIN_SUBS: set[str] = {s.strip() for s in _RAW_ADMIN_SUBS.split(",") if s.strip()} if _RAW_ADMIN_SUBS else set()
+
 USERS_FILE = os.path.join(PROJECT_DIR, "Data", "users.json")
 
 # ── CORS & Security ───────────────────────────────────────────────

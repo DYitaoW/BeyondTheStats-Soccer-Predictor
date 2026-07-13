@@ -67,10 +67,18 @@ def _debug_auth_ok():
 
 
 def _mutation_auth_ok():
-    """Return True if the caller is authorized for backend-changing endpoints."""
-    if not config.MUTATION_API_TOKEN and not config.NOTIFICATIONS_API_KEY:
+    """Return True if the caller is authorized for backend-changing endpoints.
+
+    Accepts:
+      1. ``X-Admin-Token`` / ``Authorization: Bearer <token>`` matching
+         ``MUTATION_API_TOKEN`` or ``NOTIFICATIONS_API_KEY`` (server-to-server).
+      2. A session JWT whose ``sub`` is in ``ADMIN_SUBS`` (personal Apple
+         accounts promoted to admin via ``APPLE_ADMIN_SUBS`` env var).
+    """
+    if not config.MUTATION_API_TOKEN and not config.NOTIFICATIONS_API_KEY and not config.ADMIN_SUBS:
         return False
 
+    # 1. Shared-secret checks (server-to-server)
     for header_name in ("X-Admin-Token", "X-Notifications-Key"):
         token = request.headers.get(header_name, "").strip()
         if token and config.MUTATION_API_TOKEN and token == config.MUTATION_API_TOKEN:
@@ -85,6 +93,15 @@ def _mutation_auth_ok():
             return True
         if config.NOTIFICATIONS_API_KEY and token == config.NOTIFICATIONS_API_KEY:
             return True
+
+    # 2. Session JWT check (personal Apple account admin)
+    if config.ADMIN_SUBS and auth_header.lower().startswith("bearer "):
+        session_token = auth_header[7:].strip()
+        if session_token:
+            from apple_auth import decode_session_jwt
+            session = decode_session_jwt(session_token)
+            if session and session.get("sub") in config.ADMIN_SUBS:
+                return True
 
     return False
 

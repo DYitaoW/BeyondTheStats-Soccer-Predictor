@@ -671,13 +671,15 @@ def api_auth_apple():
         ok, session_token, user
     """
     payload = request.get_json(silent=True) or {}
-    identity_token = str(payload.get("identity_token", "")).strip()
+    raw_identity = payload.get("identity_token")
+    identity_token = str(raw_identity).strip() if isinstance(raw_identity, str) else ""
     if not identity_token:
         return jsonify({"ok": False, "error": "identity_token required"}), 400
 
     from apple_auth import verify_apple_identity_token, get_or_create_user, create_session_jwt
 
-    client_id = str(payload.get("client_id", "")).strip() or config.APPLE_CLIENT_ID or None
+    raw_client = payload.get("client_id")
+    client_id = str(raw_client).strip() if isinstance(raw_client, str) else (config.APPLE_CLIENT_ID or None)
     apple_payload = verify_apple_identity_token(identity_token, client_id)
     if not apple_payload:
         return jsonify({"ok": False, "error": "Invalid identity token"}), 401
