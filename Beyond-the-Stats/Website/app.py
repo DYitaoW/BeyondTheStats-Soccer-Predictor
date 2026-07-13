@@ -1475,6 +1475,8 @@ def api_refresh():
     """Trigger a background pipeline refresh (non-blocking when BackendServer is running)."""
     if not _refresh_auth_ok():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    if not config.PIPELINE_ENABLED:
+        return jsonify({"ok": False, "error": "Pipeline disabled (set PIPELINE_ENABLED=1 to enable)"}), 403
 
     refresh_fn = app.config.get("_backend_refresh")
     if callable(refresh_fn):
@@ -1501,13 +1503,14 @@ def api_refresh():
 
 @app.post("/api/retrain")
 def api_retrain():
-    """Force a full model retrain (global + MLS + extra cache rebuild).
-
+    """Force a full model retrain.
     Same as the scheduled Tuesday/Friday run: downloads data and retrains all
     model caches. Non-blocking when :class:`BackendServer` is running.
     """
     if not _refresh_auth_ok():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    if not config.PIPELINE_ENABLED:
+        return jsonify({"ok": False, "error": "Pipeline disabled (set PIPELINE_ENABLED=1 to enable)"}), 403
 
     refresh_fn = app.config.get("_backend_refresh")
     if callable(refresh_fn):

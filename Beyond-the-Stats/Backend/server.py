@@ -130,9 +130,11 @@ class BackendServer:
         if self.config.enable_watcher:
             self._start_watcher()
         if self.config.run_on_start:
-            # Always a light refresh on boot; missing caches are built without a
-            # full retrain. Scheduled Tue/Fri runs handle model retraining.
-            self._run_pipeline_in_background(trigger="startup", full_retrain=False)
+            pipeline_enabled = os.environ.get("PIPELINE_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
+            if pipeline_enabled:
+                self._run_pipeline_in_background(trigger="startup", full_retrain=False)
+            else:
+                LOG.warning("[startup] PIPELINE_ENABLED=0 — skipping startup pipeline run")
 
         self._scheduler_thread = threading.Thread(
             target=self._scheduler_loop, name="daily-scheduler", daemon=True
@@ -595,6 +597,10 @@ class BackendServer:
             if self._stop.is_set():
                 break
             is_model_day = self._is_model_refresh_day(target)
+            pipeline_enabled = os.environ.get("PIPELINE_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
+            if not pipeline_enabled:
+                LOG.warning("[scheduler] PIPELINE_ENABLED=0 — skipping scheduled pipeline run")
+                continue
             self._run_pipeline_in_background(trigger="scheduled", full_retrain=is_model_day, wait_for_lock=True)
             # Wait for completion (or up to timeout) so we don't fire
             # another scheduled run while the previous is still going.
