@@ -1375,6 +1375,19 @@ def publish_to_output(output_dir=None):
     output_dir = Path(output_dir) if output_dir else OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Clear stale league-data cache so next API call recomputes fresh
+    league_data_cache_dir = SP_DIR / "Output" / "LeagueData"
+    if league_data_cache_dir.exists():
+        import shutil
+        try:
+            shutil.rmtree(str(league_data_cache_dir))
+        except Exception:
+            for f in league_data_cache_dir.glob("*.json"):
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+
     written = {"europe": {}, "other": {}, "national": {}, "combined": {}}
 
     global_tables = PREDICTIONS_DIR / "projected_league_tables.csv"
