@@ -150,11 +150,8 @@ def verify_apple_identity_token(identity_token: str, client_id: str | None = Non
             print(f"[apple-auth] no JWK found for kid={kid}")
             return None
 
-        kty = apple_key.get("kty", "RSA")
-        if kty == "EC":
-            public_key = jwt.algorithms.ECAlgorithm.from_jwk(json.dumps(apple_key))
-        else:
-            public_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(apple_key))
+        from jwt import PyJWK
+        public_key = PyJWK(apple_key).key
 
         payload = jwt.decode(
             identity_token,
