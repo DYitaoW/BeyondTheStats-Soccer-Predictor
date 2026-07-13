@@ -17,6 +17,7 @@ import time
 from base64 import urlsafe_b64decode
 
 import jwt
+import jwt.algorithms  # noqa: F401 — ensures jwt is bound locally so except clauses work
 import requests
 
 import config
@@ -153,7 +154,6 @@ def verify_apple_identity_token(identity_token: str, client_id: str | None = Non
         # Build the public key from the JWK using PyJWT's standard utility.
         # PyJWT's RSAAlgorithm.from_jwk / ECAlgorithm.from_jwk require
         # the ``cryptography`` package to be installed.
-        import jwt.algorithms
         kty = apple_key.get("kty", "RSA")
         if kty == "EC":
             public_key = jwt.algorithms.ECAlgorithm.from_jwk(json.dumps(apple_key))
@@ -168,10 +168,6 @@ def verify_apple_identity_token(identity_token: str, client_id: str | None = Non
             issuer="https://appleid.apple.com",
         )
         return payload
-    except jwt.ExpiredSignatureError:
-        print("[apple-auth] token expired")
-    except jwt.InvalidAudienceError as e:
-        print(f"[apple-auth] audience mismatch — check APPLE_CLIENT_ID matches the token's aud: {e}")
     except jwt.PyJWTError as e:
         print(f"[apple-auth] jwt decode failed: {type(e).__name__}: {e}")
     except Exception as e:
