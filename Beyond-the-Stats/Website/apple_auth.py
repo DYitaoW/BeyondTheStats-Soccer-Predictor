@@ -135,17 +135,29 @@ def verify_apple_identity_token(identity_token: str, client_id: str | None = Non
     """Verify an Apple identity token, return the payload dict or None."""
     client_id = client_id or os.environ.get("APPLE_CLIENT_ID", "")
     if not client_id:
+        print("[apple-auth] verify_apple_identity_token: client_id is empty")
         return None
     try:
         header = jwt.get_unverified_header(identity_token)
         kid = header.get("kid")
         alg = header.get("alg", "RS256")
         if not kid:
+            print("[apple-auth] missing kid in token header")
             return None
+
         apple_key = _find_apple_key(kid)
         if not apple_key:
+            print(f"[apple-auth] no JWK found for kid={kid}")
             return None
-        public_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(apple_key))
+
+        kty = apple_key.get("kty", "RSA")
+        if kty == "EC":
+            from jwt.algorithms import ECAlgorithm
+            public_key = ECAlgorithm.from_jwk(json.dumps(apple_key))
+        else:
+            from jwt.algorithms import RSAAlgorithm
+            public_key = RSAAlgorithm.from_jwk(json.dumps(apple_key))
+
         payload = jwt.decode(
             identity_token,
             public_key,
@@ -154,10 +166,19 @@ def verify_apple_identity_token(identity_token: str, client_id: str | None = Non
             issuer="https://appleid.apple.com",
         )
         return payload
-    except jwt.PyJWTError:
-        return None
-    except Exception:
-        return None
+    except jwt.ImmatureSignatureError as e:
+        print(f"[apple-auth] token not yet valid (ImmatureSignatureError): {e}")
+    except jwt.ExpiredSignatureError as e:
+        print(f"[apple-auth] token expired: {e}")
+    except jwt.InvalidAudienceError as e:
+        print(f"[apple-auth] audience mismatch — token aud does not match client_id='{client_id}': {e}")
+    except jwt.InvalidIssuerError as e:
+        print(f"[apple-auth] issuer mismatch: {e}")
+    except jwt.PyJWTError as e:
+        print(f"[apple-auth] jwt decode failed: {type(e).__name__}: {e}")
+    except Exception as e:
+        print(f"[apple-auth] unexpected error: {type(e).__name__}: {e}")
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════
