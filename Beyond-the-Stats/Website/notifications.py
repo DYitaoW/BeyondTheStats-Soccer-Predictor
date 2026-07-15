@@ -1,4 +1,5 @@
 """Apple Push Notification Service (APNs) worker and token generation."""
+import logging
 import time
 import threading
 from collections import deque
@@ -7,6 +8,8 @@ from datetime import datetime, timezone
 import httpx
 
 import config
+
+LOG = logging.getLogger("notifications")
 
 _notifications = deque(maxlen=100)
 device_tokens: set = set()
@@ -29,13 +32,19 @@ def _generate_apns_token() -> str | None:
     if _apns_token_cache and now < _apns_token_expires:
         return _apns_token_cache
     if not config.APNS_KEY_FILE or not config.APNS_KEY_ID or not config.APNS_TEAM_ID:
+        LOG.warning("APNs config incomplete: KEY_FILE=%s KEY_ID=%s TEAM_ID=%s",
+                     config.APNS_KEY_FILE, config.APNS_KEY_ID, config.APNS_TEAM_ID)
         return None
     try:
         with open(config.APNS_KEY_FILE, "rb") as f:
             key_data = f.read()
+    except Exception as e:
+        LOG.error("Failed to read APNs key file %s: %s", config.APNS_KEY_FILE, e)
+        return None
+    try:
         import jwt as pyjwt
         issued_at = int(now)
-        expiry = issued_at + 3600  # tokens valid for 1 hour
+        expiry = issued_at + 3600
         headers = {"kid": config.APNS_KEY_ID}
         payload = {
             "iss": config.APNS_TEAM_ID,
@@ -43,9 +52,10 @@ def _generate_apns_token() -> str | None:
         }
         token = pyjwt.encode(payload, key_data, algorithm="ES256", headers=headers)
         _apns_token_cache = token
-        _apns_token_expires = expiry - 60  # refresh 1 min early
+        _apns_token_expires = expiry - 60
         return token
-    except Exception:
+    except Exception as e:
+        LOG.error("APNs JWT generation failed: %s", e)
         return None
 
 
@@ -77,8 +87,11 @@ def _send_apns_notification(device_token: str, title: str, body: str, badge: int
                     "apns-push-type": "alert",
                 },
             )
+            if resp.status_code != 200:
+                LOG.warning("APNs alert push failed: HTTP %s %s", resp.status_code, resp.text[:200])
             return resp.status_code == 200
-    except Exception:
+    except Exception as e:
+        LOG.error("APNs alert push error: %s", e)
         return False
 
 
@@ -131,8 +144,11 @@ def _send_live_activity_push(
                     "apns-push-type": "liveactivity",
                 },
             )
+            if resp.status_code != 200:
+                LOG.warning("APNs liveactivity push failed: HTTP %s %s", resp.status_code, resp.text[:200])
             return resp.status_code == 200
-    except Exception:
+    except Exception as e:
+        LOG.error("APNs liveactivity push error: %s", e)
         return False
 
 
@@ -159,19 +175,21 @@ def _apns_worker():
         if item:
             ptype = item.get("type", "alert")
             if ptype == "liveactivity":
-                _send_live_activity_push(
+                ok = _send_live_activity_push(
                     activity_token=item["token"],
                     event=item.get("event", "update"),
                     content_state=item.get("content_state", {}),
                     timestamp=item.get("timestamp"),
                 )
             else:
-                _send_apns_notification(
+                ok = _send_apns_notification(
                     device_token=item["token"],
                     title=item["title"],
                     body=item["body"],
                     badge=item.get("badge", 0),
                 )
+            if not ok:
+                LOG.warning("APNs worker: failed to send %s push", ptype)
         else:
             time.sleep(2.0)
 

@@ -594,6 +594,11 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         future_pairs.append((home, away))
         future_dates.append(row["DateParsed"].date().isoformat() if pd.notna(row["DateParsed"]) else "")
 
+    # If every row in the CSV is a completed result, this is a finished season
+    # with no remaining fixtures — skip it (nothing to project).
+    if not future_pairs:
+        return [], []
+
     # Try ESPN API for full-season upcoming fixtures (more accurate than CSV or synthetic)
     espn_fixtures = load_future_fixtures_from_espn(competition)
     if not espn_fixtures.empty:

@@ -47,6 +47,40 @@ from espn_api import _fetch_leaders, _fetch_standings, LIVE_SCORE_FETCH_TIMEOUT
 from team_utils import _to_int
 
 _real_tables: dict[str, dict] = {}
+_team_display_mapping: dict[str, dict[str, str]] | None = None
+_team_display_mapping_lock = threading.Lock()
+
+
+def _load_team_display_mapping() -> dict[str, dict[str, str]]:
+    global _team_display_mapping
+    if _team_display_mapping is not None:
+        return _team_display_mapping
+    with _team_display_mapping_lock:
+        if _team_display_mapping is not None:
+            return _team_display_mapping
+        path = config.TEAM_NAME_DISPLAY_MAPPING_FILE
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    _team_display_mapping = json.load(f)
+            except Exception:
+                _team_display_mapping = {}
+        else:
+            _team_display_mapping = {}
+        return _team_display_mapping
+
+
+def _normalize_team_name(name: str, competition: str) -> str:
+    mapping = _load_team_display_mapping()
+    comp_map = mapping.get(competition, {})
+    result = comp_map.get(name)
+    if result:
+        return result
+    lower = name.lower().strip()
+    for raw, canon in comp_map.items():
+        if raw.lower().strip() == lower:
+            return canon
+    return name
 _real_tables_lock = threading.Lock()
 
 _real_leaders: dict[str, dict] = {}
@@ -369,6 +403,12 @@ def _compute_standings_from_history(comp_name):
     comp_games = collect_competition_games(comp_name)
     if not comp_games:
         return None
+
+    for g in comp_games:
+        raw_ht = str(g.get("home_team", ""))
+        raw_at = str(g.get("away_team", ""))
+        g["home_team"] = _normalize_team_name(raw_ht, base_comp)
+        g["away_team"] = _normalize_team_name(raw_at, base_comp)
 
     def _finalize(groups, source="computed", current_phase=None):
         if mls_view and groups:

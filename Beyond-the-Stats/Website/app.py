@@ -889,6 +889,52 @@ def api_auth_tier():
     return jsonify({"ok": True, "user": updated})
 
 
+@app.post("/api/auth/unlock-match")
+def api_auth_unlock_match():
+    """Record a match unlock for the authenticated user.
+
+    Body (JSON):
+        home_team   (str, required)
+        away_team   (str, required)
+        competition (str, required)
+        match_id    (str, required)
+
+    Deduplicates by match_id — re-sending the same match_id is a no-op.
+    """
+    result = _require_user()
+    if result[0] is None:
+        return result[1]
+    sub, _user = result
+
+    body = request.get_json(silent=True) or {}
+    home_team = str(body.get("home_team", "")).strip()
+    away_team = str(body.get("away_team", "")).strip()
+    competition = str(body.get("competition", "")).strip()
+    match_id = str(body.get("match_id", "")).strip()
+
+    if not all([home_team, away_team, competition, match_id]):
+        return jsonify({"ok": False, "error": "home_team, away_team, competition, and match_id required"}), 400
+    if len(home_team) > 128 or len(away_team) > 128 or len(competition) > 128 or len(match_id) > 128:
+        return jsonify({"ok": False, "error": "input too long"}), 400
+
+    from apple_auth import add_unlocked_match
+    ok = add_unlocked_match(sub, match_id, home_team, away_team, competition)
+    return jsonify({"ok": ok, "added": ok})
+
+
+@app.get("/api/auth/unlocked-matches")
+def api_auth_unlocked_matches():
+    """Return all unlocked matches for the authenticated user."""
+    result = _require_user()
+    if result[0] is None:
+        return result[1]
+    sub, _user = result
+
+    from apple_auth import get_unlocked_matches
+    matches = get_unlocked_matches(sub)
+    return jsonify({"ok": True, "matches": matches})
+
+
 @app.post("/api/auth/credits/decrement")
 def api_auth_credits_decrement():
     """Decrement credits for the current user.
@@ -1014,6 +1060,8 @@ def api_help():
         ("/api/auth/credits/decrement", "POST", "Decrement credits (use a prediction/feature)"),
         ("/api/auth/check-access", "POST", "Check tier + credits before using a feature (?min_tier=, ?credit_cost=)"),
         ("/api/auth/tier", "PATCH", "Admin: manually set a user's tier (requires mutation token)"),
+        ("/api/auth/unlock-match", "POST", "Record a match unlock for the user"),
+        ("/api/auth/unlocked-matches", "GET", "Return all unlocked matches for the user"),
         ("/api/mobile/feed", "GET", "Mobile home feed"),
         ("/api/mobile/widget", "GET", "Mobile widget data"),
         ("/api/feedback", "POST", "Submit user feedback"),

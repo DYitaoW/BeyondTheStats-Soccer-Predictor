@@ -36,8 +36,17 @@ _APPLE_KEYS_CACHE: list[dict] = []
 _APPLE_KEYS_CACHE_AT: float = 0
 _APPLE_KEYS_CACHE_TTL: float = 86400  # 24 h
 
+# ── File paths ────────────────────────────────────────────────────
+# WARNING: If you manually edit Data/users.json or Data/original_tx_sub_map.json
+# while the server is running, the in-memory lock (_USERS_LOCK) will NOT protect
+# your change.  The server re-reads the file on every operation, so your edits
+# WILL be picked up on the NEXT read.  However, if the server writes between
+# your edit and the next read, your change could be overwritten.
+# Safe approach: stop the server, edit, restart.
+
 USERS_FILE = os.path.join(config.PROJECT_DIR, "Data", "users.json")
 ORIGINAL_TX_MAP_FILE = os.path.join(config.PROJECT_DIR, "Data", "original_tx_sub_map.json")
+USERS_BACKUP_DIR = os.path.join(config.PROJECT_DIR, "Data", "Backups")
 
 # Apple server-to-server notification V2: Apple root certificate URL
 APPLE_ROOT_CA_URL = "https://www.apple.com/certificateauthority/AppleRootCA-G3.cer"
@@ -59,20 +68,15 @@ SUBSCRIPTION_PRODUCTS: dict[str, dict] = {
         "credits_monthly_cap": 3,
         "price": 2.99,
     },
-    "com.beyondthestats.plus.yearly": {
-        "tier": "plus",
-        "credits_monthly_cap": 3,
-        "price": 29.99,
-    },
     "com.beyondthestats.prediction.monthly": {
         "tier": "prediction",
         "credits_monthly_cap": 15,
         "price": 6.99,
     },
-    "com.beyondthestats.prediction.yearly": {
-        "tier": "prediction",
-        "credits_monthly_cap": 15,
-        "price": 69.99,
+    "com.beyondthestats.founders.monthly": {
+        "tier": "founders",
+        "credits_monthly_cap": 1000,
+        "price": 7.99,
     },
     "com.beyondthestats.premium.monthly": {
         "tier": "premium",
@@ -101,6 +105,7 @@ _USER_FIELDS = frozenset({
     "teams_followed", "leagues_followed",
     "widget_settings", "live_activity_settings",
     "processed_transactions",
+    "unlocked_matches",
     "created_at", "updated_at",
 })
 
@@ -478,6 +483,7 @@ def _verify_receipt_with_apple(receipt_data: str, url: str) -> dict | None:
     """Send receipt data to Apple's verification endpoint."""
     shared_secret = _apple_store_shared_secret()
     if not shared_secret:
+        print("[apple-receipt] APP_STORE_SHARED_SECRET not set")
         return None
     try:
         resp = requests.post(
@@ -487,7 +493,11 @@ def _verify_receipt_with_apple(receipt_data: str, url: str) -> dict | None:
         )
         resp.raise_for_status()
         return resp.json()
-    except Exception:
+    except requests.RequestException as e:
+        print(f"[apple-receipt] HTTP error: {e}")
+        return None
+    except Exception as e:
+        print(f"[apple-receipt] unexpected error: {type(e).__name__}: {e}")
         return None
 
 
@@ -643,8 +653,37 @@ def apply_purchases(sub: str, parsed_receipt: dict) -> dict | None:
 #  User persistence  (JSON file, no DB)
 # ═══════════════════════════════════════════════════════════════════
 
+_BACKUP_DATE: str = ""
+
+
+def _daily_user_backup() -> None:
+    """Create a dated copy of users.json once per day.
+
+    Copies go to ``Data/Backups/users-YYYY-MM-DD.json``.
+    Old backups are NOT auto-deleted — clean them up manually if desired.
+    """
+    global _BACKUP_DATE
+    today = time.strftime("%Y-%m-%d")
+    if _BACKUP_DATE == today:
+        return
+    if not os.path.exists(USERS_FILE):
+        return
+    os.makedirs(USERS_BACKUP_DIR, exist_ok=True)
+    backup_path = os.path.join(USERS_BACKUP_DIR, f"users-{today}.json")
+    if os.path.exists(backup_path):
+        _BACKUP_DATE = today
+        return
+    import shutil
+    try:
+        shutil.copy2(USERS_FILE, backup_path)
+        print(f"[backup] users.json → {backup_path}")
+        _BACKUP_DATE = today
+    except Exception as e:
+        print(f"[backup] failed: {e}")
+
 
 def _load_users() -> dict[str, dict]:
+    _daily_user_backup()
     if not os.path.exists(USERS_FILE):
         return {}
     try:
@@ -681,16 +720,17 @@ def get_or_create_user(sub: str) -> dict:
                 "tier": "free",
                 "tier_expires_at": None,
                 "tier_product_id": None,
-                "credits": 0,
-                "credits_purchased": 0,
+                "credits": 1,
+                "credits_purchased": 1,
+                "total_credits_purchased": 1,
                 "credits_monthly_cap": 0,
                 "credits_granted_until": None,
-                "total_credits_purchased": 0,
                 "teams_followed": [],
                 "leagues_followed": [],
                 "widget_settings": {},
                 "live_activity_settings": {},
                 "processed_transactions": [],
+                "unlocked_matches": [],
                 "created_at": time.time(),
                 "updated_at": time.time(),
             }
@@ -787,7 +827,7 @@ def add_credits(sub: str, amount: int) -> int:
 # ═══════════════════════════════════════════════════════════════════
 
 # Ordered from lowest to highest access.
-TIER_HIERARCHY = ["free", "plus", "prediction", "premium"]
+TIER_HIERARCHY = ["free", "plus", "prediction", "founders", "premium"]
 
 
 def _tier_rank(tier: str) -> int:
@@ -919,3 +959,45 @@ def decode_session_jwt(token: str) -> dict | None:
         return None
     except Exception:
         return None
+
+
+# ── Unlocked match tracking ──────────────────────────────────────
+
+
+def add_unlocked_match(sub: str, match_id: str, home_team: str,
+                        away_team: str, competition: str,
+                        user: dict | None = None) -> bool:
+    """Record a match unlock for a user. Returns True if added."""
+    if not all([sub, match_id, home_team, away_team, competition]):
+        return False
+    with _USERS_LOCK:
+        if user is None:
+            users = _load_users()
+            user = users.get(sub)
+        else:
+            users = None
+        if not user:
+            return False
+        unlocked = user.setdefault("unlocked_matches", [])
+        for entry in unlocked:
+            if entry.get("match_id") == match_id:
+                return False
+        unlocked.append({
+            "match_id": match_id,
+            "home_team": home_team,
+            "away_team": away_team,
+            "competition": competition,
+            "unlocked_at": time.time(),
+        })
+        user["updated_at"] = time.time()
+        if users:
+            _save_users(users)
+    return True
+
+
+def get_unlocked_matches(sub: str) -> list[dict]:
+    """Return all unlocked matches for a user."""
+    user = get_user(sub)
+    if not user:
+        return []
+    return user.get("unlocked_matches", [])

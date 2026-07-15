@@ -48,7 +48,7 @@ RUN_ALL_PIPELINE = os.path.join(PROJECT_DIR, "Run_All_Pipeline.py")
 # Set to "0" / "false" to disable pipeline execution entirely.
 # Useful during development/debugging so /api/refresh and /api/retrain
 # return a clear "disabled" response instead of trying to run the pipeline.
-PIPELINE_ENABLED = os.environ.get("PIPELINE_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
+PIPELINE_ENABLED = os.environ.get("PIPELINE_ENABLED", "1").strip().lower() in {"1", "true", "yes"}
 
 LAST_DATA_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_data_refresh.json")
 PIPELINE_STATUS_FILE = os.path.join(PROJECT_DIR, "Data", "pipeline_status.json")
