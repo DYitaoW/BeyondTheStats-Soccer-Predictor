@@ -130,7 +130,7 @@ class BackendServer:
         if self.config.enable_watcher:
             self._start_watcher()
         if self.config.run_on_start:
-            pipeline_enabled = os.environ.get("PIPELINE_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
+            pipeline_enabled = os.environ.get("PIPELINE_ENABLED", "1").strip().lower() in {"1", "true", "yes"}
             if pipeline_enabled:
                 self._run_pipeline_in_background(trigger="startup", full_retrain=False)
             else:
@@ -597,7 +597,7 @@ class BackendServer:
             if self._stop.is_set():
                 break
             is_model_day = self._is_model_refresh_day(target)
-            pipeline_enabled = os.environ.get("PIPELINE_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
+            pipeline_enabled = os.environ.get("PIPELINE_ENABLED", "1").strip().lower() in {"1", "true", "yes"}
             if not pipeline_enabled:
                 LOG.warning("[scheduler] PIPELINE_ENABLED=0 — skipping scheduled pipeline run")
                 continue
