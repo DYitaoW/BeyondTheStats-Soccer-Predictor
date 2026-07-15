@@ -649,19 +649,27 @@ def _parse_espn_boxscore_stats(summary_data):
     return result
 
 def _parse_elapsed_minutes(clock_str, period_str):
-    """Parse elapsed match minutes from ESPN clock/period strings."""
+    """Parse elapsed match minutes from ESPN clock/period strings.
+
+    Soccer uses total elapsed time (clock "90:00" = 90 min played).
+    Handles HT, stoppage time ("90+5"), and extra time.
+    """
     clock_str = str(clock_str or "0'").strip()
     period_str = str(period_str or "").strip().lower()
-    if "halftime" in period_str or ("half" in period_str and "1st" in period_str):
+    # Halftime break — period is "Halftime", "Half", "HT", or similar.
+    # Do NOT match "1st Half" (normal play) or "Extra Time 1st Half".
+    if "halftime" in period_str or period_str in ("ht", "half", "halftime"):
         return 45
+    # Parse numeric base from clock (before any "+")
     nums = re.findall(r"\d+", clock_str.split("+")[0])
     if not nums:
         return 0
     base = int(nums[0])
+    # Add stoppage time shown as "+N" (e.g. "90+5" → 95)
     if "+" in clock_str:
         extra = re.findall(r"\d+", clock_str.split("+")[1] if "+" in clock_str else "")
         if extra:
             base += int(extra[0])
-    if "2nd" in period_str or "second" in period_str:
-        return min(45 + max(0, base), 99)
-    return min(base, 50)
+    # For soccer the clock IS total elapsed minutes — no offset needed.
+    # Cap at a reasonable max (160 = 120+40 stoppage for extreme extra time).
+    return min(base, 160)

@@ -491,7 +491,10 @@ def _compute_live_prediction(game, prematch):
     away_score = game.get("away_score") or 0
     goal_diff = home_score - away_score
     elapsed = _parse_elapsed_minutes(game.get("clock", "0'"), game.get("period", ""))
-    time_frac = max(0.05, min(1.0, (95 - elapsed) / 90.0))
+    period = str(game.get("period", "")).lower()
+    is_extra_time = "extra" in period or "et" in period or "overtime" in period
+    total_minutes = 120 if is_extra_time else 90
+    time_frac = max(0.05, min(1.0, (total_minutes + 5 - elapsed) / total_minutes))
 
     # ── Pre-match data ─────────────────────────────────────────
     if prematch:
@@ -574,7 +577,7 @@ def _compute_live_prediction(game, prematch):
     # Blend decays with time AND with goals scored.  Goals are strong
     # evidence so they accelerate the transition toward the pure model.
     # At 0-0 the blend decays slowly so pre-match weight persists longer.
-    blend = max(0.0, min(1.0, 1.0 - (elapsed + 15 * abs(goal_diff)) / 90.0))
+    blend = max(0.0, min(1.0, 1.0 - (elapsed + 15 * abs(goal_diff)) / total_minutes))
 
     p_home = blend * prem_home + (1.0 - blend) * m_home
     p_draw = blend * prem_draw + (1.0 - blend) * m_draw
