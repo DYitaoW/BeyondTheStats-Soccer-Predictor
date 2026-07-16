@@ -12,7 +12,7 @@ from io import StringIO
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
 OUTPUT_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
-SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})\.csv$", re.IGNORECASE)
+SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})(?:-(\d{2}))?\.csv$", re.IGNORECASE)
 MIN_START_YEAR = 2002
 # Approximate relative-strength coefficients so every Extra-leagues
 # competition isn't silently flattened to the same 0.85 fallback used by

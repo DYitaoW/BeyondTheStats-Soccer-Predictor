@@ -428,8 +428,66 @@ def clone_table(table):
     }
 
 
-def rank_table(table):
-    return sorted(table.items(), key=lambda kv: (-kv[1]["Pts"], -kv[1]["GD"], -kv[1]["GF"], kv[0]))
+# Leagues where the first tiebreaker is head-to-head (points > GD > GF) then overall GD > GF > name.
+H2H_LEAGUES = {
+    "Spain/La Liga", "Spain/La Liga 2",
+    "Italy/Serie A", "Italy/Serie B",
+    "Portugal/Liga Portugal",
+    "Belgium/First Division A",
+    "Turkey/Super Lig",
+    "Mexico/Liga MX",
+}
+
+
+def _compute_h2h_scores(tied_teams, all_matches):
+    scores = {t: {"pts": 0, "gd": 0, "gf": 0} for t in tied_teams}
+    team_set = set(tied_teams)
+    for home, away, hg, ag in all_matches:
+        if home in team_set and away in team_set:
+            if hg > ag:
+                scores[home]["pts"] += 3
+            elif ag > hg:
+                scores[away]["pts"] += 3
+            else:
+                scores[home]["pts"] += 1
+                scores[away]["pts"] += 1
+            scores[home]["gd"] += hg - ag
+            scores[home]["gf"] += hg
+            scores[away]["gd"] += ag - hg
+            scores[away]["gf"] += ag
+    return scores
+
+
+def rank_table(table, competition=None, all_matches=None):
+    use_h2h = competition in H2H_LEAGUES and all_matches is not None
+    if not use_h2h:
+        return sorted(table.items(), key=lambda kv: (-kv[1]["Pts"], -kv[1]["GD"], -kv[1]["GF"], kv[0]))
+
+    pts_groups = defaultdict(list)
+    for team, stats in table.items():
+        pts_groups[stats["Pts"]].append(team)
+
+    result = []
+    for pts in sorted(pts_groups, reverse=True):
+        tied = pts_groups[pts]
+        if len(tied) == 1:
+            result.append((tied[0], table[tied[0]]))
+        else:
+            h2h = _compute_h2h_scores(tied, all_matches)
+            sorted_tied = sorted(
+                tied,
+                key=lambda t: (
+                    -h2h[t]["pts"],
+                    -h2h[t]["gd"],
+                    -h2h[t]["gf"],
+                    -table[t]["GD"],
+                    -table[t]["GF"],
+                    t,
+                ),
+            )
+            for team in sorted_tied:
+                result.append((team, table[team]))
+    return result
 
 
 def sample_outcome(probs):
@@ -455,18 +513,20 @@ def coerce_scoreline(pred_result, base_hg, base_ag):
     return hg, ag
 
 
-def run_monte_carlo(teams, base_table, future_predictions, runs):
+def run_monte_carlo(teams, base_table, future_predictions, runs, competition=None, all_matches=None):
     stat_sums = {team: defaultdict(float) for team in teams}
     position_counts = {team: defaultdict(int) for team in teams}
 
+    sim_matches = list(all_matches) if all_matches else []
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
         for fixture in future_predictions:
             result = sample_outcome(fixture["probs"])
             hg, ag = coerce_scoreline(result, fixture["pred_home_goals"], fixture["pred_away_goals"])
             apply_result(sim_table, fixture["home_team"], fixture["away_team"], hg, ag, is_real=False)
+            sim_matches.append((fixture["home_team"], fixture["away_team"], hg, ag))
 
-        ranked = rank_table(sim_table)
+        ranked = rank_table(sim_table, competition=competition, all_matches=sim_matches if competition in H2H_LEAGUES else None)
         for pos, (team, stats) in enumerate(ranked, start=1):
             position_counts[team][pos] += 1
             for key, value in stats.items():
@@ -589,6 +649,7 @@ def project_competition(ctx, competition, raw_file):
     table = init_table(teams)
     future_rows = []
     future_predictions = []
+    real_matches = []
     seen_pairs = set()
 
     def add_future_prediction(home, away, match_date=""):
@@ -630,6 +691,7 @@ def project_competition(ctx, competition, raw_file):
 
         if is_played:
             apply_result(table, home, away, int(hg), int(ag), is_real=True)
+            real_matches.append((home, away, int(hg), int(ag)))
             continue
 
         add_future_prediction(
@@ -651,7 +713,7 @@ def project_competition(ctx, competition, raw_file):
             seen_pairs.add((resolved_home, resolved_away))
             add_future_prediction(resolved_home, resolved_away, "")
 
-    stat_sums, position_counts = run_monte_carlo(teams, table, future_predictions, SIMULATION_RUNS)
+    stat_sums, position_counts = run_monte_carlo(teams, table, future_predictions, SIMULATION_RUNS, competition=competition, all_matches=real_matches)
     averaged = {}
     for team in teams:
         sums = stat_sums.get(team, {})

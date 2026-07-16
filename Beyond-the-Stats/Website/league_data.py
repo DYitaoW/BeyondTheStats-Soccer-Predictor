@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timedelta, timezone
 
 import config
 from competition_rules import (
@@ -207,6 +208,28 @@ def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict]
             return build_structured_standings_groups(comp_name, roster)
         return None
 
+    # For cup competitions with group stages (like Leagues Cup), try ESPN standings for group structure
+    fmt = competition_format_spec(comp_name)
+    if fmt and fmt.get("format") == "group_stage_then_knockout" and comp_table:
+        from standings import _get_or_fetch_standings
+        espn_standings = _get_or_fetch_standings(comp_name, computed=False)
+        if espn_standings and isinstance(espn_standings.get("groups"), list) and len(espn_standings["groups"]) > 1:
+            team_map = {}
+            for grp in espn_standings["groups"]:
+                for entry in grp.get("entries", []):
+                    team_map[str(entry.get("team", "")).strip()] = grp.get("name", "Overall")
+            if team_map:
+                groups_dict = {}
+                for row in _rows_to_group_entries(comp_table):
+                    t = str(row.get("team", "")).strip()
+                    gname = team_map.get(t, "Overall")
+                    groups_dict.setdefault(gname, {"name": gname, "entries": []})["entries"].append(row)
+                if groups_dict:
+                    result = list(groups_dict.values())
+                    for g in result:
+                        g["entries"].sort(key=lambda e: e.get("rank") or e.get("position") or 999)
+                    return result
+
     real = _load_real_standings(comp_name)
     if real and isinstance(real.get("groups"), list) and real["groups"]:
         if comp_table:
@@ -225,7 +248,19 @@ def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict]
 
 
 def _load_real_standings(comp_name: str) -> dict | None:
-    return _compute_standings_from_history(comp_name) or _build_fallback_standings(comp_name)
+    result = _compute_standings_from_history(comp_name) or _build_fallback_standings(comp_name)
+    if result and result.get("groups"):
+        from competition_rules import collect_competition_games
+        games = collect_competition_games(comp_name)
+        if games:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=45)).strftime("%Y-%m-%d")
+            has_recent = any(
+                str(g.get("match_date", "")) >= cutoff
+                for g in games if g.get("match_date")
+            )
+            if not has_recent:
+                return None
+    return result
 
 
 def _load_fixtures(comp_name: str) -> list[dict]:

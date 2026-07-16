@@ -294,7 +294,8 @@ def build_context():
         team_comp_map[row["HomeTeam"]] = row["competition"]
         team_comp_map[row["AwayTeam"]] = row["competition"]
 
-    latest_start_year = max(pm.parse_start_year_from_key(k) for k in season_teams.keys())
+    csv_latest_year = max(pm.parse_start_year_from_key(k) for k in season_teams.keys())
+    latest_start_year = max(csv_latest_year, pm.expected_current_latest_start_year())
     latest_season = season_files[-1].replace(".csv", "")
     goal_prob_models = bundle["goal_prob_models"]
     available = sorted(set(matches["HomeTeam"].dropna()) | set(matches["AwayTeam"].dropna()))

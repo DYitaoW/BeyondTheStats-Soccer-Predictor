@@ -112,8 +112,7 @@ def mapping_lookup_competitions(competition: str, mapping: dict) -> list[str]:
             for key in sorted(mapping.keys(), key=str.lower):
                 if str(key).startswith(prefix):
                     add(key)
-
-    if is_international_competition(comp):
+    elif is_international_competition(comp):
         for key in sorted(mapping.keys(), key=str.lower):
             if is_domestic_competition(key):
                 add(key)
@@ -226,7 +225,7 @@ def store_team_mapping(
             if competition_country(comp_key) == country:
                 mapping.setdefault(comp_key, {})[api_name] = canonical
 
-    if propagate_international and country:
+    if propagate_international and country and not competition.startswith("CONCACAF/"):
         for comp_key in list(mapping.keys()):
             if is_international_competition(comp_key):
                 mapping.setdefault(comp_key, {})[api_name] = canonical

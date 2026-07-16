@@ -40,6 +40,7 @@ ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{esp
 EASTERN_TZ = ZoneInfo("America/New_York")
 
 MAPPING_FILE = os.path.join(OUT_DIR, "team_name_mapping_master.json")
+LEAGUE_TEAMS_FILE = os.path.join(OUT_DIR, "league_teams.json")
 
 
 def _sibling_competitions(competition, mapping):
@@ -95,6 +96,25 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names):
         with open(MAPPING_FILE, "w", encoding="utf-8") as fh:
             json.dump(mapping, fh, indent=2, ensure_ascii=False)
         print(f"  Mapping: auto-added {added} entry/ies to {MAPPING_FILE}")
+
+
+def _load_upcoming_roster(competition):
+    """Load team roster for the upcoming season from league_teams.json.
+
+    Returns a sorted list of team names, or None if the competition is
+    not found in the roster file.
+    """
+    if not os.path.exists(LEAGUE_TEAMS_FILE):
+        return None
+    try:
+        with open(LEAGUE_TEAMS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        roster = data.get(competition)
+        if isinstance(roster, list) and len(roster) > 1:
+            return sorted(set(r.strip() for r in roster if r and r.strip()))
+    except Exception:
+        pass
+    return None
 
 
 ESPN_LEAGUE_IDS = {
@@ -375,6 +395,7 @@ H2H_LEAGUES = {
     "Portugal/Liga Portugal",
     "Belgium/First Division A",
     "Turkey/Super Lig",
+    "Mexico/Liga MX",
 }
 
 
@@ -595,9 +616,28 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         future_dates.append(row["DateParsed"].date().isoformat() if pd.notna(row["DateParsed"]) else "")
 
     # If every row in the CSV is a completed result, this is a finished season
-    # with no remaining fixtures — skip it (nothing to project).
+    # — try to load the upcoming season roster and generate a full synthetic
+    # schedule so the projection represents the next season instead of returning empty.
     if not future_pairs:
-        return [], []
+        upcoming_roster = _load_upcoming_roster(competition)
+        if upcoming_roster:
+            print(f"  Season completed; generating upcoming season projection ({len(upcoming_roster)} teams)")
+            teams = sorted(upcoming_roster)
+            table = init_table(teams)
+            real_matches = []
+            for home in teams:
+                resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
+                for away in teams:
+                    if home == away:
+                        continue
+                    resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
+                    if (resolved_home, resolved_away) in seen_pairs:
+                        continue
+                    seen_pairs.add((resolved_home, resolved_away))
+                    future_pairs.append((resolved_home, resolved_away))
+                    future_dates.append("")
+        else:
+            return [], []
 
     # Try ESPN API for full-season upcoming fixtures (more accurate than CSV or synthetic)
     espn_fixtures = load_future_fixtures_from_espn(competition)

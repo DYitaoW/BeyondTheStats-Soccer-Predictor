@@ -343,6 +343,13 @@ def parse_start_year_from_key(season_key):
     return -1 if start is None else start
 
 
+def expected_current_latest_start_year(reference_date=None) -> int:
+    ref = datetime.now() if reference_date is None else reference_date
+    if ref.month >= 7:
+        return ref.year
+    return ref.year - 1
+
+
 def season_recency_coefficient(latest_start_year, season_start_year):
     age = max(0, latest_start_year - season_start_year)
     if age <= 0:

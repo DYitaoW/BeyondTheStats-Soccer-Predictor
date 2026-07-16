@@ -102,6 +102,7 @@ CLUB_FRIENDLIES_ESPN_ID = "club.friendly"
 # Competitions polled for scores but excluded from league-table/help listings.
 UPCOMING_ONLY_COMPETITIONS = {
     "FIFA/Friendly",
+    "Club Friendlies",
 }
 
 # Domestic leagues used only for UEFA/cup roster fallback (or upcoming API with no

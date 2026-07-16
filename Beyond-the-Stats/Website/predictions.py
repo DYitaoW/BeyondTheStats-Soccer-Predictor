@@ -583,7 +583,8 @@ def _load_context(pm_mod):
         team_competition_map[row["AwayTeam"]] = row["competition"]
 
     latest_season = season_files[-1].replace(".csv", "")
-    latest_start_year = max(pm_mod.parse_start_year_from_key(key) for key in season_teams.keys())
+    csv_latest_year = max(pm_mod.parse_start_year_from_key(key) for key in season_teams.keys())
+    latest_start_year = max(csv_latest_year, pm_mod.expected_current_latest_start_year())
     available_teams = sorted(set(matches["HomeTeam"].dropna()) | set(matches["AwayTeam"].dropna()))
 
     return PredictorContext(
