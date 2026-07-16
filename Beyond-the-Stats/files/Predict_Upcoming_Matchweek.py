@@ -598,6 +598,23 @@ def latest_season_for_competition(season_teams, competition, fallback):
     return best_key or fallback
 
 
+def choose_prediction_season(home_team, away_team, competition, match_date, season_teams, fallback_season):
+    competition_latest = latest_season_for_competition(season_teams, competition, fallback_season)
+    fixture_year = -1
+    if match_date is not None:
+        try:
+            fixture_year = int(pd.Timestamp(match_date).year)
+        except Exception:
+            fixture_year = -1
+    if fixture_year > 0:
+        competition_latest = season_calendar.season_key_for_fixture_year(
+            competition, competition_latest, fixture_year
+        )
+    if home_team in season_teams.get(competition_latest, {}) and away_team in season_teams.get(competition_latest, {}):
+        return competition_latest
+    return pm.choose_season_for_teams(home_team, away_team, season_teams, competition_latest)
+
+
 def mean_from_dicts(rows, key, default=0.0):
     if not rows:
         return float(default)
@@ -1287,7 +1304,8 @@ def build_prediction_context():
 
     available_teams = sorted(set(matches["HomeTeam"].dropna()) | set(matches["AwayTeam"].dropna()))
     latest_season = season_files[-1].replace(".csv", "")
-    latest_start_year = max(pm.parse_start_year_from_key(key) for key in season_teams.keys())
+    csv_latest_year = max(pm.parse_start_year_from_key(key) for key in season_teams.keys())
+    latest_start_year = max(csv_latest_year, pm.expected_current_latest_start_year())
 
     # Inject UEFA country coefficients, team registry, European H2H, and
     # domestic-table data so cup provisional teams get realistic stats.
@@ -1339,7 +1357,7 @@ def predict_fixture(row, context):
 
     season_teams = context["season_teams"]
     competition_season = latest_season_for_competition(season_teams, competition, context["latest_season"])
-    prediction_season = pm.choose_season_for_teams(home_team, away_team, season_teams, competition_season)
+    prediction_season = choose_prediction_season(home_team, away_team, competition, match_date, season_teams, competition_season)
     inject_fallback_team(home_team, competition, prediction_season, context)
     inject_fallback_team(away_team, competition, prediction_season, context)
     _uefa_leagues = context.get("_uefa_team_league", {})

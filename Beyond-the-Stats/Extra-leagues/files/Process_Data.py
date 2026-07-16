@@ -18,7 +18,7 @@ import season_calendar
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_FOLDER = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PROCESSED_FOLDER = os.path.join(BASE_DIR, "Data", "Processed_Data")
-SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})\.csv$", re.IGNORECASE)
+SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})(?:-(\d{2}))?\.csv$", re.IGNORECASE)
 MIN_START_YEAR = 2002
 MIN_ROWS = 100
 CURRENT_SEASON_MIN_ROWS = 20

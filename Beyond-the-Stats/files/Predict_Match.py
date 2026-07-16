@@ -360,6 +360,17 @@ def parse_start_year_from_key(season_key):
     return -1 if start is None else start
 
 
+def expected_current_latest_start_year(reference_date=None) -> int:
+    """Return the expected latest season start year based on calendar date.
+    For European cross-year leagues (Jul-Jun), if month >= 7 the current season
+    started this year; if month < 7 it started last year.
+    For calendar-year leagues, the current season is the current year."""
+    ref = datetime.now() if reference_date is None else reference_date
+    if ref.month >= 7:
+        return ref.year
+    return ref.year - 1
+
+
 def season_recency_coefficient(latest_start_year, season_start_year):
     age = max(0, latest_start_year - season_start_year)
     if age <= 0:
@@ -1387,7 +1398,8 @@ def main():
         competition_key = os.path.dirname(prediction_season).replace("\\", "/") or "Unknown"
         prediction_start_year = parse_start_year_from_key(prediction_season)
         latest_start_year = max(parse_start_year_from_key(key) for key in season_teams.keys())
-        prediction_season_coeff = season_recency_coefficient(latest_start_year, prediction_start_year)
+        effective_latest_year = max(latest_start_year, expected_current_latest_start_year())
+        prediction_season_coeff = season_recency_coefficient(effective_latest_year, prediction_start_year)
         home_competition = team_competition_map.get(home_team, competition_key)
         away_competition = team_competition_map.get(away_team, competition_key)
 

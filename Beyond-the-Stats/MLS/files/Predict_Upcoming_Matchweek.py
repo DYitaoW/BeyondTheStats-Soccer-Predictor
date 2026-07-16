@@ -1062,7 +1062,8 @@ def build_prediction_context():
 
     available_teams = sorted(set(matches["HomeTeam"].dropna()) | set(matches["AwayTeam"].dropna()))
     latest_season = season_files[-1].replace(".csv", "")
-    latest_start_year = max(pm.parse_start_year_from_key(key) for key in season_teams.keys())
+    csv_latest_year = max(pm.parse_start_year_from_key(key) for key in season_teams.keys())
+    latest_start_year = max(csv_latest_year, pm.expected_current_latest_start_year())
 
     return {
         "clf": clf,

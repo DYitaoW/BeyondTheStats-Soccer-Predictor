@@ -1047,8 +1047,15 @@ def _build_fallback_standings(comp_name):
         if "away_team" in sub.columns:
             teams.update(sub["away_team"].dropna().astype(str).str.strip())
 
+    # Normalize all team names through the mapping file to prevent duplicates
+    normalized = set()
+    for team in teams:
+        normed = _normalize_team_name(team, base_comp)
+        if normed:
+            normalized.add(normed)
     if base_comp == "United States/MLS":
-        teams = {resolve_mls_team_name(team) for team in teams if resolve_mls_team_name(team)}
+        normalized = {resolve_mls_team_name(team) for team in normalized if resolve_mls_team_name(team)}
+    teams = normalized
 
     if not teams:
         return None
