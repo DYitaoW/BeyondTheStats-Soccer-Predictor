@@ -1410,6 +1410,7 @@ def publish_to_output(output_dir=None):
     upcoming_sources = [
         PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
         PREDICTIONS_DIR / "upcoming_cup_predictions.csv",
+        PREDICTIONS_DIR / "projected_future_matches.csv",
         MLS_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
         EXTRA_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
     ]

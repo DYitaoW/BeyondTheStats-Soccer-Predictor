@@ -3,7 +3,7 @@ import json
 import re
 import urllib.request
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 import random
 import subprocess
@@ -43,6 +43,7 @@ SIMULATION_RUNS = 2500
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 SHARED_MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "Predictions", "team_name_mapping_master.json")
+LEAGUE_TEAMS_FILE = os.path.join(BASE_DIR, "..", "Data", "Predictions", "league_teams.json")
 
 
 def _sibling_competitions(competition, mapping):
@@ -59,7 +60,7 @@ def _sibling_competitions(competition, mapping):
     return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
 
 
-def _append_mapping_if_missing(competition, unresolved_names, valid_names):
+def _append_mapping_if_missing(competition, unresolved_names, valid_names, roster_teams=None):
     if not unresolved_names or not os.path.exists(SHARED_MAPPING_FILE):
         return
     try:
@@ -90,7 +91,19 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names):
             ).strip()
             candidate = pm.resolve_team_name(stripped, valid_names) or pm.resolve_team_name(raw_name, valid_names)
         if candidate and candidate in valid_names:
-            comp_section[raw_name] = candidate
+            if roster_teams is not None and candidate not in roster_teams:
+                # Team is valid but not in current competition roster — add to sibling section instead
+                added_to_sibling = False
+                for sibling_comp in siblings:
+                    sibling_section = mapping.setdefault(sibling_comp, {})
+                    if raw_name not in sibling_section:
+                        sibling_section[raw_name] = candidate
+                        added_to_sibling = True
+                        break
+                if not added_to_sibling:
+                    comp_section[raw_name] = candidate
+            else:
+                comp_section[raw_name] = candidate
         else:
             comp_section[raw_name] = ""
         added += 1
@@ -98,6 +111,25 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names):
         with open(SHARED_MAPPING_FILE, "w", encoding="utf-8") as fh:
             json.dump(mapping, fh, indent=2, ensure_ascii=False)
         print(f"  Mapping: auto-added {added} entry/ies to {SHARED_MAPPING_FILE}")
+
+
+def _load_upcoming_roster(competition):
+    """Load team roster for the upcoming season from league_teams.json.
+
+    Returns a sorted list of team names, or None if the competition is
+    not found in the roster file.
+    """
+    if not os.path.exists(LEAGUE_TEAMS_FILE):
+        return None
+    try:
+        with open(LEAGUE_TEAMS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        roster = data.get(competition)
+        if isinstance(roster, list) and len(roster) > 1:
+            return sorted(set(r.strip() for r in roster if r and r.strip()))
+    except Exception:
+        pass
+    return None
 
 
 EXTRA_ESPN_COMPETITIONS = {
@@ -190,17 +222,18 @@ def normalize_raw_df(df):
     return frame
 
 
-def load_future_fixtures_from_espn(competition, year=None):
+def _load_espn_fixtures(competition, ctx):
+    """Fetch upcoming ESPN fixtures, resolve team names, return a DataFrame or None."""
     espn_id = EXTRA_ESPN_COMPETITIONS.get(competition)
     if not espn_id:
-        return pd.DataFrame()
-
-    target_year = int(year or datetime.now(UTC).year)
+        return None
+    target_year = datetime.now(UTC).year
     start = pd.Timestamp(f"{target_year}-01-01")
     end = pd.Timestamp(f"{target_year}-12-31")
     today = pd.Timestamp(datetime.now(UTC).date())
     rows = []
     seen = set()
+    unresolved = []
     day = start
     while day <= end:
         url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
@@ -209,7 +242,6 @@ def load_future_fixtures_from_espn(competition, year=None):
         except Exception:
             day += pd.Timedelta(days=1)
             continue
-
         for event in data.get("events", []) or []:
             event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
             if pd.isna(event_date):
@@ -217,7 +249,6 @@ def load_future_fixtures_from_espn(competition, year=None):
             match_date = event_date.tz_convert(EASTERN_TZ).tz_localize(None).normalize()
             if match_date.year != target_year or match_date < today:
                 continue
-
             competitions = event.get("competitions", [])
             if not competitions:
                 continue
@@ -227,7 +258,6 @@ def load_future_fixtures_from_espn(competition, year=None):
             ).strip().lower()
             if status_state and status_state not in {"pre"}:
                 continue
-
             home_team = ""
             away_team = ""
             for competitor in comp0.get("competitors", []) or []:
@@ -239,26 +269,33 @@ def load_future_fixtures_from_espn(competition, year=None):
                     away_team = team_name
             if not home_team or not away_team:
                 continue
-
-            key = (match_date.date().isoformat(), home_team, away_team)
+            resolved_home = pm.resolve_team_name(home_team, ctx["available_teams"])
+            resolved_away = pm.resolve_team_name(away_team, ctx["available_teams"])
+            if not resolved_home:
+                unresolved.append(home_team)
+            if not resolved_away:
+                unresolved.append(away_team)
+            if not resolved_home or not resolved_away:
+                continue
+            key = (match_date.date().isoformat(), resolved_home, resolved_away)
             if key in seen:
                 continue
             seen.add(key)
-            rows.append(
-                {
-                    "Date": match_date.date().isoformat(),
-                    "HomeTeam": home_team,
-                    "AwayTeam": away_team,
-                    "FTHG": None,
-                    "FTAG": None,
-                    "FTR": "",
-                }
-            )
-
+            rows.append({
+                "Date": match_date.date().isoformat(),
+                "HomeTeam": resolved_home,
+                "AwayTeam": resolved_away,
+                "FTHG": None,
+                "FTAG": None,
+                "FTR": "",
+            })
         day += pd.Timedelta(days=1)
-
+    if unresolved:
+        msg = f"  ESPN: {len(unresolved)} team name(s) in {competition} could not be resolved: {sorted(set(unresolved))}"
+        print(f"[WARN] {msg}")
+        _append_mapping_if_missing(competition, unresolved, ctx["available_teams"], _load_upcoming_roster(competition))
     if not rows:
-        return pd.DataFrame()
+        return None
     frame = pd.DataFrame(rows)
     frame["DateParsed"] = pd.to_datetime(frame["Date"], errors="coerce")
     return frame
@@ -589,63 +626,111 @@ def predict_match(ctx, home_team, away_team, competition_hint):
     return pred_res, hg, ag, probs
 
 
+def _expected_current_season_year(competition):
+    """Return the expected start year for the current season of *competition*."""
+    now = datetime.now()
+    country = competition.split("/")[0] if "/" in competition else ""
+    cross_year_countries = {
+        "Netherlands", "Belgium", "Scotland", "Turkey", "Austria",
+        "Switzerland", "Greece", "Denmark", "Poland",
+        "Japan",
+    }
+    if country in cross_year_countries:
+        return now.year if now.month >= 7 else now.year - 1
+    return now.year
+
+
+def _fetch_espn_teams(competition):
+    """Fetch current team list from ESPN /teams endpoint."""
+    espn_id = EXTRA_ESPN_COMPETITIONS.get(competition)
+    if not espn_id:
+        return None
+    url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/teams"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+        teams_list = data.get("sports", [{}])[0].get("leagues", [{}])[0].get("teams", [])
+        if not teams_list:
+            return None
+        teams = []
+        for entry in teams_list:
+            team = entry.get("team") or {}
+            name = (team.get("displayName") or team.get("name") or "").strip()
+            if name:
+                teams.append(name)
+        return sorted(set(teams))
+    except Exception:
+        return None
+
+
 def project_competition(ctx, competition, raw_file):
-    df = normalize_raw_df(pd.read_csv(raw_file))
-    required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
-    if not required.issubset(df.columns):
-        return [], []
+    # Determine if this CSV represents the current season or a past season
+    csv_start_year = pm.parse_season_start_year(os.path.basename(raw_file))
+    expected_year = _expected_current_season_year(competition)
+    is_current_season = csv_start_year is not None and csv_start_year == expected_year
 
-    espn_future = load_future_fixtures_from_espn(competition)
-    if not espn_future.empty:
-        espn_future = espn_future.copy()
-        espn_future["DateParsed"] = pd.to_datetime(espn_future["Date"], errors="coerce")
+    if is_current_season:
+        # ── PATH A: Current-season CSV exists ──────────────────────────
+        df = normalize_raw_df(pd.read_csv(raw_file))
+        required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
+        if not required.issubset(df.columns):
+            return [], []
+
+        # Try ESPN for any forthcoming fixtures in the current season window
+        espn_future = _load_espn_fixtures(competition, ctx)
+        if espn_future is not None:
+            df = pd.concat([df, espn_future], ignore_index=True, sort=False)
+
         df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
-        played_keys = set()
-        for _, row in df.iterrows():
-            home = str(row.get("HomeTeam", "")).strip()
-            away = str(row.get("AwayTeam", "")).strip()
-            ftr = str(row.get("FTR", "")).strip().upper()
-            hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
-            ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
-            if home and away and ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag):
-                played_keys.add(tuple(sorted([home, away])))
-        supplemental = []
-        unresolved = []
-        for _, row in espn_future.iterrows():
-            raw_home = str(row.get("HomeTeam", "")).strip()
-            raw_away = str(row.get("AwayTeam", "")).strip()
-            home = pm.resolve_team_name(raw_home, ctx["available_teams"])
-            away = pm.resolve_team_name(raw_away, ctx["available_teams"])
-            if not home:
-                unresolved.append(raw_home)
-            if not away:
-                unresolved.append(raw_away)
-            if not home or not away:
-                continue
-            if tuple(sorted([home, away])) in played_keys:
-                continue
-            supplemental.append({
-                "Date": row.get("Date", ""),
-                "HomeTeam": home,
-                "AwayTeam": away,
-                "FTHG": None,
-                "FTAG": None,
-                "FTR": "",
-            })
-        if unresolved:
-            msg = f"  ESPN: {len(unresolved)} team name(s) in {competition} could not be resolved — add to team_name_mapping_master.json: {sorted(set(unresolved))}"
-            print(f"[WARN] {msg}")
-            _append_mapping_if_missing(competition, unresolved, ctx["available_teams"])
-        if supplemental:
-            supp_df = pd.DataFrame(supplemental).dropna(axis=1, how="all")
-            df = pd.concat([df, supp_df], ignore_index=True, sort=False)
+        df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]
+        df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
 
-    df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
-    df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]
-    df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
+        raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
+        teams = sorted({pm.resolve_team_name(t, ctx["available_teams"]) or t for t in raw_teams})
+    else:
+        # ── PATH B: No current-season CSV — ESPN fallback ─────────────
+        espn_teams = _fetch_espn_teams(competition)
+        if not espn_teams:
+            static_roster = _load_upcoming_roster(competition)
+            if not static_roster:
+                print(f"  No current-season file and no ESPN/roster data for {competition}")
+                return [], []
+            teams = sorted(static_roster)
+        else:
+            teams = sorted(espn_teams)
 
-    raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
-    teams = sorted({pm.resolve_team_name(t, ctx["available_teams"]) or t for t in raw_teams})
+        print(f"  No current-season CSV — using ESPN fallback ({len(teams)} teams)")
+
+        # Build a minimal df with resolved team names and no played results
+        espn_future = _load_espn_fixtures(competition, ctx)
+        rows = []
+        if espn_future is not None:
+            for _, r in espn_future.iterrows():
+                rows.append({
+                    "Date": str(r.get("Date", "")),
+                    "HomeTeam": str(r.get("HomeTeam", "")),
+                    "AwayTeam": str(r.get("AwayTeam", "")),
+                    "FTHG": None, "FTAG": None, "FTR": "",
+                })
+        # Add synthetic pairs for any teams not covered by ESPN fixtures
+        seen = {(r["HomeTeam"], r["AwayTeam"]) for r in rows if r["HomeTeam"] and r["AwayTeam"]}
+        for home in teams:
+            resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
+            for away in teams:
+                if home == away:
+                    continue
+                resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
+                if (resolved_home, resolved_away) in seen:
+                    continue
+                seen.add((resolved_home, resolved_away))
+                rows.append({
+                    "Date": "", "HomeTeam": resolved_home, "AwayTeam": resolved_away,
+                    "FTHG": None, "FTAG": None, "FTR": "",
+                })
+        df = pd.DataFrame(rows)
+        df["DateParsed"] = pd.to_datetime(df["Date"], errors="coerce")
+
     table = init_table(teams)
     future_rows = []
     future_predictions = []
@@ -700,8 +785,7 @@ def project_competition(ctx, competition, raw_file):
             row["DateParsed"].date().isoformat() if pd.notna(row["DateParsed"]) else "",
         )
 
-    # If the feed only has played matches, synthesize missing league fixtures so
-    # the projection represents a full double round-robin season.
+    # Fill remaining synthetic pairs for any teams not yet connected
     for home in teams:
         resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
         for away in teams:

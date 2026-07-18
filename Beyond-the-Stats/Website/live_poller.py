@@ -114,7 +114,8 @@ def _merge_completed_to_history():
     with _live_scores_lock:
         for comp_name, comp_data in _live_scores.items():
             for g in comp_data.get("games", []):
-                if g.get("status") == "post" and g.get("match_id") not in historic_ids:
+                status = str(g.get("status", "")).strip().lower()
+                if status == "post" and g.get("match_id") not in historic_ids:
                     entry = dict(g)
                     entry.setdefault("competition", comp_name)
                     entry.setdefault("completed_at", datetime.now(timezone.utc).isoformat())

@@ -15,7 +15,6 @@ import json
 import math
 import os
 import sys
-import threading
 from collections import defaultdict
 from datetime import datetime, timedelta, date, timezone
 from zoneinfo import ZoneInfo
@@ -24,12 +23,10 @@ import pandas as pd
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
 
 import config
-import auth
 
 if config.PROJECT_DIR not in sys.path:
     sys.path.insert(0, config.PROJECT_DIR)
 import pipeline_log
-from auth import _client_ip, _debug_auth_ok, _mutation_auth_ok, _refresh_auth_ok
 from cache import _cache_clear_pattern, _cached_response
 from accuracy_tracker import (
     _build_persistent_accuracy_stats,
@@ -58,6 +55,8 @@ from live_poller import (
     _live_scores_lock,
     start_live_score_poller,
 )
+from league_data import build_league_data_payload
+from team_mappings import build_predictor_teams_payload, build_unmapped_espn_payload
 from notifications import (
     _apns_notification_queue,
     _notifications,
@@ -67,9 +66,7 @@ from notifications import (
     send_live_activity_end,
     start_apns_worker,
 )
-import live_activities
-from league_data import build_league_data_payload
-from team_mappings import build_predictor_teams_payload, build_unmapped_espn_payload
+import notifications as live_activities
 from predictions import (
     _enrich_json_past_row,
     _file_mtime_utc,
@@ -134,13 +131,8 @@ from standings import (
 )
 from team_utils import _normalize_team_key, _team_name_for_db, _team_name_for_display, _to_float
 
-_feedback_lock = threading.Lock()
-
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.secret_key = config._SECRET_KEY or None
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024  # 1 MB request body limit
-
-auth.register_auth_handlers(app)
 
 @app.after_request
 def _add_cache_headers(response):
@@ -598,426 +590,16 @@ def api_team_mappings_predictor_teams():
     return jsonify(build_predictor_teams_payload())
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  AUTH — Apple Sign In
-# ═══════════════════════════════════════════════════════════════════
+# ── Simple mutation auth ──────────────────────────────────────────────
 
-
-def _require_user():
-    """Extract session user from Authorization header.
-
-    Requires ``Authorization: Bearer <session_jwt>``.
-
-    Returns ``(sub, user_dict)`` or ``(None, error_response)``.
-    """
-    from apple_auth import decode_session_jwt, check_and_refresh_tier
-
-    auth = request.headers.get("Authorization", "").strip()
-    if not auth.lower().startswith("bearer "):
-        return None, (jsonify({"ok": False, "error": "Missing or invalid Authorization header"}), 401)
-    token = auth[7:].strip()
+def _mutation_authorized():
+    """Return True if the caller has a valid admin token."""
+    token = request.headers.get("X-Admin-Token", "").strip()
     if not token:
-        return None, (jsonify({"ok": False, "error": "Empty token"}), 401)
-    session = decode_session_jwt(token)
-    if not session:
-        return None, (jsonify({"ok": False, "error": "Invalid or expired session"}), 401)
-    sub = session.get("sub", "")
-    if not sub:
-        return None, (jsonify({"ok": False, "error": "Invalid session payload"}), 401)
-    user = check_and_refresh_tier(sub)
-    if not user:
-        return None, (jsonify({"ok": False, "error": "User not found"}), 401)
-    return sub, user
-
-
-def _require_tier(min_tier: str):
-    """Decorator factory that requires a minimum tier on a protected endpoint.
-
-    Usage::
-
-        @app.get("/api/premium-feature")
-        @_require_tier("premium")
-        def api_premium():
-            sub, user = _require_user()
-            ...
-    """
-    def decorator(f):
-        from functools import wraps
-        from apple_auth import require_tier
-
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            result = _require_user()
-            if result[0] is None:
-                return result[1]
-            sub, user = result
-            ok, err = require_tier(user, min_tier)
-            if not ok:
-                return jsonify({"ok": False, "error": err}), 403
-            return f(*args, **kwargs)
-        return wrapper
-    return decorator
-
-
-@app.post("/api/auth/apple")
-def api_auth_apple():
-    """Verify Apple identity token and return a session JWT.
-
-    Body (JSON):
-        identity_token  (str, required) — Apple-provided identity token
-        client_id       (str, optional) — iOS bundle id (defaults to env)
-
-    Response:
-        ok, session_token, user
-    """
-    payload = request.get_json(silent=True) or {}
-    raw_identity = payload.get("identity_token")
-    identity_token = str(raw_identity).strip() if isinstance(raw_identity, str) else ""
-    if not identity_token:
-        return jsonify({"ok": False, "error": "identity_token required"}), 400
-
-    from apple_auth import verify_apple_identity_token, get_or_create_user, create_session_jwt
-
-    raw_client = payload.get("client_id")
-    client_id = str(raw_client).strip() if isinstance(raw_client, str) else (config.APPLE_CLIENT_ID or None)
-    apple_payload = verify_apple_identity_token(identity_token, client_id)
-    if not apple_payload:
-        return jsonify({"ok": False, "error": "Invalid identity token"}), 401
-
-    sub = apple_payload.get("sub", "")
-    if not sub:
-        return jsonify({"ok": False, "error": "Token missing subject"}), 401
-
-    user = get_or_create_user(sub)
-    session_token = create_session_jwt(sub, user.get("tier", "free"))
-    if not session_token:
-        return jsonify({"ok": False, "error": "Server misconfigured (missing FLASK_SECRET_KEY)"}), 500
-
-    return jsonify({
-        "ok": True,
-        "session_token": session_token,
-        "user": user,
-    })
-
-
-@app.get("/api/auth/me")
-def api_auth_me():
-    """Return the current user's data."""
-    result = _require_user()
-    if result[0] is None:
-        return result[1]
-    sub, user = result
-    return jsonify({"ok": True, "user": user})
-
-
-@app.patch("/api/auth/preferences")
-def api_auth_preferences():
-    """Update user preferences (teams/leagues followed, widget/Live Activity settings).
-
-    Body (JSON, all optional):
-        teams_followed         (list[str])
-        leagues_followed       (list[str])
-        widget_settings        (dict)
-        live_activity_settings (dict)
-
-    Returns the updated user object.
-    """
-    result = _require_user()
-    if result[0] is None:
-        return result[1]
-    sub, _user = result
-
-    from apple_auth import update_user
-
-    body = request.get_json(silent=True) or {}
-    kwargs = {}
-    for key in ("teams_followed", "leagues_followed", "widget_settings", "live_activity_settings"):
-        if key in body:
-            kwargs[key] = body[key]
-
-    if not kwargs:
-        return jsonify({"ok": False, "error": "No valid fields to update"}), 400
-
-    updated = update_user(sub, **kwargs)
-    if not updated:
-        return jsonify({"ok": False, "error": "User not found"}), 404
-
-    return jsonify({"ok": True, "user": updated})
-
-
-@app.post("/api/auth/purchase")
-def api_auth_purchase():
-    """Verify an App Store receipt and apply purchases/subscriptions.
-
-    Body (JSON):
-        receipt_data  (str, required) — base64-encoded appStoreReceipt
-
-    Response:
-        ok, user (updated), new_purchases (list of applied product IDs)
-    """
-    result = _require_user()
-    if result[0] is None:
-        return result[1]
-    sub, _user = result
-
-    body = request.get_json(silent=True) or {}
-    receipt_data = str(body.get("receipt_data", "")).strip()
-    if not receipt_data:
-        return jsonify({"ok": False, "error": "receipt_data required"}), 400
-    if len(receipt_data) > 200000:
-        return jsonify({"ok": False, "error": "receipt_data too large"}), 400
-
-    from apple_auth import verify_app_store_receipt, apply_purchases
-
-    parsed = verify_app_store_receipt(receipt_data)
-    if not parsed:
-        return jsonify({"ok": False, "error": "Invalid receipt"}), 400
-
-    updated = apply_purchases(sub, parsed)
-    if not updated:
-        return jsonify({"ok": False, "error": "User not found"}), 404
-
-    new_pids = [
-        tx["product_id"] for tx in (parsed.get("transactions") or [])
-        if tx.get("product_id")
-    ]
-    return jsonify({
-        "ok": True,
-        "user": updated,
-        "new_purchases": new_pids,
-    })
-
-
-@app.get("/api/auth/products")
-def api_auth_products():
-    """Return available subscription and consumable product definitions."""
-    from apple_auth import SUBSCRIPTION_PRODUCTS, CONSUMABLE_PRODUCTS
-
-    subscriptions = [
-        {
-            "product_id": pid,
-            "tier": info["tier"],
-            "credits_monthly_cap": info["credits_monthly_cap"],
-            "price": info.get("price", 0),
-        }
-        for pid, info in SUBSCRIPTION_PRODUCTS.items()
-    ]
-    consumables = [
-        {
-            "product_id": pid,
-            "credits": info["credits"],
-            "price": info.get("price", 0),
-        }
-        for pid, info in CONSUMABLE_PRODUCTS.items()
-    ]
-    return jsonify({
-        "ok": True,
-        "subscriptions": subscriptions,
-        "consumables": consumables,
-    })
-
-
-@app.post("/api/auth/apple-notifications")
-def api_apple_notifications():
-    """Receive Apple server-to-server notification V2 for subscription state changes.
-
-    Apple sends these when subscriptions renew, expire, get refunded, etc.
-    This endpoint is called directly by Apple's servers — no auth header.
-
-    Body (JSON):
-        signedPayload  (str) — JWS-signed notification payload
-
-    Responds with HTTP 200 to acknowledge receipt.
-    """
-    body = request.get_json(silent=True) or {}
-    signed_payload = str(body.get("signedPayload", "")).strip()
-    if not signed_payload:
-        return jsonify({"ok": False, "error": "Missing signedPayload"}), 400
-
-    from apple_auth import verify_apple_signed_payload, process_apple_notification
-
-    payload = verify_apple_signed_payload(signed_payload)
-    if not payload:
-        return jsonify({"ok": False, "error": "Invalid signature"}), 401
-
-    result = process_apple_notification(payload)
-    if not result.get("ok"):
-        app.logger.warning("Apple notification processing warning: %s", result.get("error"))
-
-    return jsonify({"ok": True, "result": result})
-
-
-@app.get("/api/auth/credits")
-def api_auth_credits():
-    """Return the current user's credit balance."""
-    result = _require_user()
-    if result[0] is None:
-        return result[1]
-    sub, _user = result
-
-    from apple_auth import get_user
-    user = get_user(sub)
-    return jsonify({
-        "ok": True,
-        "credits": user.get("credits", 0) if user else 0,
-        "credits_purchased": user.get("credits_purchased", 0) if user else 0,
-    })
-
-
-@app.patch("/api/auth/tier")
-def api_auth_tier():
-    """Manually set a user's tier (admin only — requires mutation token).
-
-    Body (JSON):
-        sub    (str, required) — the user's Apple sub
-        tier   (str, required) — e.g. "free", "premium"
-
-    Response:
-        ok, user
-    """
-    if not _mutation_auth_ok():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    body = request.get_json(silent=True) or {}
-    target_sub = str(body.get("sub", "")).strip()
-    new_tier = str(body.get("tier", "")).strip()
-    if not target_sub or not new_tier:
-        return jsonify({"ok": False, "error": "sub and tier required"}), 400
-    from apple_auth import update_user
-    updated = update_user(target_sub, tier=new_tier)
-    if not updated:
-        return jsonify({"ok": False, "error": "User not found"}), 404
-    return jsonify({"ok": True, "user": updated})
-
-
-@app.post("/api/auth/unlock-match")
-def api_auth_unlock_match():
-    """Record a match unlock for the authenticated user.
-
-    Body (JSON):
-        home_team   (str, required)
-        away_team   (str, required)
-        competition (str, required)
-        match_id    (str, required)
-
-    Deduplicates by match_id — re-sending the same match_id is a no-op.
-    """
-    result = _require_user()
-    if result[0] is None:
-        return result[1]
-    sub, _user = result
-
-    body = request.get_json(silent=True) or {}
-    home_team = str(body.get("home_team", "")).strip()
-    away_team = str(body.get("away_team", "")).strip()
-    competition = str(body.get("competition", "")).strip()
-    match_id = str(body.get("match_id", "")).strip()
-
-    if not all([home_team, away_team, competition, match_id]):
-        return jsonify({"ok": False, "error": "home_team, away_team, competition, and match_id required"}), 400
-    if len(home_team) > 128 or len(away_team) > 128 or len(competition) > 128 or len(match_id) > 128:
-        return jsonify({"ok": False, "error": "input too long"}), 400
-
-    from apple_auth import add_unlocked_match
-    ok = add_unlocked_match(sub, match_id, home_team, away_team, competition)
-    return jsonify({"ok": ok, "added": ok})
-
-
-@app.get("/api/auth/unlocked-matches")
-def api_auth_unlocked_matches():
-    """Return all unlocked matches for the authenticated user."""
-    result = _require_user()
-    if result[0] is None:
-        return result[1]
-    sub, _user = result
-
-    from apple_auth import get_unlocked_matches
-    matches = get_unlocked_matches(sub)
-    return jsonify({"ok": True, "matches": matches})
-
-
-@app.post("/api/auth/credits/decrement")
-def api_auth_credits_decrement():
-    """Decrement credits for the current user.
-
-    Body (JSON):
-        amount  (int, optional) — number of credits to use (default 1, max 100)
-
-    Response:
-        ok, success (bool), credits (remaining balance)
-    """
-    result = _require_user()
-    if result[0] is None:
-        return result[1]
-    sub, _user = result
-
-    body = request.get_json(silent=True) or {}
-    try:
-        amount = max(1, min(100, int(body.get("amount", 1))))
-    except (TypeError, ValueError):
-        amount = 1
-
-    from apple_auth import decrement_credits
-    success, balance = decrement_credits(sub, amount)
-    if not success:
-        return jsonify({"ok": True, "success": False, "credits": balance, "error": "Insufficient credits"}), 402
-    return jsonify({"ok": True, "success": True, "credits": balance})
-
-
-@app.post("/api/auth/check-access")
-def api_auth_check_access():
-    """Check if the user can access a feature (tier + credits gate).
-
-    Body (JSON):
-        min_tier      (str, optional) — minimum tier required (default "free")
-        credit_cost   (int, optional) — number of credits needed (default 0)
-
-    Response:
-        ok, allowed (bool), user, error (str | None),
-        credits (current balance)
-    """
-    result = _require_user()
-    if result[0] is None:
-        return result[1]
-    sub, user = result
-
-    body = request.get_json(silent=True) or {}
-    min_tier = str(body.get("min_tier", "free")).strip()
-    credit_cost = 0
-    try:
-        credit_cost = max(0, int(body.get("credit_cost", 0)))
-    except (TypeError, ValueError):
-        credit_cost = 0
-
-    from apple_auth import require_tier, require_credits
-
-    tier_ok, tier_err = require_tier(user, min_tier)
-    if not tier_ok:
-        return jsonify({
-            "ok": True,
-            "allowed": False,
-            "error": tier_err,
-            "user": user,
-            "credits": user.get("credits", 0),
-        })
-
-    if credit_cost > 0:
-        cred_ok, cred_err = require_credits(user, credit_cost)
-        if not cred_ok:
-            return jsonify({
-                "ok": True,
-                "allowed": False,
-                "error": cred_err,
-                "user": user,
-                "credits": user.get("credits", 0),
-            })
-
-    return jsonify({
-        "ok": True,
-        "allowed": True,
-        "error": None,
-        "user": user,
-        "credits": user.get("credits", 0),
-    })
+        auth = request.headers.get("Authorization", "").strip()
+        if auth.lower().startswith("bearer "):
+            token = auth[7:].strip()
+    return bool(token and config.MUTATION_API_TOKEN and token == config.MUTATION_API_TOKEN)
 
 
 @app.get("/api/help")
@@ -1048,26 +630,22 @@ def api_help():
         ("/api/pipeline/logs", "GET", "Pipeline terminal output (tail, WARN/ERROR filters)"),
         ("/api/refresh", "POST", "Trigger background pipeline refresh (light, no model retrain)"),
         ("/api/retrain", "POST", "Force full model retrain (Tue/Fri-style, all pipelines)"),
-        ("/api/notifications", "GET", "List notification subscriptions"),
-        ("/api/notifications", "POST", "Send a test notification"),
-        ("/api/notifications/register", "POST", "Register push notification token"),
-        ("/api/auth/apple", "POST", "Sign in with Apple (exchange identity token for session JWT)"),
-        ("/api/auth/me", "GET", "Return current user data (requires session token)"),
-        ("/api/auth/preferences", "PATCH", "Update user preferences (teams/leagues followed, widget settings)"),
-        ("/api/auth/purchase", "POST", "Verify App Store receipt and apply purchases/subscriptions"),
-        ("/api/auth/products", "GET", "List available subscription and consumable products"),
-        ("/api/auth/credits", "GET", "Return current credit balance"),
-        ("/api/auth/credits/decrement", "POST", "Decrement credits (use a prediction/feature)"),
-        ("/api/auth/check-access", "POST", "Check tier + credits before using a feature (?min_tier=, ?credit_cost=)"),
-        ("/api/auth/tier", "PATCH", "Admin: manually set a user's tier (requires mutation token)"),
-        ("/api/auth/unlock-match", "POST", "Record a match unlock for the user"),
-        ("/api/auth/unlocked-matches", "GET", "Return all unlocked matches for the user"),
-        ("/api/mobile/feed", "GET", "Mobile home feed"),
         ("/api/mobile/widget", "GET", "Mobile widget data"),
-        ("/api/feedback", "POST", "Submit user feedback"),
         ("/api/debug/live-score-sources", "GET", "Debug: show live score source files"),
         ("/api/debug/manual-poll", "GET", "Debug: trigger manual live-score poll"),
         ("/api/debug/poller-state", "GET", "Debug: show poller state"),
+        ("/api/debug/poller-state", "GET", "Debug: show poller state"),
+        ("/api/notifications", "POST", "Queue a push notification"),
+        ("/api/notifications", "GET", "List recent notifications"),
+        ("/api/notifications/register", "POST", "Register a device push token"),
+        ("/api/live-activities/register", "POST", "Register a Live Activity push token for a match"),
+        ("/api/live-activities/unregister", "POST", "Remove a Live Activity registration"),
+        ("/api/live-activities/update", "POST", "Push a content-state update to Live Activities for a match"),
+        ("/api/live-activities/end", "POST", "End/dismiss Live Activities for a match"),
+        ("/api/redeem", "POST", "Redeem a promo code"),
+        ("/api/info/changes", "GET", "App changes changelog entries"),
+        ("/api/info/roadmap", "GET", "App planned features/roadmap"),
+        ("/api/info/upcoming", "GET", "App upcoming features"),
         ("/api/help", "GET", "This listing"),
     ]
     return jsonify({"ok": True, "routes": routes})
@@ -1213,7 +791,12 @@ def api_upcoming(mode):
     if mode == "global":
         # Prefer the pipeline-generated merged CSV (single read) over
         # loading all 6 individual source CSVs.
-        if os.path.exists(config.ALL_UPCOMING_FILE) and not four_week_mode:
+        if four_week_mode and os.path.exists(config.FOUR_WEEK_WINDOW_FILE):
+            all_rows, combined_stats, combined_league_stats = \
+                _load_upcoming_rows(config.FOUR_WEEK_WINDOW_FILE, "global", date_range="all")
+            combined_stats = dict(combined_stats or {})
+            combined_league_stats = {ls.get("competition", ""): ls for ls in (combined_league_stats or []) if ls.get("competition")}
+        elif os.path.exists(config.ALL_UPCOMING_FILE) and not four_week_mode:
             all_rows, combined_stats, combined_league_stats = \
                 _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", date_range=date_range, window_days=window_days)
             combined_stats = dict(combined_stats or {})
@@ -1263,6 +846,26 @@ def api_upcoming(mode):
         all_rows = deduped_rows
         if is_filtered:
             all_rows = [r for r in all_rows if _match_window(str(r.get("match_date_iso", "")))]
+        # 4week mode: merge in completed games from past_games.json so pre-match
+        # predictions are preserved for games already settled within the window.
+        if four_week_mode:
+            archive = _load_json_payload(config.PAST_GAMES_FILE)
+            if isinstance(archive, list):
+                for r in archive:
+                    if _is_placeholder_game(r):
+                        continue
+                    _enrich_json_past_row(r)
+                    date_val = _past_row_date_iso(r)
+                    r["match_date_iso"] = date_val
+                    if not _match_window(date_val):
+                        continue
+                    ck = "|".join(
+                        str(r.get(k, "")).strip().lower()
+                        for k in ("match_date_iso", "competition", "home_team", "away_team")
+                    )
+                    if ck and ck not in seen_keys:
+                        seen_keys.add(ck)
+                        all_rows.append(r)
         # Re-sort aggregated rows: date → league → time
         all_rows.sort(key=lambda r: (
             _row_date_iso(r),
@@ -1447,7 +1050,6 @@ def api_pipeline_status():
     """
     pipeline = _load_json_payload(config.PIPELINE_STATUS_FILE) or {}
     backend = _load_json_payload(config.BACKEND_RUN_STATUS_FILE) or {}
-    mobile_feed = _load_json_payload(config.MOBILE_FEED_FILE) or {}
 
     sub_pipelines = {"global": [], "mls": [], "extra": [], "post": [], "other": []}
     for step_name, passed in (pipeline.get("steps") or {}).items():
@@ -1466,13 +1068,12 @@ def api_pipeline_status():
 
     refreshed = get_last_pipeline_run()
     log_stats = pipeline_log.log_stats()
+    apns_configured = bool(config.APNS_KEY_ID and config.APNS_TEAM_ID and config.APNS_AUTH_KEY_PATH and os.path.exists(config.APNS_AUTH_KEY_PATH or ""))
     return jsonify({
         "ok": True,
         "last_refresh_utc": refreshed.isoformat() if refreshed else None,
         "pipeline": pipeline,
         "backend": backend,
-        "mobile_feed_status": mobile_feed.get("pipeline_status"),
-        "mobile_feed_generated_at": mobile_feed.get("generated_at_utc"),
         "sub_pipelines": sub_pipelines,
         "failed_steps": pipeline.get("failed_steps") or [
             k for k, v in (pipeline.get("steps") or {}).items() if not v
@@ -1484,6 +1085,12 @@ def api_pipeline_status():
             "exists": log_stats.get("exists", False),
             "highlights": pipeline.get("log_highlights") or [],
             "logs_api": "/api/pipeline/logs",
+        },
+        "services": {
+            "live_score_poller": True,
+            "apns_notifications": apns_configured,
+            "apns_live_activities": apns_configured,
+            "mutation_auth": bool(config.MUTATION_API_TOKEN),
         },
     })
 
@@ -1521,7 +1128,7 @@ def api_pipeline_logs():
 @app.post("/api/refresh")
 def api_refresh():
     """Trigger a background pipeline refresh (non-blocking when BackendServer is running)."""
-    if not _refresh_auth_ok():
+    if not _mutation_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     if not config.PIPELINE_ENABLED:
         return jsonify({"ok": False, "error": "Pipeline disabled (set PIPELINE_ENABLED=1 to enable)"}), 403
@@ -1555,7 +1162,7 @@ def api_retrain():
     Same as the scheduled Tuesday/Friday run: downloads data and retrains all
     model caches. Non-blocking when :class:`BackendServer` is running.
     """
-    if not _refresh_auth_ok():
+    if not _mutation_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     if not config.PIPELINE_ENABLED:
         return jsonify({"ok": False, "error": "Pipeline disabled (set PIPELINE_ENABLED=1 to enable)"}), 403
@@ -1587,18 +1194,6 @@ def api_retrain():
         "full_retrain": True,
         "message": "Full retrain finished inline (no BackendServer hook registered).",
     }), (200 if started else 500)
-
-
-@app.get("/api/mobile/feed")
-def api_mobile_feed():
-    """Return the full mobile-app feed JSON."""
-    if not os.path.exists(config.MOBILE_FEED_FILE):
-        return jsonify({"ok": False, "error": "Mobile feed not yet generated."}), 404
-    try:
-        with open(config.MOBILE_FEED_FILE, "r", encoding="utf-8") as f:
-            return jsonify(json.load(f))
-    except Exception:
-        return jsonify({"ok": False, "error": "Could not load mobile feed"}), 500
 
 
 @app.get("/api/mobile/widget")
@@ -1684,7 +1279,7 @@ def api_predict():
         away_team (str, required)
         mode (str, optional) — "global" (default), "mls", or "extra"
     """
-    if not _mutation_auth_ok():
+    if not _mutation_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
     payload = request.get_json(silent=True) or request.form
@@ -1703,7 +1298,7 @@ def api_predict():
 @app.post("/api/predict/mls")
 def api_predict_mls():
     """Predict a single MLS matchup from user input."""
-    if not _mutation_auth_ok():
+    if not _mutation_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
     payload = request.get_json(silent=True) or request.form
@@ -1719,7 +1314,7 @@ def api_predict_mls():
 @app.post("/api/predict/extra")
 def api_predict_extra():
     """Predict a single extra-league matchup from user input."""
-    if not _mutation_auth_ok():
+    if not _mutation_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
     payload = request.get_json(silent=True) or request.form
@@ -1732,187 +1327,42 @@ def api_predict_extra():
     return jsonify({"ok": True, "prediction": result})
 
 
-@app.post("/api/notifications")
-def api_push_notification():
-    """Push a notification to in-memory queue + APNs for iOS devices."""
-    if not _mutation_auth_ok():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    payload = request.get_json(silent=True) or {}
-    title = str(payload.get("title", "")).strip()
-    body = str(payload.get("body", "")).strip()
-    if not title or not body:
-        return jsonify({"ok": False, "error": "title and body required"}), 400
-    badge = payload.get("badge", 0)
-    try:
-        badge = max(0, int(badge))
-    except (TypeError, ValueError):
-        badge = 0
-    _notifications.append({
-        "id": len(_notifications),
-        "title": title,
-        "body": body,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "type": payload.get("type", "info"),
-    })
-    # Queue for APNs delivery to all registered iOS devices
-    for device_token in list(ios_device_tokens):
-        _apns_notification_queue.append({
-            "token": device_token,
-            "title": title,
-            "body": body,
-            "badge": badge,
-        })
-    return jsonify({"ok": True})
+@app.post("/api/redeem")
+def api_redeem():
+    """Redeem a promo code.
 
+    Body (JSON):
+        code (str, required) — the promo code to redeem
 
-@app.get("/api/notifications")
-def api_get_notifications():
-    """Return recent notifications."""
-    limit = min(int(request.args.get("limit", "20")), 100)
-    items = list(_notifications)[-limit:]
-    return jsonify({"ok": True, "notifications": items})
+    Response:
+        ok (bool)
+        value (str) — the redeemed value (e.g. ``"premium_1mo"``, ``"credits_50"``)
+        message (str) — human-readable description
 
-
-@app.post("/api/notifications/register")
-def api_register_device():
-    """Register a device token for push notifications.
-    
-    Supports both generic and iOS (APNs) tokens.  iOS tokens are sent
-    to Apple's APNs for validation.  Requires APNs env vars set.
-    
-    Body params:
-        token  (str, required)  — device push token
-        platform (str)          — "ios" or "generic" (default)
+    Errors:
+        400 — missing code
+        404 — unknown/expired code
     """
-    if not _mutation_auth_ok():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
-    token = str(payload.get("token", "")).strip()
-    if not token:
-        return jsonify({"ok": False, "error": "token required"}), 400
-    if len(token) > 512:
-        return jsonify({"ok": False, "error": "token too long"}), 400
-    platform = str(payload.get("platform", "generic")).strip().lower()
-    if platform == "ios":
-        ios_device_tokens.add(token)
-    else:
-        device_tokens.add(token)
-    return jsonify({"ok": True, "registered": True})
+    raw = payload.get("code", "")
+    if not isinstance(raw, str):
+        return jsonify({"ok": False})
+    code = raw.strip().upper()
+    if not code or len(code) > 200:
+        return jsonify({"ok": False})
+
+    codes = _load_json_payload(config.REDEEM_CODES_FILE)
+    if not isinstance(codes, list):
+        return jsonify({"ok": False})
+
+    for entry in codes:
+        if str(entry.get("code", "")).strip().upper() == code:
+            return jsonify({"ok": entry.get("value", False)})
+
+    return jsonify({"ok": False})
 
 
-# ── Live Activity endpoints (iOS 16.1+) ──────────────────────────────
-
-
-@app.post("/api/live-activities/register")
-def api_register_live_activity():
-    """Register a Live Activity push token for a specific match.
-
-    The iOS app calls this after ``Activity.request(…)`` returns a
-    push token so the server can send real-time score updates.
-
-    Body:
-        activity_token (str, required) — push token from the Live Activity
-        device_token  (str, optional) — device push token (for management)
-        match_id      (str, required) — match identifier
-        competition   (str, required) — competition name
-    """
-    if not _mutation_auth_ok():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    payload = request.get_json(silent=True) or {}
-    activity_token = str(payload.get("activity_token", "")).strip()
-    match_id = str(payload.get("match_id", "")).strip()
-    competition = str(payload.get("competition", "")).strip()
-    if not activity_token or not match_id or not competition:
-        return jsonify({"ok": False, "error": "activity_token, match_id, and competition required"}), 400
-    if len(activity_token) > 1024 or len(match_id) > 256 or len(competition) > 256:
-        return jsonify({"ok": False, "error": "input too long"}), 400
-    device_token = str(payload.get("device_token", "")).strip()
-    if len(device_token) > 512:
-        return jsonify({"ok": False, "error": "device_token too long"}), 400
-    ok = live_activities.register(activity_token, device_token, match_id, competition)
-    return jsonify({"ok": True, "registered": ok, "total": len(live_activities.all_activities())})
-
-
-@app.post("/api/live-activities/unregister")
-def api_unregister_live_activity():
-    """Remove a Live Activity registration (e.g. when dismissed on device)."""
-    if not _mutation_auth_ok():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    payload = request.get_json(silent=True) or {}
-    activity_token = str(payload.get("activity_token", "")).strip()
-    if not activity_token:
-        return jsonify({"ok": False, "error": "activity_token required"}), 400
-    if len(activity_token) > 1024:
-        return jsonify({"ok": False, "error": "activity_token too long"}), 400
-    ok = live_activities.unregister(activity_token)
-    return jsonify({"ok": True, "removed": ok})
-
-
-@app.post("/api/live-activities/update")
-def api_update_live_activity():
-    """Manually push a content-state update to all Live Activities for a match.
-
-    Body:
-        match_id    (str, required)
-        competition (str, required)
-        content_state (dict, required) — fields matching the iOS ContentState
-    """
-    if not _mutation_auth_ok():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    payload = request.get_json(silent=True) or {}
-    match_id = str(payload.get("match_id", "")).strip()
-    competition = str(payload.get("competition", "")).strip()
-    content_state = payload.get("content_state")
-    if not match_id or not competition or not isinstance(content_state, dict):
-        return jsonify({"ok": False, "error": "match_id, competition, and content_state required"}), 400
-    if len(match_id) > 256 or len(competition) > 256:
-        return jsonify({"ok": False, "error": "input too long"}), 400
-    activities = live_activities.for_match(match_id, competition)
-    sent = 0
-    for entry in activities:
-        _apns_notification_queue.append({
-            "type": "liveactivity",
-            "token": entry["activity_token"],
-            "event": "update",
-            "content_state": content_state,
-        })
-        sent += 1
-    return jsonify({"ok": True, "sent": sent})
-
-
-@app.post("/api/live-activities/end")
-def api_end_live_activity():
-    """End/dismiss Live Activities for a match.
-
-    Body:
-        match_id      (str, required)
-        competition   (str, required)
-        content_state (dict, optional) — final state before dismissal
-    """
-    if not _mutation_auth_ok():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    payload = request.get_json(silent=True) or {}
-    match_id = str(payload.get("match_id", "")).strip()
-    competition = str(payload.get("competition", "")).strip()
-    if not match_id or not competition:
-        return jsonify({"ok": False, "error": "match_id and competition required"}), 400
-    if len(match_id) > 256 or len(competition) > 256:
-        return jsonify({"ok": False, "error": "input too long"}), 400
-    content_state = payload.get("content_state", {})
-    if not isinstance(content_state, dict):
-        content_state = {}
-    activities = live_activities.for_match(match_id, competition)
-    sent = 0
-    for entry in activities:
-        _apns_notification_queue.append({
-            "type": "liveactivity",
-            "token": entry["activity_token"],
-            "event": "end",
-            "content_state": content_state,
-        })
-        sent += 1
-    live_activities.unregister_by_match(match_id, competition)
-    return jsonify({"ok": True, "sent": sent, "deregistered": True})
+@app.get("/api/live-scores")
 
 
 
@@ -1978,7 +1428,7 @@ def api_h2h():
 @app.get("/api/debug/live-score-sources")
 def api_debug_live_score_sources():
     """Debug endpoint: show what _get_todays_competitions() detects and which files exist/stale."""
-    if not _debug_auth_ok():
+    if not _mutation_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     info = {}
     info["today_date"] = date.today().isoformat()
@@ -2024,7 +1474,7 @@ def api_debug_live_score_sources():
 @app.get("/api/debug/manual-poll")
 def api_debug_manual_poll():
     """Manually run one ESPN poll cycle and return the results."""
-    if not _debug_auth_ok():
+    if not _mutation_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     today_str = date.today().strftime("%Y%m%d")
     all_results = {}
@@ -2051,7 +1501,7 @@ def api_debug_manual_poll():
 @app.get("/api/debug/poller-state")
 def api_debug_poller_state():
     """Show what the poller thread currently has stored and its last poll timing."""
-    if not _debug_auth_ok():
+    if not _mutation_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     with _live_scores_lock:
         state = {
@@ -2227,6 +1677,173 @@ def api_past_games():
         "page": page,
         "per_page": per_page,
     })
+
+
+# ── Push Notifications (no auth required) ─────────────────────────
+
+
+@app.post("/api/notifications")
+def api_push_notification():
+    """Queue a push notification for delivery via APNs."""
+    payload = request.get_json(silent=True) or {}
+    title = str(payload.get("title", "")).strip()
+    body = str(payload.get("body", "")).strip()
+    if not title or not body:
+        return jsonify({"ok": False, "error": "title and body required"}), 400
+    badge = payload.get("badge", 0)
+    try:
+        badge = max(0, int(badge))
+    except (TypeError, ValueError):
+        badge = 0
+    _notifications.append({
+        "id": len(_notifications),
+        "title": title,
+        "body": body,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "type": payload.get("type", "info"),
+    })
+    for device_token in list(ios_device_tokens):
+        _apns_notification_queue.append({
+            "token": device_token,
+            "title": title,
+            "body": body,
+            "badge": badge,
+        })
+    return jsonify({"ok": True})
+
+
+@app.get("/api/notifications")
+def api_get_notifications():
+    """Return recent notifications."""
+    limit = min(int(request.args.get("limit", "20")), 100)
+    items = list(_notifications)[-limit:]
+    return jsonify({"ok": True, "notifications": items})
+
+
+@app.post("/api/notifications/register")
+def api_register_device():
+    """Register a device token for push notifications.
+
+    Body params:
+        token    (str, required) — device push token
+        platform (str)           — ``"ios"`` or ``"generic"`` (default)
+    """
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get("token", "")).strip()
+    if not token:
+        return jsonify({"ok": False, "error": "token required"}), 400
+    if len(token) > 512:
+        return jsonify({"ok": False, "error": "token too long"}), 400
+    platform = str(payload.get("platform", "generic")).strip().lower()
+    if platform == "ios":
+        ios_device_tokens.add(token)
+    else:
+        device_tokens.add(token)
+    return jsonify({"ok": True, "registered": True})
+
+
+# ── Live Activity endpoints (iOS 16.1+) ────────────────────────────
+
+
+@app.post("/api/live-activities/register")
+def api_register_live_activity():
+    """Register a Live Activity push token for a specific match.
+
+    Body:
+        activity_token (str, required) — push token from the Live Activity
+        device_token  (str, optional) — device push token
+        match_id      (str, required) — match identifier
+        competition   (str, required) — competition name
+    """
+    payload = request.get_json(silent=True) or {}
+    activity_token = str(payload.get("activity_token", "")).strip()
+    match_id = str(payload.get("match_id", "")).strip()
+    competition = str(payload.get("competition", "")).strip()
+    if not activity_token or not match_id or not competition:
+        return jsonify({"ok": False, "error": "activity_token, match_id, and competition required"}), 400
+    if len(activity_token) > 1024 or len(match_id) > 256 or len(competition) > 256:
+        return jsonify({"ok": False, "error": "input too long"}), 400
+    device_token = str(payload.get("device_token", "")).strip()
+    if len(device_token) > 512:
+        return jsonify({"ok": False, "error": "device_token too long"}), 400
+    ok = live_activities.register(activity_token, device_token, match_id, competition)
+    return jsonify({"ok": True, "registered": ok, "total": len(live_activities.all_activities())})
+
+
+@app.post("/api/live-activities/unregister")
+def api_unregister_live_activity():
+    """Remove a Live Activity registration."""
+    payload = request.get_json(silent=True) or {}
+    activity_token = str(payload.get("activity_token", "")).strip()
+    if not activity_token:
+        return jsonify({"ok": False, "error": "activity_token required"}), 400
+    if len(activity_token) > 1024:
+        return jsonify({"ok": False, "error": "activity_token too long"}), 400
+    ok = live_activities.unregister(activity_token)
+    return jsonify({"ok": True, "removed": ok})
+
+
+@app.post("/api/live-activities/update")
+def api_update_live_activity():
+    """Manually push a content-state update to all Live Activities for a match.
+
+    Body:
+        match_id      (str, required)
+        competition   (str, required)
+        content_state (dict, required)
+    """
+    payload = request.get_json(silent=True) or {}
+    match_id = str(payload.get("match_id", "")).strip()
+    competition = str(payload.get("competition", "")).strip()
+    content_state = payload.get("content_state")
+    if not match_id or not competition or not isinstance(content_state, dict):
+        return jsonify({"ok": False, "error": "match_id, competition, and content_state required"}), 400
+    if len(match_id) > 256 or len(competition) > 256:
+        return jsonify({"ok": False, "error": "input too long"}), 400
+    activities = live_activities.for_match(match_id, competition)
+    sent = 0
+    for entry in activities:
+        _apns_notification_queue.append({
+            "type": "liveactivity",
+            "token": entry["activity_token"],
+            "content_state": content_state,
+            "event": "update",
+        })
+        sent += 1
+    return jsonify({"ok": True, "sent": sent})
+
+
+@app.post("/api/live-activities/end")
+def api_end_live_activity():
+    """End/dismiss Live Activities for a match.
+
+    Body:
+        match_id      (str, required)
+        competition   (str, required)
+        content_state (dict, optional) — final state before dismissal
+    """
+    payload = request.get_json(silent=True) or {}
+    match_id = str(payload.get("match_id", "")).strip()
+    competition = str(payload.get("competition", "")).strip()
+    if not match_id or not competition:
+        return jsonify({"ok": False, "error": "match_id and competition required"}), 400
+    if len(match_id) > 256 or len(competition) > 256:
+        return jsonify({"ok": False, "error": "input too long"}), 400
+    content_state = payload.get("content_state", {})
+    if not isinstance(content_state, dict):
+        content_state = {}
+    activities = live_activities.for_match(match_id, competition)
+    sent = 0
+    for entry in activities:
+        _apns_notification_queue.append({
+            "type": "liveactivity",
+            "token": entry["activity_token"],
+            "content_state": content_state,
+            "event": "end",
+        })
+        sent += 1
+    live_activities.unregister_by_match(match_id, competition)
+    return jsonify({"ok": True, "sent": sent, "deregistered": True})
 
 
 @app.get("/api/cup-bracket")
@@ -3068,36 +2685,7 @@ def api_league_leaders():
     })
 
 
-@app.post("/api/feedback")
-def api_feedback():
-    """Persist user feedback to a local text file."""
-    if not _mutation_auth_ok():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
-    payload = request.get_json(silent=True) or request.form or {}
-    feedback_text = str(payload.get("feedback", "")).strip()
-    if not feedback_text:
-        return jsonify({"ok": False, "error": "Feedback cannot be empty."}), 400
-    if len(feedback_text) > 5000:
-        return jsonify({"ok": False, "error": "Feedback is too long (max 5000 characters)."}), 400
-
-    timestamp = datetime.now(ZoneInfo("America/New_York")).isoformat()
-    remote_addr = request.headers.get("X-Forwarded-For") or request.remote_addr or "unknown"
-    user_agent = request.headers.get("User-Agent", "unknown")
-    entry = (
-        f"[{timestamp}] ip={remote_addr}\n"
-        f"user_agent={user_agent}\n"
-        f"feedback={feedback_text}\n"
-        "-----\n"
-    )
-    try:
-        os.makedirs(config.FEEDBACK_DIR, exist_ok=True)
-        with _feedback_lock:
-            with open(config.FEEDBACK_FILE, "a", encoding="utf-8") as fh:
-                fh.write(entry)
-    except Exception as exc:
-        return jsonify({"ok": False, "error": "Failed to save feedback"}), 500
-    return jsonify({"ok": True})
+@app.get("/tactics")
 
 
 @app.get("/tactics")
@@ -3133,6 +2721,45 @@ def api_scorers():
         "competitions": competitions,
         "available_leagues": sorted(competitions.keys()),
     })
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Helper: serve a JSON info file (changes / roadmap / upcoming)
+# ─────────────────────────────────────────────────────────────────────
+
+INFO_ENDPOINTS = {
+    "changes": config.INFO_CHANGES_FILE,
+    "roadmap": config.INFO_ROADMAP_FILE,
+    "upcoming": config.INFO_UPCOMING_FILE,
+}
+
+
+def _serve_info_file(name):
+    filepath = INFO_ENDPOINTS.get(name)
+    if not filepath or not os.path.exists(filepath):
+        return jsonify({"ok": False, "error": f"No {name} data available"}), 404
+    try:
+        with open(filepath, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return jsonify({"ok": False, "error": f"Could not load {name} data"}), 500
+    entries = data if isinstance(data, list) else data.get("entries", [])
+    return jsonify({"ok": True, "entries": entries})
+
+
+@app.get("/api/info/changes")
+def api_info_changes():
+    return _serve_info_file("changes")
+
+
+@app.get("/api/info/roadmap")
+def api_info_roadmap():
+    return _serve_info_file("roadmap")
+
+
+@app.get("/api/info/upcoming")
+def api_info_upcoming():
+    return _serve_info_file("upcoming")
 
 
 @app.get("/graphics/<path:filename>")
@@ -3175,15 +2802,8 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-    # Warn when auth env vars are missing
-    if not config.MUTATION_API_TOKEN and not config.NOTIFICATIONS_API_KEY:
+    if not config.MUTATION_API_TOKEN:
         print("[startup] WARNING: no mutation auth configured — write-capable API endpoints are disabled!")
-    if not config.REFRESH_API_TOKEN:
-        print("[startup] WARNING: config.REFRESH_API_TOKEN not set — /api/refresh and /api/retrain are unprotected!")
-    if not config.NOTIFICATIONS_API_KEY:
-        print("[startup] WARNING: config.NOTIFICATIONS_API_KEY not set — notification endpoints require config.MUTATION_API_TOKEN or a matching header!")
-    if not config.DEBUG_API_KEY and not config.REFRESH_API_TOKEN:
-        print("[startup] WARNING: config.DEBUG_API_KEY and config.REFRESH_API_TOKEN both unset — debug endpoints are disabled (all return 401)!")
 
     start_live_score_poller()
 

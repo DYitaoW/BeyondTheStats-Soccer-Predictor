@@ -16,9 +16,6 @@ MLS_FILES_DIR = os.path.join(PROJECT_DIR, "MLS", "files")
 EXTRA_FILES_DIR = os.path.join(PROJECT_DIR, "Extra-leagues", "files")
 WEBSITE_FILES_DIR = os.path.join(WEBSITE_DIR, "files")
 GRAPHICS_DIR = os.path.join(WEBSITE_DIR, "graphics")
-FEEDBACK_DIR = os.path.join(WEBSITE_FILES_DIR, "feedback")
-FEEDBACK_FILE = os.path.join(FEEDBACK_DIR, "feedback.txt")
-ACCURACY_HISTORY_DIR = os.path.join(WEBSITE_FILES_DIR, "accuracy_history")
 ACCURACY_TOTALS_FILE = os.path.join(WEBSITE_FILES_DIR, "accuracy_totals.json")
 
 # ── Prediction Files ──────────────────────────────────────────────
@@ -61,16 +58,18 @@ PREDICTION_TRACKING_FILE = os.path.join(PROJECT_DIR, "Data", "prediction_trackin
 REAL_TABLES_PERSIST_FILE = os.path.join(PROJECT_DIR, "Data", "standings_cache.json")
 LEAGUE_TEAMS_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "league_teams.json")
 CURRENT_SEASON_TEAMS_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "current_season_teams.json")
-MOBILE_FEED_FILE = os.path.join(PROJECT_DIR, "Output", "mobile_app_feed.json")
 WORLD_CUP_PROJECTION_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
 
 # ── League-Data Cache (pre-computed at pipeline / cached on read) ──
 
 LEAGUE_DATA_DIR = os.path.join(PROJECT_DIR, "Output", "LeagueData")
 
-# ── Live Activities (iOS 16.1+) ──────────────────────────────────────
+# ── Info Pages (changes / roadmap / upcoming) ───────────────────────
 
-LIVE_ACTIVITIES_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "live_activities.json")
+INFO_DIR = os.path.join(PROJECT_DIR, "Data", "Info")
+INFO_CHANGES_FILE = os.path.join(INFO_DIR, "changes.json")
+INFO_ROADMAP_FILE = os.path.join(INFO_DIR, "roadmap.json")
+INFO_UPCOMING_FILE = os.path.join(INFO_DIR, "upcoming.json")
 
 UPCOMING_CSV_FILES = {
     "global": GLOBAL_UPCOMING_FILE,
@@ -102,7 +101,6 @@ CLUB_FRIENDLIES_ESPN_ID = "club.friendly"
 # Competitions polled for scores but excluded from league-table/help listings.
 UPCOMING_ONLY_COMPETITIONS = {
     "FIFA/Friendly",
-    "Club Friendlies",
 }
 
 # Domestic leagues used only for UEFA/cup roster fallback (or upcoming API with no
@@ -515,58 +513,23 @@ MLS_TABLE_VIEW_ALIASES = {
     MLS_CUP_COMPETITION,
 }
 
-# ── API & Authentication ──────────────────────────────────────────
+# ── API Authentication ────────────────────────────────────────────
 
-REFRESH_API_TOKEN = os.environ.get("REFRESH_API_TOKEN", "").strip()
-NOTIFICATIONS_API_KEY = os.environ.get("NOTIFICATIONS_API_KEY", "").strip()
-DEBUG_API_KEY = os.environ.get("DEBUG_API_KEY", "").strip()
-MUTATION_API_TOKEN = os.environ.get("MUTATION_API_TOKEN", "").strip() or REFRESH_API_TOKEN
-_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "").strip()
-API_RATE_LIMIT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_PER_MINUTE", "120"))
+MUTATION_API_TOKEN = os.environ.get("MUTATION_API_TOKEN", "").strip()
 
-# ── Feature Flags ─────────────────────────────────────────────────
+# ── Apple Push Notification service (APNs) ────────────────────────
 
-STATIC_PREDICTIONS = os.environ.get("STATIC_PREDICTIONS", "1").strip().lower() in {"1", "true", "yes"}
-LOW_MEMORY_STATIC = os.environ.get("LOW_MEMORY_STATIC", "1").strip().lower() in {"1", "true", "yes"}
-USE_DISPLAY_NAME_MAPPING = False
+# APNs key from Apple Developer → Certificates → Keys
+APNS_KEY_ID = os.environ.get("APNS_KEY_ID", "").strip()
+APNS_TEAM_ID = os.environ.get("APNS_TEAM_ID", "").strip()
+APNS_AUTH_KEY_PATH = os.environ.get("APNS_AUTH_KEY_PATH", "").strip()
+APNS_TOPIC = os.environ.get("APNS_TOPIC", "com.beyondthestats.app").strip()
+APNS_LIVE_ACTIVITY_TOPIC = os.environ.get("APNS_LIVE_ACTIVITY_TOPIC", f"{APNS_TOPIC}.push-type.live-activity").strip()
+APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "0").strip().lower() in {"1", "true", "yes"}
 
-STATIC_PREDICTIONS_GLOBAL_FILE = os.environ.get("STATIC_PREDICTIONS_GLOBAL_FILE", GLOBAL_UPCOMING_FILE)
-STATIC_PREDICTIONS_MLS_FILE = os.environ.get("STATIC_PREDICTIONS_MLS_FILE", MLS_UPCOMING_FILE)
-STATIC_PREDICTIONS_EXTRA_FILE = os.environ.get("STATIC_PREDICTIONS_EXTRA_FILE", EXTRA_UPCOMING_FILE)
+# ── Redeem Codes ──────────────────────────────────────────────────
 
-# ── Apple Push Notifications (APNs) ───────────────────────────────
-
-APNS_KEY_FILE = os.environ.get("APNS_KEY_FILE", "")
-APNS_KEY_ID = os.environ.get("APNS_KEY_ID", "")
-APNS_TEAM_ID = os.environ.get("APNS_TEAM_ID", "")
-APNS_BUNDLE_ID = os.environ.get("APNS_BUNDLE_ID", "")
-APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "true").strip().lower() in ("1", "true")
-
-# ── Apple Sign In ────────────────────────────────────────────────
-
-# iOS app's bundle ID (or Service ID) — used as the `aud` when verifying
-# Apple identity tokens.  Must match the client_id configured in the
-# Apple Developer portal for Sign In with Apple.
-APPLE_CLIENT_ID = os.environ.get("APPLE_CLIENT_ID", "").strip()
-
-# Comma-separated list of Apple `sub` values that should be treated as
-# admins (e.g. "001234.abc123def456.0000,005678.ghi789jkl012.0000").
-# These users can call mutation endpoints (like /api/auth/tier) via
-# their normal session JWT without needing X-Admin-Token.
-_RAW_ADMIN_SUBS = os.environ.get("APPLE_ADMIN_SUBS", "").strip()
-ADMIN_SUBS: set[str] = {s.strip() for s in _RAW_ADMIN_SUBS.split(",") if s.strip()} if _RAW_ADMIN_SUBS else set()
-
-USERS_FILE = os.path.join(PROJECT_DIR, "Data", "users.json")
-
-# ── CORS & Security ───────────────────────────────────────────────
-
-TRUST_X_FORWARDED_FOR = os.environ.get("TRUST_X_FORWARDED_FOR", "0").strip().lower() in {"1", "true", "yes"}
-
-ALLOWED_ORIGINS = {
-    o.strip()
-    for o in os.environ.get("ALLOWED_ORIGINS", "").split(",")
-    if o.strip()
-} or {"http://localhost:5000", "http://127.0.0.1:5000"}
+REDEEM_CODES_FILE = os.path.join(PROJECT_DIR, "Data", "redeem_codes.json")
 
 
 def get_live_score_tier(competition: str) -> str:
