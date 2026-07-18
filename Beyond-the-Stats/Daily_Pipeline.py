@@ -1030,7 +1030,7 @@ _ESPN_STATS_IDS = {
     "Austria/Bundesliga": "aut.1",
     "Switzerland/Super League": "sui.1",
     "Greece/Super League": "gre.1",
-    "Denmark/Superliga": "den.1",
+    "Denmark/Danish Superliga": "den.1",
     "Ukraine/Premier League": "ukr.1",
     "Norway/Eliteserien": "nor.1",
     "Croatia/HNL": "cro.1",

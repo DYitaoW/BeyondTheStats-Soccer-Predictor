@@ -469,7 +469,9 @@ def _live_score_poller_loop():
                         try:
                             games = ft.result()
                             if name == config.CLUB_FRIENDLIES_COMPETITION:
-                                games = [g for g in games if _is_chelsea_live_game(g)]
+                                chelsea = [g for g in games if _is_chelsea_live_game(g)]
+                                non_chelsea = [g for g in games if not _is_chelsea_live_game(g) and g.get("status") == "post"]
+                                games = chelsea + non_chelsea
                             games = _filter_live_games_for_competition(name, games)
                             if not games:
                                 continue

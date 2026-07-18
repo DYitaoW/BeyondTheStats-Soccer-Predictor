@@ -15,7 +15,7 @@ import os
 from collections import OrderedDict
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "team_name_mapping_master.json")
+MAPPING_FILE = os.path.join(PROJECT_DIR, "..", "Data", "team_name_mapping_master.json")
 
 # All known competition name -> list of possible raw data directory paths
 COMP_TO_DIRS = {

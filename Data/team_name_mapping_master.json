@@ -256,14 +256,14 @@
     "Swansea": "Swansea",
     "Birmingham City": "Birmingham",
     "Birmingham City FC": "Birmingham",
-    "Blackburn Rovers": "Blackburn Rovers",
-    "Blackburn Rovers FC": "Blackburn Rovers",
+    "Blackburn Rovers": "Blackburn",
+    "Blackburn Rovers FC": "Blackburn",
     "Bristol City FC": "Bristol City",
     "Charlton Athletic": "Charlton",
     "Charlton Athletic FC": "Charlton",
     "Coventry City FC": "Coventry",
-    "Derby County": "Derby County",
-    "Derby County FC": "Derby County",
+    "Derby County": "Derby",
+    "Derby County FC": "Derby",
     "Ipswich Town FC": "Ipswich",
     "Leicester City": "Leicester",
     "Leicester City FC": "Leicester",
@@ -271,8 +271,8 @@
     "Millwall FC": "Millwall",
     "Norwich City": "Norwich",
     "Norwich City FC": "Norwich",
-    "Oxford United": "Oxford United",
-    "Oxford United FC": "Oxford United",
+    "Oxford United": "Oxford",
+    "Oxford United FC": "Oxford",
     "Portsmouth FC": "Portsmouth",
     "Preston North End": "Preston",
     "Preston North End FC": "Preston",
@@ -301,7 +301,8 @@
     "Nott'm Forest": "Nott'm Forest",
     "Sunderland": "Sunderland",
     "West Ham": "West Ham",
-    "Wolves": "Wolves"
+    "Wolves": "Wolves",
+    "West Ham United": "West Ham"
   },
   "United States/MLS": {
     "Atlanta United FC": "Atlanta Utd",
@@ -1141,7 +1142,13 @@
     "Varberg": "Varberg",
     "Varnamo": "Varnamo",
     "Vasteras SK": "Vasteras SK",
-    "Västerås SK": "Vasteras SK"
+    "Västerås SK": "Vasteras SK",
+    "BK Hacken": "Hacken",
+    "Degerfors IF": "Degerfors",
+    "IFK Goteborg": "Goteborg",
+    "Mjallby AIF": "Mjallby",
+    "Örgryte IS": "Orgryte",
+    "Orgryte IS": "Orgryte"
   },
   "Austria/Bundesliga": {
     "A. Klagenfurt": "A. Klagenfurt",
@@ -1274,7 +1281,8 @@
     "Union de Santa Fe": "Union de Santa Fe",
     "Unión (Santa Fe)": "Union de Santa Fe",
     "Velez Sarsfield": "Velez Sarsfield",
-    "Vélez Sarsfield": "Velez Sarsfield"
+    "Vélez Sarsfield": "Velez Sarsfield",
+    "Atletico Tucuman": "Atl. Tucuman"
   },
   "Brazil/Serie A": {
     "America MG": "America MG",
@@ -1362,7 +1370,9 @@
     "Vissel Kobe": "Vissel Kobe",
     "Yamaga": "Yamaga",
     "Yokohama F. Marinos": "Yokohama F. Marinos",
-    "Yokohama FC": "Yokohama FC"
+    "Yokohama FC": "Yokohama FC",
+    "JEF United Ichihara-Chiba": "JEF United",
+    "Mito Hollyhock": "Mito Hollyhock"
   },
   "Switzerland/Super League": {},
   "Ukraine/Premier League": {},
@@ -1386,5 +1396,6 @@
   "UEFA/Conference League": {},
   "FIFA/World Cup": {},
   "FIFA/Friendly": {},
-  "Club Friendlies": {}
+  "Club Friendlies": {},
+  "Denmark/Danish Superliga": {}
 }

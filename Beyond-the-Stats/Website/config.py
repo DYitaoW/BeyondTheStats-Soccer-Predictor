@@ -47,11 +47,15 @@ RUN_ALL_PIPELINE = os.path.join(PROJECT_DIR, "Run_All_Pipeline.py")
 # return a clear "disabled" response instead of trying to run the pipeline.
 PIPELINE_ENABLED = os.environ.get("PIPELINE_ENABLED", "1").strip().lower() in {"1", "true", "yes"}
 
+# If True, _team_name_for_display / _team_name_for_db in team_utils
+# will map canonical names through the display-mapping file.
+USE_DISPLAY_NAME_MAPPING = False
+
 LAST_DATA_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_data_refresh.json")
 PIPELINE_STATUS_FILE = os.path.join(PROJECT_DIR, "Data", "pipeline_status.json")
 BACKEND_RUN_STATUS_FILE = os.path.join(PROJECT_DIR, "Data", "backend_run_status.json")
 PIPELINE_LOG_FILE = os.path.join(PROJECT_DIR, "Data", "pipeline_latest.log")
-TEAM_NAME_DISPLAY_MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "team_name_mapping_master.json")
+TEAM_NAME_DISPLAY_MAPPING_FILE = os.path.join(PROJECT_DIR, "..", "Data", "team_name_mapping_master.json")
 TOP_SCORERS_FILE = os.path.join(PROJECT_DIR, "Data", "Team_Data", "current_season_top_scorers.json")
 LIVE_SCORE_HISTORY_FILE = os.path.join(PROJECT_DIR, "Data", "live_score_history.json")
 PREDICTION_TRACKING_FILE = os.path.join(PROJECT_DIR, "Data", "prediction_tracking.json")
@@ -109,7 +113,6 @@ UPCOMING_ONLY_COMPETITIONS = {
 LEAGUE_API_EXCLUDED_COMPETITIONS = {
     # football-data.org upcoming fixtures only — no domestic prediction history
     "Switzerland/Super League",
-    "Denmark/Superliga",
     "Ukraine/Premier League",
     "Croatia/HNL",
     "Hungary/NB I",
@@ -170,7 +173,7 @@ LIVE_SCORE_COMPETITIONS = {
     "Austria/Bundesliga": "aut.1",
     "Switzerland/Super League": "sui.1",
     "Greece/Super League": "gre.1",
-    "Denmark/Superliga": "den.1",
+    "Denmark/Danish Superliga": "den.1",
     "Ukraine/Premier League": "ukr.1",
     "Norway/Eliteserien": "nor.1",
     "Croatia/HNL": "cro.1",
@@ -210,7 +213,7 @@ RESULT_ONLY_COMPETITIONS = frozenset({
     "Austria/Bundesliga",
     "Switzerland/Super League",
     "Greece/Super League",
-    "Denmark/Superliga",
+    "Denmark/Danish Superliga",
     "Ukraine/Premier League",
     "Norway/Eliteserien",
     "Croatia/HNL",

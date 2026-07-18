@@ -131,8 +131,35 @@ from standings import (
 )
 from team_utils import _normalize_team_key, _team_name_for_db, _team_name_for_display, _to_float
 
+# ── KeyError tracking (for user to diagnose missing mappings / keys) ──
+from threading import Lock
+_key_error_log: list[dict] = []
+_key_error_log_lock = Lock()
+_KEY_ERROR_LOG_MAX = 200
+
+
+def _log_key_error(context: str, exc: KeyError):
+    """Record a KeyError with context for the /api/key-errors endpoint."""
+    entry = {
+        "context": context,
+        "key": str(exc.args[0]) if exc.args else None,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    with _key_error_log_lock:
+        _key_error_log.append(entry)
+        if len(_key_error_log) > _KEY_ERROR_LOG_MAX:
+            _key_error_log.pop(0)
+
+
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024  # 1 MB request body limit
+
+@app.errorhandler(KeyError)
+def _handle_key_error(exc):
+    """Log unhandled KeyErrors and return a 500 with error info."""
+    _log_key_error("unhandled", exc)
+    return jsonify({"error": f"KeyError: {exc}"}), 500
+
 
 @app.after_request
 def _add_cache_headers(response):
@@ -2745,6 +2772,13 @@ def _serve_info_file(name):
         return jsonify({"ok": False, "error": f"Could not load {name} data"}), 500
     entries = data if isinstance(data, list) else data.get("entries", [])
     return jsonify({"ok": True, "entries": entries})
+
+
+@app.get("/api/key-errors")
+def api_key_errors():
+    """Return the KeyError log for diagnosing missing mappings or broken lookups."""
+    with _key_error_log_lock:
+        return jsonify(list(_key_error_log))
 
 
 @app.get("/api/info/changes")

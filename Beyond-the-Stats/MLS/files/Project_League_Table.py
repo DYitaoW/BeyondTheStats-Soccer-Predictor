@@ -45,13 +45,15 @@ LIGA_MX_COMPETITION = "Mexico/Liga MX"
 LIGA_MX_ESPN_ID = "mex.1"
 RNG = random.Random()
 SIMULATION_RUNS = 2500
-MAPPING_FILE = os.path.join(os.path.dirname(BASE_DIR), "Data", "Predictions", "team_name_mapping_master.json")
+MAPPING_FILE = os.path.join(os.path.dirname(BASE_DIR), "..", "Data", "team_name_mapping_master.json")
 
 
 def _sibling_competitions(competition, mapping):
     country = competition.split("/")[0] if "/" in competition else competition
     if country.upper().startswith("UEFA"):
         return [k for k in mapping if isinstance(mapping.get(k), dict)]
+    if competition == "CONCACAF/Leagues Cup":
+        return [k for k in mapping if k in ("United States/MLS", "Mexico/Liga MX") and isinstance(mapping.get(k), dict)]
     return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
 
 
@@ -76,7 +78,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
             sibling_section = mapping.get(sibling_comp, {})
             if isinstance(sibling_section, dict) and raw_name in sibling_section:
                 mapped = sibling_section[raw_name]
-                if mapped and mapped in valid_names:
+                if mapped:
                     candidate = mapped
                     break
         if not candidate:

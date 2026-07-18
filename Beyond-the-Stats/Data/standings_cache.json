@@ -563,162 +563,6 @@
     ],
     "source": "roster"
   },
-  "Denmark/Superliga": {
-    "competition": "Denmark/Superliga",
-    "updated_at": "2026-07-03T02:45:35+00:00",
-    "groups": [
-      {
-        "name": "Overall",
-        "entries": [
-          {
-            "team": "AC Horsens",
-            "position": 1,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "AGF",
-            "position": 2,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "Brøndby IF",
-            "position": 3,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "F.C. København",
-            "position": 4,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "FC Midtjylland",
-            "position": 5,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "FC Nordsjælland",
-            "position": 6,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "Lyngby Boldklub",
-            "position": 7,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "Odense Boldklub",
-            "position": 8,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "Randers FC",
-            "position": 9,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "Silkeborg IF",
-            "position": 10,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "Sønderjyske Fodbold",
-            "position": 11,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          },
-          {
-            "team": "Viborg FF",
-            "position": 12,
-            "P": 0,
-            "W": 0,
-            "D": 0,
-            "L": 0,
-            "GF": 0,
-            "GA": 0,
-            "GD": 0,
-            "Pts": 0
-          }
-        ]
-      }
-    ],
-    "source": "roster"
-  },
   "England/Championship": {
     "competition": "England/Championship",
     "updated_at": "2026-07-03T02:45:35+00:00",
@@ -14274,5 +14118,161 @@
       }
     ],
     "source": "computed"
+  },
+  "Denmark/Danish Superliga": {
+    "competition": "Denmark/Danish Superliga",
+    "updated_at": "2026-07-03T02:45:35+00:00",
+    "groups": [
+      {
+        "name": "Overall",
+        "entries": [
+          {
+            "team": "AC Horsens",
+            "position": 1,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "AGF",
+            "position": 2,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "Brøndby IF",
+            "position": 3,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "F.C. København",
+            "position": 4,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "FC Midtjylland",
+            "position": 5,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "FC Nordsjælland",
+            "position": 6,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "Lyngby Boldklub",
+            "position": 7,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "Odense Boldklub",
+            "position": 8,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "Randers FC",
+            "position": 9,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "Silkeborg IF",
+            "position": 10,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "Sønderjyske Fodbold",
+            "position": 11,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          },
+          {
+            "team": "Viborg FF",
+            "position": 12,
+            "P": 0,
+            "W": 0,
+            "D": 0,
+            "L": 0,
+            "GF": 0,
+            "GA": 0,
+            "GD": 0,
+            "Pts": 0
+          }
+        ]
+      }
+    ],
+    "source": "roster"
   }
 }

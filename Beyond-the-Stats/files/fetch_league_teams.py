@@ -39,7 +39,7 @@ LEAGUES = {
     "Austria/Bundesliga": "aut.1",
     "Switzerland/Super League": "sui.1",
     "Greece/Super League": "gre.1",
-    "Denmark/Superliga": "den.1",
+    "Denmark/Danish Superliga": "den.1",
     "Ukraine/Premier League": "ukr.1",
     "Norway/Eliteserien": "nor.1",
     "Croatia/HNL": "cro.1",
@@ -83,7 +83,7 @@ LEAGUES = {
 }
 
 # Load team name mapping (ESPN display name → canonical name)
-MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "team_name_mapping_master.json")
+MAPPING_FILE = os.path.join(PROJECT_DIR, "..", "Data", "team_name_mapping_master.json")
 mapping = {}
 if os.path.exists(MAPPING_FILE):
     with open(MAPPING_FILE, "r", encoding="utf-8") as f:
