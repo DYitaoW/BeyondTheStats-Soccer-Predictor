@@ -145,20 +145,6 @@
     "Omonia Nicosia",
     "Pafos"
   ],
-  "Denmark/Superliga": [
-    "AC Horsens",
-    "AGF",
-    "Brøndby IF",
-    "F.C. København",
-    "FC Midtjylland",
-    "FC Nordsjælland",
-    "Lyngby Boldklub",
-    "Odense Boldklub",
-    "Randers FC",
-    "Silkeborg IF",
-    "Sønderjyske Fodbold",
-    "Viborg FF"
-  ],
   "England/Championship": [
     "Birmingham City",
     "Blackburn Rovers",
@@ -1548,5 +1534,19 @@
     "St. Louis CITY SC",
     "Toronto FC",
     "Vancouver Whitecaps"
+  ],
+  "Denmark/Danish Superliga": [
+    "AC Horsens",
+    "AGF",
+    "Brøndby IF",
+    "F.C. København",
+    "FC Midtjylland",
+    "FC Nordsjælland",
+    "Lyngby Boldklub",
+    "Odense Boldklub",
+    "Randers FC",
+    "Silkeborg IF",
+    "Sønderjyske Fodbold",
+    "Viborg FF"
   ]
 }

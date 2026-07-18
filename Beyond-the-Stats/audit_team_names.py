@@ -35,7 +35,7 @@ UPCOMING_FILES = [
     os.path.join(PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv"),
 ]
 
-MAPPING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "team_name_mapping_master.json")
+MAPPING_FILE = os.path.join(PROJECT_DIR, "..", "Data", "team_name_mapping_master.json")
 
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
@@ -60,7 +60,7 @@ ESPN_IDS = {
     "Austria/Bundesliga": "aut.1",
     "Switzerland/Super League": "sui.1",
     "Greece/Super League": "gre.1",
-    "Denmark/Superliga": "den.1",
+    "Denmark/Danish Superliga": "den.1",
     "Ukraine/Premier League": "ukr.1",
     "Norway/Eliteserien": "nor.1",
     "Croatia/HNL": "cro.1",

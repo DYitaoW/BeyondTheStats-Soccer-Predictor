@@ -42,7 +42,7 @@ RNG = random.Random()
 SIMULATION_RUNS = 2500
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
-SHARED_MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "Predictions", "team_name_mapping_master.json")
+SHARED_MAPPING_FILE = os.path.join(BASE_DIR, "..", "..", "Data", "team_name_mapping_master.json")
 LEAGUE_TEAMS_FILE = os.path.join(BASE_DIR, "..", "Data", "Predictions", "league_teams.json")
 
 
@@ -51,12 +51,15 @@ def _sibling_competitions(competition, mapping):
 
     For UEFA competitions, checks every competition in the mapping (since any
     European league's teams can appear in Champions/Europa/Conference League).
+    For Leagues Cup, only checks United States/MLS and Mexico/Liga MX.
     For country-specific competitions, checks sibling leagues in the same
     country (e.g. ``England/Premier League`` → also check ``England/Championship``).
     """
     country = competition.split("/")[0] if "/" in competition else competition
     if country.upper().startswith("UEFA"):
         return [k for k in mapping if isinstance(mapping.get(k), dict)]
+    if competition == "CONCACAF/Leagues Cup":
+        return [k for k in mapping if k in ("United States/MLS", "Mexico/Liga MX") and isinstance(mapping.get(k), dict)]
     return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
 
 
@@ -81,7 +84,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
             sibling_section = mapping.get(sibling_comp, {})
             if isinstance(sibling_section, dict) and raw_name in sibling_section:
                 mapped = sibling_section[raw_name]
-                if mapped and mapped in valid_names:
+                if mapped:
                     candidate = mapped
                     break
         if not candidate:
@@ -143,7 +146,7 @@ EXTRA_ESPN_COMPETITIONS = {
     "Austria/Bundesliga": "aut.1",
     "Switzerland/Super League": "sui.1",
     "Greece/Super League": "gre.1",
-    "Denmark/Superliga": "den.1",
+    "Denmark/Danish Superliga": "den.1",
     "Ukraine/Premier League": "ukr.1",
     "Norway/Eliteserien": "nor.1",
     "Croatia/HNL": "cro.1",
@@ -631,9 +634,10 @@ def _expected_current_season_year(competition):
     now = datetime.now()
     country = competition.split("/")[0] if "/" in competition else ""
     cross_year_countries = {
-        "Netherlands", "Belgium", "Scotland", "Turkey", "Austria",
-        "Switzerland", "Greece", "Denmark", "Poland",
-        "Japan",
+        "Austria", "Switzerland", "Greece", "Denmark", "Poland",
+        "Japan", "Bulgaria", "Cyprus", "Czech Republic",
+        "Israel", "Moldova", "Serbia", "Ukraine", "Romania",
+        "Croatia", "Hungary", "Slovakia", "Slovenia",
     }
     if country in cross_year_countries:
         return now.year if now.month >= 7 else now.year - 1

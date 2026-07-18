@@ -605,13 +605,23 @@ def _parse_espn_key_events(summary_data):
     """Extract key match events from summary.
 
     Returns list of event dicts with type, text, period, clock, team.
+    Delay-type events are excluded. Key events (goal, card, sub, penalty)
+    use shortText instead of the full text.
     """
     events = summary_data.get("keyEvents") or []
     result = []
+    _SHORT_TEXT_TYPES = frozenset({
+        "goal", "yellow card", "red card", "substitution",
+        "penalty", "missed penalty", "own goal",
+    })
     for ev in events:
+        ev_type = str(ev.get("type", {}).get("text", "")).lower().strip()
+        if "delay" in ev_type:
+            continue
+        text = str(ev.get("shortText" if ev_type in _SHORT_TEXT_TYPES else "text", ""))
         entry = {
             "type": str(ev.get("type", {}).get("text", "")),
-            "text": str(ev.get("text", "")),
+            "text": text,
             "short_text": str(ev.get("shortText", "")),
             "period": ev.get("period", {}).get("number"),
             "clock": str(ev.get("clock", {}).get("displayValue", "")),

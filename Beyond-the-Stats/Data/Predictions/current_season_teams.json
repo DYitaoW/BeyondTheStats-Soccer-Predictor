@@ -387,20 +387,6 @@
     "Panserraikos FC",
     "Volos NFC"
   ],
-  "Denmark/Superliga": [
-    "AC Horsens",
-    "AGF",
-    "Brøndby IF",
-    "F.C. København",
-    "FC Midtjylland",
-    "FC Nordsjælland",
-    "Lyngby Boldklub",
-    "Odense Boldklub",
-    "Randers FC",
-    "Silkeborg IF",
-    "Sønderjyske Fodbold",
-    "Viborg FF"
-  ],
   "Ukraine/Premier League": [],
   "Norway/Eliteserien": [
     "Aalesund",
@@ -498,5 +484,19 @@
   "Bulgaria/First League": [],
   "United States/MLS - Supporters Shield Table": [],
   "United States/MLS - Eastern Conference": [],
-  "United States/MLS - Western Conference": []
+  "United States/MLS - Western Conference": [],
+  "Denmark/Danish Superliga": [
+    "AC Horsens",
+    "AGF",
+    "Brøndby IF",
+    "F.C. København",
+    "FC Midtjylland",
+    "FC Nordsjælland",
+    "Lyngby Boldklub",
+    "Odense Boldklub",
+    "Randers FC",
+    "Silkeborg IF",
+    "Sønderjyske Fodbold",
+    "Viborg FF"
+  ]
 }
