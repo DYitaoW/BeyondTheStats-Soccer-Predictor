@@ -45,7 +45,7 @@ LIGA_MX_COMPETITION = "Mexico/Liga MX"
 LIGA_MX_ESPN_ID = "mex.1"
 RNG = random.Random()
 SIMULATION_RUNS = 2500
-MAPPING_FILE = os.path.join(OUT_DIR, "team_name_mapping_master.json")
+MAPPING_FILE = os.path.join(os.path.dirname(BASE_DIR), "Data", "Predictions", "team_name_mapping_master.json")
 
 
 def _sibling_competitions(competition, mapping):
@@ -55,7 +55,7 @@ def _sibling_competitions(competition, mapping):
     return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
 
 
-def _append_mapping_if_missing(competition, unresolved_names, valid_names):
+def _append_mapping_if_missing(competition, unresolved_names, valid_names, roster_teams=None):
     if not unresolved_names or not os.path.exists(MAPPING_FILE):
         return
     try:
@@ -86,7 +86,19 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names):
             ).strip()
             candidate = pm.resolve_team_name(stripped, valid_names) or pm.resolve_team_name(raw_name, valid_names)
         if candidate and candidate in valid_names:
-            comp_section[raw_name] = candidate
+            if roster_teams is not None and candidate not in roster_teams:
+                # Team is valid but not in current competition roster — add to sibling section instead
+                added_to_sibling = False
+                for sibling_comp in siblings:
+                    sibling_section = mapping.setdefault(sibling_comp, {})
+                    if raw_name not in sibling_section:
+                        sibling_section[raw_name] = candidate
+                        added_to_sibling = True
+                        break
+                if not added_to_sibling:
+                    comp_section[raw_name] = candidate
+            else:
+                comp_section[raw_name] = candidate
         else:
             comp_section[raw_name] = ""
         added += 1
@@ -940,45 +952,113 @@ def run_monte_carlo_standard(teams, base_table, future_predictions, runs):
     return stat_sums, position_counts
 
 
-def project_liga_mx_competition(ctx, competition, raw_file):
-    df = normalize_raw_df(pd.read_csv(raw_file))
-    required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
-    if not required.issubset(df.columns):
-        return [], [], None
+def _fetch_liga_mx_teams():
+    """Fetch current Liga MX team list from ESPN /teams endpoint."""
+    url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{LIGA_MX_ESPN_ID}/teams"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+        teams_list = data.get("sports", [{}])[0].get("leagues", [{}])[0].get("teams", [])
+        if not teams_list:
+            return None
+        teams = []
+        for entry in teams_list:
+            team = entry.get("team") or {}
+            name = (team.get("displayName") or team.get("name") or "").strip()
+            if name:
+                teams.append(name)
+        return sorted(set(teams))
+    except Exception:
+        return None
 
-    espn_future = load_future_fixtures_from_espn(competition)
-    if not espn_future.empty:
-        espn_future = espn_future.copy()
-        espn_future["DateParsed"] = pd.to_datetime(espn_future["Date"], errors="coerce")
-        df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
-        played_keys = set()
-        for _, row in df.iterrows():
-            home = str(row.get("HomeTeam", "")).strip()
-            away = str(row.get("AwayTeam", "")).strip()
-            ftr = str(row.get("FTR", "")).strip().upper()
-            hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
-            ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
-            if home and away and ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag):
-                played_keys.add(tuple(sorted([home, away])))
-        supplemental = []
-        for _, row in espn_future.iterrows():
-            home = str(row.get("HomeTeam", "")).strip()
-            away = str(row.get("AwayTeam", "")).strip()
-            if not home or not away:
-                continue
-            if tuple(sorted([home, away])) in played_keys:
-                continue
-            supplemental.append(row)
-        if supplemental:
-            supp_df = pd.DataFrame(supplemental).dropna(axis=1, how="all")
-            df = pd.concat([df, supp_df], ignore_index=True, sort=False)
 
+def _deduplicate_espn_fixtures(df, espn_future):
+    """Return ESPN fixtures that aren't already played in *df*, or None."""
+    espn_future = espn_future.copy()
+    espn_future["DateParsed"] = pd.to_datetime(espn_future["Date"], errors="coerce")
     df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
-    df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]
-    df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
+    played_keys = set()
+    for _, row in df.iterrows():
+        home = str(row.get("HomeTeam", "")).strip()
+        away = str(row.get("AwayTeam", "")).strip()
+        ftr = str(row.get("FTR", "")).strip().upper()
+        hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
+        ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
+        if home and away and ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag):
+            played_keys.add(tuple(sorted([home, away])))
+    supplemental = []
+    for _, row in espn_future.iterrows():
+        home = str(row.get("HomeTeam", "")).strip()
+        away = str(row.get("AwayTeam", "")).strip()
+        if not home or not away:
+            continue
+        if tuple(sorted([home, away])) in played_keys:
+            continue
+        supplemental.append(row)
+    if not supplemental:
+        return None
+    return pd.DataFrame(supplemental).dropna(axis=1, how="all")
 
-    raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
-    teams = sorted({pm.resolve_team_name(t, ctx["available_teams"]) or t for t in raw_teams})
+
+def project_liga_mx_competition(ctx, competition, raw_file):
+    # Determine if this CSV represents the current season or a past season
+    csv_start_year = pm.parse_season_start_year(os.path.basename(raw_file))
+    expected_year = datetime.now().year  # single-year format files
+    is_current_season = csv_start_year is not None and csv_start_year == expected_year
+
+    if is_current_season:
+        # ── PATH A: Current-season CSV exists ──────────────────────────
+        df = normalize_raw_df(pd.read_csv(raw_file))
+        required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
+        if not required.issubset(df.columns):
+            return [], [], None
+
+        espn_future = load_future_fixtures_from_espn(competition)
+        if not espn_future.empty:
+            supp = _deduplicate_espn_fixtures(df, espn_future)
+            if supp is not None:
+                df = pd.concat([df, supp], ignore_index=True, sort=False)
+
+        df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
+        df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]
+        df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
+
+        raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
+        teams = sorted({pm.resolve_team_name(t, ctx["available_teams"]) or t for t in raw_teams})
+    else:
+        # ── PATH B: No current-season CSV — ESPN fallback ─────────────
+        espn_teams = _fetch_liga_mx_teams()
+        if not espn_teams:
+            print(f"  No current-season CSV and no ESPN data for {competition}")
+            return [], [], None
+        teams = sorted(espn_teams)
+        print(f"  No current-season CSV — using ESPN fallback ({len(teams)} teams)")
+
+        # Build df with ESPN fixtures + synthetic pairs
+        espn_future = load_future_fixtures_from_espn(competition)
+        rows = []
+        seen = set()
+        if not espn_future.empty:
+            for _, r in espn_future.iterrows():
+                rows.append({
+                    "Date": str(r.get("Date", "")),
+                    "HomeTeam": str(r.get("HomeTeam", "")),
+                    "AwayTeam": str(r.get("AwayTeam", "")),
+                    "FTHG": None, "FTAG": None, "FTR": "",
+                })
+                seen.add((str(r.get("HomeTeam", "")), str(r.get("AwayTeam", ""))))
+        for home in teams:
+            for away in teams:
+                if home == away or (home, away) in seen:
+                    continue
+                seen.add((home, away))
+                rows.append({
+                    "Date": "", "HomeTeam": home, "AwayTeam": away,
+                    "FTHG": None, "FTAG": None, "FTR": "",
+                })
+        df = pd.DataFrame(rows)
+        df["DateParsed"] = pd.to_datetime(df["Date"], errors="coerce")
     table = init_table(teams)
     future_rows = []
     future_predictions = []
@@ -1037,7 +1117,7 @@ def project_liga_mx_competition(ctx, competition, raw_file):
 
     if unresolved:
         print(f"  Liga MX: {len(set(unresolved))} unresolved team name(s): {sorted(set(unresolved))}")
-        _append_mapping_if_missing(competition, unresolved, ctx["available_teams"])
+        _append_mapping_if_missing(competition, unresolved, ctx["available_teams"], None)
 
     stat_sums, position_counts = run_monte_carlo_standard(
         teams, table, future_predictions, SIMULATION_RUNS

@@ -112,6 +112,8 @@ Beyond-the-Stats/Data/pipeline_latest.log
 !Beyond-the-Stats/Data/Predictions/team_name_mapping_master.json
 !Beyond-the-Stats/Data/Predictions/espn_team_names_seen.json
 !Beyond-the-Stats/Data/Predictions/espn_cup_names_seen.json
+!Beyond-the-Stats/MLS/Data/Predictions/team_name_mapping_master.json
+!Beyond-the-Stats/Extra-leagues/Data/Predictions/team_name_mapping_master.json
 !Data/Predictions/team_name_mapping_master.json
 # Season roster files (manually filled, not auto-generated)
 !Beyond-the-Stats/Data/Predictions/league_teams.json

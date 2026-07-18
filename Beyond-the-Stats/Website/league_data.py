@@ -208,8 +208,9 @@ def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict]
             return build_structured_standings_groups(comp_name, roster)
         return None
 
-    # For cup competitions with group stages (like Leagues Cup), try ESPN standings for group structure
     fmt = competition_format_spec(comp_name)
+
+    # For cup competitions with group stages (like Leagues Cup), try ESPN standings first
     if fmt and fmt.get("format") == "group_stage_then_knockout" and comp_table:
         from standings import _get_or_fetch_standings
         espn_standings = _get_or_fetch_standings(comp_name, computed=False)
@@ -229,6 +230,12 @@ def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict]
                     for g in result:
                         g["entries"].sort(key=lambda e: e.get("rank") or e.get("position") or 999)
                     return result
+
+    # Fallback: infer groups from actual fixture matchups (who plays whom).
+    if fmt and fmt.get("format") == "group_stage_then_knockout" and comp_table:
+        groups = _infer_groups_from_fixtures(comp_name, comp_table)
+        if groups:
+            return groups
 
     real = _load_real_standings(comp_name)
     if real and isinstance(real.get("groups"), list) and real["groups"]:
@@ -261,6 +268,82 @@ def _load_real_standings(comp_name: str) -> dict | None:
             if not has_recent:
                 return None
     return result
+
+
+def _infer_groups_from_fixtures(comp_name: str, comp_table: list[dict]) -> list[dict] | None:
+    """Infer groups from the actual fixture matchups for group-stage cups.
+
+    For competitions like Leagues Cup, each team plays 3 group-stage games.
+    By building a graph from the fixtures (edges = matchups), connected
+    components directly correspond to groups.
+    """
+    import csv
+
+    base, _view = resolve_competition_query(comp_name)
+    candidates = {comp_name, base}
+    csv_path = config.CUP_UPCOMING_FILE
+    if not os.path.exists(csv_path):
+        return None
+    try:
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            fixtures = [r for r in reader if str(r.get("competition", "")).strip() in candidates]
+    except Exception:
+        return None
+    if not fixtures:
+        return None
+
+    adj = {}
+    for r in fixtures:
+        h = str(r.get("home_team", "")).strip().lower()
+        a = str(r.get("away_team", "")).strip().lower()
+        if h and a:
+            adj.setdefault(h, []).append(a)
+            adj.setdefault(a, []).append(h)
+
+    visited = set()
+    groups_raw = []
+    for team in adj:
+        if team in visited:
+            continue
+        stack = [team]
+        group = []
+        while stack:
+            t = stack.pop()
+            if t in visited:
+                continue
+            visited.add(t)
+            group.append(t)
+            for neighbor in adj.get(t, []):
+                if neighbor not in visited:
+                    stack.append(neighbor)
+        if group:
+            groups_raw.append(sorted(group))
+
+    if len(groups_raw) < 2:
+        return None
+
+    table_by_team = {}
+    table_lower = {}
+    for row in comp_table:
+        t = str(row.get("team", "")).strip()
+        if t:
+            table_by_team[t] = row
+            table_lower[t.lower()] = row
+
+    labels = "ABCDEFGHIJKL"
+    result = []
+    for idx, grp_teams in enumerate(groups_raw):
+        label = f"Group {labels[idx]}" if idx < len(labels) else f"Group {idx + 1}"
+        entries = []
+        for lt in grp_teams:
+            row = table_by_team.get(lt, table_lower.get(lt))
+            if row:
+                entries.append(row)
+        entries.sort(key=lambda e: e.get("rank") or e.get("position") or 999)
+        result.append({"name": label, "entries": entries})
+
+    return result if result else None
 
 
 def _load_fixtures(comp_name: str) -> list[dict]:

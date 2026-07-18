@@ -19,7 +19,7 @@ import sys
 import time
 import urllib.request
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import joblib
@@ -57,7 +57,7 @@ def _sibling_competitions(competition, mapping):
     return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
 
 
-def _append_mapping_if_missing(competition, unresolved_names, valid_names):
+def _append_mapping_if_missing(competition, unresolved_names, valid_names, roster_teams=None):
     if not unresolved_names or not os.path.exists(MAPPING_FILE):
         return
     try:
@@ -69,6 +69,15 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names):
         return
     comp_section = mapping.setdefault(competition, {})
     siblings = _sibling_competitions(competition, mapping)
+    # Pre-compute which sibling sections contain current-roster teams
+    sibling_roster = {}
+    if roster_teams:
+        for sibling_comp in siblings:
+            sibling_section = mapping.get(sibling_comp, {})
+            if isinstance(sibling_section, dict):
+                for raw, canon in sibling_section.items():
+                    if canon and canon in roster_teams:
+                        sibling_roster.setdefault(canon, []).append((sibling_comp, raw))
     added = 0
     for raw_name in sorted(set(unresolved_names)):
         if raw_name in comp_section:
@@ -88,7 +97,19 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names):
             ).strip()
             candidate = pm.resolve_team_name(stripped, valid_names) or pm.resolve_team_name(raw_name, valid_names)
         if candidate and candidate in valid_names:
-            comp_section[raw_name] = candidate
+            if roster_teams is not None and candidate not in roster_teams:
+                # Team is valid but not in current competition roster — add to sibling section instead
+                added_to_sibling = False
+                for sibling_comp in siblings:
+                    sibling_section = mapping.setdefault(sibling_comp, {})
+                    if raw_name not in sibling_section:
+                        sibling_section[raw_name] = candidate
+                        added_to_sibling = True
+                        break
+                if not added_to_sibling:
+                    comp_section[raw_name] = candidate
+            else:
+                comp_section[raw_name] = candidate
         else:
             comp_section[raw_name] = ""
         added += 1
@@ -576,123 +597,152 @@ def _predict_matches_batch(ctx, fixture_pairs, competition_hint):
     return results
 
 
+def _expected_current_season_year(competition):
+    """Return the expected start year for the current season of *competition*.
+
+    Cross-year European leagues (England, France, Germany, etc.) start in
+    Aug/Sep, so in July 2026 the current season is 2026-27 (start=2026).
+    Single-year leagues (MLS, Argentina, Brazil, etc.) use calendar years.
+    """
+    now = datetime.now()
+    country = competition.split("/")[0] if "/" in competition else ""
+    # European leagues that use a fall-to-spring (cross-year) calendar
+    cross_year_countries = {
+        "England", "France", "Germany", "Italy", "Spain", "Portugal",
+        "Netherlands", "Belgium", "Scotland", "Turkey", "Austria",
+        "Switzerland", "Greece", "Denmark", "Poland", "Romania",
+        "Japan",  # J-League switched to cross-year format
+    }
+    if country in cross_year_countries:
+        # Current season started last year if before August
+        return now.year if now.month >= 7 else now.year - 1
+    # Single-year (calendar) leagues
+    return now.year
+
+
+def _fetch_espn_teams(competition):
+    """Fetch current team list from ESPN /teams endpoint.
+
+    Returns a sorted list of team display names, or None on failure.
+    """
+    espn_id = ESPN_LEAGUE_IDS.get(competition)
+    if not espn_id:
+        return None
+    url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/teams"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+        teams_list = data.get("sports", [{}])[0].get("leagues", [{}])[0].get("teams", [])
+        if not teams_list:
+            return None
+        teams = []
+        for entry in teams_list:
+            team = entry.get("team") or {}
+            name = (team.get("displayName") or team.get("name") or "").strip()
+            if name:
+                teams.append(name)
+        return sorted(set(teams))
+    except Exception:
+        return None
+
+
 def project_competition(ctx, competition, raw_file, sim_runs=None):
     if sim_runs is None:
         sim_runs = SIMULATION_RUNS
-    df = pd.read_csv(raw_file).copy()
-    required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
-    if not required.issubset(df.columns):
-        return [], []
 
-    df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
-    df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]
-    df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
+    # Determine if this CSV represents the current season or a past season
+    csv_start_year = pm.parse_season_start_year(os.path.basename(raw_file))
+    expected_year = _expected_current_season_year(competition)
+    is_current_season = csv_start_year is not None and csv_start_year == expected_year
 
-    raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
-    teams = sorted({pm.resolve_team_name(t, ctx["available_teams"]) or t for t in raw_teams})
-    table = init_table(teams)
-    real_matches = []
-    future_pairs = []
-    future_dates = []
-    seen_pairs = set()
-
-    for _, row in df.iterrows():
-        raw_home = str(row["HomeTeam"]).strip()
-        raw_away = str(row["AwayTeam"]).strip()
-        home = pm.resolve_team_name(raw_home, ctx["available_teams"]) or raw_home
-        away = pm.resolve_team_name(raw_away, ctx["available_teams"]) or raw_away
-        seen_pairs.add((home, away))
-        ftr = str(row.get("FTR", "")).strip()
-        hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
-        ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
-        is_played = ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag)
-
-        if is_played:
-            apply_result(table, home, away, int(hg), int(ag), is_real=True)
-            real_matches.append((home, away, int(hg), int(ag)))
-            continue
-
-        future_pairs.append((home, away))
-        future_dates.append(row["DateParsed"].date().isoformat() if pd.notna(row["DateParsed"]) else "")
-
-    # If every row in the CSV is a completed result, this is a finished season
-    # — try to load the upcoming season roster and generate a full synthetic
-    # schedule so the projection represents the next season instead of returning empty.
-    if not future_pairs:
-        upcoming_roster = _load_upcoming_roster(competition)
-        if upcoming_roster:
-            print(f"  Season completed; generating upcoming season projection ({len(upcoming_roster)} teams)")
-            teams = sorted(upcoming_roster)
-            table = init_table(teams)
-            real_matches = []
-            for home in teams:
-                resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
-                for away in teams:
-                    if home == away:
-                        continue
-                    resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
-                    if (resolved_home, resolved_away) in seen_pairs:
-                        continue
-                    seen_pairs.add((resolved_home, resolved_away))
-                    future_pairs.append((resolved_home, resolved_away))
-                    future_dates.append("")
-        else:
+    if is_current_season:
+        # ── PATH A: Current-season CSV exists ──────────────────────────
+        df = pd.read_csv(raw_file).copy()
+        required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
+        if not required.issubset(df.columns):
             return [], []
 
-    # Try ESPN API for full-season upcoming fixtures (more accurate than CSV or synthetic)
-    espn_fixtures = load_future_fixtures_from_espn(competition)
-    if not espn_fixtures.empty:
-        espn_count = 0
-        unresolved = []
-        for _, row in espn_fixtures.iterrows():
+        df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
+        df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]
+        df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
+
+        raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
+        teams = sorted({pm.resolve_team_name(t, ctx["available_teams"]) or t for t in raw_teams})
+        table = init_table(teams)
+        real_matches = []
+        future_pairs = []
+        future_dates = []
+        seen_pairs = set()
+
+        for _, row in df.iterrows():
             raw_home = str(row["HomeTeam"]).strip()
             raw_away = str(row["AwayTeam"]).strip()
-            if not raw_home or not raw_away:
-                continue
-            home = pm.resolve_team_name(raw_home, ctx["available_teams"])
-            away = pm.resolve_team_name(raw_away, ctx["available_teams"])
-            if not home:
-                unresolved.append(raw_home)
-            if not away:
-                unresolved.append(raw_away)
-            if not home or not away:
-                continue
-            if (home, away) in seen_pairs:
-                continue
+            home = pm.resolve_team_name(raw_home, ctx["available_teams"]) or raw_home
+            away = pm.resolve_team_name(raw_away, ctx["available_teams"]) or raw_away
             seen_pairs.add((home, away))
+            ftr = str(row.get("FTR", "")).strip()
+            hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
+            ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
+            is_played = ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag)
+
+            if is_played:
+                apply_result(table, home, away, int(hg), int(ag), is_real=True)
+                real_matches.append((home, away, int(hg), int(ag)))
+                continue
+
             future_pairs.append((home, away))
-            future_dates.append(str(row.get("Date", "")))
-            espn_count += 1
-        if unresolved:
-            msg = f"  ESPN: {len(unresolved)} team name(s) in {competition} could not be resolved — add to team_name_mapping_master.json: {sorted(set(unresolved))}"
-            print(f"[WARN] {msg}")
-            _append_mapping_if_missing(competition, unresolved, ctx["available_teams"])
-        if espn_count:
-            print(f"  ESPN: loaded {espn_count} future fixtures for {competition}")
+            future_dates.append(row["DateParsed"].date().isoformat() if pd.notna(row["DateParsed"]) else "")
 
-    # If no future fixtures at all, synthesize missing league fixtures so
-    # the projection represents a full double round-robin season.
-    for home in teams:
-        resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
-        for away in teams:
-            if home == away:
-                continue
-            resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
-            if (resolved_home, resolved_away) in seen_pairs:
-                continue
-            seen_pairs.add((resolved_home, resolved_away))
-            future_pairs.append((resolved_home, resolved_away))
-            future_dates.append("")
+        # ESPN upcoming fixtures supplement
+        espn_fixtures = load_future_fixtures_from_espn(competition)
+        if not espn_fixtures.empty:
+            _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates, seen_pairs, ctx)
 
-    # Batch all future-fixture predictions into one vectorized call instead of N single-row
-    # calls — this avoids per-fixture pd.get_dummies/reindex/predict_proba overhead.
+        # Fill remaining gaps with synthetic home/away pairs
+        _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx)
+
+    else:
+        # ── PATH B: No current-season CSV or CSV is from a past season ──
+        # Use ESPN to get the current season team list
+        espn_teams = _fetch_espn_teams(competition)
+        if not espn_teams:
+            # Last resort: static roster from league_teams.json
+            static_roster = _load_upcoming_roster(competition)
+            if not static_roster:
+                print(f"  No current-season file and no ESPN/roster data for {competition}")
+                return [], []
+            teams = sorted(static_roster)
+        else:
+            teams = sorted(espn_teams)
+
+        print(f"  No current-season CSV — using ESPN fallback ({len(teams)} teams)")
+        table = init_table(teams)
+        real_matches = []
+        future_pairs = []
+        future_dates = []
+        seen_pairs = set()
+
+        # First try ESPN for any upcoming fixtures
+        espn_fixtures = load_future_fixtures_from_espn(competition)
+        if not espn_fixtures.empty:
+            _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates, seen_pairs, ctx)
+
+        # Generate full home/away schedule for any missing pairs
+        _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx)
+
+    if not future_pairs:
+        print(f"  No fixtures to project for {competition}")
+        return [], []
+
+    # ── Common: batch-predict all future fixtures ──────────────────────
     batched = _predict_matches_batch(ctx, future_pairs, competition) if future_pairs else []
 
     future_predictions = []
     future_rows = []
     for i, (pred_res, phg, pag, probs) in enumerate(batched):
         home, away = future_pairs[i]
-        match_date = future_dates[i]
+        match_date = future_dates[i] if i < len(future_dates) else ""
         future_predictions.append(
             {
                 "home_team": home,
@@ -717,7 +767,10 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
             }
         )
 
-    stat_sums, position_counts = run_monte_carlo(teams, table, future_predictions, sim_runs, competition=competition, real_matches=real_matches)
+    stat_sums, position_counts = run_monte_carlo(
+        teams, table, future_predictions, sim_runs,
+        competition=competition, real_matches=real_matches,
+    )
     averaged = {}
     for team in teams:
         sums = stat_sums.get(team, {})
@@ -730,41 +783,68 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
             "GA": int(round(sums.get("GA", 0.0) / sim_runs)),
             "GD": int(round(sums.get("GD", 0.0) / sim_runs)),
             "Pts": int(round(sums.get("Pts", 0.0) / sim_runs)),
-            "PlayedReal": int(round(sums.get("PlayedReal", 0.0) / sim_runs)),
-            "PlayedPred": int(round(sums.get("PlayedPred", 0.0) / sim_runs)),
         }
 
-    out_rows = []
-    ranked = sorted(averaged.items(), key=lambda kv: (-kv[1]["Pts"], -kv[1]["GD"], -kv[1]["GF"], kv[0]))
-    n_teams = len(teams)
-    top_n = min(4, n_teams)
-    bottom_cutoff = max(1, n_teams - 2)
-    for pos, (team, s) in enumerate(ranked, start=1):
-        team_positions = position_counts.get(team, {})
-        most_likely_pos, most_likely_count = max(team_positions.items(), key=lambda kv: kv[1], default=(pos, 0))
-        win_league_pct = (team_positions.get(1, 0) / sim_runs) * 100.0
-        top4_pct = (sum(v for k, v in team_positions.items() if k <= top_n) / sim_runs) * 100.0
-        bottom3_pct = (sum(v for k, v in team_positions.items() if k >= bottom_cutoff) / sim_runs) * 100.0
-        position_odds = {
-            str(rank): round((team_positions.get(rank, 0) / sim_runs) * 100.0, 2)
-            for rank in range(1, n_teams + 1)
+    table_rows = [
+        {
+            "competition": competition,
+            "team": team,
+            **averaged[team],
         }
-        out_rows.append(
-            {
-                "competition": competition,
-                "position": pos,
-                "team": team,
-                **s,
-                "win_league_pct": round(win_league_pct, 2),
-                "top4_pct": round(top4_pct, 2),
-                "bottom3_pct": round(bottom3_pct, 2),
-                "most_likely_position": int(most_likely_pos),
-                "most_likely_position_pct": round((most_likely_count / sim_runs) * 100.0, 2),
-                "position_odds_json": json.dumps(position_odds, separators=(",", ":"), sort_keys=True),
-                "sim_runs": int(sim_runs),
-            }
-        )
-    return out_rows, future_rows
+        for team in teams
+    ]
+
+    return table_rows, future_rows
+
+
+def _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates, seen_pairs, ctx):
+    """Resolve ESPN fixture names and add to future_pairs / future_dates."""
+    espn_count = 0
+    unresolved = []
+    for _, row in espn_fixtures.iterrows():
+        raw_home = str(row["HomeTeam"]).strip()
+        raw_away = str(row["AwayTeam"]).strip()
+        if not raw_home or not raw_away:
+            continue
+        home = pm.resolve_team_name(raw_home, ctx["available_teams"])
+        away = pm.resolve_team_name(raw_away, ctx["available_teams"])
+        if not home:
+            unresolved.append(raw_home)
+        if not away:
+            unresolved.append(raw_away)
+        if not home or not away:
+            continue
+        if (home, away) in seen_pairs:
+            continue
+        seen_pairs.add((home, away))
+        future_pairs.append((home, away))
+        future_dates.append(str(row.get("Date", "")))
+        espn_count += 1
+    if unresolved:
+        msg = f"  ESPN: {len(unresolved)} team name(s) in {competition} could not be resolved — add to team_name_mapping_master.json: {sorted(set(unresolved))}"
+        print(f"[WARN] {msg}")
+        _append_mapping_if_missing(competition, unresolved, ctx["available_teams"], _load_upcoming_roster(competition))
+    if espn_count:
+        print(f"  ESPN: loaded {espn_count} future fixtures for {competition}")
+
+
+def _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx):
+    """Generate remaining home/away pairs that haven't been seen."""
+    added = 0
+    for home in teams:
+        resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
+        for away in teams:
+            if home == away:
+                continue
+            resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
+            if (resolved_home, resolved_away) in seen_pairs:
+                continue
+            seen_pairs.add((resolved_home, resolved_away))
+            future_pairs.append((resolved_home, resolved_away))
+            future_dates.append("")
+            added += 1
+    if added:
+        print(f"  Generated {added} remaining home/away fixture(s)")
 
 
 def parse_cli_args():

@@ -1,212 +1,197 @@
-"""Apple Push Notification Service (APNs) worker and token generation."""
-import logging
+"""Push notification and Live Activity delivery via APNs."""
+from __future__ import annotations
+
+import json
+import os
 import time
 import threading
 from collections import deque
 from datetime import datetime, timezone
 
-import httpx
+# ── In-memory queues and registrations ────────────────────────────
 
-import config
-
-LOG = logging.getLogger("notifications")
-
-_notifications = deque(maxlen=100)
-device_tokens: set = set()
+_apns_notification_queue: deque = deque()
+_notifications: list[dict] = []
+device_tokens: set[str] = set()
 ios_device_tokens: set[str] = set()
 
-_apns_client_lock = threading.Lock()
-_apns_token_cache: str | None = None
-_apns_token_expires: float = 0.0
-_apns_notification_queue: deque[dict] = deque(maxlen=500)
-_apns_worker_started = False
+# Live Activity storage: key = "{match_id}|{competition}"
+_live_activities: dict[str, list[dict]] = {}
 
 
-def _generate_apns_token() -> str | None:
-    """Generate a JWT token for APNs token-based authentication.
+def register(activity_token: str, device_token: str, match_id: str, competition: str) -> bool:
+    key = f"{match_id}|{competition}"
+    existing = _live_activities.setdefault(key, [])
+    if any(e["activity_token"] == activity_token for e in existing):
+        return False
+    existing.append({
+        "activity_token": activity_token,
+        "device_token": device_token,
+        "registered_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return True
 
-    Returns the encoded JWT string or None if config is incomplete.
-    """
-    global _apns_token_cache, _apns_token_expires
+
+def unregister(activity_token: str) -> bool:
+    for key in list(_live_activities):
+        _live_activities[key] = [e for e in _live_activities[key] if e["activity_token"] != activity_token]
+        if not _live_activities[key]:
+            del _live_activities[key]
+            return True
+    return False
+
+
+def for_match(match_id: str, competition: str) -> list[dict]:
+    return list(_live_activities.get(f"{match_id}|{competition}", []))
+
+
+def unregister_by_match(match_id: str, competition: str) -> bool:
+    return _live_activities.pop(f"{match_id}|{competition}", None) is not None
+
+
+def all_activities() -> list[dict]:
+    return [
+        {**entry, "key": key}
+        for key, entries in _live_activities.items()
+        for entry in entries
+    ]
+
+
+# ── APNs JWT generation (ES256 with .p8 key) ─────────────────────
+
+_apns_jwt_cache: str | None = None
+_apns_jwt_expiry: float = 0
+
+
+def _generate_apns_jwt() -> str | None:
+    global _apns_jwt_cache, _apns_jwt_expiry
     now = time.time()
-    if _apns_token_cache and now < _apns_token_expires:
-        return _apns_token_cache
-    if not config.APNS_KEY_FILE or not config.APNS_KEY_ID or not config.APNS_TEAM_ID:
-        LOG.warning("APNs config incomplete: KEY_FILE=%s KEY_ID=%s TEAM_ID=%s",
-                     config.APNS_KEY_FILE, config.APNS_KEY_ID, config.APNS_TEAM_ID)
-        return None
-    try:
-        with open(config.APNS_KEY_FILE, "rb") as f:
-            key_data = f.read()
-    except Exception as e:
-        LOG.error("Failed to read APNs key file %s: %s", config.APNS_KEY_FILE, e)
-        return None
-    try:
-        import jwt as pyjwt
-        issued_at = int(now)
-        expiry = issued_at + 3600
-        headers = {"kid": config.APNS_KEY_ID}
-        payload = {
-            "iss": config.APNS_TEAM_ID,
-            "iat": issued_at,
-        }
-        token = pyjwt.encode(payload, key_data, algorithm="ES256", headers=headers)
-        _apns_token_cache = token
-        _apns_token_expires = expiry - 60
-        return token
-    except Exception as e:
-        LOG.error("APNs JWT generation failed: %s", e)
+    if _apns_jwt_cache and now < _apns_jwt_expiry - 60:
+        return _apns_jwt_cache
+
+    import config
+    import jwt as pyjwt
+
+    kid = config.APNS_KEY_ID or ""
+    iss = config.APNS_TEAM_ID or ""
+    key_path = config.APNS_AUTH_KEY_PATH or ""
+
+    if not kid or not iss or not key_path or not os.path.exists(key_path):
         return None
 
+    with open(key_path, "r") as f:
+        private_key = f.read()
 
-def _send_apns_notification(device_token: str, title: str, body: str, badge: int = 0) -> bool:
-    """Send a push notification to a single iOS device via APNs.
+    token = pyjwt.encode(
+        {"iss": iss, "iat": int(now), "exp": int(now) + 3600},
+        private_key,
+        algorithm="ES256",
+        headers={"alg": "ES256", "kid": kid},
+    )
+    _apns_jwt_cache = token
+    _apns_jwt_expiry = int(now) + 3600
+    return token
 
-    Uses HTTP/2 (required by Apple). Returns True on success.
-    """
-    token = _generate_apns_token()
-    if not token:
+
+# ── APNs HTTP/2 request ──────────────────────────────────────────
+
+_APNS_PRODUCTION = "https://api.push.apple.com"
+_APNS_SANDBOX = "https://api.sandbox.push.apple.com"
+
+
+def _apns_send(push_token: str, payload: dict, topic: str, live_activity: bool = False) -> bool:
+    jwt_token = _generate_apns_jwt()
+    if not jwt_token:
         return False
-    apns_host = "api.sandbox.push.apple.com" if config.APNS_USE_SANDBOX else "api.push.apple.com"
-    url = f"https://{apns_host}/3/device/{device_token}"
-    notification = {
-        "aps": {
-            "alert": {"title": title, "body": body},
-            "badge": badge,
-            "sound": "default",
-        }
+
+    import config
+    import httpx
+
+    base = _APNS_SANDBOX if config.APNS_USE_SANDBOX else _APNS_PRODUCTION
+    endpoint = f"{base}/3/activity/{push_token}" if live_activity else f"{base}/3/device/{push_token}"
+
+    headers = {
+        "apns-push-type": "live-activity" if live_activity else "alert",
+        "apns-topic": topic,
+        "apns-priority": "10",
+        "authorization": f"bearer {jwt_token}",
     }
+
     try:
-        with httpx.Client(http2=True, timeout=10.0) as client:
-            resp = client.post(
-                url,
-                json=notification,
-                headers={
-                    "authorization": f"bearer {token}",
-                    "apns-topic": config.APNS_BUNDLE_ID,
-                    "apns-push-type": "alert",
-                },
-            )
-            if resp.status_code != 200:
-                LOG.warning("APNs alert push failed: HTTP %s %s", resp.status_code, resp.text[:200])
-            return resp.status_code == 200
-    except Exception as e:
-        LOG.error("APNs alert push error: %s", e)
+        with httpx.Client(http2=True) as client:
+            resp = client.post(endpoint, json=payload, headers=headers, timeout=10)
+            return resp.is_success
+    except Exception:
         return False
 
 
-# ── Live Activity pushes (iOS 16.1+) ─────────────────────────────────
+# ── Queue worker ─────────────────────────────────────────────────
+
+def start_apns_worker() -> None:
+    threading.Thread(target=_worker_loop, daemon=True).start()
 
 
-def _send_live_activity_push(
-    activity_token: str,
-    event: str,
-    content_state: dict,
-    timestamp: int | None = None,
-) -> bool:
-    """Send a Live Activity push (update or end) to a single activity token.
-
-    Parameters
-    ----------
-    activity_token : str
-        The push token received from the Live Activity instance.
-    event : ``"update"`` or ``"end"``
-    content_state : dict
-        The widget's ``ContentState`` fields (home_score, away_score, …).
-    timestamp : int, optional
-        Epoch seconds for ``aps.timestamp``. Defaults to current time.
-
-    ``event="end"`` signals Apple to dismiss the Live Activity after the
-    content state is displayed.
-    """
-    token = _generate_apns_token()
-    if not token:
-        return False
-    apns_host = "api.sandbox.push.apple.com" if config.APNS_USE_SANDBOX else "api.push.apple.com"
-    url = f"https://{apns_host}/3/device/{activity_token}"
-    if timestamp is None:
-        timestamp = int(time.time())
-    payload = {
-        "aps": {
-            "timestamp": timestamp,
-            "event": event,
-            "content-state": content_state,
-        }
-    }
-    try:
-        with httpx.Client(http2=True, timeout=10.0) as client:
-            resp = client.post(
-                url,
-                json=payload,
-                headers={
-                    "authorization": f"bearer {token}",
-                    "apns-topic": f"{config.APNS_BUNDLE_ID}.push-type.liveactivity",
-                    "apns-push-type": "liveactivity",
-                },
-            )
-            if resp.status_code != 200:
-                LOG.warning("APNs liveactivity push failed: HTTP %s %s", resp.status_code, resp.text[:200])
-            return resp.status_code == 200
-    except Exception as e:
-        LOG.error("APNs liveactivity push error: %s", e)
-        return False
-
-
-def send_live_activity_update(activity_token: str, content_state: dict) -> bool:
-    """Update a Live Activity with new content state data."""
-    return _send_live_activity_push(activity_token, "update", content_state)
-
-
-def send_live_activity_end(activity_token: str, content_state: dict | None = None) -> bool:
-    """Dismiss a Live Activity (iOS removes the widget)."""
-    return _send_live_activity_push(activity_token, "end", content_state or {})
-
-
-# ── Worker ───────────────────────────────────────────────────────────
-
-
-def _apns_worker():
-    """Background thread that drains the notification queue to APNs."""
+def _worker_loop() -> None:
     while True:
         try:
-            item = _apns_notification_queue.popleft() if _apns_notification_queue else None
-        except IndexError:
-            item = None
-        if item:
-            ptype = item.get("type", "alert")
-            if ptype == "liveactivity":
-                ok = _send_live_activity_push(
-                    activity_token=item["token"],
-                    event=item.get("event", "update"),
-                    content_state=item.get("content_state", {}),
-                    timestamp=item.get("timestamp"),
-                )
-            else:
-                ok = _send_apns_notification(
-                    device_token=item["token"],
-                    title=item["title"],
-                    body=item["body"],
-                    badge=item.get("badge", 0),
-                )
-            if not ok:
-                LOG.warning("APNs worker: failed to send %s push", ptype)
+            _drain_queue()
+        except Exception:
+            pass
+        time.sleep(5)
+
+
+def _drain_queue() -> None:
+    import config
+
+    while _apns_notification_queue:
+        entry = _apns_notification_queue.popleft()
+        push_token = entry.get("token", "")
+        if not push_token:
+            continue
+
+        is_la = entry.get("type") == "liveactivity"
+
+        if is_la:
+            topic = config.APNS_LIVE_ACTIVITY_TOPIC or ""
+            payload = {
+                "aps": {
+                    "content-state": entry.get("content_state", {}),
+                    "timestamp": int(time.time()),
+                    "event": entry.get("event", "update"),
+                }
+            }
         else:
-            time.sleep(2.0)
+            topic = config.APNS_TOPIC or ""
+            payload = {
+                "aps": {
+                    "alert": {
+                        "title": entry.get("title", ""),
+                        "body": entry.get("body", ""),
+                    },
+                    "badge": entry.get("badge", 0),
+                    "sound": "default",
+                }
+            }
+
+        _apns_send(push_token, payload, topic, live_activity=is_la)
 
 
-def start_apns_worker():
-    """Start the APNs background worker once.
+def send_live_activity_update(match_id: str, competition: str, content_state: dict) -> None:
+    for entry in for_match(match_id, competition):
+        _apns_notification_queue.append({
+            "type": "liveactivity",
+            "token": entry["activity_token"],
+            "content_state": content_state,
+            "event": "update",
+        })
 
-    The worker drains the notification queue for Live Activities even when
-    APNs credentials are missing — items simply log a warning instead of
-    failing silently.
-    """
-    global _apns_worker_started
-    if _apns_worker_started:
-        return
-    has_creds = bool(config.APNS_KEY_FILE and config.APNS_KEY_ID and config.APNS_TEAM_ID and config.APNS_BUNDLE_ID)
-    if not has_creds:
-        pass
-    _apns_worker_started = True
-    t = threading.Thread(target=_apns_worker, daemon=True, name="apns-worker")
-    t.start()
+
+def send_live_activity_end(match_id: str, competition: str, content_state: dict | None = None) -> None:
+    for entry in for_match(match_id, competition):
+        _apns_notification_queue.append({
+            "type": "liveactivity",
+            "token": entry["activity_token"],
+            "content_state": content_state or {},
+            "event": "end",
+        })
+    unregister_by_match(match_id, competition)
