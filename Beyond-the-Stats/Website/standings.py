@@ -72,14 +72,19 @@ def _load_team_display_mapping() -> dict[str, dict[str, str]]:
 
 def _normalize_team_name(name: str, competition: str) -> str:
     mapping = _load_team_display_mapping()
-    comp_map = mapping.get(competition, {})
-    result = comp_map.get(name)
-    if result:
-        return result
     lower = name.lower().strip()
+    # Check competition-specific section first
+    comp_map = mapping.get(competition, {})
     for raw, canon in comp_map.items():
         if raw.lower().strip() == lower:
             return canon
+    # Fall through to flattened mapping across ALL competitions
+    for comp_entries in mapping.values():
+        if not isinstance(comp_entries, dict):
+            continue
+        for raw, canon in comp_entries.items():
+            if raw.lower().strip() == lower:
+                return canon
     return name
 _real_tables_lock = threading.Lock()
 

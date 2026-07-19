@@ -153,7 +153,7 @@ def _discover_cup_teams(comp_name, upcoming_rows, completed_rows):
     return sorted(teams)
 
 
-def _run_randomized_cup_simulation(teams, num_simulations=10000):
+def _run_randomized_cup_simulation(teams, num_simulations=1000):
     """Monte Carlo knockout simulation — random pairings each round, 50/50 winners.
 
     Returns {team_name: win_pct} for teams that won at least once.
@@ -1413,6 +1413,7 @@ def publish_to_output(output_dir=None):
         PREDICTIONS_DIR / "projected_future_matches.csv",
         MLS_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
         EXTRA_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
+        EXTRA_PREDICTIONS_DIR / "projected_future_matches.csv",
     ]
     for region in ("europe", "other"):
         path = _publish_upcoming_csv(output_dir, upcoming_sources, region)
