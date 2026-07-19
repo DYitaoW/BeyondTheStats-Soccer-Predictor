@@ -58,7 +58,7 @@ try:
     import cudf  # type: ignore
 except Exception:
     cudf = None
-MAPPING_FILE = os.path.join(BASE_DIR, "Data", "team_name_mapping_master.json")
+MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "team_name_mapping_master.json")
 _name_mapping_cache = None
 
 

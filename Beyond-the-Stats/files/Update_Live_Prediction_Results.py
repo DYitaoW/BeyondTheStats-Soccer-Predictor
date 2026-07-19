@@ -37,6 +37,7 @@ import team_mapping_groups as tmg
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GLOBAL_PREDICTIONS_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 MLS_PREDICTIONS_FILE = os.path.join(BASE_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
+EXTRA_PREDICTIONS_FILE = os.path.join(BASE_DIR, "Extra-leagues", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 SHARED_MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "team_name_mapping_master.json")
 ESPN_NAMES_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "espn_team_names_seen.json")
 ACCURACY_TOTALS_FILE = os.path.join(BASE_DIR, "Website", "files", "accuracy_totals.json")
@@ -852,6 +853,7 @@ def main():
 
     global_df = load_predictions(GLOBAL_PREDICTIONS_FILE)
     mls_df = load_predictions(MLS_PREDICTIONS_FILE)
+    extra_df = load_predictions(EXTRA_PREDICTIONS_FILE)
     totals = load_accuracy_totals(ACCURACY_TOTALS_FILE)
 
     if global_df is None and mls_df is None:
@@ -867,12 +869,17 @@ def main():
         mls_results, mls_mapping_updates, mls_unresolved, mls_seen_names = build_results_index_from_espn(
             mls_df, shared_mapping, fetch_workers=args.espn_fetch_workers
         )
+        extra_results, extra_mapping_updates, extra_unresolved, extra_seen_names = build_results_index_from_espn(
+            extra_df, shared_mapping, fetch_workers=args.espn_fetch_workers
+        )
     else:
         global_results, global_mapping_updates, global_unresolved, global_seen_names = {}, {}, {}, {}
         mls_results, mls_mapping_updates, mls_unresolved, mls_seen_names = {}, {}, {}, {}
+        extra_results, extra_mapping_updates, extra_unresolved, extra_seen_names = {}, {}, {}, {}
 
     shared_mapping, global_added, global_drift = apply_mapping_updates(shared_mapping, global_mapping_updates)
     shared_mapping, mls_added, mls_drift = apply_mapping_updates(shared_mapping, mls_mapping_updates)
+    shared_mapping, extra_added, extra_drift = apply_mapping_updates(shared_mapping, extra_mapping_updates)
     save_mapping(SHARED_MAPPING_FILE, shared_mapping)
     save_json(
         ESPN_NAMES_FILE,
@@ -880,45 +887,36 @@ def main():
             "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
             "global": global_seen_names,
             "mls": mls_seen_names,
+            "extra": extra_seen_names,
         },
     )
 
     global_updates = 0
     global_cleaned = 0
     global_removed_completed = 0
-    if global_df is not None:
-        if args.cleanup_all:
-            global_df, global_cleaned = cleanup_all_settled_rows(global_df)
-        if needs_resettle:
-            global_df, global_updates = update_frame_with_results(global_df, global_results)
-        global_totals_added = update_accuracy_totals_from_frame(totals, global_df)
-        today_et = datetime.now(EASTERN_TZ).date()
-        prev_thursday = today_et - timedelta(days=(today_et.weekday() - 3) % 7 + 7)
-        save_completed_rows_to_past_games(global_df, today=prev_thursday)
-        global_df, global_removed_completed = drop_completed_rows(global_df, today=prev_thursday)
-        global_df.to_csv(GLOBAL_PREDICTIONS_FILE, index=False)
-    else:
-        global_totals_added = 0
-
+    global_totals_added = 0
     mls_updates = 0
     mls_cleaned = 0
     mls_future_cleared = 0
     mls_removed_completed = 0
-    if mls_df is not None:
+    mls_totals_added = 0
+    extra_updates = 0
+    extra_cleaned = 0
+    extra_future_cleared = 0
+    extra_removed_completed = 0
+
+    extra_removed_completed = 0
+    if extra_df is not None:
         today_et = datetime.now(EASTERN_TZ).date()
-        mls_df, mls_future_cleared = clear_future_settled_rows(mls_df, today_et)
+        extra_df, extra_future_cleared = clear_future_settled_rows(extra_df, today_et)
         if args.cleanup_all:
-            mls_df, mls_cleaned = cleanup_all_settled_rows(mls_df)
-        elif args.cleanup_mls:
-            mls_df, mls_cleaned = cleanup_settled_rows_not_in_results(mls_df, mls_results)
-        if needs_resettle:
-            mls_df, mls_updates = update_frame_with_results(mls_df, mls_results)
-        mls_totals_added = update_accuracy_totals_from_frame(totals, mls_df)
-        save_completed_rows_to_past_games(mls_df, today=prev_thursday)
-        mls_df, mls_removed_completed = drop_completed_rows(mls_df, today=prev_thursday)
-        mls_df.to_csv(MLS_PREDICTIONS_FILE, index=False)
-    else:
-        mls_totals_added = 0
+            extra_df, extra_cleaned = cleanup_all_settled_rows(extra_df)
+        if needs_resettle and extra_results:
+            extra_df, extra_updates = update_frame_with_results(extra_df, extra_results)
+        extra_totals_added = update_accuracy_totals_from_frame(totals, extra_df)
+        save_completed_rows_to_past_games(extra_df, today=prev_thursday)
+        extra_df, extra_removed_completed = drop_completed_rows(extra_df, today=prev_thursday)
+        extra_df.to_csv(EXTRA_PREDICTIONS_FILE, index=False)
 
     totals["updated_at_utc"] = datetime.now(UTC).replace(microsecond=0).isoformat()
     save_json(ACCURACY_TOTALS_FILE, totals)
@@ -941,6 +939,9 @@ def main():
     print(f"MLS predictions updated: {mls_updates}")
     print(f"MLS completed rows removed from upcoming list: {mls_removed_completed}")
     print(f"MLS totals entries added: {mls_totals_added}")
+    if extra_df is not None:
+        print(f"Extra predictions updated: {extra_updates}")
+        print(f"Extra completed rows removed: {extra_removed_completed}")
     print(f"ESPN names seen file: {ESPN_NAMES_FILE}")
     print(f"Accuracy totals file: {ACCURACY_TOTALS_FILE}")
     print("Done.")

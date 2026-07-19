@@ -1033,7 +1033,7 @@ def project_liga_mx_competition(ctx, competition, raw_file):
         df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
 
         raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
-        teams = sorted({pm.resolve_team_name(t, ctx["available_teams"]) or t for t in raw_teams})
+        teams = sorted({r for t in raw_teams if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
     else:
         # ── PATH B: No current-season CSV — ESPN fallback ─────────────
         espn_teams = _fetch_liga_mx_teams()

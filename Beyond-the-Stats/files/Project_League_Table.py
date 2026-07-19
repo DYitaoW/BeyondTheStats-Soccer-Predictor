@@ -14,11 +14,13 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import time
 import urllib.request
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -35,7 +37,14 @@ OUT_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
 OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
 RNG = random.Random()
-SIMULATION_RUNS = 2500
+SIMULATION_RUNS = 1000
+COMPETITION_SIM_RUNS = {
+    "England/Premier League": 2500,
+    "Spain/La Liga": 2500,
+    "Italy/Serie A": 2500,
+    "Germany/Bundesliga": 2500,
+    "France/Ligue 1": 2500,
+}
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
@@ -653,6 +662,7 @@ def _fetch_espn_teams(competition):
 def project_competition(ctx, competition, raw_file, sim_runs=None):
     if sim_runs is None:
         sim_runs = SIMULATION_RUNS
+    sim_runs = COMPETITION_SIM_RUNS.get(competition, sim_runs)
 
     # Determine if this CSV represents the current season or a past season
     csv_start_year = pm.parse_season_start_year(os.path.basename(raw_file))
@@ -671,7 +681,7 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
 
         raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
-        teams = sorted({pm.resolve_team_name(t, ctx["available_teams"]) or t for t in raw_teams})
+        teams = sorted({r for t in raw_teams if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
         table = init_table(teams)
         real_matches = []
         future_pairs = []
@@ -709,15 +719,31 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         # ── PATH B: No current-season CSV or CSV is from a past season ──
         # Use ESPN to get the current season team list
         espn_teams = _fetch_espn_teams(competition)
-        if not espn_teams:
+        if espn_teams:
+            resolved = set()
+            unresolved = []
+            for t in espn_teams:
+                r = pm.resolve_team_name(t, ctx["available_teams"])
+                if r:
+                    resolved.add(r)
+                else:
+                    unresolved.append(t)
+            if unresolved:
+                print(f"  Unresolved ESPN teams in {competition}: {sorted(set(unresolved))}")
+                _append_mapping_if_missing(competition, unresolved, ctx["available_teams"], _load_upcoming_roster(competition))
+                # Re-check any newly mapped names
+                for t in unresolved:
+                    r = pm.resolve_team_name(t, ctx["available_teams"])
+                    if r:
+                        resolved.add(r)
+            teams = sorted(resolved) if resolved else None
+        if not teams:
             # Last resort: static roster from league_teams.json
             static_roster = _load_upcoming_roster(competition)
             if not static_roster:
                 print(f"  No current-season file and no ESPN/roster data for {competition}")
                 return [], []
             teams = sorted(static_roster)
-        else:
-            teams = sorted(espn_teams)
 
         print(f"  No current-season CSV — using ESPN fallback ({len(teams)} teams)")
         table = init_table(teams)
@@ -862,11 +888,7 @@ def parse_cli_args():
         "--competition-workers",
         type=int,
         default=0,
-        help=(
-            "Reserved for future per-competition parallelism. "
-            "Currently the inner sim loop is the bottleneck; batching predict_match "
-            "already covers the easier win."
-        ),
+        help="Number of parallel workers for per-competition processing (0 = sequential).",
     )
     return parser.parse_args()
 
@@ -874,6 +896,7 @@ def parse_cli_args():
 def main():
     args = parse_cli_args()
     sim_runs = max(1, int(args.sim_runs))
+    comp_workers = max(1, int(args.competition_workers))
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR)
     if not latest:
@@ -881,10 +904,30 @@ def main():
 
     all_tables = []
     all_future = []
-    for competition, path in sorted(latest.items()):
-        table_rows, future_rows = project_competition(ctx, competition, path, sim_runs)
-        all_tables.extend(table_rows)
-        all_future.extend(future_rows)
+    comps = sorted(latest.items())
+
+    if comp_workers <= 1 or len(comps) <= 1:
+        for competition, path in comps:
+            table_rows, future_rows = project_competition(ctx, competition, path, sim_runs)
+            all_tables.extend(table_rows)
+            all_future.extend(future_rows)
+    else:
+        max_workers = min(comp_workers, len(comps))
+        print(f"  Processing {len(comps)} competitions with {max_workers} workers")
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(project_competition, ctx, comp, path, sim_runs): comp
+                for comp, path in comps
+            }
+            for fut in as_completed(futures):
+                comp = futures[fut]
+                try:
+                    table_rows, future_rows = fut.result()
+                    all_tables.extend(table_rows)
+                    all_future.extend(future_rows)
+                    print(f"  [{comp}] done ({len(table_rows)} rows)")
+                except Exception as e:
+                    print(f"  [{comp}] ERROR: {e}")
 
     os.makedirs(OUT_DIR, exist_ok=True)
     pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)

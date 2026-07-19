@@ -2,7 +2,9 @@ import os
 import json
 import re
 import urllib.request
+import argparse
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 import random
@@ -16,30 +18,8 @@ import pandas as pd
 import Predict_Match as pm
 
 
-class AveragedProbaClassifier:
-    # Cache compatibility shim for previously pickled wrappers.
-    def __init__(self, models):
-        self.models = models
-        self.classes_ = models[0].classes_
-
-    def predict_proba(self, X):
-        matrices = [model.predict_proba(X) for model in self.models]
-        return sum(matrices) / len(matrices)
-
-    def predict(self, X):
-        avg = self.predict_proba(X)
-        idx = avg.argmax(axis=1)
-        return self.classes_[idx]
-
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FILES_DIR = os.path.dirname(os.path.abspath(__file__))
-RAW_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
-OUT_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
-OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
-OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
-RNG = random.Random()
-SIMULATION_RUNS = 2500
+SIMULATION_RUNS = 1000
+COMPETITION_SIM_RUNS = {}
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 SHARED_MAPPING_FILE = os.path.join(BASE_DIR, "..", "..", "Data", "team_name_mapping_master.json")
@@ -638,6 +618,7 @@ def _expected_current_season_year(competition):
         "Japan", "Bulgaria", "Cyprus", "Czech Republic",
         "Israel", "Moldova", "Serbia", "Ukraine", "Romania",
         "Croatia", "Hungary", "Slovakia", "Slovenia",
+        "Netherlands", "Belgium", "Scotland", "Turkey",
     }
     if country in cross_year_countries:
         return now.year if now.month >= 7 else now.year - 1
@@ -669,6 +650,8 @@ def _fetch_espn_teams(competition):
 
 
 def project_competition(ctx, competition, raw_file):
+    sim_runs = COMPETITION_SIM_RUNS.get(competition, SIMULATION_RUNS)
+
     # Determine if this CSV represents the current season or a past season
     csv_start_year = pm.parse_season_start_year(os.path.basename(raw_file))
     expected_year = _expected_current_season_year(competition)
@@ -691,18 +674,33 @@ def project_competition(ctx, competition, raw_file):
         df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
 
         raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
-        teams = sorted({pm.resolve_team_name(t, ctx["available_teams"]) or t for t in raw_teams})
+        teams = sorted({r for t in raw_teams if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
     else:
         # ── PATH B: No current-season CSV — ESPN fallback ─────────────
         espn_teams = _fetch_espn_teams(competition)
-        if not espn_teams:
+        if espn_teams:
+            resolved = set()
+            unresolved = []
+            for t in espn_teams:
+                r = pm.resolve_team_name(t, ctx["available_teams"])
+                if r:
+                    resolved.add(r)
+                else:
+                    unresolved.append(t)
+            if unresolved:
+                print(f"  Unresolved ESPN teams in {competition}: {sorted(set(unresolved))}")
+                _append_mapping_if_missing(competition, unresolved, ctx["available_teams"], _load_upcoming_roster(competition))
+                for t in unresolved:
+                    r = pm.resolve_team_name(t, ctx["available_teams"])
+                    if r:
+                        resolved.add(r)
+            teams = sorted(resolved) if resolved else None
+        if not teams:
             static_roster = _load_upcoming_roster(competition)
             if not static_roster:
                 print(f"  No current-season file and no ESPN/roster data for {competition}")
                 return [], []
             teams = sorted(static_roster)
-        else:
-            teams = sorted(espn_teams)
 
         print(f"  No current-season CSV — using ESPN fallback ({len(teams)} teams)")
 
@@ -801,21 +799,21 @@ def project_competition(ctx, competition, raw_file):
             seen_pairs.add((resolved_home, resolved_away))
             add_future_prediction(resolved_home, resolved_away, "")
 
-    stat_sums, position_counts = run_monte_carlo(teams, table, future_predictions, SIMULATION_RUNS, competition=competition, all_matches=real_matches)
+    stat_sums, position_counts = run_monte_carlo(teams, table, future_predictions, sim_runs, competition=competition, all_matches=real_matches)
     averaged = {}
     for team in teams:
         sums = stat_sums.get(team, {})
         averaged[team] = {
-            "P": int(round(sums.get("P", 0.0) / SIMULATION_RUNS)),
-            "W": int(round(sums.get("W", 0.0) / SIMULATION_RUNS)),
-            "D": int(round(sums.get("D", 0.0) / SIMULATION_RUNS)),
-            "L": int(round(sums.get("L", 0.0) / SIMULATION_RUNS)),
-            "GF": int(round(sums.get("GF", 0.0) / SIMULATION_RUNS)),
-            "GA": int(round(sums.get("GA", 0.0) / SIMULATION_RUNS)),
-            "GD": int(round(sums.get("GD", 0.0) / SIMULATION_RUNS)),
-            "Pts": int(round(sums.get("Pts", 0.0) / SIMULATION_RUNS)),
-            "PlayedReal": int(round(sums.get("PlayedReal", 0.0) / SIMULATION_RUNS)),
-            "PlayedPred": int(round(sums.get("PlayedPred", 0.0) / SIMULATION_RUNS)),
+            "P": int(round(sums.get("P", 0.0) / sim_runs)),
+            "W": int(round(sums.get("W", 0.0) / sim_runs)),
+            "D": int(round(sums.get("D", 0.0) / sim_runs)),
+            "L": int(round(sums.get("L", 0.0) / sim_runs)),
+            "GF": int(round(sums.get("GF", 0.0) / sim_runs)),
+            "GA": int(round(sums.get("GA", 0.0) / sim_runs)),
+            "GD": int(round(sums.get("GD", 0.0) / sim_runs)),
+            "Pts": int(round(sums.get("Pts", 0.0) / sim_runs)),
+            "PlayedReal": int(round(sums.get("PlayedReal", 0.0) / sim_runs)),
+            "PlayedPred": int(round(sums.get("PlayedPred", 0.0) / sim_runs)),
         }
 
     out_rows = []
@@ -826,11 +824,11 @@ def project_competition(ctx, competition, raw_file):
     for pos, (team, s) in enumerate(ranked, start=1):
         team_positions = position_counts.get(team, {})
         most_likely_pos, most_likely_count = max(team_positions.items(), key=lambda kv: kv[1], default=(pos, 0))
-        win_league_pct = (team_positions.get(1, 0) / SIMULATION_RUNS) * 100.0
-        top4_pct = (sum(v for k, v in team_positions.items() if k <= top_n) / SIMULATION_RUNS) * 100.0
-        bottom3_pct = (sum(v for k, v in team_positions.items() if k >= bottom_cutoff) / SIMULATION_RUNS) * 100.0
+        win_league_pct = (team_positions.get(1, 0) / sim_runs) * 100.0
+        top4_pct = (sum(v for k, v in team_positions.items() if k <= top_n) / sim_runs) * 100.0
+        bottom3_pct = (sum(v for k, v in team_positions.items() if k >= bottom_cutoff) / sim_runs) * 100.0
         position_odds = {
-            str(rank): round((team_positions.get(rank, 0) / SIMULATION_RUNS) * 100.0, 2)
+            str(rank): round((team_positions.get(rank, 0) / sim_runs) * 100.0, 2)
             for rank in range(1, n_teams + 1)
         }
         out_rows.append(
@@ -843,15 +841,25 @@ def project_competition(ctx, competition, raw_file):
                 "top4_pct": round(top4_pct, 2),
                 "bottom3_pct": round(bottom3_pct, 2),
                 "most_likely_position": int(most_likely_pos),
-                "most_likely_position_pct": round((most_likely_count / SIMULATION_RUNS) * 100.0, 2),
+                "most_likely_position_pct": round((most_likely_count / sim_runs) * 100.0, 2),
                 "position_odds_json": json.dumps(position_odds, separators=(",", ":"), sort_keys=True),
-                "sim_runs": int(SIMULATION_RUNS),
+                "sim_runs": int(sim_runs),
             }
         )
     return out_rows, future_rows
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Project remaining fixtures onto a Monte-Carlo season.")
+    parser.add_argument(
+        "--competition-workers",
+        type=int,
+        default=0,
+        help="Number of parallel workers for per-competition processing (0 = sequential).",
+    )
+    args = parser.parse_args()
+    comp_workers = max(1, int(args.competition_workers))
+
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR)
     if not latest:
@@ -859,10 +867,30 @@ def main():
 
     all_tables = []
     all_future = []
-    for competition, path in sorted(latest.items()):
-        table_rows, future_rows = project_competition(ctx, competition, path)
-        all_tables.extend(table_rows)
-        all_future.extend(future_rows)
+    comps = sorted(latest.items())
+
+    if comp_workers <= 1 or len(comps) <= 1:
+        for competition, path in comps:
+            table_rows, future_rows = project_competition(ctx, competition, path)
+            all_tables.extend(table_rows)
+            all_future.extend(future_rows)
+    else:
+        max_workers = min(comp_workers, len(comps))
+        print(f"  Processing {len(comps)} competitions with {max_workers} workers")
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(project_competition, ctx, comp, path): comp
+                for comp, path in comps
+            }
+            for fut in as_completed(futures):
+                comp = futures[fut]
+                try:
+                    table_rows, future_rows = fut.result()
+                    all_tables.extend(table_rows)
+                    all_future.extend(future_rows)
+                    print(f"  [{comp}] done ({len(table_rows)} rows)")
+                except Exception as e:
+                    print(f"  [{comp}] ERROR: {e}")
 
     os.makedirs(OUT_DIR, exist_ok=True)
     pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)

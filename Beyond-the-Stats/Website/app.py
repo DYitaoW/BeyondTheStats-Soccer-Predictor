@@ -243,8 +243,10 @@ _UPCOMING_MODE_MAP = {
 
 _ALL_UPCOMING_SOURCES = [
     ("global", config.GLOBAL_UPCOMING_FILE),
+    ("global_projected", config.GLOBAL_PROJECTED_MATCHES_FILE),
     ("mls", config.MLS_UPCOMING_FILE),
     ("extra", config.EXTRA_UPCOMING_FILE),
+    ("extra_projected", config.EXTRA_PROJECTED_MATCHES_FILE),
     ("cups", config.CUP_UPCOMING_FILE),
     ("national", config.NATIONAL_UPCOMING_FILE),
     ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
@@ -836,12 +838,6 @@ def api_upcoming(mode):
             for source, csv_path in _ALL_UPCOMING_SOURCES:
                 rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range=date_range, window_days=window_days)
                 for r in rows:
-                    comp = str(r.get("competition", "")).strip()
-                    if not four_week_mode:
-                        if comp in config.UPCOMING_ONLY_COMPETITIONS:
-                            continue
-                        if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
-                            continue
                     ck = "|".join(
                         str(r.get(k, "")).strip().lower()
                         for k in ("match_date_iso", "competition", "home_team", "away_team")
