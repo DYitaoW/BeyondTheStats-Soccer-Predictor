@@ -628,7 +628,7 @@ def _live_score_poller_loop():
             # Send push updates when match scores change and end pushes
             # when matches finish.
             try:
-                import live_activities as _la
+                import notifications as _la
                 from notifications import _apns_notification_queue
 
                 with _live_scores_lock:

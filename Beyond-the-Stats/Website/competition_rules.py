@@ -41,24 +41,6 @@ MLS_WESTERN_CONFERENCE_TEAMS = frozenset({
     "Vancouver Whitecaps",
 })
 
-MLS_TEAM_ALIASES = {
-    "dcunited": "DC United",
-    "newyorkcityfc": "New York City",
-    "newyorkcity": "New York City",
-    "newyorkredbulls": "New York Red Bulls",
-    "lafc": "Los Angeles FC",
-    "lagalaxy": "Los Angeles Galaxy",
-    "stlouiscitysc": "St. Louis City",
-    "stlouiscity": "St. Louis City",
-    "sandiegofc": "San Diego FC",
-    "sandiego": "San Diego FC",
-    "cfmontreal": "CF Montreal",
-    "intermiamicf": "Inter Miami",
-    "intermiami": "Inter Miami",
-    "atlantaunitedfc": "Atlanta Utd",
-    "atlantautd": "Atlanta Utd",
-}
-
 MLS_SEASON_FILE_RE = re.compile(r"^mlsstat(\d{4})\.csv$", re.IGNORECASE)
 LIGA_MX_SEASON_FILE_RE = re.compile(r"^mexstat(\d{4})\.csv$", re.IGNORECASE)
 
@@ -479,9 +461,6 @@ def resolve_mls_team_name(raw_name: str) -> str:
     mapped = canonical_team_name(raw, "United States/MLS")
     if mapped:
         return mapped
-    alias = MLS_TEAM_ALIASES.get(normalize_team_key(raw))
-    if alias:
-        return alias
     key = normalize_team_key(raw)
     for team in list(MLS_EASTERN_CONFERENCE_TEAMS) + list(MLS_WESTERN_CONFERENCE_TEAMS):
         team_key = normalize_team_key(team)

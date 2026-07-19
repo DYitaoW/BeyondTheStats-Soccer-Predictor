@@ -144,19 +144,25 @@ WESTERN_CONFERENCE_TEAMS = {
     "St. Louis City",
     "Vancouver Whitecaps",
 }
-MLS_TEAM_ALIASES = {
-    "d.c.united": "DC United",
-    "dcunited": "DC United",
-    "newyorkcityfc": "New York City",
-    "newyorkcity": "New York City",
-    "newyorkredbulls": "New York Red Bulls",
-    "lafc": "Los Angeles FC",
-    "lagalaxy": "Los Angeles Galaxy",
-    "stlouiscitysc": "St. Louis City",
-    "stlouiscity": "St. Louis City",
-    "sandiegofc": "San Diego FC",
-    "sandiego": "San Diego FC",
-}
+_name_mapping_flat = None
+
+
+def _load_name_mapping_flat():
+    global _name_mapping_flat
+    if _name_mapping_flat is not None:
+        return _name_mapping_flat
+    try:
+        with open(MAPPING_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        flat = {}
+        for comp, entries in data.items():
+            if isinstance(entries, dict):
+                for k, v in entries.items():
+                    flat[k.strip().lower()] = v
+        _name_mapping_flat = flat
+    except Exception:
+        _name_mapping_flat = {}
+    return _name_mapping_flat
 
 
 def normalize_team_key(name):
@@ -217,7 +223,7 @@ def resolve_fixture_team(raw_name, ctx, by_key):
         return direct
 
     key = normalize_team_key(raw)
-    alias_target = MLS_TEAM_ALIASES.get(key)
+    alias_target = _load_name_mapping_flat().get(key)
     if alias_target:
         mapped = pm.resolve_team_name(alias_target, ctx["available_teams"])
         if mapped:

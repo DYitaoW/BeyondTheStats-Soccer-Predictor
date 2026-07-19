@@ -27,21 +27,28 @@ try:
     import cudf  # type: ignore
 except Exception:
     cudf = None
-TEAM_NAME_ALIASES = {
-    "man utd": "Man United",
-    "manchester utd": "Man United",
-    "manchester united": "Man United",
-    "man city": "Man City",
-    "manchester city": "Man City",
-    "tottenham hotspur": "Tottenham",
-    "spurs": "Tottenham",
-    "wolverhampton wanderers": "Wolves",
-    "wolverhampton": "Wolves",
-    "newcastle united": "Newcastle",
-    "newcastle utd": "Newcastle",
-    "nottingham forest": "Nott'm Forest",
-    "nottm forest": "Nott'm Forest",
-}
+MAPPING_FILE = os.path.join(BASE_DIR, "Data", "team_name_mapping_master.json")
+_name_mapping_cache = None
+
+
+def _load_name_mapping():
+    global _name_mapping_cache
+    if _name_mapping_cache is not None:
+        return _name_mapping_cache
+    try:
+        with open(MAPPING_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        flat = {}
+        for comp, entries in data.items():
+            if isinstance(entries, dict):
+                for k, v in entries.items():
+                    flat[k.strip().lower()] = v
+        _name_mapping_cache = flat
+    except Exception:
+        _name_mapping_cache = {}
+    return _name_mapping_cache
+
+
 TRANSFERMARKT_SEARCH_URL = "https://www.transfermarkt.com/schnellsuche/ergebnis/schnellsuche?query={query}"
 TRANSFERMARKT_BASE_URL = "https://www.transfermarkt.com"
 TRANSFERMARKT_HEADERS = {
@@ -291,8 +298,8 @@ def canonical_team_name(name):
     text = str(name).strip()
     if not text:
         return text
-    key = text.lower()
-    return TEAM_NAME_ALIASES.get(key, text)
+    mapping = _load_name_mapping()
+    return mapping.get(text.lower(), text)
 
 
 def is_valid_team_name(name):

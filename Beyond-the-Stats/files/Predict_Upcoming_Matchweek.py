@@ -11,7 +11,6 @@ Called as a sub-pipeline step by ``Run_All_Pipeline``.  For each fixture it:
 Three copies: global / MLS / Extra-leagues.
 """
 import argparse
-import difflib
 import json
 import os
 import subprocess
@@ -96,29 +95,6 @@ PROVISIONAL_STRENGTH_COEFF = 0.50
 CUP_RANDOMIZER_MAX_DELTA = 0.11
 NEUTRAL_RANDOMIZER_BONUS = 0.03
 PROVISIONAL_RANDOMIZER_BONUS = 0.02
-
-MANUAL_TEAM_OVERRIDES = {
-    "Manchester City FC": "Man City",
-    "Wolverhampton Wanderers FC": "Wolves",
-    "1. FC Köln": "FC Koln",
-    "AC Pisa 1909": "Pisa",
-    "Borussia Mönchengladbach": "M'gladbach",
-    "Deportivo Alavés": "Alaves",
-    "FC Internazionale Milano": "Inter",
-    "FC Lorient": "Lorient",
-    "FC Metz": "Metz",
-    "Paris Saint-Germain FC": "Paris SG",
-    "Queens Park Rangers FC": "QPR",
-    "RC Celta de Vigo": "Celta",
-    "RCD Espanyol de Barcelona": "Espanol",
-    "Rayo Vallecano de Madrid": "Vallecano",
-    "Real Betis Balompié": "Betis",
-    "Sporting Clube de Braga": "Sp Braga",
-    "Sporting Clube de Portugal": "Sp Lisbon",
-    "Stade Rennais FC 1901": "Rennes",
-    "US Cremonese": "Cremonese",
-    "Vitória SC": "Guimaraes",
-}
 
 TEAM_KEY_ALIASES = {
     "caosasuna": "osasuna",
@@ -398,16 +374,39 @@ def append_only_mapping_from_fixtures(fixtures, context, mapping):
     return normalized, added, blanks_added
 
 
+_name_mapping_flat = None
+
+
+def _load_name_mapping_flat():
+    global _name_mapping_flat
+    if _name_mapping_flat is not None:
+        return _name_mapping_flat
+    try:
+        with open(TEAM_MAPPING_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        flat = {}
+        for comp, entries in data.items():
+            if isinstance(entries, dict):
+                for k, v in entries.items():
+                    flat[k.strip().lower()] = v
+        _name_mapping_flat = flat
+    except Exception:
+        _name_mapping_flat = {}
+    return _name_mapping_flat
+
+
 def resolve_live_team_name(raw_name, competition, context, mapping=None):
     team_competition_map = context["team_competition_map"]
     valid_names = tmg.candidate_teams_for_competition(competition, context)
 
-    manual_override = MANUAL_TEAM_OVERRIDES.get(str(raw_name).strip())
-    if manual_override:
-        if manual_override in valid_names:
-            return manual_override
-        if manual_override in context["available_teams"]:
-            return manual_override
+    raw = str(raw_name).strip()
+    flat_map = _load_name_mapping_flat()
+    mapped = flat_map.get(raw.lower())
+    if mapped:
+        if mapped in valid_names:
+            return mapped
+        if mapped in context["available_teams"]:
+            return mapped
 
     if mapping is not None:
         canonical, _source = tmg.lookup_mapped_name(raw_name, competition, mapping)
