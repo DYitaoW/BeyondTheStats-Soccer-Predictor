@@ -911,37 +911,16 @@ def resolve_team_name(raw_name, valid_names):
         name = re.sub(r"[^a-z0-9]+", "", name)
         return name
 
-    alias_map = {normalize(team): team for team in valid_names}
-
-    manual_aliases = {
-        "manutd": "Man United",
-        "manchesterunited": "Man United",
-        "mancity": "Man City",
-        "manchestercity": "Man City",
-        "spurs": "Tottenham",
-        "tottenhamhotspur": "Tottenham",
-        "wolves": "Wolves",
-        "wolverhampton": "Wolves",
-        "wolverhamptonwanderers": "Wolves",
-        "newcastleutd": "Newcastle",
-        "newcastleunited": "Newcastle",
-        "nottinghamforest": "Nott'm Forest",
-        "nottmforest": "Nott'm Forest",
-    }
-
-    for alias_key, canonical in manual_aliases.items():
-        if canonical in valid_names:
-            alias_map[alias_key] = canonical
-
-    key = normalize(raw_name)
-    direct = alias_map.get(key)
-    if direct:
-        return direct
-
     mapping = _load_name_mapping()
     mapped = mapping.get(raw_name.strip().lower())
     if mapped and mapped in valid_names:
         return mapped
+
+    key = normalize(raw_name)
+    alias_map = {normalize(team): team for team in valid_names}
+    direct = alias_map.get(key)
+    if direct:
+        return direct
 
     candidates = [team for team in valid_names if key and key in normalize(team)]
     if len(candidates) == 1:

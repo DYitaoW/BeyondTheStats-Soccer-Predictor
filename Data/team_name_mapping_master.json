@@ -50,7 +50,24 @@
     "Brighton Hove": "Brighton",
     "Hull": "Hull",
     "Leicester": "Leicester",
-    "Southampton": "Southampton"
+    "Southampton": "Southampton",
+    "1. FC Koln": "FC Koln",
+    "man utd": "Man United",
+    "manchester utd": "Man United",
+    "spurs": "Tottenham",
+    "wolverhampton": "Wolves",
+    "newcastle utd": "Newcastle",
+    "nottm forest": "Nott'm Forest",
+    "manutd": "Man United",
+    "manchesterunited": "Man United",
+    "mancity": "Man City",
+    "manchestercity": "Man City",
+    "tottenhamhotspur": "Tottenham",
+    "wolverhamptonwanderers": "Wolves",
+    "newcastleutd": "Newcastle",
+    "newcastleunited": "Newcastle",
+    "nottinghamforest": "Nott'm Forest",
+    "nottmforest": "Nott'm Forest"
   },
   "Spain/La Liga": {
     "Alavés": "Alaves",
@@ -121,7 +138,9 @@
     "Sp Gijon": "Sp Gijon",
     "Tenerife": "Tenerife",
     "Valladolid": "Valladolid",
-    "Zaragoza": "Zaragoza"
+    "Zaragoza": "Zaragoza",
+    "Deportivo Alaves": "Alaves",
+    "Real Betis Balompie": "Betis"
   },
   "Italy/Serie A": {
     "AC Milan": "Milan",
@@ -352,7 +371,22 @@
     "Toronto FC": "Toronto FC",
     "Vancouver Whitecaps": "Vancouver Whitecaps",
     "MLS All-Stars": "",
-    "Liga MX All-Stars": ""
+    "Liga MX All-Stars": "",
+    "d.c.united": "DC United",
+    "newyorkcityfc": "New York City",
+    "newyorkcity": "New York City",
+    "newyorkredbulls": "New York RB",
+    "lagalaxy": "Los Angeles Galaxy",
+    "stlouiscitysc": "St. Louis City",
+    "stlouiscity": "St. Louis City",
+    "sandiegofc": "San Diego FC",
+    "sandiego": "San Diego FC",
+    "dcunited": "DC United",
+    "cfmontreal": "Montreal",
+    "intermiamicf": "Inter Miami",
+    "intermiami": "Inter Miami",
+    "atlantaunitedfc": "Atlanta Utd",
+    "atlantautd": "Atlanta Utd"
   },
   "Portugal/Liga Portugal": {
     "Casa Pia": "Casa Pia",
@@ -411,7 +445,9 @@
     "Penafiel": "Penafiel",
     "Trofense": "Trofense",
     "Uniao Madeira": "Uniao Madeira",
-    "Varzim": "Varzim"
+    "Varzim": "Varzim",
+    "Sporting Clube de Portugal": "Sp Lisbon",
+    "Vitoria SC": "Guimaraes"
   },
   "Netherlands/Eredivisie": {
     "Heracles": "Heracles",
@@ -517,7 +553,9 @@
     "Paderborn": "Paderborn",
     "SC Paderbvorn 07": "Paderborn",
     "Schalke 04": "Schalke 04",
-    "FC Elversberg": "Elversberg"
+    "FC Elversberg": "Elversberg",
+    "1. FC Koln": "FC Koln",
+    "Borussia Monchengladbach": "M'gladbach"
   },
   "Scotland/Premiership": {
     "Hibernian": "Hibernian",

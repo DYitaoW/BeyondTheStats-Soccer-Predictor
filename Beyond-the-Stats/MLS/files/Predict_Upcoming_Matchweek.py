@@ -6,7 +6,6 @@ writes ``upcoming_matchweek_predictions.csv`` with predicted scores and
 probabilities.
 """
 import argparse
-import difflib
 import json
 import os
 import subprocess
@@ -86,20 +85,6 @@ class AveragedProbaClassifier:
 
 MLS_COMPETITION_CODE = "MLS"
 MLS_COMPETITION_NAME = "United States/MLS"
-MANUAL_TEAM_OVERRIDES = {
-    "Atlanta United FC": "Atlanta Utd",
-    "Atlanta United": "Atlanta Utd",
-    "Los Angeles FC": "Los Angeles FC",
-    "LAFC": "Los Angeles FC",
-    "St. Louis CITY SC": "St. Louis City",
-    "St. Louis City SC": "St. Louis City",
-    "New York City FC": "New York City",
-    "New York Red Bulls": "New York RB",
-    "Sporting Kansas City": "Kansas City",
-    "Inter Miami CF": "Inter Miami",
-    "CF Montréal": "Montreal",
-    "CF Montreal": "Montreal",
-}
 TEAM_KEY_ALIASES = {
     "caosasuna": "osasuna",
     "uslecce": "lecce",
@@ -326,15 +311,38 @@ def ensure_canonical_self_mappings(mapping, context):
     return updated, added
 
 
+_name_mapping_flat = None
+
+
+def _load_name_mapping_flat():
+    global _name_mapping_flat
+    if _name_mapping_flat is not None:
+        return _name_mapping_flat
+    try:
+        with open(TEAM_MAPPING_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        flat = {}
+        for comp, entries in data.items():
+            if isinstance(entries, dict):
+                for k, v in entries.items():
+                    flat[k.strip().lower()] = v
+        _name_mapping_flat = flat
+    except Exception:
+        _name_mapping_flat = {}
+    return _name_mapping_flat
+
+
 def resolve_live_team_name(raw_name, competition, context, mapping=None):
     valid_names = tmg.candidate_teams_for_competition(competition, context)
 
-    manual_override = MANUAL_TEAM_OVERRIDES.get(str(raw_name).strip())
-    if manual_override:
-        if manual_override in valid_names:
-            return manual_override
-        if manual_override in context["available_teams"]:
-            return manual_override
+    raw = str(raw_name).strip()
+    flat_map = _load_name_mapping_flat()
+    mapped = flat_map.get(raw.lower())
+    if mapped:
+        if mapped in valid_names:
+            return mapped
+        if mapped in context["available_teams"]:
+            return mapped
 
     if mapping is not None:
         canonical, _source = tmg.lookup_mapped_name(raw_name, competition, mapping)
