@@ -1603,12 +1603,13 @@ def main():
         finally:
             _write_pipeline_status(step_results)
 
-        # Mobile feed generation disabled (not currently used)
-        # try:
-        #     build_mobile_app_feed(pipeline_ok, step_results, DEFAULT_FEED_FILE)
-        #     publish_to_output()
-        # except Exception as exc:
-        #     print(f"[WARN] Mobile feed generation failed: {exc}")
+        # Rebuild Output/Upcoming/all_upcoming.csv (and related Output trees)
+        # so /api/upcoming/global prefers a fresh merged file. Mobile feed
+        # generation remains disabled (not currently used).
+        try:
+            publish_to_output()
+        except Exception as exc:
+            print(f"[WARN] publish_to_output failed: {exc}")
         if tee is not None:
             pipeline_log.deactivate_stdout_tee()
 

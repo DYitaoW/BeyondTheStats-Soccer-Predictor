@@ -18,6 +18,13 @@ import pandas as pd
 import Predict_Match as pm
 
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FILES_DIR = os.path.dirname(os.path.abspath(__file__))
+RAW_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
+OUT_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
+OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
+OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
+RNG = random.Random()
 SIMULATION_RUNS = 1000
 COMPETITION_SIM_RUNS = {}
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
