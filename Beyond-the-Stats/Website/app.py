@@ -233,7 +233,7 @@ def _handle_cors_preflight():
 
 
 _UPCOMING_MODE_MAP = {
-    "global": (config.ALL_UPCOMING_FILE if os.path.exists(config.ALL_UPCOMING_FILE) else config.GLOBAL_UPCOMING_FILE, "global"),
+    "global": (config.GLOBAL_UPCOMING_FILE, "global"),
     "mls": (config.MLS_UPCOMING_FILE, "mls"),
     "extra": (config.EXTRA_UPCOMING_FILE, "extra"),
     "cups": (config.CUP_UPCOMING_FILE, "cups"),
@@ -251,6 +251,31 @@ _ALL_UPCOMING_SOURCES = [
     ("national", config.NATIONAL_UPCOMING_FILE),
     ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
 ]
+
+
+def _merged_upcoming_file_is_fresh(merged_path):
+    """True when ``merged_path`` exists and is at least as new as every source CSV.
+
+    The API prefers ``Output/Upcoming/all_upcoming.csv`` for a single-file read,
+    but that merge is only refreshed by ``publish_to_output()``. If publish was
+    skipped or failed, the merged file can be days/weeks stale while the
+    per-pipeline prediction CSVs are fresh — fall back to the sources instead.
+    """
+    if not merged_path or not os.path.exists(merged_path):
+        return False
+    try:
+        merged_mtime = os.path.getmtime(merged_path)
+    except OSError:
+        return False
+    for _, csv_path in _ALL_UPCOMING_SOURCES:
+        if not csv_path or not os.path.exists(csv_path):
+            continue
+        try:
+            if os.path.getmtime(csv_path) > merged_mtime + 1.0:
+                return False
+        except OSError:
+            continue
+    return True
 
 
 def _regional_espn_schedule_fallback(existing_rows):
@@ -819,13 +844,13 @@ def api_upcoming(mode):
 
     if mode == "global":
         # Prefer the pipeline-generated merged CSV (single read) over
-        # loading all 6 individual source CSVs.
-        if four_week_mode and os.path.exists(config.FOUR_WEEK_WINDOW_FILE):
+        # loading all source CSVs — but only when the merge is fresh.
+        if four_week_mode and _merged_upcoming_file_is_fresh(config.FOUR_WEEK_WINDOW_FILE):
             all_rows, combined_stats, combined_league_stats = \
                 _load_upcoming_rows(config.FOUR_WEEK_WINDOW_FILE, "global", date_range="all")
             combined_stats = dict(combined_stats or {})
             combined_league_stats = {ls.get("competition", ""): ls for ls in (combined_league_stats or []) if ls.get("competition")}
-        elif os.path.exists(config.ALL_UPCOMING_FILE) and not four_week_mode:
+        elif (not four_week_mode) and _merged_upcoming_file_is_fresh(config.ALL_UPCOMING_FILE):
             all_rows, combined_stats, combined_league_stats = \
                 _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", date_range=date_range, window_days=window_days)
             combined_stats = dict(combined_stats or {})
@@ -958,8 +983,8 @@ def api_home_upcoming():
     start_date = min(max(start_date, window_start), window_end)
     end_date = min(max(end_date, window_start), window_end)
 
-    # Prefer the merged CSV over loading all 6 individual sources.
-    if os.path.exists(config.ALL_UPCOMING_FILE):
+    # Prefer the merged CSV when fresh; otherwise load individual sources.
+    if _merged_upcoming_file_is_fresh(config.ALL_UPCOMING_FILE):
         merged_rows, _, _ = _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", date_range="all")
         feed = merged_rows
     else:

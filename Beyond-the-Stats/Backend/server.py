@@ -265,6 +265,9 @@ class BackendServer:
                 reading.utilization_pct,
             )
             self._kill_pipeline_blocking()
+            # Ensure the reader/reaper path can finish; if the proc is already
+            # gone, unlock so the next scheduled run is not blocked.
+            self._reap_pipeline()
 
         def on_warn(reading: MemoryReading) -> None:
             LOG.warning(
@@ -302,8 +305,29 @@ class BackendServer:
                 self._reap_pipeline()
                 # Force-acquire now that the process is dead
                 if not self._pipeline_lock.acquire(blocking=True, timeout=30):
-                    LOG.error("[pipeline] still cannot acquire lock after force-kill; skipping trigger=%s", trigger)
-                    return False
+                    # Lock can remain held when the reader thread crashed before
+                    # unlock, memory-kill left an orphan holder, or the watcher
+                    # is mid-refresh. Scheduled runs are authoritative — force
+                    # release once the pipeline subprocess is gone.
+                    proc = self._pipeline_proc
+                    if proc is None or proc.poll() is not None:
+                        LOG.warning(
+                            "[pipeline] force-releasing orphaned lock after kill trigger=%s",
+                            trigger,
+                        )
+                        self._release_lock()
+                        if not self._pipeline_lock.acquire(blocking=False):
+                            LOG.error(
+                                "[pipeline] still cannot acquire lock after force-kill; skipping trigger=%s",
+                                trigger,
+                            )
+                            return False
+                    else:
+                        LOG.error(
+                            "[pipeline] still cannot acquire lock after force-kill; skipping trigger=%s",
+                            trigger,
+                        )
+                        return False
         else:
             # Manual triggers: don't wait, skip if locked
             if not self._pipeline_lock.acquire(blocking=False):
@@ -404,46 +428,48 @@ class BackendServer:
                 pass
 
     def _pipeline_done(self, proc: subprocess.Popen) -> None:
-        rc = proc.returncode
-        self._last_run = datetime.now()
-        self._last_status = rc == 0
-        LOG.info(
-            "[pipeline] finished rc=%s last_run=%s last_status=%s",
-            rc,
-            self._last_run.isoformat(),
-            self._last_status,
-        )
+        """Finalize a finished pipeline subprocess and always release the lock."""
         try:
-            status_path = SP_DIR / "Data" / "backend_run_status.json"
-            status_path.parent.mkdir(parents=True, exist_ok=True)
-            status_path.write_text(
-                json.dumps({
-                    "finished_utc": self._last_run.replace(microsecond=0).isoformat(),
-                    "return_code": rc,
-                    "ok": rc == 0,
-                    "trigger": getattr(proc, "_bts_trigger", "unknown"),
-                    "log_file": str(pipeline_log.log_path()),
-                }, indent=2),
-                encoding="utf-8",
+            rc = proc.returncode
+            self._last_run = datetime.now()
+            self._last_status = rc == 0
+            LOG.info(
+                "[pipeline] finished rc=%s last_run=%s last_status=%s",
+                rc,
+                self._last_run.isoformat(),
+                self._last_status,
             )
-            pipeline_log.append_line(
-                f"=== Backend pipeline subprocess finished rc={rc} trigger={getattr(proc, '_bts_trigger', 'unknown')} ==="
-            )
-        except Exception:
-            LOG.exception("[pipeline] could not write backend_run_status.json")
-        # Propagate the finish time to the Flask app so /api/stats returns it.
-        try:
-            import app as website_app
-            website_app.set_last_pipeline_run(self._last_run)
-            website_app._save_last_refresh()
-            website_app._save_last_data_refresh()
-            website_app._invalidate_prediction_caches(reload_contexts=True)
-        except Exception:
-            pass
-        try:
-            self._pipeline_lock.release()
-        except RuntimeError:
-            pass
+            try:
+                status_path = SP_DIR / "Data" / "backend_run_status.json"
+                status_path.parent.mkdir(parents=True, exist_ok=True)
+                status_path.write_text(
+                    json.dumps({
+                        "finished_utc": self._last_run.replace(microsecond=0).isoformat(),
+                        "return_code": rc,
+                        "ok": rc == 0,
+                        "trigger": getattr(proc, "_bts_trigger", "unknown"),
+                        "log_file": str(pipeline_log.log_path()),
+                    }, indent=2),
+                    encoding="utf-8",
+                )
+                pipeline_log.append_line(
+                    f"=== Backend pipeline subprocess finished rc={rc} trigger={getattr(proc, '_bts_trigger', 'unknown')} ==="
+                )
+            except Exception:
+                LOG.exception("[pipeline] could not write backend_run_status.json")
+            # Propagate the finish time to the Flask app so /api/stats returns it.
+            try:
+                import app as website_app
+                website_app.set_last_pipeline_run(self._last_run)
+                website_app._save_last_refresh()
+                website_app._save_last_data_refresh()
+                website_app._invalidate_prediction_caches(reload_contexts=True)
+            except Exception:
+                pass
+        finally:
+            # Always unlock so a crash during status/cache updates cannot
+            # permanently block scheduled runs.
+            self._release_lock()
 
     def _any_model_cache_missing(self) -> bool:
         """Return True when any enabled sub-pipeline has no loadable model cache file."""
