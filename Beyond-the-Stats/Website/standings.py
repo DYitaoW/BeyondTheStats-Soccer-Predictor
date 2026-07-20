@@ -144,26 +144,90 @@ def _dedupe_standings_groups(standings: dict, comp_name: str) -> dict:
     return out
 
 
-def _canonical_roster_teams(comp_name: str) -> list[str]:
-    """Return the current-season team set in predicted-table canonical names.
+def _slugify_competition_for_output(competition: str) -> str:
+    """Match Daily_Pipeline slugify: England/Premier League → england_premier_league."""
+    out = (competition or "").strip().lower()
+    out = out.replace("/", "_").replace(" ", "_").replace("-", "_")
+    out = out.replace(".", "").replace(",", "").replace("'", "")
+    while "__" in out:
+        out = out.replace("__", "_")
+    return out.strip("_") or "unknown"
 
-    Prefers ``current_season_teams.json`` (active roster) over ``league_teams.json``.
+
+def _teams_from_predicted_table(comp_name: str) -> list[str]:
+    """Team names exactly as shown on the predictions tab (source of truth)."""
+    base_comp, _view = resolve_competition_query(comp_name)
+    lookup_names = [comp_name, base_comp]
+    # 1) Projected CSV rows used by /api/league-data predicted tables.
+    try:
+        from predictions import _load_projected_competition_table
+
+        for name in lookup_names:
+            if not name:
+                continue
+            rows = _load_projected_competition_table(name) or []
+            teams = [str(r.get("team", "")).strip() for r in rows if str(r.get("team", "")).strip()]
+            if teams:
+                return teams
+    except Exception:
+        pass
+    # 2) Published LeagueResult JSON (same teams the site ships after pipeline).
+    slug_names = []
+    for name in lookup_names:
+        if name:
+            slug_names.append(_slugify_competition_for_output(name))
+    for region in ("Europe", "Other", "National"):
+        for slug in slug_names:
+            path = os.path.join(config.PROJECT_DIR, "Output", region, "LeagueResult", f"{slug}.json")
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+                teams_raw = payload.get("teams") if isinstance(payload, dict) else None
+                if not isinstance(teams_raw, list):
+                    continue
+                teams = []
+                for row in teams_raw:
+                    if isinstance(row, dict):
+                        t = str(row.get("team", "")).strip()
+                    else:
+                        t = str(row or "").strip()
+                    if t:
+                        teams.append(t)
+                if teams:
+                    return teams
+            except Exception:
+                continue
+    return []
+
+
+def _canonical_roster_teams(comp_name: str) -> list[str]:
+    """Return the team set real tables must share with predicted tables.
+
+    Order of preference:
+      1. Predicted/projected table teams (identical names & count as predictions tab)
+      2. ``current_season_teams.json``
+      3. ``league_teams.json``
+
+    All names are normalized through the shared ESPN→football-data mapping.
     """
     base_comp, _view = resolve_competition_query(comp_name)
     lookup_names = {comp_name, base_comp}
-    raw_teams: list[str] = []
-    try:
-        if os.path.exists(config.CURRENT_SEASON_TEAMS_FILE):
-            with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
-                current = json.load(fh)
-            if isinstance(current, dict):
-                for name in lookup_names:
-                    cached = current.get(name)
-                    if cached:
-                        raw_teams = list(cached)
-                        break
-    except Exception:
-        raw_teams = []
+    raw_teams: list[str] = _teams_from_predicted_table(comp_name)
+    if not raw_teams:
+        try:
+            if os.path.exists(config.CURRENT_SEASON_TEAMS_FILE):
+                with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
+                    current = json.load(fh)
+                if isinstance(current, dict):
+                    for name in lookup_names:
+                        cached = current.get(name)
+                        if cached:
+                            raw_teams = list(cached)
+                            break
+        except Exception:
+            raw_teams = []
     if not raw_teams:
         league_teams = _load_league_teams()
         for name in lookup_names:
@@ -254,6 +318,18 @@ def _align_standings_to_canonical_roster(standings: dict, comp_name: str) -> dic
     return out
 
 
+def _sanitize_real_standings(standings: dict | None, comp_name: str) -> dict | None:
+    """Dedupe + align so real tables always match the predicted team set.
+
+    Safe to call on persisted cache rows that predate mapping fixes.
+    """
+    if not standings or not isinstance(standings, dict):
+        return standings
+    cleaned = _dedupe_standings_groups(standings, comp_name)
+    cleaned = _align_standings_to_canonical_roster(cleaned, comp_name)
+    return cleaned
+
+
 _real_tables_lock = threading.Lock()
 
 _real_leaders: dict[str, dict] = {}
@@ -304,13 +380,12 @@ def _load_persisted_standings():
             with _real_tables_lock:
                 for comp_name, table in data.items():
                     if table is not None:
-                        _real_tables[comp_name] = table
+                        # Re-sanitize so older caches cannot serve ESPN/football-data
+                        # duplicate rows or a roster that diverges from predictions.
+                        cleaned = _sanitize_real_standings(table, comp_name)
+                        _real_tables[comp_name] = cleaned if cleaned is not None else table
     except Exception:
         pass
-
-
-# Warm the standings cache from disk on import so the API never starts cold.
-_load_persisted_standings()
 
 
 def _persist_real_tables():
@@ -340,6 +415,10 @@ def _load_league_teams():
     except Exception:
         pass
     return {}
+
+
+# Warm after ``_load_league_teams`` exists — sanitize-on-load may need it.
+_load_persisted_standings()
 
 
 _espn_roster_cache: dict[str, list[str]] = {}
@@ -614,8 +693,7 @@ def _compute_standings_from_history(comp_name):
         )
         # Always collapse ESPN/football-data aliases and align to the same
         # canonical roster predicted tables use (Premier League etc.).
-        response = _dedupe_standings_groups(response, comp_name)
-        response = _align_standings_to_canonical_roster(response, comp_name)
+        response = _sanitize_real_standings(response, comp_name) or response
         with _real_tables_lock:
             _real_tables[comp_name] = response
         _persist_real_tables()
@@ -1264,6 +1342,4 @@ def _build_fallback_standings(comp_name):
     if not groups:
         return None
     response = package_real_standings(comp_name, groups, "placeholder")
-    response = _dedupe_standings_groups(response, comp_name)
-    response = _align_standings_to_canonical_roster(response, comp_name)
-    return response
+    return _sanitize_real_standings(response, comp_name) or response

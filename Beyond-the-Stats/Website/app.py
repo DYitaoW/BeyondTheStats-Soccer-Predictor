@@ -128,6 +128,7 @@ from standings import (
     _load_live_score_history,
     _real_tables,
     _real_tables_lock,
+    _sanitize_real_standings,
 )
 from team_utils import _normalize_team_key, _team_name_for_db, _team_name_for_display, _to_float
 
@@ -2199,7 +2200,8 @@ def api_real_tables():
         if isinstance(persisted, dict) and comp_filter in persisted:
             cached = persisted[comp_filter]
             if should_use_persisted_table(cached, force_refresh):
-                return jsonify({"ok": True, "table": cached})
+                cleaned = _sanitize_real_standings(cached, comp_filter) or cached
+                return jsonify({"ok": True, "table": cleaned})
         table = _compute_standings_from_history(comp_filter)
         if table is not None:
             return jsonify({"ok": True, "table": table})
@@ -2216,7 +2218,7 @@ def api_real_tables():
                 continue
             cached = persisted.get(comp_name)
             if should_use_persisted_table(cached, force_refresh):
-                results[comp_name] = cached
+                results[comp_name] = _sanitize_real_standings(cached, comp_name) or cached
                 continue
             if force_refresh:
                 _clear_standings_cache(comp_name)
