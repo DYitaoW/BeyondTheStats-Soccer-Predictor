@@ -284,8 +284,10 @@ def load_context():
         rebuild_model_cache_once()
 
     try:
-        # Caches pickled from Predict_Match.py as __main__ need this alias.
-        setattr(sys.modules.get("__main__"), "AveragedProbaClassifier", pm.AveragedProbaClassifier)
+        # Caches pickled from Predict_Match.py as __main__ need this alias when present.
+        cls = getattr(pm, "AveragedProbaClassifier", None)
+        if cls is not None:
+            setattr(sys.modules.get("__main__"), "AveragedProbaClassifier", cls)
     except Exception:
         pass
 
@@ -295,7 +297,9 @@ def load_context():
         print(f"[model-cache] failed to load cache ({exc.__class__.__name__}: {exc}); rebuilding...")
         rebuild_model_cache_once()
         try:
-            setattr(sys.modules.get("__main__"), "AveragedProbaClassifier", pm.AveragedProbaClassifier)
+            cls = getattr(pm, "AveragedProbaClassifier", None)
+            if cls is not None:
+                setattr(sys.modules.get("__main__"), "AveragedProbaClassifier", cls)
         except Exception:
             pass
         bundle = joblib.load(pm.MODEL_CACHE)
