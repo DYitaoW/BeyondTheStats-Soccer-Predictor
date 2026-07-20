@@ -1324,6 +1324,23 @@ def standings_shape_is_valid(cached: dict, comp_name: str) -> bool:
     names = {str(g.get("name", "")).strip() for g in groups if isinstance(g, dict)}
     if not names:
         return False
+    # Reject caches that still carry duplicate team rows (ESPN + football-data
+    # aliases for the same club). Force a recompute / sanitize path instead.
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        seen_keys: set[str] = set()
+        for entry in group.get("entries") or []:
+            if not isinstance(entry, dict):
+                continue
+            team = str(entry.get("team", "")).strip()
+            if not team:
+                continue
+            canon = canonical_team_name(team, comp_name) or team
+            key = canon.lower()
+            if key in seen_keys:
+                return False
+            seen_keys.add(key)
     layout = standings_layout_for(comp_name)
     expected = expected_standings_group_names(comp_name)
     if expected is not None:
