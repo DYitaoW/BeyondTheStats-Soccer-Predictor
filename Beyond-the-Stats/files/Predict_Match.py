@@ -51,7 +51,7 @@ PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
 TEAM_DATA_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
 MODEL_CACHE = os.path.join(TEAM_DATA_DIR, "model_cache.pkl")
 SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})-(\d{2})\.csv$", re.IGNORECASE)
-MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "team_name_mapping_master.json")
+MAPPING_FILE = os.path.join(BASE_DIR, "..", "..", "Data", "team_name_mapping_master.json")
 _name_mapping_cache = None
 MIN_START_YEAR = 2002
 EU_RANDOMIZER_MAX_DELTA = 0.08
@@ -879,6 +879,12 @@ def is_placeholder_team(name):
         "final", "playoff ", "qualifier", "tbd", "to be determined",
     ]
     return any(t in text for t in tokens)
+
+
+def clear_name_mapping_cache():
+    """Force the next resolve_team_name call to reload team_name_mapping_master.json."""
+    global _name_mapping_cache
+    _name_mapping_cache = None
 
 
 def _load_name_mapping():

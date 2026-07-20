@@ -79,8 +79,10 @@ def _normalize_team_name(name: str, competition: str) -> str:
     # Prefer shared canonical resolver (key-aware mapping aliases).
     try:
         mapped = canonical_team_name(text, competition)
-        if mapped:
+        if mapped and mapped != text:
             return mapped
+        if mapped:
+            text = mapped
     except Exception:
         pass
     mapping = _load_team_display_mapping()
@@ -96,6 +98,160 @@ def _normalize_team_name(name: str, competition: str) -> str:
             if str(raw).lower().strip() == lower and str(canon).strip():
                 return str(canon).strip()
     return text
+
+
+def _dedupe_standings_groups(standings: dict, comp_name: str) -> dict:
+    """Collapse duplicate team rows that survived incomplete name mapping.
+
+    Uses the same football-data canonicals as predicted tables so
+    ``Manchester City`` / ``Man City`` (etc.) become one row.
+    """
+    if not standings or not isinstance(standings.get("groups"), list):
+        return standings
+    base_comp, _view = resolve_competition_query(comp_name)
+    new_groups = []
+    for group in standings["groups"]:
+        entries = group.get("entries") or []
+        by_key: dict[str, dict] = {}
+        order: list[str] = []
+        for entry in entries:
+            team = str(entry.get("team", "")).strip()
+            if not team:
+                continue
+            canon = _normalize_team_name(team, base_comp)
+            key = canon.lower()
+            if key not in by_key:
+                cloned = dict(entry)
+                cloned["team"] = canon
+                by_key[key] = cloned
+                order.append(key)
+            else:
+                existing = by_key[key]
+                try:
+                    if int(entry.get("P") or 0) > int(existing.get("P") or 0):
+                        cloned = dict(entry)
+                        cloned["team"] = canon
+                        by_key[key] = cloned
+                except Exception:
+                    pass
+        deduped = [by_key[k] for k in order]
+        for idx, row in enumerate(deduped, start=1):
+            row["rank"] = idx
+            row["position"] = idx
+        new_groups.append({**group, "entries": deduped})
+    out = dict(standings)
+    out["groups"] = new_groups
+    return out
+
+
+def _canonical_roster_teams(comp_name: str) -> list[str]:
+    """Return the current-season team set in predicted-table canonical names.
+
+    Prefers ``current_season_teams.json`` (active roster) over ``league_teams.json``.
+    """
+    base_comp, _view = resolve_competition_query(comp_name)
+    lookup_names = {comp_name, base_comp}
+    raw_teams: list[str] = []
+    try:
+        if os.path.exists(config.CURRENT_SEASON_TEAMS_FILE):
+            with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
+                current = json.load(fh)
+            if isinstance(current, dict):
+                for name in lookup_names:
+                    cached = current.get(name)
+                    if cached:
+                        raw_teams = list(cached)
+                        break
+    except Exception:
+        raw_teams = []
+    if not raw_teams:
+        league_teams = _load_league_teams()
+        for name in lookup_names:
+            cached = league_teams.get(name)
+            if cached:
+                raw_teams = list(cached)
+                break
+    seen: set[str] = set()
+    out: list[str] = []
+    for team in raw_teams:
+        canon = _normalize_team_name(str(team).strip(), base_comp)
+        if not canon:
+            continue
+        key = canon.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(canon)
+    return out
+
+
+def _align_standings_to_canonical_roster(standings: dict, comp_name: str) -> dict:
+    """Re-key real rows onto the predicted roster; drop unmapped alias orphans.
+
+    Intended relationship: real table = same teams as predicted, stats only
+    from played results. Orphan alias rows that do not resolve into the roster
+    (and have no mapped twin) are dropped so ESPN/football-data dual names
+    cannot inflate the table.
+    """
+    if not standings or not isinstance(standings.get("groups"), list):
+        return standings
+    roster = _canonical_roster_teams(comp_name)
+    if not roster:
+        return standings
+    roster_set = set(roster)
+    base_comp, _view = resolve_competition_query(comp_name)
+    # Only align simple single-table / placeholder layouts (Premier League etc.).
+    layout = str(standings.get("standings_layout") or "")
+    if layout and layout not in {"single_table", ""}:
+        # Still rename entries to canonicals via dedupe; keep structure.
+        return standings
+    new_groups = []
+    for group in standings["groups"]:
+        entries = group.get("entries") or []
+        # Skip alignment for multi-group cups / conferences.
+        if len(standings["groups"]) > 1 and str(group.get("name") or "") not in {
+            "Overall", "Regular Season", "League Phase", "Supporters Shield",
+        }:
+            new_groups.append(group)
+            continue
+        by_team: dict[str, dict] = {t: {
+            "team": t, "rank": 0, "position": 0,
+            "P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
+        } for t in roster}
+        for entry in entries:
+            team = _normalize_team_name(str(entry.get("team", "")).strip(), base_comp)
+            if not team:
+                continue
+            if team not in roster_set:
+                # Unmapped alias — drop rather than keep a duplicate row.
+                continue
+            existing = by_team[team]
+            try:
+                if int(entry.get("P") or 0) >= int(existing.get("P") or 0):
+                    merged = dict(entry)
+                    merged["team"] = team
+                    by_team[team] = merged
+            except Exception:
+                merged = dict(entry)
+                merged["team"] = team
+                by_team[team] = merged
+        # Rank by standard GD tiebreak for zeroed/partial tables.
+        ranked = sorted(
+            by_team.values(),
+            key=lambda r: (
+                -int(r.get("Pts") or 0),
+                -int(r.get("GD") or 0),
+                -int(r.get("GF") or 0),
+                str(r.get("team") or ""),
+            ),
+        )
+        for idx, row in enumerate(ranked, start=1):
+            row["rank"] = idx
+            row["position"] = idx
+        new_groups.append({**group, "entries": ranked})
+    out = dict(standings)
+    out["groups"] = new_groups
+    return out
 
 
 _real_tables_lock = threading.Lock()
@@ -456,6 +612,10 @@ def _compute_standings_from_history(comp_name):
             source,
             current_phase=current_phase,
         )
+        # Always collapse ESPN/football-data aliases and align to the same
+        # canonical roster predicted tables use (Premier League etc.).
+        response = _dedupe_standings_groups(response, comp_name)
+        response = _align_standings_to_canonical_roster(response, comp_name)
         with _real_tables_lock:
             _real_tables[comp_name] = response
         _persist_real_tables()
@@ -1103,4 +1263,7 @@ def _build_fallback_standings(comp_name):
     groups = build_structured_standings_groups(comp_name, sorted(teams))
     if not groups:
         return None
-    return package_real_standings(comp_name, groups, "placeholder")
+    response = package_real_standings(comp_name, groups, "placeholder")
+    response = _dedupe_standings_groups(response, comp_name)
+    response = _align_standings_to_canonical_roster(response, comp_name)
+    return response

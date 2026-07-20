@@ -48,7 +48,7 @@ COMPETITION_SIM_RUNS = {
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
-MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "team_name_mapping_master.json")
+MAPPING_FILE = os.path.join(BASE_DIR, "..", "..", "Data", "team_name_mapping_master.json")
 LEAGUE_TEAMS_FILE = os.path.join(OUT_DIR, "league_teams.json")
 
 
@@ -92,7 +92,8 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
                         sibling_roster.setdefault(canon, []).append((sibling_comp, raw))
     added = 0
     for raw_name in sorted(set(unresolved_names)):
-        if raw_name in comp_section:
+        existing = comp_section.get(raw_name)
+        if isinstance(existing, str) and existing.strip():
             continue
         candidate = None
         for sibling_comp in siblings:
@@ -114,7 +115,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
                 added_to_sibling = False
                 for sibling_comp in siblings:
                     sibling_section = mapping.setdefault(sibling_comp, {})
-                    if raw_name not in sibling_section:
+                    if raw_name not in sibling_section or not str(sibling_section.get(raw_name) or "").strip():
                         sibling_section[raw_name] = candidate
                         added_to_sibling = True
                         break
@@ -122,12 +123,13 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
                     comp_section[raw_name] = candidate
             else:
                 comp_section[raw_name] = candidate
-        else:
-            comp_section[raw_name] = ""
-        added += 1
+            added += 1
+        # Do not write blank stubs — they block future auto-mapping.
     if added:
         with open(MAPPING_FILE, "w", encoding="utf-8") as fh:
             json.dump(mapping, fh, indent=2, ensure_ascii=False)
+        if hasattr(pm, "clear_name_mapping_cache"):
+            pm.clear_name_mapping_cache()
         print(f"  Mapping: auto-added {added} entry/ies to {MAPPING_FILE}")
 
 
@@ -171,21 +173,21 @@ def fetch_json(url, timeout=20):
         return json.loads(resp.read().decode("utf-8"))
 
 
-def load_future_fixtures_from_espn(competition, year=None):
+def load_future_fixtures_from_espn(competition, year=None, max_days=45):
     espn_id = ESPN_LEAGUE_IDS.get(competition)
     if not espn_id:
         return pd.DataFrame()
 
     today = pd.Timestamp(datetime.now(UTC).date())
-    # Scan through the competition's active season window (European: Jul→May),
-    # not just Dec 31 of the calendar year.
+    # Prefer a short near-term crawl; remaining fixtures are filled synthetically.
     try:
         import season_calendar as sc
-        _start, end = sc.fixture_search_bounds(competition, reference_date=today)
-        end = max(end, today)
+        _start, season_end = sc.fixture_search_bounds(competition, reference_date=today)
+        season_end = max(season_end, today)
     except Exception:
         target_year = int(year or datetime.now(UTC).year)
-        end = pd.Timestamp(f"{target_year}-12-31")
+        season_end = pd.Timestamp(f"{target_year}-12-31")
+    end = min(season_end, today + pd.Timedelta(days=max(0, int(max_days))))
     start = today
     rows = []
     seen = set()

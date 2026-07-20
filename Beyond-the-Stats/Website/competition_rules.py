@@ -451,21 +451,35 @@ def cup_format(comp_name: str) -> dict | None:
 
 
 def _game_match_key(game: dict) -> tuple:
+    """Identity for completed-game dedupe.
+
+    Team sides are mapped through ``canonical_team_name`` first so ESPN
+    ``Manchester City`` and football-data ``Man City`` collapse to one match.
+    ``normalize_team_key`` alone is unsafe (strips ``city``/``united`` and can
+    collide Man City vs Man United, while failing to equate Man City vs Manchester City).
+    """
+    comp = str(game.get("competition", "")).strip()
+    home = canonical_team_name(game.get("home_team"), comp) or str(game.get("home_team") or "")
+    away = canonical_team_name(game.get("away_team"), comp) or str(game.get("away_team") or "")
     return (
-        str(game.get("competition", "")).strip().lower(),
+        comp.lower(),
         str(game.get("match_date", "")).strip()[:10],
-        normalize_team_key(game.get("home_team")),
-        normalize_team_key(game.get("away_team")),
+        home.strip().lower(),
+        away.strip().lower(),
     )
 
 
 def _append_game(games: list[dict], seen: set, game: dict) -> None:
     if not game:
         return
+    comp = str(game.get("competition", "")).strip()
     home = str(game.get("home_team", "")).strip()
     away = str(game.get("away_team", "")).strip()
     if not home or not away:
         return
+    # Store canonical football-data names so real tables match predicted.
+    home = canonical_team_name(home, comp) or home
+    away = canonical_team_name(away, comp) or away
     hs = game.get("home_score")
     aws = game.get("away_score")
     if hs is None or aws is None:
@@ -475,7 +489,12 @@ def _append_game(games: list[dict], seen: set, game: dict) -> None:
         aws_i = int(float(aws))
     except (TypeError, ValueError):
         return
-    key = _game_match_key(game)
+    key = _game_match_key({
+        "competition": comp,
+        "match_date": game.get("match_date"),
+        "home_team": home,
+        "away_team": away,
+    })
     if key in seen:
         return
     seen.add(key)

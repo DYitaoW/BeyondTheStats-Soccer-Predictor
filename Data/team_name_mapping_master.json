@@ -78,9 +78,8 @@
   },
   "Spain/La Liga": {
     "Alavés": "Alaves",
-    "Athletic Club": "",
+    "Athletic Club": "Ath Bilbao",
     "CA Osasuna": "Osasuna",
-    "Club Atlético de Madrid": "",
     "Deportivo Alavés": "Alaves",
     "Elche CF": "Elche",
     "FC Barcelona": "Barcelona",
@@ -94,7 +93,6 @@
     "Real Betis Balompié": "Betis",
     "Real Madrid CF": "Real Madrid",
     "Real Oviedo": "Oviedo",
-    "Real Sociedad de Fútbol": "",
     "Sevilla FC": "Sevilla",
     "Valencia CF": "Valencia",
     "Villarreal CF": "Villarreal",
@@ -147,7 +145,9 @@
     "Valladolid": "Valladolid",
     "Zaragoza": "Zaragoza",
     "Deportivo Alaves": "Alaves",
-    "Real Betis Balompie": "Betis"
+    "Real Betis Balompie": "Betis",
+    "Deportivo La Coruña": "La Coruna",
+    "Málaga": "Malaga"
   },
   "Italy/Serie A": {
     "AC Milan": "Milan",
@@ -328,7 +328,8 @@
     "Sunderland": "Sunderland",
     "West Ham": "West Ham",
     "Wolves": "Wolves",
-    "West Ham United": "West Ham"
+    "West Ham United": "West Ham",
+    "Wolverhampton Wanderers": "Wolves"
   },
   "United States/MLS": {
     "Atlanta United FC": "Atlanta Utd",
@@ -377,8 +378,6 @@
     "St. Louis CITY SC": "St. Louis City",
     "Toronto FC": "Toronto FC",
     "Vancouver Whitecaps": "Vancouver Whitecaps",
-    "MLS All-Stars": "",
-    "Liga MX All-Stars": "",
     "d.c.united": "DC United",
     "newyorkcityfc": "New York City",
     "newyorkcity": "New York City",
@@ -563,7 +562,9 @@
     "Schalke 04": "Schalke 04",
     "FC Elversberg": "Elversberg",
     "1. FC Koln": "FC Koln",
-    "Borussia Monchengladbach": "M'gladbach"
+    "Borussia Monchengladbach": "M'gladbach",
+    "Borussia Dortmund": "Dortmund",
+    "SV Elversberg": "Elversberg"
   },
   "Scotland/Premiership": {
     "Hibernian": "Hibernian",
@@ -977,10 +978,7 @@
     "Union Berlin": "Union Berlin",
     "Werder Bremen": "Werder Bremen"
   },
-  "Germany/DFB-Pokal": {
-    "Fortuna Düsseldorf": "",
-    "Freiburg": ""
-  },
+  "Germany/DFB-Pokal": {},
   "Greece/Super League": {
     "AEK": "AEK",
     "AEK Athens": "AEK",
@@ -1370,13 +1368,41 @@
     "JEF United Ichihara-Chiba": "JEF United",
     "Mito Hollyhock": "Mito Hollyhock"
   },
-  "Switzerland/Super League": {},
+  "Switzerland/Super League": {
+    "FC Basel": "FC Basel",
+    "FC Lugano": "FC Lugano",
+    "FC Luzern": "FC Luzern",
+    "FC Sion": "FC Sion",
+    "FC Thun": "FC Thun",
+    "FC Zürich": "FC Zürich",
+    "Grasshoppers": "Grasshoppers",
+    "Lausanne Sports": "Lausanne Sports",
+    "Servette": "Servette",
+    "St. Gallen": "St. Gallen",
+    "Winterthur": "Winterthur",
+    "Young Boys": "Young Boys"
+  },
   "Ukraine/Premier League": {},
   "Croatia/HNL": {},
   "Hungary/NB I": {},
   "Czech Republic/First League": {},
   "Serbia/SuperLiga": {},
-  "Cyprus/First Division": {},
+  "Cyprus/First Division": {
+    "AEK Larnaca": "AEK Larnaca",
+    "AEL": "AEL",
+    "Akritas Chlorakas": "Akritas Chlorakas",
+    "Anorthosis": "Anorthosis",
+    "Apoel Nicosia": "Apoel Nicosia",
+    "Apollon Limassol": "Apollon Limassol",
+    "Aris Limassol": "Aris Limassol",
+    "Enosis Neon Paralimni": "Enosis Neon Paralimni",
+    "Ethnikos Achnas": "Ethnikos Achnas",
+    "Krasava": "Krasava",
+    "Olympiakos Nicosia": "Olympiakos Nicosia",
+    "Omonia Aradippou": "Omonia Aradippou",
+    "Omonia Nicosia": "Omonia Nicosia",
+    "Pafos": "Pafos"
+  },
   "Slovakia/Super Liga": {},
   "Slovenia/PrvaLiga": {},
   "Bulgaria/First League": {},
@@ -1393,7 +1419,20 @@
   "FIFA/World Cup": {},
   "FIFA/Friendly": {},
   "Club Friendlies": {},
-  "Denmark/Danish Superliga": {},
+  "Denmark/Danish Superliga": {
+    "AC Horsens": "Horsens",
+    "AGF": "Aarhus",
+    "Brøndby IF": "Brondby",
+    "F.C. København": "FC Copenhagen",
+    "FC Midtjylland": "Midtjylland",
+    "FC Nordsjælland": "Nordsjaelland",
+    "Lyngby Boldklub": "Lyngby",
+    "Odense Boldklub": "Odense",
+    "Randers FC": "Randers FC",
+    "Silkeborg IF": "Silkeborg",
+    "Sønderjyske Fodbold": "Sonderjyske",
+    "Viborg FF": "Viborg"
+  },
   "Brazil/Brasileirão": {
     "America MG": "America MG",
     "Athletico-PR": "Athletico-PR",
@@ -1442,5 +1481,21 @@
     "Vasco da Gama": "Vasco",
     "Vitoria": "Vitoria",
     "Vitória": "Vitoria"
+  },
+  "Israel/Premier League": {
+    "Beitar Jerusalem": "Beitar Jerusalem",
+    "Bnei Sakhnin": "Bnei Sakhnin",
+    "Hapoel Be'er": "Hapoel Be'er",
+    "Hapoel Hadera": "Hapoel Hadera",
+    "Hapoel Haifa": "Hapoel Haifa",
+    "Hapoel Jerusalem": "Hapoel Jerusalem",
+    "Hapoel Kiryat Shmona": "Hapoel Kiryat Shmona",
+    "Ironi Tiberias": "Ironi Tiberias",
+    "Maccabi Haifa": "Maccabi Haifa",
+    "Maccabi Netanya": "Maccabi Netanya",
+    "Maccabi Petah-Tikva": "Maccabi Petah-Tikva",
+    "Maccabi Raina": "Maccabi Raina",
+    "Maccabi Tel-Aviv": "Maccabi Tel-Aviv",
+    "Moadon Sport Ashdod": "Moadon Sport Ashdod"
   }
 }

@@ -20,7 +20,7 @@ import Predict_Match as pm
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_club_friendlies.csv")
-TEAM_MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "team_name_mapping_master.json")
+TEAM_MAPPING_FILE = os.path.join(BASE_DIR, "..", "..", "Data", "team_name_mapping_master.json")
 
 CLUB_FRIENDLIES_COMPETITION = "Club Friendlies"
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/club.friendly/scoreboard"
