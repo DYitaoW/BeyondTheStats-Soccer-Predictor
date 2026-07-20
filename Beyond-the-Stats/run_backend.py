@@ -207,10 +207,16 @@ def main() -> int:
 
     workers = max(1, min(int(args.workers), 3))
     cpu_count = os.cpu_count() or 1
+    # When sub-pipelines already run in parallel, keep competition workers low
+    # so Global+MLS+Extra projection pools do not oversubscribe the host.
     if args.competition_workers <= 0:
-        competition_workers = max(1, min(cpu_count, 4))
+        competition_workers = max(1, min(2 if workers > 1 else 4, cpu_count))
+        if workers > 1:
+            competition_workers = max(1, min(competition_workers, cpu_count // workers or 1))
     else:
         competition_workers = max(1, int(args.competition_workers))
+        if workers > 1:
+            competition_workers = max(1, min(competition_workers, 2))
 
     config = BackendConfig(
         serve_website=not args.no_website,
