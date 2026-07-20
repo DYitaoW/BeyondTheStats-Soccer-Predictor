@@ -78,10 +78,36 @@ def _load_league_data_from_cache(comp_name):
             if age > float(getattr(config, "CACHE_TTL_LONG", 600)):
                 return None
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                payload = json.load(f)
+            if _mls_league_data_cache_missing_cup(comp_name, payload):
+                return None
+            return payload
         except Exception:
             pass
     return None
+
+
+def _mls_league_data_cache_missing_cup(comp_name: str, payload: dict) -> bool:
+    """Rebuild MLS cache entries that omit Cup bracket / winner odds."""
+    if not str(comp_name or "").startswith("United States/MLS"):
+        return False
+    if not isinstance(payload, dict):
+        return True
+    winners = payload.get("mls_winners_odds") or {}
+    cup_odds = winners.get("mls_cup") if isinstance(winners, dict) else None
+    has_cup_odds = isinstance(cup_odds, dict) and bool(
+        cup_odds.get("winner_probabilities") or cup_odds.get("winners_odds") or cup_odds.get("champion")
+    )
+    projected = ((payload.get("bracket") or {}).get("projected") or {})
+    has_real_bracket = isinstance(projected, dict) and any(
+        key in projected
+        for key in ("mls_cup", "wildcard", "round_one", "eastern_seeds", "mls_cup_winner_probabilities")
+    )
+    bracket_path = getattr(config, "MLS_PROJECTED_BRACKET_FILE", "")
+    if bracket_path and os.path.exists(bracket_path):
+        return not (has_cup_odds and has_real_bracket)
+    # Even without the pipeline file, keep a stable mls_cup slot in winners_odds.
+    return "mls_cup" not in (winners or {})
 
 
 def _write_league_data_cache(comp_name, payload):
@@ -509,6 +535,21 @@ def _generate_mls_playoff_bracket():
     }
 
 
+def _load_mls_projected_bracket() -> dict | None:
+    """Load the pipeline MLS Cup / playoff bracket JSON when present."""
+    data = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
+    return data if isinstance(data, dict) and data else None
+
+
+def _mls_bracket_has_playoff_structure(bracket: dict | None) -> bool:
+    if not isinstance(bracket, dict):
+        return False
+    return any(
+        key in bracket
+        for key in ("mls_cup", "wildcard", "round_one", "eastern_seeds", "mls_cup_winner_probabilities")
+    )
+
+
 def _build_bracket_section(comp_name: str) -> dict:
     bracket = {
         "projected": None,
@@ -520,10 +561,16 @@ def _build_bracket_section(comp_name: str) -> dict:
     base_comp, _view = resolve_competition_query(comp_name)
 
     if base_comp == "United States/MLS" or comp_name.startswith("United States/MLS"):
-        mls_playoff = _generate_mls_playoff_bracket()
-        if mls_playoff.get("rounds"):
-            bracket["projected"] = mls_playoff
-            bracket["knockout_rounds"] = mls_playoff.get("knockout_rounds")
+        # Prefer the full simulated playoff bracket from Project_League_Table.
+        projected = _load_mls_projected_bracket()
+        stub = _generate_mls_playoff_bracket()
+        if _mls_bracket_has_playoff_structure(projected):
+            bracket["projected"] = projected
+            # Keep round topology for clients that only understand knockout_rounds.
+            bracket["knockout_rounds"] = stub.get("knockout_rounds")
+        elif stub.get("rounds"):
+            bracket["projected"] = stub
+            bracket["knockout_rounds"] = stub.get("knockout_rounds")
         return bracket
 
     cup_fmt = config._CUP_FORMATS.get(base_comp) or config._CUP_FORMATS.get(comp_name)
@@ -613,15 +660,31 @@ def _roster_predicted_table(comp_name: str) -> tuple[list[dict], list[dict]]:
     return predicted_table, winners_odds
 
 
+def _empty_mls_cup_odds() -> dict:
+    return {
+        "competition": config.MLS_CUP_COMPETITION,
+        "winner_probabilities": {},
+        "winners_odds": [],
+        "champion": None,
+        "simulations_run": None,
+    }
+
+
 def _enrich_mls_payload(comp: str, payload: dict) -> dict:
+    """Attach MLS Cup playoff bracket + Shield/East/West/Cup winner odds."""
     if not str(comp or "").startswith("United States/MLS"):
         return payload
 
-    mls_winners = _build_mls_winners_odds_bundle()
-    if mls_winners:
-        payload["mls_winners_odds"] = mls_winners
-        payload["format"]["extensions"]["mls_winner_views"] = list(mls_winners.keys())
-        payload["predicted"]["mls_winner_views"] = mls_winners
+    mls_winners = _build_mls_winners_odds_bundle() or {}
+    # Always expose an mls_cup slot so clients can rely on the key.
+    if "mls_cup" not in mls_winners:
+        mls_winners["mls_cup"] = _empty_mls_cup_odds()
+
+    payload["mls_winners_odds"] = mls_winners
+    payload.setdefault("format", {}).setdefault("extensions", {})
+    payload["format"]["extensions"]["mls_winner_views"] = list(mls_winners.keys())
+    payload.setdefault("predicted", {})
+    payload["predicted"]["mls_winner_views"] = mls_winners
 
     _, view = resolve_competition_query(comp)
     view_key_map = {
@@ -636,33 +699,90 @@ def _enrich_mls_payload(comp: str, payload: dict) -> dict:
     else:
         view_key = None
 
+    # Only remap predicted.winner for an explicit view / MLS Cup URL.
+    # Default ``United States/MLS`` keeps Supporters Shield table odds and
+    # exposes Cup odds under ``mls_winners_odds.mls_cup``.
     if view_key and view_key in mls_winners:
         view_payload = mls_winners[view_key]
-        for key in ("winner_probabilities", "winners_odds", "champion", "simulations_run"):
-            if view_payload.get(key) is not None:
-                if key == "winner_probabilities":
-                    payload["predicted"]["winner"]["probabilities"] = view_payload[key]
-                elif key == "winners_odds":
-                    payload["predicted"]["winners_odds"] = view_payload[key]
-                elif key == "champion":
-                    payload["predicted"]["winner"]["champion"] = view_payload[key]
-                elif key == "simulations_run":
-                    payload["predicted"]["winner"]["simulations_run"] = view_payload[key]
+        payload["predicted"].setdefault("winner", {})
+        if view_payload.get("winner_probabilities") is not None:
+            payload["predicted"]["winner"]["probabilities"] = view_payload["winner_probabilities"]
+        if view_payload.get("winners_odds") is not None:
+            payload["predicted"]["winners_odds"] = view_payload["winners_odds"]
+        if view_payload.get("champion") is not None:
+            payload["predicted"]["winner"]["champion"] = view_payload["champion"]
+        if view_payload.get("simulations_run") is not None:
+            payload["predicted"]["winner"]["simulations_run"] = view_payload["simulations_run"]
 
-    bracket_file = _load_json_payload(config.MLS_PROJECTED_BRACKET_FILE)
-    if isinstance(bracket_file, dict) and bracket_file:
-        cup_probs = bracket_file.get("mls_cup_winner_probabilities") or {}
+    bracket_section = payload.get("bracket") if isinstance(payload.get("bracket"), dict) else {}
+    projected = bracket_section.get("projected") if isinstance(bracket_section.get("projected"), dict) else None
+    bracket_file = _load_mls_projected_bracket()
+    if _mls_bracket_has_playoff_structure(bracket_file):
+        projected = dict(bracket_file)
+        bracket_section["projected"] = projected
+        payload["bracket"] = bracket_section
+
+        cup_data = projected.get("mls_cup") or {}
+        cup_probs = projected.get("mls_cup_winner_probabilities") or {}
+        if cup_data.get("winner"):
+            payload["mls_cup_winner"] = cup_data.get("winner")
+        # Convenience mirrors for clients that expect Cup fields beside the bracket.
+        payload["mls_cup"] = cup_data or None
         if cup_probs:
-            payload["predicted"]["winner"]["probabilities"] = {
+            payload["mls_cup_winner_probabilities"] = {
                 k: round(float(v), 2) for k, v in cup_probs.items() if float(v or 0) > 0
             }
-        cup_data = bracket_file.get("mls_cup") or {}
-        if cup_data.get("winner"):
-            payload["predicted"]["winner"]["champion"] = cup_data.get("winner")
-            payload["mls_cup_winner"] = cup_data.get("winner")
-        sims = bracket_file.get("simulations_run", 0)
-        if sims:
-            payload["predicted"]["winner"]["simulations_run"] = sims
+            # Refresh mls_cup odds from the live bracket file when the projected
+            # table CSV lacks an ``United States/MLS - MLS Cup`` sheet.
+            cup_view = mls_winners.get("mls_cup") or _empty_mls_cup_odds()
+            if not cup_view.get("winner_probabilities"):
+                winners_odds = [
+                    {
+                        "team": team,
+                        "win_league_pct": round(float(pct), 2),
+                        "top4_pct": None,
+                        "bottom3_pct": None,
+                        "most_likely_position": None,
+                        "most_likely_position_pct": None,
+                    }
+                    for team, pct in sorted(cup_probs.items(), key=lambda x: -float(x[1] or 0))
+                    if float(pct or 0) > 0
+                ]
+                cup_view = {
+                    "competition": config.MLS_CUP_COMPETITION,
+                    "winner_probabilities": {
+                        k: round(float(v), 2) for k, v in cup_probs.items() if float(v or 0) > 0
+                    },
+                    "winners_odds": winners_odds,
+                    "champion": (
+                        winners_odds[0]["team"] if winners_odds else cup_data.get("winner")
+                    ),
+                    "simulations_run": projected.get("simulations_run"),
+                }
+                mls_winners["mls_cup"] = cup_view
+                payload["mls_winners_odds"] = mls_winners
+                payload["predicted"]["mls_winner_views"] = mls_winners
+
+        if comp == config.MLS_CUP_COMPETITION or view_key == "mls_cup":
+            payload["predicted"].setdefault("winner", {})
+            if cup_probs:
+                payload["predicted"]["winner"]["probabilities"] = {
+                    k: round(float(v), 2) for k, v in cup_probs.items() if float(v or 0) > 0
+                }
+            if cup_data.get("winner"):
+                payload["predicted"]["winner"]["champion"] = cup_data.get("winner")
+            if projected.get("simulations_run"):
+                payload["predicted"]["winner"]["simulations_run"] = projected.get("simulations_run")
+
+    # Ensure Cup odds are also mirrored under predicted for the default MLS URL.
+    cup_view = (payload.get("mls_winners_odds") or {}).get("mls_cup") or {}
+    if cup_view:
+        payload["predicted"]["mls_cup"] = {
+            "champion": cup_view.get("champion"),
+            "probabilities": cup_view.get("winner_probabilities") or {},
+            "winners_odds": cup_view.get("winners_odds") or [],
+            "simulations_run": cup_view.get("simulations_run"),
+        }
 
     if not payload.get("fixtures"):
         payload["fixtures"] = _load_fixtures(comp)
