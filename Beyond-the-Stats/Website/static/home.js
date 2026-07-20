@@ -68,9 +68,18 @@ const homeEndDate = document.getElementById("home-end-date");
 const homeApplyDates = document.getElementById("home-apply-dates");
 
 function isoToday() {
-    const now = new Date();
-    const offsetMs = now.getTimezoneOffset() * 60000;
-    return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+    try {
+        return new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/New_York",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(new Date());
+    } catch (_err) {
+        const now = new Date();
+        const offsetMs = now.getTimezoneOffset() * 60000;
+        return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+    }
 }
 
 function formatDateButton(start, end) {

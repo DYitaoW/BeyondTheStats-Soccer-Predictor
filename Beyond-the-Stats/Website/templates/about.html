@@ -7,50 +7,50 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026070905') }}">
-  <meta name="description" content="About Beyond The Stats: machine learning match predictions for top European leagues, MLS, and cup competitions. Privacy policy and terms of use.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026072002') }}">
+  <meta name="description" content="About Beyond The Stats: machine learning match predictions for top European leagues, MLS, and cup competitions.">
   <meta name="robots" content="index, follow">
   <meta property="og:title" content="About — Beyond The Stats">
   <meta property="og:description" content="Machine learning match predictions for top European leagues, MLS, and cup competitions. Entertainment only.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://beyondthestats.com/about">
-  <meta property="og:image" content="https://beyondthestats.com/graphics/BeyondTheStatsLogo.png">
+  <meta property="og:url" content="https://beyondthestatsapp.com/about">
+  <meta property="og:image" content="https://beyondthestatsapp.com/graphics/BeyondTheStatsLogo.png">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="About — Beyond The Stats">
   <meta name="twitter:description" content="Machine learning match predictions. Entertainment only.">
-  <meta name="twitter:image" content="https://beyondthestats.com/graphics/BeyondTheStatsLogo.png">
+  <meta name="twitter:image" content="https://beyondthestatsapp.com/graphics/BeyondTheStatsLogo.png">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "WebSite",
-        "@id": "https://beyondthestats.com/#website",
-        "url": "https://beyondthestats.com",
+        "@id": "https://beyondthestatsapp.com/#website",
+        "url": "https://beyondthestatsapp.com",
         "name": "Beyond The Stats",
         "description": "Machine learning match predictions for top European leagues, MLS, and cup competitions.",
-        "publisher": { "@id": "https://beyondthestats.com/#organization" },
+        "publisher": { "@id": "https://beyondthestatsapp.com/#organization" },
         "inLanguage": "en-US"
       },
       {
         "@type": "Organization",
-        "@id": "https://beyondthestats.com/#organization",
+        "@id": "https://beyondthestatsapp.com/#organization",
         "name": "Beyond The Stats",
-        "url": "https://beyondthestats.com",
+        "url": "https://beyondthestatsapp.com",
         "logo": {
           "@type": "ImageObject",
-          "url": "https://beyondthestats.com/graphics/BeyondTheStatsLogo.png"
+          "url": "https://beyondthestatsapp.com/graphics/BeyondTheStatsLogo.png"
         },
         "description": "Soccer match prediction platform using machine learning."
       },
       {
         "@type": "WebPage",
-        "@id": "https://beyondthestats.com/about#webpage",
-        "url": "https://beyondthestats.com/about",
+        "@id": "https://beyondthestatsapp.com/about#webpage",
+        "url": "https://beyondthestatsapp.com/about",
         "name": "About Beyond The Stats",
-        "isPartOf": { "@id": "https://beyondthestats.com/#website" },
-        "about": { "@id": "https://beyondthestats.com/#organization" },
-        "description": "About Beyond The Stats, our prediction methodology, privacy policy, and terms of use.",
+        "isPartOf": { "@id": "https://beyondthestatsapp.com/#website" },
+        "about": { "@id": "https://beyondthestatsapp.com/#organization" },
+        "description": "About Beyond The Stats and our prediction methodology.",
         "inLanguage": "en-US"
       }
     ]
@@ -77,7 +77,6 @@
 
       <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
         <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
-        <a id="tab-world-cup" class="tab-btn world-cup-highlight {{ 'active' if active_page == 'world-cup' else '' }}" href="/world-cup">World Cup 2026</a>
         <a id="tab-global" class="tab-btn {{ 'active' if active_page == 'global' else '' }}" href="/upcoming-matches">Upcoming Matches</a>
         <a id="tab-cups" class="tab-btn {{ 'active' if active_page == 'cups' else '' }}" href="/cups">Cups</a>
         <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
@@ -114,7 +113,6 @@
           <option value="global">European Leagues</option>
           <option value="mls">MLS</option>
           <option value="extra">Extra Leagues</option>
-          <option value="world-cup">World Cup 2026</option>
         </select>
         <label for="cup-tabs" class="hidden" style="margin-top: 10px;">Cup</label>
         <select id="cup-tabs" class="cup-tabs hidden" aria-label="Cup prediction tabs"></select>
@@ -178,8 +176,7 @@
             <option value="global">European Leagues</option>
             <option value="mls">MLS</option>
             <option value="extra">Extra Leagues</option>
-            <option value="world-cup">World Cup 2026</option>
-          </select>
+            </select>
 
           <label for="table-league">League</label>
           <select id="table-league"></select>
@@ -187,16 +184,6 @@
         <button id="table-view-toggle" type="button">Show Probability View</button>
       </div>
       <div id="league-table-view" class="card">Select a dataset and league.</div>
-
-    </section>
-    <section id="panel-world-cup" class="{{ '' if active_page == 'world-cup' else 'hidden' }}">
-      <div class="card">
-        <h3>2026 FIFA World Cup Projection</h3>
-        <p class="section-subtitle">
-          Projected group tables, best third-place ranking, and knockout bracket using current World Cup rules.
-        </p>
-      </div>
-      <div id="world-cup-view" class="card">Loading World Cup projection...</div>
 
     </section>
     <section id="panel-players" class="{{ '' if active_page == 'players' else 'hidden' }}">
@@ -311,78 +298,25 @@
     <div class="card">
       <h3>Legal</h3>
       <p><em>Effective date: July 19, 2026</em></p>
-      <p>
-        The current Privacy Policy, Terms of Service, and Apple auto-renewable subscription
-        disclosure are published on dedicated pages and available via the public API:
-      </p>
       <ul>
-        <li><a href="/privacy">Privacy Policy</a> — <code>/api/legal/privacy</code></li>
-        <li><a href="/terms">Terms of Service</a> — <code>/api/legal/terms</code></li>
-        <li><a href="/subscriptions">Subscription Disclosure</a> — <code>/api/legal/subscriptions</code></li>
+        <li><a href="https://beyondthestatsapp.com/privacy">Privacy Policy</a></li>
+        <li><a href="https://beyondthestatsapp.com/terms">Terms of Service</a></li>
+        <li><a href="https://beyondthestatsapp.com/subscriptions">Subscription Disclosure</a></li>
       </ul>
-      <p>Index of all legal documents: <a href="/api/legal"><code>/api/legal</code></a></p>
-    </div>
-    <div class="card">
-      <h3>Privacy Policy (summary)</h3>
-      <p><em>See the full policy at <a href="/privacy">/privacy</a>.</em></p>
-      <h4>Data We Collect</h4>
-      <p>Beyond The Stats minimizes collection of personal data. App preferences stay on-device; the backend may temporarily process technical tokens needed for push notifications and Live Activities. Premium purchases are handled by Apple.</p>
-      <h4>Cookies & Local Storage</h4>
-      <p>The website does not set advertising cookies. The mobile app may store preferences locally on your device.</p>
-      <h4>Third-Party Services</h4>
-      <p>Match and player data is sourced from public third-party providers. We do not own or control this data. The providers we use, and links to their policies, are:</p>
-      <ul>
-        <li><strong>Cloudflare</strong> &mdash; serves our static content and routes API traffic. May set functional cookies. See their <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener noreferrer">privacy policy</a>.</li>
-        <li><strong>api.football-data.org</strong> &mdash; provides real-time match data. See their <a href="https://www.football-data.org/" target="_blank" rel="noopener noreferrer">policy</a>.</li>
-        <li><strong>football-data.co.uk</strong> &mdash; provides historical match data (no personal data).</li>
-        <li><strong>ESPN scoreboard</strong> &mdash; provides supplemental match data.</li>
-        <li><strong>Transfermarkt</strong> &mdash; provides player market value data.</li>
-        <li><strong>Apple</strong> &mdash; App Store purchases, push notifications, and Live Activities.</li>
-      </ul>
-      <p>Contact: <a href="mailto:beyondthestatsapp@gmail.com">beyondthestatsapp@gmail.com</a></p>
-    </div>
-    <div class="card">
-      <h3>Terms of Use (summary)</h3>
-      <p><em>See the full Terms of Service at <a href="/terms">/terms</a> and subscription terms at <a href="/subscriptions">/subscriptions</a>.</em></p>
-      <h4>1. Acceptance</h4>
-      <p>By accessing or using Beyond The Stats (the "Site" / "App"), you agree to these Terms. If you do not agree, do not use the Site or App.</p>
-      <h4>2. Purpose &amp; No Advice</h4>
-      <p>The Site is provided for <strong>entertainment and educational purposes only</strong>. Nothing on the Site constitutes betting, gambling, financial, investment, legal, or professional advice. Predictions are statistical estimates generated by machine learning models and may be substantially incorrect. Do not rely on them for any decision that has real-world consequences.</p>
-      <h4>3. No Warranty</h4>
-      <p>Predictions, probabilities, projected league tables, and any other model outputs are provided "as is" without any warranty of accuracy, completeness, or fitness for any particular purpose. Real-world outcomes will differ from model outputs, sometimes significantly.</p>
-      <h4>4. No Liability</h4>
-      <p>To the maximum extent permitted by law, the operators of the Site are not liable for any losses, damages, or consequences arising from your use of the Site or your reliance on its content. This includes, without limitation, betting losses, financial losses, or any other damages, even if we were advised of the possibility of such damages.</p>
-      <h4>5. No Betting Solicitation</h4>
-      <p>The Site does not promote, endorse, or facilitate gambling. If you choose to gamble based on third-party interpretations of our content, you do so entirely at your own risk and must comply with the laws of your jurisdiction. We are not a bookmaker, betting exchange, or gambling operator.</p>
-      <h4>6. Age Restriction</h4>
-      <p>You must be at least 18 years old (or the legal gambling age in your jurisdiction, whichever is higher) to use the Site if you intend to use predictions in connection with gambling. If you are under 18, do not use the Site for any gambling-related purpose.</p>
-      <h4>7. Intellectual Property</h4>
-      <p>Site design, source code, machine learning models, and original content are owned by Beyond The Stats and protected by applicable intellectual property laws. Match data, team names, player names, league names, and competition names are the property of their respective rights holders and are used under fair use for informational and editorial purposes. No ownership or affiliation with any league, team, federation, or data provider is implied.</p>
-      <h4>8. User Conduct</h4>
-      <p>You agree not to: scrape the Site at high volume or in a manner that degrades service; attempt to disrupt, reverse-engineer, or compromise the Site; submit malicious, defamatory, or unlawful content via the feedback form; or use the Site in violation of any applicable law.</p>
-      <h4>9. Third-Party Content &amp; Links</h4>
-      <p>Data is sourced from football-data.co.uk, api.football-data.org, ESPN, and Transfermarkt. Their terms, conditions, and licenses apply to that data. We are not responsible for the accuracy, availability, or legality of third-party content or external sites we may link to.</p>
-      <h4>10. Modifications</h4>
-      <p>We may modify, suspend, or discontinue any part of the Site at any time without notice. We may also update these Terms; the "last updated" date will reflect any changes.</p>
-      <h4>11. Termination</h4>
-      <p>We reserve the right to restrict or terminate your access to the Site at any time, with or without cause, and without notice.</p>
-      <h4>12. Governing Law &amp; Disputes</h4>
-      <p>These Terms are governed by the laws of the Commonwealth of Virginia and the applicable federal laws of the United States, without regard to conflict-of-law rules. Any disputes arising from or relating to the Site or these Terms will be resolved exclusively in the appropriate courts of the United States.</p>
-      <h4>13. Severability</h4>
-      <p>If any provision of these Terms is held to be invalid or unenforceable, the remaining provisions will continue in full force and effect.</p>
+      <p>API: <a href="https://api.beyondthestatsapp.com/api/legal"><code>https://api.beyondthestatsapp.com/api/legal</code></a></p>
     </div>
       <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
       <p>
-        <a href="/privacy">Privacy Policy</a> ·
-        <a href="/terms">Terms of Service</a> ·
-        <a href="/subscriptions">Subscriptions</a>
+        <a href="https://beyondthestatsapp.com/privacy">Privacy Policy</a> ·
+        <a href="https://beyondthestatsapp.com/terms">Terms of Service</a> ·
+        <a href="https://beyondthestatsapp.com/subscriptions">Subscriptions</a>
       </p>
       <p>&copy; 2026 Beyond The Stats</p>
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='shared.js', v='2026070904') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026072002') }}"></script>
   <script src="{{ url_for('static', filename='about.js', v='2026060706') }}"></script>
 </body>
 </html>
