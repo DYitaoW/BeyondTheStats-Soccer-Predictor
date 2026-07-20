@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ doc.title }} | Beyond The Stats</title>
+  <meta name="description" content="{{ doc.title }} for Beyond the Stats.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026072001') }}">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="site-header">
+      <div class="brand-row">
+        <a class="brand" href="/">Beyond The Stats</a>
+        <nav class="header-links">
+          <a class="theme-toggle header-link" href="/about">About</a>
+        </nav>
+      </div>
+    </header>
+
+    <article class="card legal-doc">
+      <p class="legal-nav">
+        <a href="/privacy">Privacy Policy</a> ·
+        <a href="/terms">Terms of Service</a> ·
+        <a href="/subscriptions">Subscriptions</a>
+      </p>
+      <div class="legal-body">
+        {{ body_html | safe }}
+      </div>
+      <p class="legal-meta muted-placeholder">
+        Also available via API:
+        <a href="{{ doc.api_url }}">{{ doc.api_url }}</a>
+      </p>
+    </article>
+
+    <footer class="site-footer">
+      <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
+      <p>
+        <a href="/privacy">Privacy</a> ·
+        <a href="/terms">Terms</a> ·
+        <a href="/subscriptions">Subscriptions</a>
+      </p>
+      <p>&copy; 2026 Beyond The Stats</p>
+    </footer>
+  </main>
+  <script src="{{ url_for('static', filename='shared.js', v='2026072001') }}"></script>
+</body>
+</html>

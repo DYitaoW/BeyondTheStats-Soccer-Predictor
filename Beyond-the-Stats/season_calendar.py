@@ -22,9 +22,10 @@ EUROPEAN_SEASON_FLIP_MONTH = 7
 EUROPEAN_SEASON_FLIP_DAY = 15
 
 # Competitions that run Jan–Dec on a single calendar-year file (*statYYYY).
+# Note: Liga MX is NOT here — it follows a Jul–May 26-27 style season
+# (Apertura + Clausura) even though football-data files are named mexstatYYYY.
 CALENDAR_YEAR_COMPETITION_PREFIXES = (
     "United States/",
-    "Mexico/",
     "Brazil/",
     "Japan/",
     "Argentina/",
@@ -32,7 +33,6 @@ CALENDAR_YEAR_COMPETITION_PREFIXES = (
 
 CALENDAR_YEAR_STAT_PREFIXES = (
     "mlsstat",
-    "mexstat",
     "brastat",
     "jpnstat",
     "argstat",
@@ -53,23 +53,36 @@ CALENDAR_YEAR_COMPETITIONS = frozenset({
 SEASON_FILE_PATTERN = re.compile(r"^(.+stat)(\d{4})(?:-(\d{2}))?\.csv$", re.IGNORECASE)
 
 
-def uses_calendar_year_season(file_name: str) -> bool:
-    """Return True for leagues whose season file year matches the calendar year."""
-    base = str(file_name or "").lower()
-    return any(
-        base.startswith(prefix)
-        for prefix in CALENDAR_YEAR_STAT_PREFIXES + CALENDAR_YEAR_ALIASED_STAT_PREFIXES
-    )
-
-
 def competition_uses_calendar_year(competition_name: str) -> bool:
-    """Return True for MLS, Liga MX, Brazil, J1, Argentina, and calendar-year EU leagues."""
+    """Return True for MLS, Brazil, J1, Argentina, and calendar-year EU leagues.
+
+    Liga MX is Jul–May (Apertura/Clausura across a 26-27 style season) and uses
+    ``european_season_start_year`` / European fixture bounds.
+    """
     comp = str(competition_name or "").strip()
+    if comp.startswith("Mexico/") or comp == "Mexico/Liga MX":
+        return False
     if any(comp.startswith(prefix) for prefix in CALENDAR_YEAR_COMPETITION_PREFIXES):
         return True
     if comp in CALENDAR_YEAR_COMPETITIONS:
         return True
     return False
+
+
+def uses_calendar_year_season(file_name: str) -> bool:
+    """Return True for leagues whose season file year matches the calendar year.
+
+    ``mexstatYYYY`` files use the European-style season *start* year (e.g.
+    mexstat2026 for the 2026-27 Apertura/Clausura cycle), so they are not
+    treated as calendar-year files here.
+    """
+    base = str(file_name or "").lower()
+    if base.startswith("mexstat"):
+        return False
+    return any(
+        base.startswith(prefix)
+        for prefix in CALENDAR_YEAR_STAT_PREFIXES + CALENDAR_YEAR_ALIASED_STAT_PREFIXES
+    )
 
 
 def _as_timestamp(value) -> pd.Timestamp:
