@@ -1048,16 +1048,30 @@ def api_home_upcoming():
 
 @app.get("/api/world-cup")
 def api_world_cup():
-    """Return the World Cup projection data."""
+    """Return the World Cup projection data (archived; 2026 tournament ended)."""
     world_cup_file = os.path.join(config.PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
     if not os.path.exists(world_cup_file):
-        return jsonify({"ok": False, "error": "World Cup projection not available"}), 404
+        return jsonify({
+            "ok": True,
+            "available": False,
+            "error": "World Cup projection not available",
+            "group_tables": [],
+            "simulations": {"winner_probabilities": {}},
+        })
     try:
         with open(world_cup_file, "r") as f:
             data = json.load(f)
+        if isinstance(data, dict):
+            data.setdefault("ok", True)
         return jsonify(data)
     except Exception:
-        return jsonify({"ok": False, "error": "Could not load World Cup projection"}), 500
+        return jsonify({
+            "ok": True,
+            "available": False,
+            "error": "Could not load World Cup projection",
+            "group_tables": [],
+            "simulations": {"winner_probabilities": {}},
+        })
 
 
 @app.get("/api/tournament/<key>")

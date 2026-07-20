@@ -763,19 +763,25 @@ def project_competition(ctx, competition, raw_file):
                     "AwayTeam": str(r.get("AwayTeam", "")),
                     "FTHG": None, "FTAG": None, "FTR": "",
                 })
-        # Add synthetic pairs for any teams not covered by ESPN fixtures
+        # Add synthetic pairs for any teams not covered by ESPN fixtures.
+        # Prefer resolved model names only — never inject unresolved ESPN aliases.
+        resolved_teams = []
+        for team_name in teams:
+            r = pm.resolve_team_name(team_name, ctx["available_teams"])
+            if r:
+                resolved_teams.append(r)
+        if resolved_teams:
+            teams = sorted(set(resolved_teams))
         seen = {(r["HomeTeam"], r["AwayTeam"]) for r in rows if r["HomeTeam"] and r["AwayTeam"]}
         for home in teams:
-            resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
             for away in teams:
                 if home == away:
                     continue
-                resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
-                if (resolved_home, resolved_away) in seen:
+                if (home, away) in seen:
                     continue
-                seen.add((resolved_home, resolved_away))
+                seen.add((home, away))
                 rows.append({
-                    "Date": "", "HomeTeam": resolved_home, "AwayTeam": resolved_away,
+                    "Date": "", "HomeTeam": home, "AwayTeam": away,
                     "FTHG": None, "FTAG": None, "FTR": "",
                 })
         df = pd.DataFrame(rows)
@@ -817,15 +823,18 @@ def project_competition(ctx, competition, raw_file):
     for _, row in df.iterrows():
         raw_home = str(row["HomeTeam"]).strip()
         raw_away = str(row["AwayTeam"]).strip()
-        home = pm.resolve_team_name(raw_home, ctx["available_teams"]) or raw_home
-        away = pm.resolve_team_name(raw_away, ctx["available_teams"]) or raw_away
+        home = pm.resolve_team_name(raw_home, ctx["available_teams"])
+        away = pm.resolve_team_name(raw_away, ctx["available_teams"])
+        if not home or not away or home not in table or away not in table:
+            continue
         seen_pairs.add((home, away))
         ftr = str(row.get("FTR", "")).strip()
         hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
         ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
         is_played = ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag)
 
-        if is_played:
+        # PATH B (no current-season CSV): never treat rows as already played.
+        if is_played and is_current_season:
             apply_result(table, home, away, int(hg), int(ag), is_real=True)
             real_matches.append((home, away, int(hg), int(ag)))
             continue

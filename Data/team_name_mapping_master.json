@@ -67,7 +67,14 @@
     "newcastleutd": "Newcastle",
     "newcastleunited": "Newcastle",
     "nottinghamforest": "Nott'm Forest",
-    "nottmforest": "Nott'm Forest"
+    "nottmforest": "Nott'm Forest",
+    "Brighton and Hove Albion": "Brighton",
+    "Brighton and Hove Albion FC": "Brighton",
+    "Coventry City": "Coventry",
+    "Coventry": "Coventry",
+    "Hull City": "Hull",
+    "Ipswich Town": "Ipswich",
+    "Ipswich": "Ipswich"
   },
   "Spain/La Liga": {
     "Alavés": "Alaves",
@@ -518,7 +525,6 @@
     "Bayer 04 Leverkusen": "Bayer 04 Leverkusen",
     "Bayer Leverkusen": "Leverkusen",
     "borussia Dortmund": "borussia Dortmund",
-
     "Borussia Mönchengladbach": "M'gladbach",
     "Eintracht Frankfurt": "Ein Frankfurt",
     "FC Augsburg": "Augsburg",
@@ -533,7 +539,6 @@
     "TSG Hoffenheim": "Hoffenheim",
     "VfB Stuttgart": "Stuttgart",
     "VFL Wolfsburg": "VFL Wolfsburg",
-
     "Bielefeld": "Bielefeld",
     "Bochum": "Bochum",
     "Braunschweig": "Braunschweig",
@@ -1274,7 +1279,6 @@
     "Central Córdoba (Santiago del Estero)": "Central Cordoba",
     "Chacarita Juniors": "Chacarita Juniors",
     "Colon Santa FE": "Colon Santa FE",
-
     "Crucero del Norte": "Crucero del Norte",
     "Defensa y Justicia": "Defensa y Justicia",
     "Dep. Riestra": "Dep. Riestra",

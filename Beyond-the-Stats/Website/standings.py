@@ -36,8 +36,10 @@ from competition_rules import (
     current_competition_phase,
     extract_group_label,
     filter_games_to_liga_mx_tournament,
+    filter_games_to_active_season,
     load_wc_team_groups,
     mls_conference,
+    normalize_team_key,
     package_real_standings,
     resolve_competition_query,
     resolve_mls_team_name,
@@ -71,21 +73,31 @@ def _load_team_display_mapping() -> dict[str, dict[str, str]]:
 
 
 def _normalize_team_name(name: str, competition: str) -> str:
+    text = str(name or "").strip()
+    if not text:
+        return ""
+    # Prefer shared canonical resolver (key-aware mapping aliases).
+    try:
+        mapped = canonical_team_name(text, competition)
+        if mapped:
+            return mapped
+    except Exception:
+        pass
     mapping = _load_team_display_mapping()
-    lower = name.lower().strip()
-    # Check competition-specific section first
+    lower = text.lower()
     comp_map = mapping.get(competition, {})
     for raw, canon in comp_map.items():
-        if raw.lower().strip() == lower:
-            return canon
-    # Fall through to flattened mapping across ALL competitions
+        if str(raw).lower().strip() == lower and str(canon).strip():
+            return str(canon).strip()
     for comp_entries in mapping.values():
         if not isinstance(comp_entries, dict):
             continue
         for raw, canon in comp_entries.items():
-            if raw.lower().strip() == lower:
-                return canon
-    return name
+            if str(raw).lower().strip() == lower and str(canon).strip():
+                return str(canon).strip()
+    return text
+
+
 _real_tables_lock = threading.Lock()
 
 _real_leaders: dict[str, dict] = {}
@@ -405,7 +417,18 @@ def _compute_standings_from_history(comp_name):
     Returns ``None`` if no completed games are available.
     """
     base_comp, mls_view = resolve_competition_query(comp_name)
-    comp_games = collect_competition_games(comp_name)
+    # Only count games from the active season window (drops prior May finales
+    # during Jul–Aug preseason when no new-season CSV exists yet).
+    comp_games = filter_games_to_active_season(
+        collect_competition_games(comp_name),
+        base_comp,
+    )
+    if base_comp == config.LIGA_MX_COMPETITION or base_comp.startswith("Mexico/"):
+        # Liga MX already has tournament filtering; re-apply after season filter.
+        try:
+            comp_games = filter_games_to_liga_mx_tournament(comp_games, base_comp) or comp_games
+        except Exception:
+            pass
     if not comp_games:
         return None
 
@@ -1010,12 +1033,24 @@ def _build_fallback_standings(comp_name):
     lookup_names = _competition_names_for_lookup(comp_name)
     teams = set()
 
-    # 1. Persisted league-team rosters (offseason fallback from fetch_league_teams.py)
+    # 1. Prefer current-season roster, then broader league_teams.json
+    try:
+        if os.path.exists(config.CURRENT_SEASON_TEAMS_FILE):
+            with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
+                current = json.load(fh)
+            if isinstance(current, dict):
+                for lookup_name in lookup_names:
+                    cached = current.get(lookup_name)
+                    if cached:
+                        teams.update(cached)
+    except Exception:
+        pass
     league_teams = _load_league_teams()
-    for lookup_name in lookup_names:
-        cached = league_teams.get(lookup_name)
-        if cached:
-            teams.update(cached)
+    if not teams:
+        for lookup_name in lookup_names:
+            cached = league_teams.get(lookup_name)
+            if cached:
+                teams.update(cached)
 
     # 2. Upcoming prediction CSVs and projected table CSVs
     csv_sources = [

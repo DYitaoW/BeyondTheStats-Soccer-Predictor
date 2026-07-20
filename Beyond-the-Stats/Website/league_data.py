@@ -35,6 +35,7 @@ from standings import (
     _build_fallback_standings,
     _compute_standings_from_history,
     _load_league_teams,
+    _normalize_team_name,
     _UEFA_COMPETITIONS,
 )
 
@@ -72,7 +73,10 @@ def _load_league_data_from_cache(comp_name):
     path = _league_data_cache_path(comp_name)
     if os.path.exists(path):
         try:
-            diff = os.path.getmtime(path)
+            age = datetime.now(timezone.utc).timestamp() - os.path.getmtime(path)
+            # Short TTL so preseason roster / PATH B fixes show up quickly.
+            if age > float(getattr(config, "CACHE_TTL_LONG", 600)):
+                return None
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
@@ -255,19 +259,62 @@ def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict]
 
 
 def _load_real_standings(comp_name: str) -> dict | None:
-    result = _compute_standings_from_history(comp_name) or _build_fallback_standings(comp_name)
+    """Active-season real table, or a zeroed current roster in preseason.
+
+    Prior-season history is excluded via ``filter_games_to_active_season``.
+    When the active window has no games yet (typical Jul–mid-Aug), return the
+    roster placeholder instead of a stale end-of-season table.
+    """
+    result = _compute_standings_from_history(comp_name)
     if result and result.get("groups"):
-        from competition_rules import collect_competition_games
-        games = collect_competition_games(comp_name)
-        if games:
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=45)).strftime("%Y-%m-%d")
-            has_recent = any(
-                str(g.get("match_date", "")) >= cutoff
-                for g in games if g.get("match_date")
-            )
-            if not has_recent:
-                return None
-    return result
+        result = _dedupe_standings_groups(result, comp_name)
+        return result
+    fallback = _build_fallback_standings(comp_name)
+    if fallback:
+        return _dedupe_standings_groups(fallback, comp_name)
+    return None
+
+
+def _dedupe_standings_groups(standings: dict, comp_name: str) -> dict:
+    """Collapse duplicate team rows that survived incomplete name mapping."""
+    if not standings or not isinstance(standings.get("groups"), list):
+        return standings
+    from competition_rules import resolve_competition_query
+
+    base_comp, _view = resolve_competition_query(comp_name)
+    new_groups = []
+    for group in standings["groups"]:
+        entries = group.get("entries") or []
+        by_key: dict[str, dict] = {}
+        order: list[str] = []
+        for entry in entries:
+            team = str(entry.get("team", "")).strip()
+            if not team:
+                continue
+            canon = _normalize_team_name(team, base_comp)
+            key = canon.lower()
+            if key not in by_key:
+                cloned = dict(entry)
+                cloned["team"] = canon
+                by_key[key] = cloned
+                order.append(key)
+            else:
+                existing = by_key[key]
+                try:
+                    if int(entry.get("P") or 0) > int(existing.get("P") or 0):
+                        cloned = dict(entry)
+                        cloned["team"] = canon
+                        by_key[key] = cloned
+                except Exception:
+                    pass
+        deduped = [by_key[k] for k in order]
+        for idx, row in enumerate(deduped, start=1):
+            row["rank"] = idx
+            row["position"] = idx
+        new_groups.append({**group, "entries": deduped})
+    out = dict(standings)
+    out["groups"] = new_groups
+    return out
 
 
 def _infer_groups_from_fixtures(comp_name: str, comp_table: list[dict]) -> list[dict] | None:
@@ -506,16 +553,44 @@ def _build_bracket_section(comp_name: str) -> dict:
 
 
 def _roster_predicted_table(comp_name: str) -> tuple[list[dict], list[dict]]:
-    league_teams = _load_league_teams()
-    roster = league_teams.get(comp_name)
+    """Zeroed preseason table from the best available current roster.
+
+    Prefers ``current_season_teams.json`` (updated for the active season) over
+    the broader ``league_teams.json`` historical roster when available.
+    """
+    base_comp, _ = resolve_competition_query(comp_name)
+    roster = None
+    # Prefer current-season roster when present (preseason 26-27 lists, etc.)
+    try:
+        if os.path.exists(config.CURRENT_SEASON_TEAMS_FILE):
+            with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
+                current = json.load(fh)
+            if isinstance(current, dict):
+                roster = current.get(comp_name) or current.get(base_comp)
+    except Exception:
+        roster = None
     if not roster:
-        base_comp, _ = resolve_competition_query(comp_name)
-        roster = league_teams.get(base_comp)
+        league_teams = _load_league_teams()
+        roster = league_teams.get(comp_name) or league_teams.get(base_comp)
     if not roster:
+        return [], []
+    # Map ESPN long names → football-data canonicals and drop blanks/dupes.
+    seen = set()
+    canonical_roster = []
+    for team in roster:
+        canon = _normalize_team_name(str(team).strip(), base_comp)
+        if not canon:
+            continue
+        key = canon.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        canonical_roster.append(canon)
+    if not canonical_roster:
         return [], []
     predicted_table = []
     winners_odds = []
-    for pos, team in enumerate(sorted(roster), start=1):
+    for pos, team in enumerate(sorted(canonical_roster), start=1):
         predicted_table.append({
             "position": pos,
             "team": team,
@@ -594,6 +669,63 @@ def _enrich_mls_payload(comp: str, payload: dict) -> dict:
     return payload
 
 
+def _projected_table_looks_like_completed_prior_season(comp_name: str, rows: list[dict]) -> bool:
+    """True when projected rows look like a finished prior season (preseason stale CSV).
+
+    Until the new-season CSV exists (often Jul–mid-Aug), PATH B should project a
+    fresh table from roster/ESPN with P≈0 real matches. A leftover end-of-season
+    projection typically has nearly every team with a full slate of played games.
+    """
+    if not rows or len(rows) < 8:
+        return False
+    played = []
+    for row in rows:
+        try:
+            played.append(int(float(row.get("P") or 0)))
+        except (TypeError, ValueError):
+            played.append(0)
+    if not played:
+        return False
+    played_sorted = sorted(played)
+    median_p = played_sorted[len(played_sorted) // 2]
+    # 20-team leagues finish at 38; 18-team at 34. Treat median >= 30 as complete.
+    if median_p < 30:
+        return False
+    # Only treat as stale when we are in the European preseason window without
+    # a current-season CSV (calendar-year leagues keep mid-season tables).
+    try:
+        import sys as _sys
+        import os as _os
+        _root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        import season_calendar as sc
+        base_comp, _view = resolve_competition_query(comp_name)
+        if sc.competition_uses_calendar_year(base_comp):
+            return False
+        # After Jul 15 flip, still preseason until roughly mid-August.
+        now = datetime.now(timezone.utc)
+        if now.month == 7 or (now.month == 8 and now.day < 15):
+            return True
+        # Also stale if offseason Jun–Jul 14
+        if sc.is_european_club_offseason():
+            return True
+    except Exception:
+        # If calendar helpers unavailable, still drop obviously-complete tables
+        # in July/early August.
+        now = datetime.now(timezone.utc)
+        if now.month == 7 or (now.month == 8 and now.day < 15):
+            return True
+    return False
+
+
+def _load_usable_projected_table(comp_name: str) -> list[dict]:
+    rows = _load_projected_competition_table(comp_name) or []
+    if rows and _projected_table_looks_like_completed_prior_season(comp_name, rows):
+        return []
+    return rows
+
+
 def build_league_data_payload(comp_name: str) -> dict:
     """Build the canonical league-data API payload for one competition."""
     comp = str(comp_name or "").strip()
@@ -604,8 +736,8 @@ def build_league_data_payload(comp_name: str) -> dict:
 
     fmt = competition_format_spec(comp)
 
-    comp_table = _load_projected_competition_table(comp)
-    predicted_table = comp_table or []
+    comp_table = _load_usable_projected_table(comp)
+    predicted_table = list(comp_table or [])
     winner_fields = _build_winner_probability_payload(comp_table) if comp_table else {}
 
     if not predicted_table:
@@ -614,6 +746,26 @@ def build_league_data_payload(comp_name: str) -> dict:
             winner_fields = _build_winner_probability_payload(predicted_table)
         else:
             roster_winners = []
+
+    # Dedupe predicted rows the same way as real tables
+    if predicted_table:
+        fake = {
+            "groups": [{"name": "Overall", "entries": [
+                {**row, "team": row.get("team"), "P": row.get("P") or row.get("played") or 0}
+                for row in predicted_table
+            ]}]
+        }
+        deduped = _dedupe_standings_groups(fake, comp)
+        entries = (deduped.get("groups") or [{}])[0].get("entries") or []
+        # Preserve original projected fields keyed by team
+        by_team = {str(r.get("team", "")).strip(): r for r in predicted_table}
+        predicted_table = []
+        for entry in entries:
+            team = str(entry.get("team", "")).strip()
+            base = dict(by_team.get(team) or entry)
+            base["team"] = team
+            predicted_table.append(base)
+        winner_fields = _build_winner_probability_payload(predicted_table) if predicted_table else winner_fields
 
     position_odds = _build_position_odds(predicted_table)
     predicted_groups = _load_predicted_groups(comp, predicted_table)
