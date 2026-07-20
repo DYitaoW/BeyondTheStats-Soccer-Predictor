@@ -330,10 +330,13 @@ def parse_start_year_from_key(season_key):
 
 
 def expected_current_latest_start_year(reference_date=None) -> int:
-    ref = datetime.now() if reference_date is None else reference_date
-    if ref.month >= 7:
-        return ref.year
-    return ref.year - 1
+    """MLS is a calendar-year competition — current season is the calendar year."""
+    try:
+        import season_calendar as sc
+        return sc.expected_season_start_year("United States/MLS", reference_date)
+    except Exception:
+        ref = datetime.now() if reference_date is None else reference_date
+        return int(ref.year)
 
 
 def season_recency_coefficient(latest_start_year, season_start_year):

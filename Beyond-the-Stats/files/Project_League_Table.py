@@ -632,7 +632,10 @@ def _expected_current_season_year(competition):
         return sc.expected_season_start_year(competition)
     except Exception:
         now = datetime.now()
-        return now.year if now.month >= 7 else now.year - 1
+        # Mirror european_season_start_year when season_calendar is unavailable.
+        if now.month > 7 or (now.month == 7 and now.day >= 15):
+            return now.year
+        return now.year - 1
 
 
 def _fetch_espn_teams(competition):
@@ -752,7 +755,10 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
                 return [], []
             teams = sorted(static_roster)
 
-        print(f"  No current-season CSV — using ESPN fallback ({len(teams)} teams)")
+        print(
+            f"  No current-season CSV (typical Jul–Aug before games) — "
+            f"using ESPN/roster PATH B ({len(teams)} teams)"
+        )
         table = init_table(teams)
         real_matches = []
         future_pairs = []
@@ -909,8 +915,10 @@ def main():
     if not latest:
         raise ValueError(f"No raw season files found in {RAW_DIR}")
 
-    # June is the European club off-season — skip projections until July when
-    # the next season (e.g. 26-27) becomes the active target.
+    # June through mid-July is the European club off-season — skip projections
+    # until on/after Jul 15 when the next season (e.g. 26-27) becomes active.
+    # Even then, Jul–most of Aug often has no next-season CSV yet; PATH B uses
+    # ESPN/roster without requiring that file.
     try:
         import season_calendar as sc
         if sc.is_european_club_offseason():
@@ -924,8 +932,8 @@ def main():
             }
             if european:
                 print(
-                    f"[skip] European club off-season (June) — "
-                    f"deferring {len(european)} league projection(s) until July"
+                    f"[skip] European club off-season (Jun–Jul 14) — "
+                    f"deferring {len(european)} league projection(s) until Jul 15+"
                 )
             latest = calendar
     except Exception:

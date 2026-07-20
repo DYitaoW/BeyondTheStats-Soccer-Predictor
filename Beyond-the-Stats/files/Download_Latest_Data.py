@@ -116,7 +116,8 @@ def has_required_general_data(csv_bytes, start_year, current_year, file_prefix="
     if any(col not in df.columns for col in GENERAL_REQUIRED_COLUMNS):
         return False
 
-    # Keep the active season (e.g. 2026-27 from July 2026) with a 1-row floor.
+    # Keep the active season (e.g. 2026-27 from Jul 15 2026) with a 1-row floor.
+    # Before the flip / early Jul–Aug the next-season file often does not exist yet.
     file_name = f"{file_prefix}{start_year}-{(start_year + 1) % 100:02d}.csv" if file_prefix else ""
     in_progress_season = season_calendar.is_in_progress_season(
         start_year, file_name, current_year=current_year

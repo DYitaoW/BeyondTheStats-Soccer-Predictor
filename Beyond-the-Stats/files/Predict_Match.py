@@ -362,13 +362,20 @@ def parse_start_year_from_key(season_key):
 
 def expected_current_latest_start_year(reference_date=None) -> int:
     """Return the expected latest season start year based on calendar date.
-    For European cross-year leagues (Jul-Jun), if month >= 7 the current season
-    started this year; if month < 7 it started last year.
-    For calendar-year leagues, the current season is the current year."""
-    ref = datetime.now() if reference_date is None else reference_date
-    if ref.month >= 7:
-        return ref.year
-    return ref.year - 1
+
+    Delegates to ``season_calendar.european_season_start_year`` (Jul 15 flip)
+    for European cross-year leagues. Callers that know a specific competition
+    should prefer ``season_calendar.expected_season_start_year`` so calendar-year
+    leagues (MLS, Nordic, etc.) are handled correctly.
+    """
+    try:
+        import season_calendar as sc
+        return sc.european_season_start_year(reference_date)
+    except Exception:
+        ref = datetime.now() if reference_date is None else reference_date
+        if ref.month > 7 or (ref.month == 7 and ref.day >= 15):
+            return ref.year
+        return ref.year - 1
 
 
 def season_recency_coefficient(latest_start_year, season_start_year):

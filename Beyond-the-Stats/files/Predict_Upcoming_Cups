@@ -666,7 +666,10 @@ def build_schedule_only_row(row, context=None):
         "schedule_only": "1",
         "prediction_quality": "no_prediction",
         "predicted_result": "",
-        "probability_reasoning": "Teams are not in the model database — fixture listed without odds.",
+        "probability_reasoning": (
+            "Prediction unavailable — fixture listed without odds "
+            "(model failure, missing data, or placeholder team)."
+        ),
         "prob_home": 0.0,
         "prob_draw": 0.0,
         "prob_away": 0.0,
@@ -1911,10 +1914,21 @@ def main():
 
     new_records = []
     skipped = 0
+    schedule_only_count = 0
     for _, fixture in fixtures.iterrows():
-        pred = predict_fixture(fixture, context)
+        pred = None
+        try:
+            pred = predict_fixture(fixture, context)
+        except Exception as exc:
+            home = str(fixture.get("home_team", "")).strip()
+            away = str(fixture.get("away_team", "")).strip()
+            comp = str(fixture.get("competition", "")).strip()
+            print(f"  Prediction failed ({comp}: {home} vs {away}): {exc}")
+            pred = None
         if pred is None:
             pred = build_schedule_only_row(fixture, context)
+            if pred is not None:
+                schedule_only_count += 1
         if pred is None:
             skipped += 1
             continue
@@ -1950,6 +1964,7 @@ def main():
     print(f"Team mappings file updated: {TEAM_MAPPING_FILE}")
     print(f"Predictions saved to: {PREDICTIONS_FILE}")
     print(f"New predictions written: {len(new_df)}")
+    print(f"Schedule-only (no odds, still listed): {schedule_only_count}")
     print(f"Skipped (unmatched team names): {skipped}")
     print(f"Removed completed fixtures from upcoming list: {removed_completed}")
     print(f"Newly settled with real results: {settled_count}")

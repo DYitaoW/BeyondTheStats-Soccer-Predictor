@@ -14,6 +14,13 @@ DEFAULT_CUP_LOOKAHEAD_DAYS = 180
 # single row). Accept those so real tables and projections can start immediately.
 CURRENT_SEASON_MIN_ROWS = 1
 
+# European fall–spring seasons flip to the next start year on/after this date
+# (e.g. Jul 15 2026 → 2026-27). Before then, keep targeting the prior season
+# because schedules / squad lists are often not published yet. Jul–Aug often
+# still has no next-season CSV (no games played) — projections use ESPN/roster.
+EUROPEAN_SEASON_FLIP_MONTH = 7
+EUROPEAN_SEASON_FLIP_DAY = 15
+
 # Competitions that run Jan–Dec on a single calendar-year file (*statYYYY).
 CALENDAR_YEAR_COMPETITION_PREFIXES = (
     "United States/",
@@ -36,6 +43,13 @@ CALENDAR_YEAR_ALIASED_STAT_PREFIXES = (
     "norstat",
     "swestat",
 )
+
+# Domestic competitions that use a single calendar year even when nested under
+# Europe/ (or similar). Do not apply the Jul–May European flip to these.
+CALENDAR_YEAR_COMPETITIONS = frozenset({
+    "Norway/Eliteserien",
+    "Sweden/Allsvenskan",
+})
 SEASON_FILE_PATTERN = re.compile(r"^(.+stat)(\d{4})(?:-(\d{2}))?\.csv$", re.IGNORECASE)
 
 
@@ -49,12 +63,11 @@ def uses_calendar_year_season(file_name: str) -> bool:
 
 
 def competition_uses_calendar_year(competition_name: str) -> bool:
-    """Return True for MLS, Liga MX, Brazil, J1, Argentina style leagues."""
+    """Return True for MLS, Liga MX, Brazil, J1, Argentina, and calendar-year EU leagues."""
     comp = str(competition_name or "").strip()
     if any(comp.startswith(prefix) for prefix in CALENDAR_YEAR_COMPETITION_PREFIXES):
         return True
-    # Nordic domestic leagues are calendar-year even when stored under Europe.
-    if comp in {"Norway/Eliteserien", "Sweden/Allsvenskan"}:
+    if comp in CALENDAR_YEAR_COMPETITIONS:
         return True
     return False
 
@@ -69,20 +82,36 @@ def _as_timestamp(value) -> pd.Timestamp:
     return pd.Timestamp(str(value)[:10]).normalize()
 
 
+def _past_european_season_flip(ref: pd.Timestamp) -> bool:
+    """True on/after EUROPEAN_SEASON_FLIP_MONTH/DAY in the reference year."""
+    return (int(ref.month), int(ref.day)) >= (
+        EUROPEAN_SEASON_FLIP_MONTH,
+        EUROPEAN_SEASON_FLIP_DAY,
+    )
+
+
 def is_european_club_offseason(reference_date=None) -> bool:
-    """June is the European club off-season gap (after May 31, before Jul 1)."""
+    """European club off-season: June 1 through the day before the Jul 15 flip.
+
+    Calendar-year European leagues (Nordic etc.) are not covered by this helper;
+    callers should exclude them via ``competition_uses_calendar_year``.
+    """
     ref = _as_timestamp(reference_date)
-    return int(ref.month) == 6
+    if int(ref.month) == 6:
+        return True
+    if int(ref.month) == EUROPEAN_SEASON_FLIP_MONTH and not _past_european_season_flip(ref):
+        return True
+    return False
 
 
 def european_season_start_year(reference_date=None) -> int:
-    """Start year of the active European season (Jul–May).
+    """Start year of the active European season (flip date → May).
 
-    July onwards → current calendar year (e.g. Jul 2026 → 2026-27).
-    Jan–June → previous calendar year (e.g. Mar 2026 → 2025-26).
+    On/after Jul 15 → current calendar year (e.g. Jul 15 2026 → 2026-27).
+    Jan through Jul 14 → previous calendar year (e.g. Jul 10 2026 → 2025-26).
     """
     ref = _as_timestamp(reference_date)
-    return int(ref.year) if int(ref.month) >= 7 else int(ref.year) - 1
+    return int(ref.year) if _past_european_season_flip(ref) else int(ref.year) - 1
 
 
 def expected_season_start_year(competition_or_file: str = "", reference_date=None) -> int:
@@ -107,15 +136,25 @@ def is_in_progress_season(
 ) -> bool:
     """Return True when a season file should use the relaxed in-progress row minimum.
 
-    European: matches the active Jul–May season start year (so in Jul 2026 the
-    in-progress file is ``*stat2026-27``, not ``*stat2025-26``).
+    European: matches the active season start year after the Jul 15 flip
+    (so on Jul 15 2026 the in-progress file is ``*stat2026-27``, not
+    ``*stat2025-26``). Before the flip, ``*stat2025-26`` remains in progress.
     Calendar-year: matches the current calendar year.
+
+    Note: early after the flip (Jul–most of Aug) the next-season CSV often does
+    not exist yet — download/process simply won't have that file, and
+    projections fall back to ESPN/roster (PATH B).
     """
     if reference_date is None:
         today = date.today()
         if current_year is not None and int(current_year) != today.year:
-            # Historical call sites that only passed current_year.
-            reference_date = date(int(current_year), 7, 15)
+            # Historical call sites that only passed current_year — evaluate on
+            # the European flip day of that year so "current" means post-flip.
+            reference_date = date(
+                int(current_year),
+                EUROPEAN_SEASON_FLIP_MONTH,
+                EUROPEAN_SEASON_FLIP_DAY,
+            )
         else:
             reference_date = today
     expected = expected_season_start_year(file_name, reference_date=reference_date)
@@ -179,7 +218,11 @@ def fixture_window_kind(competition_name: str, *, is_cup: bool = False) -> Fixtu
 
 
 def european_season_bounds(reference_date=None) -> tuple[pd.Timestamp, pd.Timestamp]:
-    """Jul 1 of the active European season through May 31 of the end year."""
+    """Jul 1 of the active European season through May 31 of the end year.
+
+    Fixture windows still use Jul 1 as the season calendar start; only the
+    *which season is active* decision uses the Jul 15 flip.
+    """
     start_year = european_season_start_year(reference_date)
     end_year = start_year + 1
     start = pd.Timestamp(year=start_year, month=7, day=1)
