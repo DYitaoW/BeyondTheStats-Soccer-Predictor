@@ -17,6 +17,12 @@ import pandas as pd
 
 import Predict_Match as pm
 
+# Beyond-the-Stats root (sibling of Extra-leagues/) for shared season helpers.
+_SP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _SP_DIR not in sys.path:
+    sys.path.insert(0, _SP_DIR)
+import season_calendar
+
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES_DIR = os.path.dirname(os.path.abspath(__file__))
