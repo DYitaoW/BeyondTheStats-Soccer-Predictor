@@ -25,6 +25,7 @@ Flags
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -177,29 +178,53 @@ def _should_build_model_cache(args, label: str, predict_script: Path) -> tuple[b
     return False, detail
 
 
+# Projected league tables can be CPU/network heavy (Monte Carlo + ESPN crawls).
+# Bound them so a hung/slow projection cannot pin the daily pipeline for hours.
+PROJECTED_TABLE_TIMEOUT_S = {
+    "global": 3600,  # many competitions
+    "mls": 2700,
+    "extra": 2700,
+}
+
+
 def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
     print(f"\n=== {name} ===")
     print(" ".join(str(c) for c in cmd))
     started = time.monotonic()
     print(f"[DEBUG] run_step starting '{name}' at T+{started - _pipeline_start_global:.0f}s "
           f"timeout={timeout}s")
+    # Own process group so timeouts can kill Project_League_Table worker pools
+    # (grandchildren) instead of leaving them orphaned on the host.
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=str(ROOT_DIR),
             text=True,
-            input=input_text,
-            check=False,
-            timeout=timeout,
-            capture_output=True,
+            stdin=subprocess.PIPE if input_text is not None else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired as exc:
+    except Exception as exc:
+        elapsed = time.monotonic() - started
+        print(f"[ERROR] {name}: failed to start: {exc} (after {elapsed:.1f}s)")
+        print(f"  → Skipping (continue_on_error={continue_on_error})")
+        return False
+
+    try:
+        stdout, stderr = proc.communicate(input=input_text, timeout=timeout)
+    except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - started
         print(f"[TIMEOUT] {name} exceeded {timeout}s timeout (after {elapsed:.1f}s)")
-        # Kill the hung subprocess — subprocess.run does NOT do this automatically.
         try:
-            exc.process.kill()
-            exc.process.wait(timeout=5)
+            os.killpg(proc.pid, signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        try:
+            proc.wait(timeout=5)
         except Exception:
             pass
         print(f"  → Skipping (continue_on_error={continue_on_error})")
@@ -211,10 +236,10 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
         return False
 
     elapsed = time.monotonic() - started
-    if proc.stdout:
-        print(proc.stdout, end="" if str(proc.stdout).endswith("\n") else "\n")
-    if proc.stderr:
-        print(proc.stderr, end="" if str(proc.stderr).endswith("\n") else "\n")
+    if stdout:
+        print(stdout, end="" if str(stdout).endswith("\n") else "\n")
+    if stderr:
+        print(stderr, end="" if str(stderr).endswith("\n") else "\n")
     print(f"[DEBUG] run_step finished '{name}' rc={proc.returncode} elapsed={elapsed:.1f}s "
           f"at T+{time.monotonic() - _pipeline_start_global:.0f}s")
     if proc.returncode != 0:
@@ -224,6 +249,21 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
 
     print(f"[OK] {name} ({elapsed:.1f}s)")
     return True
+
+
+def _resolve_competition_workers(args):
+    """Cap nested projection workers when sub-pipelines already run in parallel."""
+    requested = int(getattr(args, "competition_workers", 0) or 0)
+    workers = max(1, int(getattr(args, "workers", 1) or 1))
+    cpu = os.cpu_count() or 1
+    if requested <= 0:
+        # Auto: leave headroom for concurrent global/MLS/extra processes.
+        if workers > 1:
+            return max(1, min(2, cpu // workers or 1))
+        return max(1, min(cpu, 4))
+    if workers > 1:
+        return max(1, min(requested, 2))
+    return max(1, requested)
 
 
 def _project_table_cmd(files_dir, comp_workers, base_name):
@@ -238,7 +278,7 @@ def _run_global_subpipeline(args, api_token):
     """Run all global (European) + national + WC steps. Returns dict of results."""
     py = sys.executable
     sub = {}
-    comp_workers = int(getattr(args, "competition_workers", 0) or 0)
+    comp_workers = _resolve_competition_workers(args)
 
     sub["global_download_latest_data"] = run_step(
         "[global] Download latest data",
@@ -326,7 +366,7 @@ def _run_mls_subpipeline(args, api_token):
     """Run the MLS sub-pipeline. Returns dict of results."""
     py = sys.executable
     sub = {}
-    comp_workers = int(getattr(args, "competition_workers", 0) or 0)
+    comp_workers = _resolve_competition_workers(args)
 
     mls_dl_cmd = [py, str(MLS_FILES_DIR / "Download_Latest_Data.py")]
     if args.skip_model_train:
@@ -355,6 +395,7 @@ def _run_mls_subpipeline(args, api_token):
         "[mls] Projected league tables",
         _project_table_cmd(MLS_FILES_DIR, comp_workers, "Project_League_Table.py"),
         continue_on_error=args.continue_on_error,
+        timeout=PROJECTED_TABLE_TIMEOUT_S["mls"],
     )
     return sub
 
@@ -363,7 +404,7 @@ def _run_extra_subpipeline(args, api_token):
     """Run the extra-leagues sub-pipeline (smaller European / S. American / Asian leagues)."""
     py = sys.executable
     sub = {}
-    comp_workers = int(getattr(args, "competition_workers", 0) or 0)
+    comp_workers = _resolve_competition_workers(args)
     sub["extra_download_process_sort"] = run_step(
         "[extra] Download/process/sort latest data",
         [py, str(EXTRA_FILES_DIR / "Download_Latest_Data.py")],
@@ -386,6 +427,7 @@ def _run_extra_subpipeline(args, api_token):
         "[extra] Projected league tables",
         _project_table_cmd(EXTRA_FILES_DIR, comp_workers, "Project_League_Table.py"),
         continue_on_error=args.continue_on_error,
+        timeout=PROJECTED_TABLE_TIMEOUT_S["extra"],
     )
     return sub
 

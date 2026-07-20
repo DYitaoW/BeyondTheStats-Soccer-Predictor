@@ -44,7 +44,10 @@ ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{esp
 LIGA_MX_COMPETITION = "Mexico/Liga MX"
 LIGA_MX_ESPN_ID = "mex.1"
 RNG = random.Random()
-SIMULATION_RUNS = 2500
+# Regular-season Monte Carlo iterations. Cup win % uses the same run count but
+# samples from a precomputed matchup-prob cache (not a fresh model call per
+# playoff game), so raising this no longer multiplies sklearn cost by ~30x.
+SIMULATION_RUNS = 1000
 MAPPING_FILE = os.path.join(os.path.dirname(BASE_DIR), "..", "Data", "team_name_mapping_master.json")
 
 
@@ -299,6 +302,7 @@ def load_full_schedule_from_espn_season(target_year):
     end = pd.Timestamp(f"{target_year}-12-31")
     rows = []
     seen = set()
+    empty_streak = 0
 
     day = start
     while day <= end:
@@ -306,13 +310,18 @@ def load_full_schedule_from_espn_season(target_year):
         try:
             data = fetch_json(url, timeout=20)
         except Exception:
-            day += pd.Timedelta(days=1)
+            empty_streak += 1
+            # MLS has long offseason gaps; skip ahead instead of waiting on
+            # hundreds of empty daily scoreboard calls.
+            day += pd.Timedelta(days=7 if empty_streak >= 5 else 1)
             continue
 
         events = data.get("events", [])
-        if not isinstance(events, list):
-            day += pd.Timedelta(days=1)
+        if not isinstance(events, list) or not events:
+            empty_streak += 1
+            day += pd.Timedelta(days=7 if empty_streak >= 5 else 1)
             continue
+        empty_streak = 0
 
         for event in events:
             dt = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
@@ -585,6 +594,14 @@ def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, confere
     west_pos_counts = defaultdict(lambda: defaultdict(int))
     cup_win_counts = defaultdict(int)
 
+    # Precompute home-win probs for every MLS matchup once. Without this cache,
+    # each Monte Carlo season re-ran full sklearn predict_match calls for every
+    # playoff game (~25-30 model calls × runs ≈ tens of thousands), which could
+    # pin the MLS projection step for hours.
+    matchup_cache = None
+    if ctx is not None and canonical_teams:
+        matchup_cache = precompute_mls_matchup_probs(ctx, canonical_teams, "United States/MLS")
+
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
         for fixture in future_predictions:
@@ -605,8 +622,10 @@ def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, confere
         for pos, (team, _) in enumerate(west_ranked, start=1):
             west_pos_counts[team][pos] += 1
 
-        if ctx is not None and len(east_ranked) >= 9 and len(west_ranked) >= 9:
-            bracket = simulate_mls_playoff_bracket(ctx, east_ranked, west_ranked)
+        if matchup_cache is not None and len(east_ranked) >= 9 and len(west_ranked) >= 9:
+            bracket = simulate_mls_playoff_bracket(
+                ctx, east_ranked, west_ranked, matchup_cache=matchup_cache
+            )
             cup_winner = (bracket.get("mls_cup") or {}).get("winner")
             if cup_winner in cup_win_counts:
                 cup_win_counts[cup_winner] += 1
@@ -723,7 +742,12 @@ def predict_match(ctx, home_team, away_team, competition_hint):
     return pred_res, hg, ag, probs
 
 
-def predict_single_winner_no_draw(ctx, home_team, away_team, competition_hint, fallback_winner):
+def predict_single_winner_no_draw(ctx, home_team, away_team, competition_hint, fallback_winner, matchup_cache=None):
+    if matchup_cache is not None:
+        p_home = matchup_home_win_prob(ctx, home_team, away_team, competition_hint, matchup_cache)
+        if p_home is None:
+            return fallback_winner
+        return home_team if RNG.random() < p_home else away_team
     _, _, _, probs = predict_match(ctx, home_team, away_team, competition_hint)
     p_home = max(0.0, float(probs.get("H", 0.0)))
     p_away = max(0.0, float(probs.get("A", 0.0)))
@@ -733,13 +757,42 @@ def predict_single_winner_no_draw(ctx, home_team, away_team, competition_hint, f
     return home_team if RNG.random() < (p_home / total) else away_team
 
 
-def predict_best_of_three(ctx, high_seed_team, low_seed_team, competition_hint):
+def matchup_home_win_prob(ctx, home_team, away_team, competition_hint, matchup_cache):
+    """Return P(home beats away | no draw), using ``matchup_cache`` when provided."""
+    key = (home_team, away_team)
+    if key in matchup_cache:
+        return matchup_cache[key]
+    _, _, _, probs = predict_match(ctx, home_team, away_team, competition_hint)
+    p_home = max(0.0, float(probs.get("H", 0.0)))
+    p_away = max(0.0, float(probs.get("A", 0.0)))
+    total = p_home + p_away
+    value = (p_home / total) if total > 0 else None
+    matchup_cache[key] = value
+    return value
+
+
+def precompute_mls_matchup_probs(ctx, teams, competition_hint):
+    """Build a cache of no-draw home-win probs for every ordered pair of teams."""
+    cache = {}
+    unique = sorted({t for t in teams if t})
+    print(f"  Precomputing MLS playoff matchup probs ({len(unique)} teams)...")
+    started = time.monotonic()
+    for home in unique:
+        for away in unique:
+            if home == away:
+                continue
+            matchup_home_win_prob(ctx, home, away, competition_hint, cache)
+    print(f"  Matchup cache ready: {len(cache)} pairs in {time.monotonic() - started:.1f}s")
+    return cache
+
+
+def predict_best_of_three(ctx, high_seed_team, low_seed_team, competition_hint, matchup_cache=None):
     high_wins = 0
     low_wins = 0
     games = []
 
     winner = predict_single_winner_no_draw(
-        ctx, high_seed_team, low_seed_team, competition_hint, high_seed_team
+        ctx, high_seed_team, low_seed_team, competition_hint, high_seed_team, matchup_cache=matchup_cache
     )
     games.append({"home": high_seed_team, "away": low_seed_team, "winner": winner})
     if winner == high_seed_team:
@@ -749,7 +802,7 @@ def predict_best_of_three(ctx, high_seed_team, low_seed_team, competition_hint):
 
     if high_wins < 2 and low_wins < 2:
         winner = predict_single_winner_no_draw(
-            ctx, low_seed_team, high_seed_team, competition_hint, high_seed_team
+            ctx, low_seed_team, high_seed_team, competition_hint, high_seed_team, matchup_cache=matchup_cache
         )
         games.append({"home": low_seed_team, "away": high_seed_team, "winner": winner})
         if winner == high_seed_team:
@@ -759,7 +812,7 @@ def predict_best_of_three(ctx, high_seed_team, low_seed_team, competition_hint):
 
     if high_wins < 2 and low_wins < 2:
         winner = predict_single_winner_no_draw(
-            ctx, high_seed_team, low_seed_team, competition_hint, high_seed_team
+            ctx, high_seed_team, low_seed_team, competition_hint, high_seed_team, matchup_cache=matchup_cache
         )
         games.append({"home": high_seed_team, "away": low_seed_team, "winner": winner})
         if winner == high_seed_team:
@@ -781,7 +834,7 @@ def build_mls_playoff_bracket_prediction(ctx, east_ranked, west_ranked):
     return bracket
 
 
-def simulate_mls_playoff_bracket(ctx, east_ranked, west_ranked):
+def simulate_mls_playoff_bracket(ctx, east_ranked, west_ranked, matchup_cache=None):
     def seed_at(items, seed_num):
         for pos, (team, _) in enumerate(items, start=1):
             if pos == seed_num:
@@ -791,42 +844,42 @@ def simulate_mls_playoff_bracket(ctx, east_ranked, west_ranked):
     e1, e2, e3, e4, e5, e6, e7, e8, e9 = [seed_at(east_ranked, s) for s in range(1, 10)]
     w1, w2, w3, w4, w5, w6, w7, w8, w9 = [seed_at(west_ranked, s) for s in range(1, 10)]
 
-    e_wc_winner = predict_single_winner_no_draw(ctx, e8, e9, "United States/MLS", e8)
-    w_wc_winner = predict_single_winner_no_draw(ctx, w8, w9, "United States/MLS", w8)
+    e_wc_winner = predict_single_winner_no_draw(ctx, e8, e9, "United States/MLS", e8, matchup_cache=matchup_cache)
+    w_wc_winner = predict_single_winner_no_draw(ctx, w8, w9, "United States/MLS", w8, matchup_cache=matchup_cache)
 
-    e_r1a = predict_best_of_three(ctx, e1, e_wc_winner, "United States/MLS")
-    e_r1b = predict_best_of_three(ctx, e2, e7, "United States/MLS")
-    e_r1c = predict_best_of_three(ctx, e3, e6, "United States/MLS")
-    e_r1d = predict_best_of_three(ctx, e4, e5, "United States/MLS")
+    e_r1a = predict_best_of_three(ctx, e1, e_wc_winner, "United States/MLS", matchup_cache=matchup_cache)
+    e_r1b = predict_best_of_three(ctx, e2, e7, "United States/MLS", matchup_cache=matchup_cache)
+    e_r1c = predict_best_of_three(ctx, e3, e6, "United States/MLS", matchup_cache=matchup_cache)
+    e_r1d = predict_best_of_three(ctx, e4, e5, "United States/MLS", matchup_cache=matchup_cache)
 
-    w_r1a = predict_best_of_three(ctx, w1, w_wc_winner, "United States/MLS")
-    w_r1b = predict_best_of_three(ctx, w2, w7, "United States/MLS")
-    w_r1c = predict_best_of_three(ctx, w3, w6, "United States/MLS")
-    w_r1d = predict_best_of_three(ctx, w4, w5, "United States/MLS")
+    w_r1a = predict_best_of_three(ctx, w1, w_wc_winner, "United States/MLS", matchup_cache=matchup_cache)
+    w_r1b = predict_best_of_three(ctx, w2, w7, "United States/MLS", matchup_cache=matchup_cache)
+    w_r1c = predict_best_of_three(ctx, w3, w6, "United States/MLS", matchup_cache=matchup_cache)
+    w_r1d = predict_best_of_three(ctx, w4, w5, "United States/MLS", matchup_cache=matchup_cache)
 
     e_sf1_home = e_r1a["winner"]
     e_sf1_away = e_r1d["winner"]
-    e_sf1_winner = predict_single_winner_no_draw(ctx, e_sf1_home, e_sf1_away, "United States/MLS", e_sf1_home)
+    e_sf1_winner = predict_single_winner_no_draw(ctx, e_sf1_home, e_sf1_away, "United States/MLS", e_sf1_home, matchup_cache=matchup_cache)
     e_sf2_home = e_r1b["winner"]
     e_sf2_away = e_r1c["winner"]
-    e_sf2_winner = predict_single_winner_no_draw(ctx, e_sf2_home, e_sf2_away, "United States/MLS", e_sf2_home)
+    e_sf2_winner = predict_single_winner_no_draw(ctx, e_sf2_home, e_sf2_away, "United States/MLS", e_sf2_home, matchup_cache=matchup_cache)
     e_cf_home = e_sf1_winner
     e_cf_away = e_sf2_winner
-    e_champ = predict_single_winner_no_draw(ctx, e_cf_home, e_cf_away, "United States/MLS", e_cf_home)
+    e_champ = predict_single_winner_no_draw(ctx, e_cf_home, e_cf_away, "United States/MLS", e_cf_home, matchup_cache=matchup_cache)
 
     w_sf1_home = w_r1a["winner"]
     w_sf1_away = w_r1d["winner"]
-    w_sf1_winner = predict_single_winner_no_draw(ctx, w_sf1_home, w_sf1_away, "United States/MLS", w_sf1_home)
+    w_sf1_winner = predict_single_winner_no_draw(ctx, w_sf1_home, w_sf1_away, "United States/MLS", w_sf1_home, matchup_cache=matchup_cache)
     w_sf2_home = w_r1b["winner"]
     w_sf2_away = w_r1c["winner"]
-    w_sf2_winner = predict_single_winner_no_draw(ctx, w_sf2_home, w_sf2_away, "United States/MLS", w_sf2_home)
+    w_sf2_winner = predict_single_winner_no_draw(ctx, w_sf2_home, w_sf2_away, "United States/MLS", w_sf2_home, matchup_cache=matchup_cache)
     w_cf_home = w_sf1_winner
     w_cf_away = w_sf2_winner
-    w_champ = predict_single_winner_no_draw(ctx, w_cf_home, w_cf_away, "United States/MLS", w_cf_home)
+    w_champ = predict_single_winner_no_draw(ctx, w_cf_home, w_cf_away, "United States/MLS", w_cf_home, matchup_cache=matchup_cache)
 
     cup_home = e_champ
     cup_away = w_champ
-    cup_winner = predict_single_winner_no_draw(ctx, cup_home, cup_away, "United States/MLS", cup_home)
+    cup_winner = predict_single_winner_no_draw(ctx, cup_home, cup_away, "United States/MLS", cup_home, matchup_cache=matchup_cache)
 
     return {
         "eastern_seeds": [{"seed": i + 1, "team": team} for i, team in enumerate([e1, e2, e3, e4, e5, e6, e7, e8, e9])],
@@ -883,16 +936,25 @@ def load_future_fixtures_from_espn(competition, espn_id=LIGA_MX_ESPN_ID, year=No
     end = pd.Timestamp(f"{target_year}-12-31")
     rows = []
     seen = set()
+    empty_streak = 0
     day = start
     while day <= end:
         url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
         try:
             data = fetch_json(url, timeout=20)
         except Exception:
-            day += pd.Timedelta(days=1)
+            empty_streak += 1
+            day += pd.Timedelta(days=7 if empty_streak >= 5 else 1)
             continue
 
-        for event in data.get("events", []) or []:
+        events = data.get("events", []) or []
+        if not events:
+            empty_streak += 1
+            day += pd.Timedelta(days=7 if empty_streak >= 5 else 1)
+            continue
+        empty_streak = 0
+
+        for event in events:
             event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
             if pd.isna(event_date):
                 continue

@@ -182,16 +182,25 @@ def load_future_fixtures_from_espn(competition, year=None):
     end = pd.Timestamp(f"{target_year}-12-31")
     rows = []
     seen = set()
+    empty_streak = 0
     day = start
     while day <= end:
         url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
         try:
             data = fetch_json(url, timeout=20)
         except Exception:
-            day += timedelta(days=1)
+            empty_streak += 1
+            day += timedelta(days=7 if empty_streak >= 5 else 1)
             continue
 
-        for event in data.get("events", []) or []:
+        events = data.get("events", []) or []
+        if not events:
+            empty_streak += 1
+            day += timedelta(days=7 if empty_streak >= 5 else 1)
+            continue
+        empty_streak = 0
+
+        for event in events:
             event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
             if pd.isna(event_date):
                 continue
