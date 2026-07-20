@@ -852,6 +852,12 @@ def is_placeholder_team(name):
     return any(t in text for t in tokens)
 
 
+def clear_name_mapping_cache():
+    """Force the next resolve_team_name call to reload team_name_mapping_master.json."""
+    global _name_mapping_cache
+    _name_mapping_cache = None
+
+
 def _load_name_mapping():
     global _name_mapping_cache
     if _name_mapping_cache is not None:

@@ -792,27 +792,33 @@ def _enrich_mls_payload(comp: str, payload: dict) -> dict:
 def _projected_table_looks_like_completed_prior_season(comp_name: str, rows: list[dict]) -> bool:
     """True when projected rows look like a finished prior season (preseason stale CSV).
 
-    Until the new-season CSV exists (often Jul–mid-Aug), PATH B should project a
-    fresh table from roster/ESPN with P≈0 real matches. A leftover end-of-season
-    projection typically has nearly every team with a full slate of played games.
+    Fresh PATH B projections also have high total ``P`` (almost all games are
+    *predicted*), so we key off ``PlayedReal`` instead. Prior-season leftovers
+    typically have median PlayedReal ≥ 30; preseason PATH B has PlayedReal ≈ 0.
     """
     if not rows or len(rows) < 8:
         return False
-    played = []
+    played_real = []
+    played_total = []
     for row in rows:
         try:
-            played.append(int(float(row.get("P") or 0)))
+            played_real.append(int(float(row.get("PlayedReal") or 0)))
         except (TypeError, ValueError):
-            played.append(0)
-    if not played:
+            played_real.append(0)
+        try:
+            played_total.append(int(float(row.get("P") or 0)))
+        except (TypeError, ValueError):
+            played_total.append(0)
+    if not played_real:
         return False
-    played_sorted = sorted(played)
-    median_p = played_sorted[len(played_sorted) // 2]
-    # 20-team leagues finish at 38; 18-team at 34. Treat median >= 30 as complete.
-    if median_p < 30:
+    played_real_sorted = sorted(played_real)
+    median_real = played_real_sorted[len(played_real_sorted) // 2]
+    # Fresh PATH B / early season: almost no real results yet.
+    if median_real < 8:
         return False
-    # Only treat as stale when we are in the European preseason window without
-    # a current-season CSV (calendar-year leagues keep mid-season tables).
+    # Prior-season leftover: most games were already played for real.
+    if median_real < 30:
+        return False
     try:
         import sys as _sys
         import os as _os
@@ -823,16 +829,12 @@ def _projected_table_looks_like_completed_prior_season(comp_name: str, rows: lis
         base_comp, _view = resolve_competition_query(comp_name)
         if sc.competition_uses_calendar_year(base_comp):
             return False
-        # After Jul 15 flip, still preseason until roughly mid-August.
         now = datetime.now(timezone.utc)
         if now.month == 7 or (now.month == 8 and now.day < 15):
             return True
-        # Also stale if offseason Jun–Jul 14
         if sc.is_european_club_offseason():
             return True
     except Exception:
-        # If calendar helpers unavailable, still drop obviously-complete tables
-        # in July/early August.
         now = datetime.now(timezone.utc)
         if now.month == 7 or (now.month == 8 and now.day < 15):
             return True
