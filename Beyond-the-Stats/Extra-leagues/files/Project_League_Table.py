@@ -218,21 +218,30 @@ def _load_espn_fixtures(competition, ctx):
     if not espn_id:
         return None
     target_year = datetime.now(UTC).year
-    start = pd.Timestamp(f"{target_year}-01-01")
-    end = pd.Timestamp(f"{target_year}-12-31")
     today = pd.Timestamp(datetime.now(UTC).date())
+    # Only crawl remaining days — past dates are irrelevant for upcoming fixtures.
+    start = today
+    end = pd.Timestamp(f"{target_year}-12-31")
     rows = []
     seen = set()
     unresolved = []
+    empty_streak = 0
     day = start
     while day <= end:
         url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
         try:
             data = fetch_json(url, timeout=20)
         except Exception:
-            day += pd.Timedelta(days=1)
+            empty_streak += 1
+            day += pd.Timedelta(days=7 if empty_streak >= 5 else 1)
             continue
-        for event in data.get("events", []) or []:
+        events = data.get("events", []) or []
+        if not events:
+            empty_streak += 1
+            day += pd.Timedelta(days=7 if empty_streak >= 5 else 1)
+            continue
+        empty_streak = 0
+        for event in events:
             event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
             if pd.isna(event_date):
                 continue
@@ -544,9 +553,11 @@ def run_monte_carlo(teams, base_table, future_predictions, runs, competition=Non
     stat_sums = {team: defaultdict(float) for team in teams}
     position_counts = {team: defaultdict(int) for team in teams}
 
-    sim_matches = list(all_matches) if all_matches else []
+    real_matches = list(all_matches) if all_matches else []
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
+        # Reset each iteration — appending forever made H2H ranking O(runs^2).
+        sim_matches = list(real_matches)
         for fixture in future_predictions:
             result = sample_outcome(fixture["probs"])
             hg, ag = coerce_scoreline(result, fixture["pred_home_goals"], fixture["pred_away_goals"])
