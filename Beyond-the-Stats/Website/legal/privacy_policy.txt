@@ -1,0 +1,124 @@
+Beyond the Stats Privacy Policy
+
+Effective Date: July 19, 2026
+
+Thank you for using Beyond the Stats ("the App"). Your privacy is important. This Privacy Policy explains what information may be processed when you use the App, how that information is handled, and your rights regarding that information.
+
+By using the App, you acknowledge that you have read and understood this Privacy Policy.
+
+1. Information We Process
+
+Beyond the Stats is designed to minimize the collection and retention of user information.
+
+Information Stored on Your Device
+
+The App stores certain preferences locally on your device to personalize your experience. Depending on the features you use, this may include:
+
+- Favorite teams
+- Hidden leagues or competitions
+- App settings and preferences
+- Cached sports data
+- Other personalization settings
+
+This information remains on your device and is not transmitted to or stored on the developer's servers.
+
+Server Communications
+
+To provide live scores, match information, predictions, subscriptions, push notifications, Live Activities, and other App features, the App communicates with backend servers operated by the developer.
+
+During normal operation, the backend may temporarily process technical information necessary to provide these services, including:
+
+- Push notification device tokens
+- Live Activity push tokens
+- Network request information
+- Technical request metadata
+
+This information is processed only while necessary to provide the requested service. It is maintained in server memory only and is not intentionally written to persistent storage or retained after it is no longer needed.
+
+Purchases
+
+Premium subscriptions are processed entirely through Apple's App Store.
+
+The developer does not receive or store your payment card information or billing details.
+
+Apple may provide limited subscription status information necessary to determine your access to premium features.
+
+Apple Services
+
+The App relies on Apple services for features such as:
+
+- In-App Purchases
+- Push Notifications
+- Live Activities
+- App distribution
+
+Your use of these services is subject to Apple's own privacy policies and terms.
+
+2. Analytics
+
+Beyond the Stats does not use third-party advertising networks or third-party analytics SDKs to track individual users.
+
+The developer may receive aggregated, anonymous usage statistics provided through Apple App Store Connect. These reports do not identify individual users.
+
+3. Data Sharing
+
+The developer does not sell, rent, or trade personal information.
+
+Information is not shared with advertisers or marketing companies.
+
+Information may only be disclosed if required by applicable law or when necessary to protect the security, integrity, or operation of the App.
+
+4. Push Notifications and Live Activities
+
+If you enable push notifications or Live Activities, the App may send notifications relating to:
+
+- Match reminders
+- Goals and match events
+- Final match results
+- Sports updates
+- Future prediction summaries or similar App features
+
+You may disable notifications at any time through your device settings.
+
+5. Data Security
+
+Reasonable technical and administrative measures are used to help protect the App and its backend infrastructure.
+
+However, no method of electronic transmission or storage can be guaranteed to be completely secure, and the developer cannot guarantee absolute security.
+
+6. Data Retention
+
+Beyond the Stats is designed to minimize retained data.
+
+The developer does not intentionally maintain databases containing users' personal information.
+
+Temporary technical information processed by the backend is discarded when it is no longer required to provide the requested service.
+
+Locally stored preferences remain on your device until removed by you or by uninstalling the App.
+
+7. Children's Privacy
+
+Beyond the Stats is intended for a general audience.
+
+The App does not knowingly collect personal information from children.
+
+8. Your Choices
+
+You may:
+
+- Disable push notifications through your device settings.
+- Cancel subscriptions through your Apple ID account settings.
+- Remove locally stored preferences by deleting the App.
+- Contact the developer with questions regarding privacy.
+
+9. Changes to this Privacy Policy
+
+This Privacy Policy may be updated from time to time.
+
+Any changes become effective upon publication of the updated Privacy Policy. Continued use of the App after changes are published constitutes acceptance of the revised Privacy Policy.
+
+10. Contact
+
+If you have any questions regarding this Privacy Policy, please contact:
+
+Email: beyondthestatsapp@gmail.com

@@ -391,6 +391,40 @@ def canonical_team_name(name: str, competition: str = "") -> str:
         mapped = _load_mls_canonical_names().get(normalize_team_key(text))
         if mapped:
             return mapped
+    # Competition mapping: exact alias match first; key match only when unique
+    # (aggressive token stripping can collide, e.g. Man United vs Man City).
+    path = config.TEAM_NAME_DISPLAY_MAPPING_FILE
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            base_comp, _view = resolve_competition_query(competition)
+            comp_map = payload.get(base_comp) or payload.get(competition) or {}
+            if isinstance(comp_map, dict):
+                lower = text.lower()
+                lower_and = lower.replace(" & ", " and ").replace("&", " and ")
+                key = normalize_team_key(text)
+                key_to_canons: dict[str, set[str]] = {}
+                for raw_name, canonical in comp_map.items():
+                    raw = str(raw_name or "").strip()
+                    canon = str(canonical or "").strip()
+                    if not canon:
+                        continue
+                    raw_l = raw.lower()
+                    canon_l = canon.lower()
+                    raw_and = raw_l.replace(" & ", " and ").replace("&", " and ")
+                    canon_and = canon_l.replace(" & ", " and ").replace("&", " and ")
+                    if lower in {raw_l, canon_l} or lower_and in {raw_and, canon_and}:
+                        return canon
+                    for candidate in (raw, canon):
+                        ck = normalize_team_key(candidate)
+                        if ck:
+                            key_to_canons.setdefault(ck, set()).add(canon)
+                hits = key_to_canons.get(key) or set()
+                if len(hits) == 1:
+                    return next(iter(hits))
+        except Exception:
+            pass
     return text
 
 
@@ -1438,6 +1472,50 @@ def build_structured_standings_groups(comp_name: str, teams: list[str]) -> list[
             ]
 
     return [{"name": "Overall", "entries": _entries_from_teams(team_list)}]
+
+
+def filter_games_to_active_season(
+    games: list[dict],
+    competition: str,
+    reference_date=None,
+) -> list[dict]:
+    """Keep only completed games that belong to the active season window.
+
+    European fall–spring leagues: Jul 1 of the active start year → May 31 end year
+    (active start year flips on Jul 15 via ``season_calendar``).
+    Calendar-year leagues: Jan 1–Dec 31 of the current calendar year.
+
+    In Jul–Aug before the new season CSV exists, this correctly drops the prior
+    season's May finales so real tables start empty (preseason).
+    """
+    if not games:
+        return []
+    try:
+        import sys as _sys
+        import os as _os
+        _root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        import season_calendar as sc
+    except Exception:
+        return list(games)
+
+    base_comp, _view = resolve_competition_query(competition)
+    try:
+        start, end = sc.fixture_search_bounds(base_comp, reference_date=reference_date)
+    except Exception:
+        return list(games)
+
+    start_s = start.strftime("%Y-%m-%d")
+    end_s = end.strftime("%Y-%m-%d")
+    out = []
+    for game in games:
+        md = str(game.get("match_date") or game.get("match_datetime_utc") or "")[:10]
+        if len(md) < 10:
+            continue
+        if start_s <= md <= end_s:
+            out.append(game)
+    return out
 
 
 def should_use_persisted_table(cached: dict | None, force_refresh: bool = False) -> bool:

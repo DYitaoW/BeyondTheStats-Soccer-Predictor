@@ -1072,9 +1072,21 @@ def _deduplicate_espn_fixtures(df, espn_future):
 
 
 def project_liga_mx_competition(ctx, competition, raw_file):
-    # Determine if this CSV represents the current season or a past season
+    """Project Liga MX for the active Jul–May (26-27 style) season.
+
+    Liga MX plays Apertura (Aug–Dec) then Clausura (Jan–May). Across the full
+    season each club typically faces every other club home and away (~34 games
+    for an 18-team league). Treat season targeting like European leagues via
+    ``season_calendar`` — not a Jan–Dec calendar year.
+    """
+    # Beyond-the-Stats root for shared season helpers
+    _sp = os.path.dirname(os.path.dirname(BASE_DIR))
+    if _sp not in sys.path:
+        sys.path.insert(0, _sp)
+    import season_calendar as sc
+
     csv_start_year = pm.parse_season_start_year(os.path.basename(raw_file))
-    expected_year = datetime.now().year  # single-year format files
+    expected_year = sc.expected_season_start_year(competition)
     is_current_season = csv_start_year is not None and csv_start_year == expected_year
 
     if is_current_season:
@@ -1092,47 +1104,84 @@ def project_liga_mx_competition(ctx, competition, raw_file):
 
         df["DateParsed"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
         df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]
+        # Keep only matches in the active Jul–May season window
+        try:
+            start, end = sc.european_season_bounds()
+            df = df[
+                df["DateParsed"].isna()
+                | ((df["DateParsed"] >= start) & (df["DateParsed"] <= end))
+            ]
+        except Exception:
+            pass
         df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
 
         raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
         teams = sorted({r for t in raw_teams if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
+        if not teams:
+            espn_teams = _fetch_liga_mx_teams() or []
+            teams = sorted({r for t in espn_teams if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
     else:
-        # ── PATH B: No current-season CSV — ESPN fallback ─────────────
-        espn_teams = _fetch_liga_mx_teams()
-        if not espn_teams:
-            print(f"  No current-season CSV and no ESPN data for {competition}")
+        # ── PATH B: No current-season CSV — ESPN/roster, zero played ──
+        espn_teams = _fetch_liga_mx_teams() or []
+        resolved = []
+        unresolved = []
+        for t in espn_teams:
+            r = pm.resolve_team_name(t, ctx["available_teams"])
+            if r:
+                resolved.append(r)
+            else:
+                unresolved.append(t)
+        if unresolved:
+            print(f"  Liga MX PATH B unresolved: {sorted(set(unresolved))}")
+            _append_mapping_if_missing(competition, unresolved, ctx["available_teams"], None)
+            for t in unresolved:
+                r = pm.resolve_team_name(t, ctx["available_teams"])
+                if r:
+                    resolved.append(r)
+        teams = sorted(set(resolved))
+        if not teams:
+            print(f"  No current-season CSV and no resolved ESPN/roster for {competition}")
             return [], [], None
-        teams = sorted(espn_teams)
-        print(f"  No current-season CSV — using ESPN fallback ({len(teams)} teams)")
-
-        # Build df with ESPN fixtures + synthetic pairs
+        print(
+            f"  No current-season CSV (26-27 preseason) — "
+            f"Liga MX PATH B ({len(teams)} teams, 0 played)"
+        )
         espn_future = load_future_fixtures_from_espn(competition)
         rows = []
-        seen = set()
+        seen_ordered = set()
         if not espn_future.empty:
             for _, r in espn_future.iterrows():
+                home = pm.resolve_team_name(str(r.get("HomeTeam", "")).strip(), ctx["available_teams"])
+                away = pm.resolve_team_name(str(r.get("AwayTeam", "")).strip(), ctx["available_teams"])
+                if not home or not away or home not in teams or away not in teams:
+                    continue
                 rows.append({
                     "Date": str(r.get("Date", "")),
-                    "HomeTeam": str(r.get("HomeTeam", "")),
-                    "AwayTeam": str(r.get("AwayTeam", "")),
+                    "HomeTeam": home,
+                    "AwayTeam": away,
                     "FTHG": None, "FTAG": None, "FTR": "",
                 })
-                seen.add((str(r.get("HomeTeam", "")), str(r.get("AwayTeam", ""))))
+                seen_ordered.add((home, away))
+        # Full-season home-and-away schedule (Apertura + Clausura ≈ 34 games/team)
         for home in teams:
             for away in teams:
-                if home == away or (home, away) in seen:
+                if home == away or (home, away) in seen_ordered:
                     continue
-                seen.add((home, away))
+                seen_ordered.add((home, away))
                 rows.append({
                     "Date": "", "HomeTeam": home, "AwayTeam": away,
                     "FTHG": None, "FTAG": None, "FTR": "",
                 })
         df = pd.DataFrame(rows)
         df["DateParsed"] = pd.to_datetime(df["Date"], errors="coerce")
+
+    if not teams:
+        return [], [], None
+
     table = init_table(teams)
     future_rows = []
     future_predictions = []
-    seen_pairs = set()
+    seen_ordered = set()
     unresolved = []
 
     for _, row in df.iterrows():
@@ -1140,26 +1189,36 @@ def project_liga_mx_competition(ctx, competition, raw_file):
         raw_away = str(row.get("AwayTeam", "")).strip()
         if not raw_home or not raw_away:
             continue
-        home = pm.resolve_team_name(raw_home, ctx["available_teams"]) or raw_home
-        away = pm.resolve_team_name(raw_away, ctx["available_teams"]) or raw_away
-        if home == raw_home and raw_home not in teams:
-            unresolved.append(raw_home)
-        if away == raw_away and raw_away not in teams:
-            unresolved.append(raw_away)
+        home = pm.resolve_team_name(raw_home, ctx["available_teams"])
+        away = pm.resolve_team_name(raw_away, ctx["available_teams"])
+        if not home or not away:
+            if raw_home and raw_home not in teams:
+                unresolved.append(raw_home)
+            if raw_away and raw_away not in teams:
+                unresolved.append(raw_away)
+            continue
+        if home not in table or away not in table:
+            continue
+
         ftr = str(row.get("FTR", "")).strip().upper()
         hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
         ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
         match_date = row.get("DateParsed")
         match_date_str = match_date.strftime("%Y-%m-%d") if pd.notna(match_date) else ""
 
-        if ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag):
+        # Ordered home/away — keep both legs across Apertura + Clausura.
+        pair_key = (home, away)
+        if pair_key in seen_ordered:
+            continue
+        seen_ordered.add(pair_key)
+
+        # PATH B / preseason: never treat rows as already played without a
+        # current-season CSV. Mark played legs so the fill step does not
+        # re-project them.
+        if is_current_season and ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag):
             apply_result(table, home, away, int(hg), int(ag), is_real=True)
             continue
 
-        pair_key = tuple(sorted([home, away]))
-        if pair_key in seen_pairs:
-            continue
-        seen_pairs.add(pair_key)
         pred_res, phg, pag, probs = predict_match(ctx, home, away, competition)
         future_predictions.append(
             {
@@ -1185,9 +1244,46 @@ def project_liga_mx_competition(ctx, competition, raw_file):
             }
         )
 
+    # PATH A may still miss the return legs — fill home-and-away gaps.
+    for home in teams:
+        for away in teams:
+            if home == away or (home, away) in seen_ordered:
+                continue
+            # Skip if this ordered leg was already played in PATH A table data
+            # (seen via apply_result counts is harder; just add missing predictions).
+            seen_ordered.add((home, away))
+            pred_res, phg, pag, probs = predict_match(ctx, home, away, competition)
+            future_predictions.append(
+                {
+                    "home_team": home,
+                    "away_team": away,
+                    "pred_home_goals": phg,
+                    "pred_away_goals": pag,
+                    "probs": probs,
+                }
+            )
+            future_rows.append(
+                {
+                    "competition": competition,
+                    "match_date": "",
+                    "home_team": home,
+                    "away_team": away,
+                    "predicted_result": pred_res,
+                    "pred_home_goals": phg,
+                    "pred_away_goals": pag,
+                    "prob_home": round(probs["H"], 6),
+                    "prob_draw": round(probs["D"], 6),
+                    "prob_away": round(probs["A"], 6),
+                }
+            )
+
     if unresolved:
         print(f"  Liga MX: {len(set(unresolved))} unresolved team name(s): {sorted(set(unresolved))}")
         _append_mapping_if_missing(competition, unresolved, ctx["available_teams"], None)
+
+    if not future_predictions:
+        print(f"  No fixtures to project for {competition}")
+        return [], [], None
 
     stat_sums, position_counts = run_monte_carlo_standard(
         teams, table, future_predictions, SIMULATION_RUNS

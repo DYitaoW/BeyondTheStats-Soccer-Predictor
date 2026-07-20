@@ -767,7 +767,12 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
             if not static_roster:
                 print(f"  No current-season file and no ESPN/roster data for {competition}")
                 return [], []
-            teams = sorted(static_roster)
+            resolved_static = []
+            for t in static_roster:
+                r = pm.resolve_team_name(t, ctx["available_teams"])
+                if r:
+                    resolved_static.append(r)
+            teams = sorted(set(resolved_static)) if resolved_static else sorted(static_roster)
 
         print(
             f"  No current-season CSV (typical Jul–Aug before games) — "

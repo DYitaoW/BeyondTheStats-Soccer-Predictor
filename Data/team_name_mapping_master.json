@@ -67,7 +67,14 @@
     "newcastleutd": "Newcastle",
     "newcastleunited": "Newcastle",
     "nottinghamforest": "Nott'm Forest",
-    "nottmforest": "Nott'm Forest"
+    "nottmforest": "Nott'm Forest",
+    "Brighton and Hove Albion": "Brighton",
+    "Brighton and Hove Albion FC": "Brighton",
+    "Coventry City": "Coventry",
+    "Coventry": "Coventry",
+    "Hull City": "Hull",
+    "Ipswich Town": "Ipswich",
+    "Ipswich": "Ipswich"
   },
   "Spain/La Liga": {
     "Alavés": "Alaves",

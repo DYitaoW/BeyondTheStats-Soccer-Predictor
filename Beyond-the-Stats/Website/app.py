@@ -514,6 +514,9 @@ def _render_site_page(template_name, active_page):
         "players": "/players",
         "tactics": "/tactics",
         "about": "/about",
+        "privacy": "/privacy",
+        "terms": "/terms",
+        "subscriptions": "/subscriptions",
     }
     # Template defaults prevent Undefined errors for pages that serialize these values.
     upcoming_leagues = {"global": [], "mls": [], "extra": [], "cups": [], "friendlies": []}
@@ -590,6 +593,55 @@ def about():
     """Render the about tab page."""
     return _render_site_page("about.html", active_page="about")
 
+
+@app.get("/privacy")
+def privacy_page():
+    """Render the Privacy Policy page."""
+    from legal_docs import get_legal_document, plain_text_to_html_paragraphs
+
+    doc = get_legal_document("privacy")
+    if not doc:
+        return "Privacy Policy unavailable", 404
+    return render_template(
+        "legal.html",
+        active_page="privacy",
+        doc=doc,
+        body_html=plain_text_to_html_paragraphs(doc["body"]),
+    )
+
+
+@app.get("/terms")
+def terms_page():
+    """Render the Terms of Service page."""
+    from legal_docs import get_legal_document, plain_text_to_html_paragraphs
+
+    doc = get_legal_document("terms")
+    if not doc:
+        return "Terms of Service unavailable", 404
+    return render_template(
+        "legal.html",
+        active_page="terms",
+        doc=doc,
+        body_html=plain_text_to_html_paragraphs(doc["body"]),
+    )
+
+
+@app.get("/subscriptions")
+def subscriptions_page():
+    """Render the Apple IAP auto-renewable subscription disclosure page."""
+    from legal_docs import get_legal_document, plain_text_to_html_paragraphs
+
+    doc = get_legal_document("subscriptions")
+    if not doc:
+        return "Subscription disclosure unavailable", 404
+    return render_template(
+        "legal.html",
+        active_page="subscriptions",
+        doc=doc,
+        body_html=plain_text_to_html_paragraphs(doc["body"]),
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  REST API ENDPOINTS — 32+ ``/api/*`` routes
 # ═══════════════════════════════════════════════════════════════════
@@ -617,6 +669,25 @@ def api_teams():
         except Exception:
             display_teams = []
     return jsonify({"teams": display_teams})
+
+
+@app.get("/api/legal")
+def api_legal_index():
+    """List Privacy Policy, Terms of Service, and subscription disclosure endpoints."""
+    from legal_docs import list_legal_documents
+
+    return jsonify({"ok": True, "documents": list_legal_documents()})
+
+
+@app.get("/api/legal/<doc_id>")
+def api_legal_document(doc_id):
+    """Return a legal document body (privacy, terms, or subscriptions)."""
+    from legal_docs import get_legal_document
+
+    doc = get_legal_document(doc_id)
+    if not doc:
+        return jsonify({"ok": False, "error": f"Unknown legal document: {doc_id}"}), 404
+    return jsonify(doc)
 
 
 @app.get("/api/team-mappings/unmapped")
@@ -661,6 +732,10 @@ def api_help():
     """Return a listing of every /api/ route with a short description."""
     routes = [
         ("/api/teams", "GET", "List selectable teams for a given mode (?mode=global|mls|extra)"),
+        ("/api/legal", "GET", "List Privacy Policy, Terms of Service, and subscription disclosure endpoints"),
+        ("/api/legal/privacy", "GET", "Full Privacy Policy text (JSON)"),
+        ("/api/legal/terms", "GET", "Full Terms of Service text (JSON)"),
+        ("/api/legal/subscriptions", "GET", "Apple IAP auto-renewable subscription disclosure (JSON)"),
         ("/api/team-mappings/unmapped", "GET", "ESPN upcoming teams missing/blank in mapping master (?lookahead_days=30&competition=)"),
         ("/api/team-mappings/predictor-teams", "GET", "All canonical predictor team names (global/mls/extra) with duplicate detection"),
         ("/api/upcoming/<mode>", "GET", "Upcoming prediction rows (mode=global|mls|extra|cups|world-cup)"),
@@ -1048,16 +1123,30 @@ def api_home_upcoming():
 
 @app.get("/api/world-cup")
 def api_world_cup():
-    """Return the World Cup projection data."""
+    """Return the World Cup projection data (archived; 2026 tournament ended)."""
     world_cup_file = os.path.join(config.PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
     if not os.path.exists(world_cup_file):
-        return jsonify({"ok": False, "error": "World Cup projection not available"}), 404
+        return jsonify({
+            "ok": True,
+            "available": False,
+            "error": "World Cup projection not available",
+            "group_tables": [],
+            "simulations": {"winner_probabilities": {}},
+        })
     try:
         with open(world_cup_file, "r") as f:
             data = json.load(f)
+        if isinstance(data, dict):
+            data.setdefault("ok", True)
         return jsonify(data)
     except Exception:
-        return jsonify({"ok": False, "error": "Could not load World Cup projection"}), 500
+        return jsonify({
+            "ok": True,
+            "available": False,
+            "error": "Could not load World Cup projection",
+            "group_tables": [],
+            "simulations": {"winner_probabilities": {}},
+        })
 
 
 @app.get("/api/tournament/<key>")

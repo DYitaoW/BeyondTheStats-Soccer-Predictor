@@ -12,6 +12,8 @@ TARGET_DIR = os.path.join(RAW_DATA_DIR, "Mexico", "Liga MX")
 
 # Mexico source page: https://www.football-data.co.uk/mexico.php
 # Direct CSV contains many seasons in one file.
+# Season labels like "2026/2027" are written as mexstat2026.csv — that start year
+# matches the Jul–May 26-27 Liga MX cycle (Apertura + Clausura), not a calendar year.
 MEXICO_SOURCE_URL = "https://www.football-data.co.uk/new/MEX.csv"
 FILE_PREFIX = "mexstat"
 MIN_START_YEAR = 2002
