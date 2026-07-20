@@ -125,4 +125,8 @@ Beyond-the-Stats/Data/pipeline_latest.log
 
 dist-frontend/
 scripts/__pycache__/
-public/
+/public/
+# Commit the Cloudflare Pages static site artifact so production can be
+# updated even when the Actions deploy token is missing.
+!Beyond-the-Stats/public/
+!Beyond-the-Stats/public/**

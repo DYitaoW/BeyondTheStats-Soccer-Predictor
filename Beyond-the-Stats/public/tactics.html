@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tactics Whiteboard - Soccer Predictor</title>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        :root {
+            --home-primary: #d32f2f;
+            --home-secondary: #ff5252;
+            --away-primary: #1976d2;
+            --away-secondary: #448aff;
+        }
+        h1 { margin-bottom: 20px; color: #333; }
+        .controls { margin-bottom: 15px; }
+        .btn {
+            padding: 8px 16px;
+            background-color: #333;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 0 5px;
+        }
+        .btn:hover { background-color: #555; }
+        
+        .field-container {
+            position: relative;
+            width: 900px;
+            height: 600px;
+            background-color: #2e7d32; /* Grass green */
+            border: 5px solid #fff;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            overflow: visible;
+            user-select: none;
+            transform-origin: top center;
+        }
+        
+        /* Pitch Patterns */
+        .field-container.stripes {
+            background-image: repeating-linear-gradient(90deg, rgba(255,255,255,0.07) 0px, rgba(255,255,255,0.07) 50px, transparent 50px, transparent 100px);
+        }
+        .field-container.checkered {
+            background-image: linear-gradient(45deg, rgba(255,255,255,0.07) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.07) 75%, rgba(255,255,255,0.07)), 
+                              linear-gradient(45deg, rgba(255,255,255,0.07) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.07) 75%, rgba(255,255,255,0.07));
+            background-position: 0 0, 50px 50px;
+            background-size: 100px 100px;
+        }
+        .field-container.circles {
+            background-image: radial-gradient(circle, rgba(255,255,255,0.07) 20%, transparent 20%), radial-gradient(circle, rgba(255,255,255,0.07) 20%, transparent 20%);
+            background-position: 0 0, 50px 50px;
+            background-size: 100px 100px;
+        }
+        
+        /* Field Markings */
+        .marking { position: absolute; border: 2px solid rgba(255,255,255,0.8); pointer-events: none; }
+        .center-line {
+            width: 2px; height: 100%; left: 50%; top: 0; background-color: rgba(255,255,255,0.8); border: none;
+        }
+        .center-circle {
+            width: 130px; height: 130px;
+            border-radius: 50%;
+            left: 50%; top: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .center-spot {
+            width: 10px; height: 10px; background-color: white; border-radius: 50%;
+            left: 50%; top: 50%; transform: translate(-50%, -50%); border: none;
+        }
+        
+        .penalty-area { width: 150px; height: 360px; top: 50%; transform: translateY(-50%); }
+        .penalty-area.left { left: 0; border-left: none; }
+        .penalty-area.right { right: 0; border-right: none; }
+        
+        .goal-area { width: 50px; height: 160px; top: 50%; transform: translateY(-50%); }
+        .goal-area.left { left: 0; border-left: none; }
+        .goal-area.right { right: 0; border-right: none; }
+        
+        .corner-arc { width: 30px; height: 30px; border-radius: 50%; border: 2px solid white; position: absolute; pointer-events: none; }
+        .tl { top: -15px; left: -15px; }
+        .tr { top: -15px; right: -15px; }
+        .bl { bottom: -15px; left: -15px; }
+        .br { bottom: -15px; right: -15px; }
+
+        /* Players */
+        .player {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            font-size: 14px;
+            color: white;
+            cursor: grab;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            z-index: 10;
+            transition: transform 0.1s;
+        }
+        .player:active { cursor: grabbing; transform: scale(1.1); z-index: 20; }
+        
+        .home { background: radial-gradient(circle at 30% 30%, var(--home-secondary), var(--home-primary)); border: 2px solid white; }
+        .away { background: radial-gradient(circle at 30% 30%, var(--away-secondary), var(--away-primary)); border: 2px solid white; }
+        .gk.home { background: radial-gradient(circle at 30% 30%, #ffeb3b, #fbc02d); color: black; }
+        .gk.away { background: radial-gradient(circle at 30% 30%, #69f0ae, #00c853); color: black; }
+        
+        .player-number { pointer-events: none; }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .ball {
+            width: 25px;
+            height: 25px;
+            background: radial-gradient(circle at 30% 30%, #fff, #ddd);
+            border-radius: 50%;
+            position: absolute;
+            border: 1px solid #333;
+            z-index: 15;
+            cursor: grab;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 30px;
+        }
+
+        .toolbar {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            background: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            justify-content: center;
+        }
+        
+        .tool-btn {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            background: #f9f9f9;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .tool-btn:hover { background: #eee; }
+        .tool-btn.active {
+            background: #333;
+            color: #fff;
+            border-color: #333;
+        }
+        
+        .color-picker-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-left: 10px;
+            font-size: 14px;
+        }
+
+        .notification-area {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .notification {
+            background: #333;
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            opacity: 0;
+            animation: fadeIn 0.3s forwards;
+        }
+        @keyframes fadeIn { to { opacity: 1; } }
+        @keyframes fadeOut { to { opacity: 0; } }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 3000;
+            display: none; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: white; padding: 20px; border-radius: 8px; width: 300px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .modal-content h3 { margin-top: 0; }
+        .modal-content input {
+            width: 100%; padding: 8px; margin: 10px 0;
+            box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px;
+        }
+        .modal-buttons {
+            display: flex; justify-content: flex-end; gap: 10px;
+        }
+
+        /* Roster / Bench Styles */
+        .roster-container {
+            width: 900px;
+            margin-top: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .roster-tabs {
+            display: flex;
+            background: #eee;
+            border-bottom: 1px solid #ccc;
+        }
+        .roster-tab {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-weight: bold;
+            color: #555;
+            font-size: 14px;
+        }
+        .roster-tab.active {
+            background: #fff;
+            color: #333;
+            border-bottom: 3px solid #d32f2f;
+        }
+        .roster-content { display: none; padding: 20px; min-height: 80px; gap: 10px; flex-wrap: wrap; }
+        .roster-content.active { display: flex; }
+    </style>
+</head>
+<body>
+    <div id="notification-area" class="notification-area"></div>
+    
+    <div id="save-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3>Save Tactic</h3>
+            <input type="text" id="save-name-input" placeholder="Enter name for this setup">
+            <div class="modal-buttons">
+                <button class="btn" onclick="closeSaveModal()">Cancel</button>
+                <button class="btn" onclick="confirmSaveBoard()" style="background: #d32f2f;">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div style="position: absolute; top: 20px; left: 20px;">
+        <a href="/index.html" style="text-decoration: none; display: flex; align-items: center; gap: 8px; color: #333; font-weight: bold; font-size: 1.2rem;">
+            <img src="/graphics/BeyondTheStatsLogo.png" alt="Beyond The Stats logo" style="height: 36px; width: auto;">
+            <span>Home</span>
+        </a>
+    </div>
+
+    <h1>Tactics Whiteboard</h1>
+    
+    <div class="controls">
+        <a href="/index.html" class="btn">Back to Home</a>
+        <button class="btn" onclick="resetBoard()">Reset Positions</button>
+    </div>
+
+    <div class="field-container" id="field">
+        <canvas id="canvas" width="900" height="600"></canvas>
+        <!-- Markings -->
+        <div class="marking center-line"></div>
+        <div class="marking center-circle"></div>
+        <div class="marking center-spot"></div>
+        
+        <div class="marking penalty-area left"></div>
+        <div class="marking goal-area left"></div>
+        
+        <div class="marking penalty-area right"></div>
+        <div class="marking goal-area right"></div>
+        
+        <div class="corner-arc tl"></div>
+        <div class="corner-arc tr"></div>
+        <div class="corner-arc bl"></div>
+        <div class="corner-arc br"></div>
+    </div>
+
+    <div class="roster-container">
+        <div class="roster-tabs">
+            <button class="roster-tab active" onclick="switchRosterTab('subs')" id="tab-subs">Substitutes</button>
+            <button class="roster-tab" onclick="switchRosterTab('reserves')" id="tab-reserves">Reserves</button>
+        </div>
+        <div id="roster-subs" class="roster-content active">
+        </div>
+        <div id="roster-reserves" class="roster-content">
+        </div>
+    </div>
+
+    <div class="formation-controls" style="margin-top: 20px; display: flex; gap: 20px;">
+        <div>
+            <label for="home-formation">Home Formation:</label>
+            <select id="home-formation" onchange="updateFormation()">
+                <option value="4-4-2">4-4-2</option>
+                <option value="4-3-3">4-3-3</option>
+                <option value="3-5-2">3-5-2</option>
+                <option value="5-3-2">5-3-2</option>
+            </select>
+        </div>
+        <div>
+            <label for="away-formation">Away Formation:</label>
+            <select id="away-formation" onchange="updateFormation()">
+                <option value="4-4-2">4-4-2</option>
+                <option value="4-3-3">4-3-3</option>
+                <option value="3-5-2">3-5-2</option>
+                <option value="5-3-2">5-3-2</option>
+            </select>
+        </div>
+        <div>
+            <label for="team-search">Team Search:</label>
+            <input type="text" id="team-search" placeholder="Search team..." disabled style="padding: 4px;">
+        </div>
+        <div>
+            <label for="pitch-pattern">Pitch Pattern:</label>
+            <select id="pitch-pattern" onchange="setPitchPattern(this.value)">
+                <option value="">Plain Green</option>
+                <option value="stripes">Stripes</option>
+                <option value="checkered">Checkered</option>
+                <option value="circles">Circles</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <button class="tool-btn active" onclick="setTool('move')" id="btn-move">Move</button>
+        <button class="tool-btn" onclick="setTool('free')" id="btn-free">Free Draw</button>
+        <button class="tool-btn" onclick="setTool('line')" id="btn-line">Line</button>
+        <button class="tool-btn" onclick="setTool('arrow')" id="btn-arrow">Arrow</button>
+        <button class="tool-btn" onclick="setTool('zone')" id="btn-zone">Zone (Circuit)</button>
+        <button class="tool-btn" onclick="setTool('link')" id="btn-link">Link Players</button>
+        <button class="tool-btn" onclick="setTool('eraser')" id="btn-eraser">Eraser</button>
+        <button class="tool-btn" onclick="undoLast()">Undo</button>
+        
+        <div style="display: flex; gap: 5px; align-items: center; border-left: 1px solid #ccc; padding-left: 10px;">
+            <button class="tool-btn" onclick="saveBoard()">Save New</button>
+            <select id="save-select" style="padding: 6px; border-radius: 4px;"><option value="">-- Select Save --</option></select>
+            <button class="tool-btn" onclick="loadBoard()">Load</button>
+        </div>
+        
+        <div style="display: flex; gap: 5px; align-items: center; border-left: 1px solid #ccc; padding-left: 10px;">
+            <button class="tool-btn" onclick="addKeyframe()">Add Frame</button>
+            <button class="tool-btn" onclick="playAnimation()">Play</button>
+            <button class="tool-btn" onclick="exportAnimation()">Export Anim</button>
+            <button class="tool-btn" onclick="togglePhysics()" id="btn-physics">Physics: OFF</button>
+        </div>
+
+        <button class="tool-btn" onclick="exportImage()">Export Image</button>
+        <button class="tool-btn" onclick="clearCanvas()">Clear Drawings</button>
+        
+        <div class="color-picker-group">
+            <label>Home:</label>
+            <input type="color" id="home-color" value="#d32f2f" onchange="updateColors()">
+        </div>
+        <div class="color-picker-group">
+            <label>Away:</label>
+            <input type="color" id="away-color" value="#1976d2" onchange="updateColors()">
+        </div>
+    </div>
+
+    <script>
+        const field = document.getElementById('field');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const rosterSubs = document.getElementById('roster-subs');
+        const rosterReserves = document.getElementById('roster-reserves');
+
+        function switchRosterTab(tab) {
+            document.querySelectorAll('.roster-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.roster-content').forEach(c => c.classList.remove('active'));
+            
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            document.getElementById(`roster-${tab}`).classList.add('active');
+        }
+        
+        const formationConfigs = {
+            '4-4-2': [
+                { x: 30, y: 280, num: '1', role: 'gk' },
+                { x: 150, y: 100, num: '2' }, { x: 120, y: 220, num: '4' }, { x: 120, y: 340, num: '5' }, { x: 150, y: 460, num: '3' },
+                { x: 300, y: 100, num: '7' }, { x: 280, y: 220, num: '6' }, { x: 280, y: 340, num: '8' }, { x: 300, y: 460, num: '11' },
+                { x: 400, y: 250, num: '9' }, { x: 400, y: 310, num: '10' }
+            ],
+            '4-3-3': [
+                { x: 30, y: 280, num: '1', role: 'gk' },
+                { x: 150, y: 100, num: '2' }, { x: 120, y: 220, num: '4' }, { x: 120, y: 340, num: '5' }, { x: 150, y: 460, num: '3' },
+                { x: 260, y: 280, num: '6' }, { x: 300, y: 150, num: '8' }, { x: 300, y: 410, num: '10' },
+                { x: 400, y: 80, num: '7' }, { x: 400, y: 280, num: '9' }, { x: 400, y: 480, num: '11' }
+            ],
+            '3-5-2': [
+                { x: 30, y: 280, num: '1', role: 'gk' },
+                { x: 120, y: 150, num: '4' }, { x: 100, y: 280, num: '5' }, { x: 120, y: 410, num: '3' },
+                { x: 220, y: 280, num: '6' }, { x: 250, y: 100, num: '2' }, { x: 250, y: 460, num: '11' }, { x: 300, y: 200, num: '8' }, { x: 300, y: 360, num: '10' },
+                { x: 400, y: 200, num: '9' }, { x: 400, y: 360, num: '7' }
+            ],
+            '5-3-2': [
+                { x: 30, y: 280, num: '1', role: 'gk' },
+                { x: 150, y: 50, num: '2' }, { x: 120, y: 160, num: '4' }, { x: 100, y: 280, num: '5' }, { x: 120, y: 400, num: '6' }, { x: 150, y: 510, num: '3' },
+                { x: 280, y: 150, num: '8' }, { x: 260, y: 280, num: '10' }, { x: 280, y: 410, num: '11' },
+                { x: 400, y: 200, num: '9' }, { x: 400, y: 360, num: '7' }
+            ]
+        };
+
+        function getPlayersForTeam(side, formation) {
+            const config = formationConfigs[formation] || formationConfigs['4-4-2'];
+            return config.map(p => {
+                let x = p.x;
+                let y = p.y;
+                let type = side === 'home' ? 'home' : 'away';
+                if (p.role === 'gk') type += ' gk';
+
+                if (side === 'away') {
+                    // Mirror X for away team (field width 900, player width 40)
+                    x = 900 - p.x - 40; 
+                }
+                
+                return { type: type, num: p.num, x: x, y: y };
+            });
+        }
+
+        function getPlayerCenter(playerId) {
+            const player = document.getElementById(playerId);
+            if (!player) return null;
+            return {
+                x: player.offsetLeft + player.clientWidth / 2,
+                y: player.offsetTop + player.clientHeight / 2
+            };
+        }
+
+        function createPlayers() {
+            const homeForm = document.getElementById('home-formation').value;
+            const awayForm = document.getElementById('away-formation').value;
+            
+            const homePlayers = getPlayersForTeam('home', homeForm);
+            const awayPlayers = getPlayersForTeam('away', awayForm);
+            const allPlayers = [...homePlayers, ...awayPlayers];
+            
+            // Add Subs (7 per team)
+            for(let i=12; i<=18; i++) {
+                allPlayers.push({ type: 'home', num: i.toString(), location: 'subs' });
+                allPlayers.push({ type: 'away', num: i.toString(), location: 'subs' });
+            }
+            
+            // Add Reserves (5 per team)
+            for(let i=19; i<=23; i++) {
+                allPlayers.push({ type: 'home', num: i.toString(), location: 'reserves' });
+                allPlayers.push({ type: 'away', num: i.toString(), location: 'reserves' });
+            }
+
+            const existing = document.querySelectorAll('.player');
+            existing.forEach(e => e.remove());
+
+            allPlayers.forEach(p => {
+                const el = document.createElement('div');
+                el.className = `player ${p.type}`;
+                el.id = `player-${p.type.replace(' ', '')}-${p.num}`;
+                el.innerHTML = `<span class="player-number">${p.num}</span>`;
+                
+                if (p.location === 'subs') {
+                    el.style.position = 'relative';
+                    rosterSubs.appendChild(el);
+                } else if (p.location === 'reserves') {
+                    el.style.position = 'relative';
+                    rosterReserves.appendChild(el);
+                } else {
+                    el.style.left = p.x + 'px';
+                    el.style.top = p.y + 'px';
+                    el.dataset.orgX = p.x;
+                    el.dataset.orgY = p.y;
+                    field.appendChild(el);
+                }
+                
+                addDragFunctionality(el);
+            });
+        }
+
+        function addBall() {
+            if (document.querySelector('.ball')) {
+                return; // Only one ball allowed
+            }
+            const el = document.createElement('div');
+            el.className = 'ball';
+            el.innerHTML = '⚽';
+            el.style.left = '440px';
+            el.style.top = '290px';
+            addDragFunctionality(el);
+            field.appendChild(el);
+        }
+
+        function resetBoard() {
+            const players = document.querySelectorAll('.player');
+            players.forEach(p => {
+                if (p.dataset.orgX) {
+                    p.style.left = p.dataset.orgX + 'px';
+                    p.style.top = p.dataset.orgY + 'px';
+                }
+            });
+            const balls = document.querySelectorAll('.ball');
+            balls.forEach(b => b.remove());
+            clearCanvas();
+        }
+
+        function undoLast() {
+            if (drawingHistory.length > 0) {
+                drawingHistory.pop();
+                redraw();
+            }
+        }
+
+        function updateFormation() {
+            createPlayers();
+        }
+
+        function updateColors() {
+            const homeColor = document.getElementById('home-color').value;
+            const awayColor = document.getElementById('away-color').value;
+            document.documentElement.style.setProperty('--home-primary', homeColor);
+            document.documentElement.style.setProperty('--home-secondary', adjustColor(homeColor, 40));
+            document.documentElement.style.setProperty('--away-primary', awayColor);
+            document.documentElement.style.setProperty('--away-secondary', adjustColor(awayColor, 40));
+        }
+
+        function setPitchPattern(pattern) {
+            field.className = 'field-container'; // Reset
+            if (pattern) field.classList.add(pattern);
+        }
+
+        function adjustColor(color, amount) {
+            return '#' + color.replace(/^#/, '').replace(/../g, color => ('0'+Math.min(255, Math.max(0, parseInt(color, 16) + amount)).toString(16)).substr(-2));
+        }
+
+        function addDragFunctionality(el) {
+            let isDragging = false;
+            let startX, startY, initialLeft, initialTop;
+            
+            // Physics tracking
+            let lastX = 0, lastY = 0, lastTime = 0;
+            let velX = 0, velY = 0;
+
+            el.addEventListener('mousedown', (e) => {
+                if (currentTool !== 'move') return;
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                
+                // Handle pickup from bench
+                if (el.parentElement !== field) {
+                    const rect = el.getBoundingClientRect();
+                    const fieldRect = field.getBoundingClientRect();
+                    el.style.position = 'absolute';
+                    el.style.left = (rect.left - fieldRect.left) + 'px';
+                    el.style.top = (rect.top - fieldRect.top) + 'px';
+                    field.appendChild(el);
+                }
+                
+                initialLeft = el.offsetLeft;
+                initialTop = el.offsetTop;
+                el.style.cursor = 'grabbing';
+                
+                if (el.classList.contains('ball')) {
+                    el.dataset.vx = 0;
+                    el.dataset.vy = 0;
+                    lastTime = Date.now();
+                }
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                e.preventDefault();
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                
+                let newLeft = initialLeft + dx;
+                let newTop = initialTop + dy;
+
+                if (el.classList.contains('ball')) {
+                    const now = Date.now();
+                    const dt = now - lastTime;
+                    if (dt > 0) {
+                        velX = (e.clientX - lastX) / dt * 15; // Scale velocity
+                        velY = (e.clientY - lastY) / dt * 15;
+                        lastX = e.clientX;
+                        lastY = e.clientY;
+                        lastTime = now;
+                    }
+                }
+
+                // Removed constraints to allow dragging out of field
+                // const maxX = field.clientWidth - el.clientWidth;
+                // const maxY = field.clientHeight - el.clientHeight;
+                // newLeft = Math.max(0, Math.min(newLeft, maxX));
+                // newTop = Math.max(0, Math.min(newTop, maxY));
+
+                el.style.left = newLeft + 'px';
+                el.style.top = newTop + 'px';
+                redraw();
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    el.style.cursor = 'grab';
+                    
+                    if (el.classList.contains('ball') && physicsEnabled) {
+                        el.dataset.vx = velX;
+                        el.dataset.vy = velY;
+                    }
+                    
+                    // Check if dropped outside field
+                    const rect = el.getBoundingClientRect();
+                    const fieldRect = field.getBoundingClientRect();
+                    
+                    // Simple check: if center of player is outside field bounds
+                    const centerX = rect.left + rect.width/2;
+                    const centerY = rect.top + rect.height/2;
+                    
+                    if (centerX < fieldRect.left || centerX > fieldRect.right || 
+                        centerY < fieldRect.top || centerY > fieldRect.bottom) {
+                        
+                        // Move to active roster tab
+                        const activeTab = document.querySelector('.roster-content.active');
+                        if (activeTab) {
+                            el.style.position = 'relative';
+                            el.style.left = '';
+                            el.style.top = '';
+                            activeTab.appendChild(el);
+                        }
+                    }
+                }
+            });
+        }
+
+        // Drawing Logic
+        let currentTool = 'move';
+        let isDrawing = false;
+        let startX, startY;
+        let drawingHistory = [];
+        let currentPath = []; // For zone tool
+        let animationFrames = [];
+        
+        // Physics Logic
+        let physicsEnabled = false;
+        let physicsInterval;
+
+        function togglePhysics() {
+            physicsEnabled = !physicsEnabled;
+            const btn = document.getElementById('btn-physics');
+            btn.textContent = physicsEnabled ? "Physics: ON" : "Physics: OFF";
+            btn.style.background = physicsEnabled ? "#4caf50" : "#f9f9f9";
+            btn.style.color = physicsEnabled ? "white" : "#333";
+            
+            if (physicsEnabled) {
+                physicsLoop();
+            }
+        }
+
+        function physicsLoop() {
+            if (!physicsEnabled) return;
+            
+            const ball = document.querySelector('.ball');
+            if (ball && !ball.style.cursor.includes('grabbing')) { // Don't simulate if currently being dragged
+                let vx = parseFloat(ball.dataset.vx || 0);
+                let vy = parseFloat(ball.dataset.vy || 0);
+                
+                if (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1) {
+                    let x = parseFloat(ball.style.left);
+                    let y = parseFloat(ball.style.top);
+                    
+                    x += vx;
+                    y += vy;
+                    
+                    // Bounce off walls (field dimensions 900x600, ball ~25px)
+                    if (x < 0) { x = 0; vx *= -0.7; }
+                    if (x > 875) { x = 875; vx *= -0.7; }
+                    if (y < 0) { y = 0; vy *= -0.7; }
+                    if (y > 575) { y = 575; vy *= -0.7; }
+                    
+                    // Friction
+                    vx *= 0.96;
+                    vy *= 0.96;
+                    
+                    ball.style.left = x + 'px';
+                    ball.style.top = y + 'px';
+                    ball.dataset.vx = vx;
+                    ball.dataset.vy = vy;
+                }
+            }
+            
+            requestAnimationFrame(physicsLoop);
+        }
+
+        function setTool(tool) {
+            if ((currentTool === 'link' || currentTool === 'line') && currentPath.length > 0) {
+                if (currentPath.length >= 2) {
+                    const type = currentTool === 'line' ? 'player_line' : 'zone';
+                    drawingHistory.push({ type: type, playerIds: [...currentPath], team: currentPath.team });
+                }
+            }
+
+            currentTool = tool;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`btn-${tool}`).classList.add('active');
+            
+            if (tool === 'move') {
+                canvas.style.pointerEvents = 'none';
+            } else {
+                canvas.style.pointerEvents = 'auto';
+            }
+            currentPath = []; // Reset zone path on tool switch
+            redraw();
+        }
+
+        function clearCanvas() {
+            drawingHistory = [];
+            currentPath = [];
+            animationFrames = [];
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function findClickedPlayer(clickX, clickY) {
+            const players = document.querySelectorAll('.player');
+            for (const player of players) {
+                const x = player.offsetLeft;
+                const y = player.offsetTop;
+                const size = player.clientWidth;
+                const dx = clickX - (x + size / 2);
+                const dy = clickY - (y + size / 2);
+                if (Math.sqrt(dx * dx + dy * dy) < size / 2) {
+                    return player;
+                }
+            }
+            return null;
+        }
+
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: (e.clientX - rect.left) * (canvas.width / rect.width),
+                y: (e.clientY - rect.top) * (canvas.height / rect.height)
+            };
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (currentTool === 'move') return;
+            const pos = getPos(e);
+
+            if (currentTool === 'eraser') {
+                deleteDrawingAt(pos.x, pos.y);
+                return;
+            }
+
+            if (currentTool === 'link' || currentTool === 'line') {
+                const clickedPlayer = findClickedPlayer(pos.x, pos.y);
+                if (clickedPlayer) {
+                    const teamClass = clickedPlayer.classList.contains('home') ? 'home' : 'away';
+
+                    if (currentPath.length === 0) {
+                        currentPath.team = teamClass;
+                    } else if (currentPath.team !== teamClass) {
+                        return;
+                    }
+
+                    const idx = currentPath.indexOf(clickedPlayer.id);
+                    if (idx !== -1) {
+                        currentPath.splice(idx, 1);
+                    } else {
+                        currentPath.push(clickedPlayer.id);
+                    }
+                    redraw();
+                    return;
+                }
+                if (currentTool !== 'line') return;
+            }
+
+            if (currentTool === 'zone') {
+                const clickedPlayer = findClickedPlayer(pos.x, pos.y);
+                if (!clickedPlayer) return;
+
+                const teamClass = clickedPlayer.classList.contains('home') ? 'home' : 'away';
+
+                if (currentPath.length === 0) {
+                    currentPath.team = teamClass;
+                } else {
+                    if (currentPath.team !== teamClass) {
+                        return;
+                    }
+                }
+
+                // Check if closing the loop
+                if (currentPath.length > 2 && clickedPlayer.id === currentPath[0]) {
+                    drawingHistory.push({ type: 'zone', playerIds: [...currentPath], team: currentPath.team });
+                    currentPath = [];
+                    redraw();
+                    return;
+                }
+
+                if (currentPath.length === 0 || currentPath[currentPath.length - 1] !== clickedPlayer.id) {
+                    currentPath.push(clickedPlayer.id);
+                }
+                redraw();
+                return;
+            }
+
+            isDrawing = true;
+            startX = pos.x;
+            startY = pos.y;
+            
+            if (currentTool === 'free') {
+                currentPath = [pos];
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            const pos = getPos(e);
+            
+            if (currentTool === 'zone') {
+                redraw();
+                if (currentPath.length > 0) {
+                    const lastPlayerId = currentPath[currentPath.length - 1];
+                    const lastPlayerCenter = getPlayerCenter(lastPlayerId);
+                    if (lastPlayerCenter) {
+                        // Draw preview line
+                        ctx.beginPath();
+                        ctx.moveTo(lastPlayerCenter.x, lastPlayerCenter.y);
+                        ctx.lineTo(pos.x, pos.y);
+                        ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                }
+                return;
+            }
+
+            if (!isDrawing) return;
+
+            redraw();
+
+            if (currentTool === 'free') {
+                currentPath.push(pos);
+                ctx.beginPath();
+                ctx.moveTo(currentPath[0].x, currentPath[0].y);
+                for (let i = 1; i < currentPath.length; i++) {
+                    ctx.lineTo(currentPath[i].x, currentPath[i].y);
+                }
+                ctx.strokeStyle = 'yellow';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            } else if (currentTool === 'line' || currentTool === 'arrow') {
+                drawShape(startX, startY, pos.x, pos.y, currentTool, true);
+            }
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (currentTool === 'zone') return;
+            if (!isDrawing) return;
+            isDrawing = false;
+            const pos = getPos(e);
+
+            if (currentTool === 'free') {
+                drawingHistory.push({ type: 'free', points: [...currentPath] });
+            } else {
+                drawingHistory.push({ type: currentTool, start: {x: startX, y: startY}, end: {x: pos.x, y: pos.y} });
+            }
+            redraw();
+        });
+
+        function redraw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            drawingHistory.forEach(item => {
+                if (item.type === 'free') {
+                    ctx.beginPath();
+                    ctx.moveTo(item.points[0].x, item.points[0].y);
+                    for (let i = 1; i < item.points.length; i++) {
+                        ctx.lineTo(item.points[i].x, item.points[i].y);
+                    }
+                    ctx.strokeStyle = 'yellow';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                } else if (item.type === 'zone' || item.type === 'player_line') {
+                    const points = item.playerIds.map(getPlayerCenter).filter(p => p !== null);
+                    if (points.length < 2) return;
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    for (let i = 1; i < points.length; i++) {
+                        ctx.lineTo(points[i].x, points[i].y);
+                    }
+                    if (item.type === 'zone') {
+                        ctx.closePath();
+                        ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+                        ctx.fill();
+                    }
+                    ctx.strokeStyle = 'yellow';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                } else {
+                    drawShape(item.start.x, item.start.y, item.end.x, item.end.y, item.type, false);
+                }
+            });
+
+            // Draw current zone path
+            if ((currentTool === 'zone' || currentTool === 'link' || currentTool === 'line') && currentPath.length > 0) {
+                const points = currentPath.map(getPlayerCenter).filter(p => p !== null);
+                if (points.length > 0) {
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+                    for (let i = 1; i < points.length; i++) {
+                        ctx.lineTo(points[i].x, points[i].y);
+                    }
+
+                    if (currentTool === 'link' && points.length >= 3) {
+                        ctx.closePath();
+                        ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+                        ctx.fill();
+                    }
+
+                    ctx.strokeStyle = 'yellow';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    // Draw points on players
+                    points.forEach(p => {
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                        ctx.fill();
+                    });
+
+                    // Highlight selected players in link mode
+                    if (currentTool === 'link' || currentTool === 'line') {
+                        points.forEach(p => {
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
+                            ctx.strokeStyle = '#ffeb3b';
+                            ctx.lineWidth = 3;
+                            ctx.stroke();
+                        });
+                    }
+                }
+            }
+        }
+
+        function drawShape(x1, y1, x2, y2, type, isPreview) {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = 'yellow';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            if (type === 'arrow') {
+                const angle = Math.atan2(y2 - y1, x2 - x1);
+                const headLen = 15;
+                ctx.beginPath();
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+                ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+                ctx.closePath();
+                ctx.fillStyle = 'yellow';
+                ctx.fill();
+            }
+        }
+
+        function deleteDrawingAt(x, y) {
+            for (let i = drawingHistory.length - 1; i >= 0; i--) {
+                if (isHit(drawingHistory[i], x, y)) {
+                    drawingHistory.splice(i, 1);
+                    redraw();
+                    return;
+                }
+            }
+        }
+
+        function isHit(item, x, y) {
+            const threshold = 12;
+            const distToSegment = (p, v, w) => {
+                const l2 = (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
+                if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+                let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+                t = Math.max(0, Math.min(1, t));
+                return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+            };
+
+            if (item.type === 'free') {
+                return item.points.some(p => Math.hypot(p.x - x, p.y - y) < threshold);
+            } else if (item.type === 'line' || item.type === 'arrow') {
+                return distToSegment({x, y}, item.start, item.end) < threshold;
+            } else if (item.type === 'zone' || item.type === 'player_line') {
+                const points = item.playerIds.map(getPlayerCenter).filter(p => p !== null);
+                for (let j = 0; j < points.length - 1; j++) {
+                    if (distToSegment({x, y}, points[j], points[j+1]) < threshold) return true;
+                }
+                if (item.type === 'zone' && points.length > 2) {
+                    if (distToSegment({x, y}, points[points.length-1], points[0]) < threshold) return true;
+                }
+            }
+            return false;
+        }
+
+        function showNotification(message) {
+            const area = document.getElementById('notification-area');
+            const el = document.createElement('div');
+            el.className = 'notification';
+            el.textContent = message;
+            area.appendChild(el);
+            setTimeout(() => {
+                el.style.animation = 'fadeOut 0.3s forwards';
+                setTimeout(() => el.remove(), 300);
+            }, 3000);
+        }
+
+        function updateSaveList() {
+            const saves = JSON.parse(localStorage.getItem('tacticsSaves') || '{}');
+            const select = document.getElementById('save-select');
+            select.innerHTML = '<option value="">-- Select Save --</option>';
+            Object.keys(saves).forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                select.appendChild(opt);
+            });
+        }
+
+        function getBoardState() {
+            const players = [];
+            document.querySelectorAll('.player').forEach(p => {
+                players.push({
+                    id: p.id,
+                    left: p.style.left,
+                    top: p.style.top,
+                    className: p.className,
+                    innerHTML: p.innerHTML,
+                    parentId: p.parentElement.id
+                });
+            });
+
+            const ball = document.querySelector('.ball');
+            const ballPos = ball ? { left: ball.style.left, top: ball.style.top } : null;
+
+            return {
+                players: players,
+                ball: ballPos,
+                drawings: [...drawingHistory],
+                homeFormation: document.getElementById('home-formation').value,
+                awayFormation: document.getElementById('away-formation').value
+            };
+        }
+
+        function saveBoard() {
+            document.getElementById('save-modal').style.display = 'flex';
+            document.getElementById('save-name-input').focus();
+        }
+
+        function closeSaveModal() {
+            document.getElementById('save-modal').style.display = 'none';
+        }
+
+        function confirmSaveBoard() {
+            const name = document.getElementById('save-name-input').value;
+            if (!name) return showNotification("Please enter a name.");
+            
+            const state = getBoardState();
+            
+            const saves = JSON.parse(localStorage.getItem('tacticsSaves') || '{}');
+            saves[name] = state;
+            localStorage.setItem('tacticsSaves', JSON.stringify(saves));
+            updateSaveList();
+            closeSaveModal();
+            showNotification('Board saved!');
+        }
+
+        function applyBoardState(state) {
+            document.getElementById('home-formation').value = state.homeFormation;
+            document.getElementById('away-formation').value = state.awayFormation;
+            
+            // Restore players
+            createPlayers(); 
+            state.players.forEach(pData => {
+                const el = document.getElementById(pData.id);
+                if (el) {
+                    const parent = document.getElementById(pData.parentId) || field;
+                    parent.appendChild(el);
+                    if (pData.parentId === 'field') {
+                        el.style.position = 'absolute';
+                        el.style.left = pData.left;
+                        el.style.top = pData.top;
+                    } else {
+                        el.style.position = 'relative';
+                        el.style.left = '';
+                        el.style.top = '';
+                    }
+                }
+            });
+
+            // Restore ball
+            if (state.ball) {
+                let ball = document.querySelector('.ball');
+                if (!ball) { addBall(); ball = document.querySelector('.ball'); }
+                ball.style.left = state.ball.left;
+                ball.style.top = state.ball.top;
+            }
+
+            // Restore drawings
+            drawingHistory = state.drawings || [];
+            redraw();
+        }
+
+        function loadBoard() {
+            const name = document.getElementById('save-select').value;
+            if (!name) return showNotification('Please select a save to load.');
+            
+            const saves = JSON.parse(localStorage.getItem('tacticsSaves') || '{}');
+            const state = saves[name];
+            if (!state) return showNotification('Save not found.');
+            
+            applyBoardState(state);
+        }
+
+        function addKeyframe() {
+            const state = getBoardState();
+            animationFrames.push(state);
+            showNotification(`Frame ${animationFrames.length} added.`);
+        }
+
+        function updatePositionsOnly(state) {
+            state.players.forEach(pData => {
+                const el = document.getElementById(pData.id);
+                if (el) {
+                    if (pData.parentId === 'field') {
+                        el.style.left = pData.left;
+                        el.style.top = pData.top;
+                    }
+                }
+            });
+            if (state.ball) {
+                let ball = document.querySelector('.ball');
+                if (ball) {
+                    ball.style.left = state.ball.left;
+                    ball.style.top = state.ball.top;
+                }
+            }
+            drawingHistory = state.drawings || [];
+            redraw();
+        }
+
+        function playAnimation() {
+            if (animationFrames.length < 2) return showNotification("Need at least 2 frames to animate.");
+            
+            // Set initial state to frame 0 to ensure correct formation/players exist
+            applyBoardState(animationFrames[0]);
+            
+            // Small delay to allow DOM to settle before starting animation loop
+            setTimeout(() => {
+                let frameIdx = 0;
+                
+                const players = document.querySelectorAll('.player');
+                const ball = document.querySelector('.ball');
+                const elements = [...players];
+                if(ball) elements.push(ball);
+                
+                elements.forEach(el => el.style.transition = "all 1s ease-in-out");
+
+                const playNext = () => {
+                    if (frameIdx >= animationFrames.length) {
+                        elements.forEach(el => el.style.transition = "");
+                        return;
+                    }
+                    
+                    updatePositionsOnly(animationFrames[frameIdx]);
+                    frameIdx++;
+                    setTimeout(playNext, 1000);
+                };
+                playNext();
+            }, 50);
+        }
+
+        function exportAnimation() {
+            if (animationFrames.length === 0) return showNotification("No animation frames to export.");
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(animationFrames));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "tactics_animation.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+
+        function exportImage() {
+            html2canvas(document.querySelector("#field")).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'tactics_board.png';
+                link.href = canvas.toDataURL();
+                link.click();
+            });
+        }
+
+        function resizeField() {
+           const scale = Math.min(1, (window.innerWidth - 40) / 900);
+           field.style.transform = `scale(${scale})`;
+           field.style.marginBottom = `${-(600 * (1-scale))}px`;
+        }
+        window.addEventListener('resize', resizeField);
+
+        createPlayers();
+        addBall();
+        updateSaveList();
+        resizeField();
+    </script>
+</body>
+</html>

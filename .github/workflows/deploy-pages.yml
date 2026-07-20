@@ -41,15 +41,19 @@ jobs:
         working-directory: Beyond-the-Stats
         run: |
           test -f public/index.html
-          test -f public/privacy.html
-          test -f public/terms.html
-          test -f public/subscriptions.html
+          test -f public/privacy/index.html
+          test -f public/terms/index.html
+          test -f public/subscriptions/index.html
           test -f public/upcoming-matches.html
           test -f public/static/shared.js
           test -f public/_redirects
           ! test -f public/world-cup.html
           ! grep -q 'loadHomeWorldCup\|wc-winner-odds\|World Cup 2026' public/index.html public/static/home.js
+          ! grep -Eq '["'"'"'`]\/api\/home\/' public/static/home.js public/static/shared.js
+          grep -q '/api/upcoming/' public/static/home.js
+          grep -q 'api.beyondthestatsapp.com' public/static/shared.js
           node --check public/static/shared.js
+          node --check public/static/home.js
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3

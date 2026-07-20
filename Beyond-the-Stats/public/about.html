@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Beyond The Stats</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/graphics/BeyondTheStatsLogo.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/graphics/BeyondTheStatsLogo.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/graphics/BeyondTheStatsLogo.png">
+  <link rel="stylesheet" href="/static/styles.css?v=2026072003">
+  <meta name="description" content="About Beyond The Stats: machine learning match predictions for top European leagues, MLS, and cup competitions.">
+  <meta name="robots" content="index, follow">
+  <meta property="og:title" content="About — Beyond The Stats">
+  <meta property="og:description" content="Machine learning match predictions for top European leagues, MLS, and cup competitions. Entertainment only.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://beyondthestatsapp.com/about">
+  <meta property="og:image" content="https://beyondthestatsapp.com/graphics/BeyondTheStatsLogo.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="About — Beyond The Stats">
+  <meta name="twitter:description" content="Machine learning match predictions. Entertainment only.">
+  <meta name="twitter:image" content="https://beyondthestatsapp.com/graphics/BeyondTheStatsLogo.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://beyondthestatsapp.com/#website",
+        "url": "https://beyondthestatsapp.com",
+        "name": "Beyond The Stats",
+        "description": "Machine learning match predictions for top European leagues, MLS, and cup competitions.",
+        "publisher": { "@id": "https://beyondthestatsapp.com/#organization" },
+        "inLanguage": "en-US"
+      },
+      {
+        "@type": "Organization",
+        "@id": "https://beyondthestatsapp.com/#organization",
+        "name": "Beyond The Stats",
+        "url": "https://beyondthestatsapp.com",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://beyondthestatsapp.com/graphics/BeyondTheStatsLogo.png"
+        },
+        "description": "Soccer match prediction platform using machine learning."
+      },
+      {
+        "@type": "WebPage",
+        "@id": "https://beyondthestatsapp.com/about#webpage",
+        "url": "https://beyondthestatsapp.com/about",
+        "name": "About Beyond The Stats",
+        "isPartOf": { "@id": "https://beyondthestatsapp.com/#website" },
+        "about": { "@id": "https://beyondthestatsapp.com/#organization" },
+        "description": "About Beyond The Stats and our prediction methodology.",
+        "inLanguage": "en-US"
+      }
+    ]
+  }
+  </script>
+</head>
+<body class="dark-mode" data-active-page="about">
+  <main class="page">
+        <div id="notification-area" class="notification-area"></div>
+    <header class="site-header">
+      <div class="site-header-top">
+        <a id="brand-home-btn" class="brand brand-home-btn" href="/index.html" aria-label="Go to home">
+          <img class="brand-mark" src="/graphics/BeyondTheStatsLogo.png" alt="Beyond The Stats logo">
+          <div>
+            <div class="brand-name">Beyond The Stats BETA</div>
+            <div class="brand-sub">Matchday Predictor</div>
+          </div>
+        </a>
+        <div class="header-actions">
+          <span class="ios-app-indicator" role="status"><span class="ios-app-indicator-icon" aria-hidden="true">📱</span><span class="ios-app-indicator-text">iOS mobile app and new website UI coming soon...</span></span>
+          <a id="header-about" class="theme-toggle header-link " href="/about.html">About</a>
+        </div>
+      </div>
+
+      <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
+        <a id="tab-home" class="tab-btn " href="/index.html">Home</a>
+        <a id="tab-global" class="tab-btn " href="/upcoming-matches.html">Upcoming Matches</a>
+        <a id="tab-cups" class="tab-btn " href="/cups.html">Cups</a>
+        <a id="tab-h2h" class="tab-btn " href="/head-to-head.html">Compare Teams</a>
+        <a id="tab-league-table" class="tab-btn " href="/league-tables.html">Projected League Tables</a>
+        <a id="tab-tactics" class="tab-btn " href="/tactics.html">Tactics Board</a>
+      </nav>
+    </header>
+
+    
+    
+    
+    
+    
+    <section id="panel-about" class="">
+      <div class="card">
+        <h3>About This Project</h3>
+        <p>
+          This app predicts soccer match outcomes using historical match data, team-level form/stat features,
+          and model-generated probabilities. It supports many popular European leagues and the MLS with more leagues to come
+          in the future. The models include specific tuning to different leagues to improve accuracy. This website is created as 
+          a fun personal project to explore machine learning and data analysis and should not be used for any betting, financial, 
+          or professional purposes. Predictions are not guaranteed to be accurate and are likely highly inaccurate.
+        </p>
+      </div>
+      <div class="card">
+        <h3>How To Use It</h3>
+        <p>
+          The predictor tool allows for match predictions between teams in the currently supported European leagues (Premier League,
+           Championship, Bundesliga, Ligue 1, La Liga, Serie A, etc.). The separate MLS predictor only works with MLS matchups and uses a 
+           sepearate, less advanced model due to current data limitations. Predictions between teams in different leagues often create wild
+           predictions and are far less accurate than predictions of teams in the same league. The upcoming matches tab is used to show matches
+           of the current matchweek (and midweek fixtures), including dedicated tabs for supported cup competitions. Each prediction
+           also includes a score prediction and may include shots and shot on target predictions and a reasoning for the match prediction. These additional
+           features are experimental and may not be available for all matches or leagues. The league table shows the predicted league table based on real 
+           results and predicted results for the rest of the season. Accuracy of the predictions is not guaranteed and should be used for ENTERTAINMENT PURPOSES ONLY.
+        </p>
+      </div>
+      <div class = "card">
+        <h3>Upcoming Features & Improvements</h3>
+        <p>
+          <ul>
+            <li><strong>Advanced Metrics (xG):</strong> Integrating Expected Goals and other advanced stats to reduce variance in predictions.</li>
+            <li><strong>Live Match Tracker:</strong> Real-time score updates and prediction status tracking.</li>
+            <li><strong>User Accounts:</strong> Save your tactics, prediction history, and join private leagues.</li>
+            <li><strong>Tactics Simulation:</strong> Simple physics-based simulation to test formations on the whiteboard.</li>
+            <li><strong>Multi-Sport Support:</strong> Expanding the platform to NBA and NFL predictions.</li>
+            <li><strong>Historical Archive:</strong> Searchable database of past model performance and match results.</li>
+            <li><strong>Squad Depth Analysis:</strong> Using Transfermarkt data to adjust for injuries and suspensions.</li>
+          </ul>
+        </p>
+      </div>
+      <div class="card">
+        <h3>Feedback</h3>
+        <p>Have an idea or found a bug? Let us know!</p>
+        <textarea id="feedback-text" placeholder="Type your feedback here..." style="width: 100%; padding: 10px; border: 1px solid var(--card-border); border-radius: 4px; background: var(--card-bg); color: var(--text-color); margin-bottom: 10px; min-height: 80px;"></textarea>
+        <button id="feedback-submit" class="tab-btn active" type="button" style="margin: 0;">Send Feedback</button>
+      </div>
+    <section class="">
+    <div class = "card">
+        <h3>Known Bugs & Issues</h3>
+        <p>
+          <ul>
+            <li>
+              Some team matchups may be missing or duplicated in the upcoming matches tab
+            </li>
+            <li>
+              Match prediction live correct/incorrect trackers is not stable and may be inaccurate or not update properly
+            </li>
+            <li>
+              Many predictions may lack reasoning or additional data
+            </li>
+            <li>
+              The model may have some inaccuracies due to data filtering limitations and often has wilder prediction
+              percentages compared to other prediction models
+            </li>
+            <li>
+              Some functions of the website may not function properly
+            </li>
+          </ul>
+        </p>
+    </section>
+    <section class=\"card disclaimer ">
+      <h3>Disclaimer</h3>
+      <p>
+        These predictions are model-generated estimates for entertainment use only.
+        Results are not guaranteed, and probabilities can change as data updates. 
+        This is a project made for fun and should not be relied upon for any professional, betting, or financial decisions.
+
+      </p>
+      <p>
+
+        DO NOT treat this as betting, financial, or professional advice in any aspect.
+
+      </p>
+      <p>
+
+        Historical result data is sourced from football-data.co.uk. Realtime data is sourced from api.football-data.org, ESPN scoreboard, and Transfermarkt.com
+
+      </p>
+    </section>
+    </section>
+    <div class="card">
+      <h3>Legal</h3>
+      <p><em>Effective date: July 19, 2026</em></p>
+      <ul>
+        <li><a href="/privacy/">Privacy Policy</a></li>
+        <li><a href="/terms/">Terms of Service</a></li>
+        <li><a href="/subscriptions/">Subscription Disclosure</a></li>
+      </ul>
+      <p>API: <a href="https://api.beyondthestatsapp.com/api/legal"><code>https://api.beyondthestatsapp.com/api/legal</code></a></p>
+    </div>
+      <footer class="site-footer">
+      <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
+      <p>
+        <a href="/privacy/">Privacy Policy</a> ·
+        <a href="/terms/">Terms of Service</a> ·
+        <a href="/subscriptions/">Subscriptions</a>
+      </p>
+      <p>&copy; 2026 Beyond The Stats</p>
+    </footer>
+  </main>
+
+  <script src="/static/shared.js?v=2026072003"></script>
+  <script src="/static/about.js?v=2026060706"></script>
+</body>
+</html>
+
+
+
+
+
+
