@@ -1113,6 +1113,51 @@ def mean_from_dicts(rows, key, default=0.0):
     return float(sum(values) / len(values))
 
 
+def _enrich_uefa_context_for_known_team(team_name, competition, season_key, context):
+    """Attach UEFA domestic league + coefficient data for teams already in the DB.
+
+    Cup predictions for known teams still use their trained overall/season/form
+    rows, but should also use country/league coefficients and (when available)
+    domestic table position — the same signals used for missing-team fallbacks.
+    """
+    if not str(competition or "").startswith("UEFA/"):
+        return
+    if "uefa_coefficients" not in context:
+        return
+    uefa_data = uefa.lookup_team_data_for_fallback(
+        team_name,
+        context.get("uefa_coefficients"),
+        context.get("uefa_team_registry"),
+        context.get("uefa_squad_values"),
+        context.get("uefa_domestic_tables"),
+    )
+    if not uefa_data or not uefa_data.get("league"):
+        return
+    real_league = uefa_data["league"]
+    context.setdefault("league_strength", {})[real_league] = uefa_data["league_strength"]
+    context.setdefault("_uefa_team_league", {})[team_name] = real_league
+    context.setdefault("team_competition_map", {})[team_name] = real_league
+    if uefa_data.get("squad_value_eur_m") is not None:
+        context.setdefault("uefa_squad_values", {})[team_name] = uefa_data["squad_value_eur_m"]
+    domestic = uefa_data.get("domestic") or {}
+    if not domestic:
+        return
+    season_teams = context.setdefault("season_teams", {})
+    season_bucket = season_teams.setdefault(season_key, {})
+    existing = season_bucket.get(team_name) or {}
+    played = max(1, int(domestic.get("played", existing.get("games", 1) or 1)))
+    points = float(domestic.get("points", existing.get("points", 0) or 0))
+    # Prefer live domestic table numbers when the local season row is empty/thin.
+    if int(existing.get("games", 0) or 0) < 3:
+        season_bucket[team_name] = {
+            **existing,
+            "games": played,
+            "points": points,
+            "avg_goals_scored": float(existing.get("avg_goals_scored", domestic.get("goals_for", 0) / played)),
+            "avg_goals_conceded": float(existing.get("avg_goals_conceded", domestic.get("goals_against", 0) / played)),
+        }
+
+
 def inject_fallback_team(team_name, competition, season_key, context):
     overall_teams = context["overall_teams"]
     season_teams = context["season_teams"]
@@ -1126,6 +1171,9 @@ def inject_fallback_team(team_name, competition, season_key, context):
             available_teams.append(team_name)
         if team_name not in season_teams.get(season_key, {}):
             season_teams.setdefault(season_key, {})[team_name] = {"games": 0, "points": 0}
+        # Known teams still get UEFA domestic-league mapping + coefficient /
+        # table-position enrichment for Champions/Europa/Conference fixtures.
+        _enrich_uefa_context_for_known_team(team_name, competition, season_key, context)
         return
 
     if competition in CROSS_LEAGUE_CUP_COMPETITIONS:

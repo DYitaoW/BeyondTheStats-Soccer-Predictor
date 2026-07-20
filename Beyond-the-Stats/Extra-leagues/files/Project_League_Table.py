@@ -618,18 +618,11 @@ def predict_match(ctx, home_team, away_team, competition_hint):
 
 def _expected_current_season_year(competition):
     """Return the expected start year for the current season of *competition*."""
-    now = datetime.now()
-    country = competition.split("/")[0] if "/" in competition else ""
-    cross_year_countries = {
-        "Austria", "Switzerland", "Greece", "Denmark", "Poland",
-        "Japan", "Bulgaria", "Cyprus", "Czech Republic",
-        "Israel", "Moldova", "Serbia", "Ukraine", "Romania",
-        "Croatia", "Hungary", "Slovakia", "Slovenia",
-        "Netherlands", "Belgium", "Scotland", "Turkey",
-    }
-    if country in cross_year_countries:
+    try:
+        return season_calendar.expected_season_start_year(competition)
+    except Exception:
+        now = datetime.now()
         return now.year if now.month >= 7 else now.year - 1
-    return now.year
 
 
 def _fetch_espn_teams(competition):

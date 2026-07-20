@@ -14,14 +14,19 @@ within head-to-head groups; all others use overall GD → GF → team-name.
 import pandas as pd
 import os
 import re
+import sys
 from collections import defaultdict
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+import season_calendar
+
 # Head-to-head tiebreaker leagues: La Liga, La Liga 2, Serie A, Serie B, Liga Portugal.
 H2H_TIEBREAKER_PREFIXES = {"laligastat", "laliga2stat", "seriaastat", "seriabstat", "portstat"}
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_FOLDER = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PROCESSED_FOLDER = os.path.join(BASE_DIR, "Data", "Processed_Data")
 SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})-(\d{2})\.csv$", re.IGNORECASE)
@@ -29,7 +34,7 @@ GENERAL_REQUIRED_COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR
 CORE_REQUIRED_COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"]
 MIN_COMPLETENESS_RATIO = 0.95
 MIN_ROWS = 250
-CURRENT_SEASON_MIN_ROWS = 20
+CURRENT_SEASON_MIN_ROWS = season_calendar.CURRENT_SEASON_MIN_ROWS
 MIN_START_YEAR = 2002
 
 # Leagues sourced from football-data.co.uk's "new" single-CSV format (see
@@ -122,21 +127,26 @@ def get_target_season_files(folder):
     return [name for _, name in valid]
 
 
-def has_required_general_data(df, start_year, competition_prefix=""):
+def has_required_general_data(df, start_year, competition_prefix="", file_name="", *, force_min_rows=None):
     required_columns = (
         CORE_REQUIRED_COLUMNS if competition_prefix in NO_SHOT_STATS_PREFIXES else GENERAL_REQUIRED_COLUMNS
     )
     if any(col not in df.columns for col in required_columns):
         return False
 
-    current_year = datetime.now().year
-    in_progress_season = start_year == (current_year - 1)
-    if in_progress_season:
-        return len(df) >= CURRENT_SEASON_MIN_ROWS
+    min_rows_floor = force_min_rows
+    if min_rows_floor is None:
+        if season_calendar.is_in_progress_season(start_year, file_name or f"{competition_prefix}{start_year}-00.csv"):
+            min_rows_floor = CURRENT_SEASON_MIN_ROWS
+        else:
+            min_rows_floor = MIN_ROWS_OVERRIDES.get(competition_prefix, MIN_ROWS)
 
-    min_rows = MIN_ROWS_OVERRIDES.get(competition_prefix, MIN_ROWS)
-    if len(df) < min_rows:
+    if len(df) < max(1, int(min_rows_floor)):
         return False
+
+    # Current / force-relaxed seasons: keep whatever early results we have.
+    if min_rows_floor <= CURRENT_SEASON_MIN_ROWS:
+        return True
 
     complete_rows = df[required_columns].notna().all(axis=1).mean()
     return complete_rows >= MIN_COMPLETENESS_RATIO
@@ -271,7 +281,7 @@ def add_table_context_columns(df, competition=""):
     return df
 
 
-def process_one_file(rel_path):
+def process_one_file(rel_path, *, force_min_rows=None):
     file_path = os.path.join(RAW_FOLDER, rel_path)
     season_start_year = parse_season_start_year(os.path.basename(rel_path))
     if season_start_year is None:
@@ -282,7 +292,13 @@ def process_one_file(rel_path):
     competition_prefix = prefix_match.group(1).lower() if prefix_match else ""
 
     df = read_csv_fast(file_path)
-    if not has_required_general_data(df, season_start_year, competition_prefix):
+    if not has_required_general_data(
+        df,
+        season_start_year,
+        competition_prefix,
+        file_name=fname,
+        force_min_rows=force_min_rows,
+    ):
         return False, rel_path, "skipped_insufficient_data"
 
     if "Date" in df.columns:
@@ -335,16 +351,37 @@ def main():
         raise ValueError("No valid files were found in Raw_Data.")
 
     workers = max(1, PROCESS_WORKERS)
+    processed_comps = set()
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(process_one_file, rel_path): rel_path for rel_path in target_files}
         for future in as_completed(futures):
-            _, rel_path, status = future.result()
+            ok, rel_path, status = future.result()
             if status == "processed":
                 print(f"Processed {rel_path}...")
+                processed_comps.add(os.path.dirname(rel_path).replace("\\", "/"))
             elif status == "skipped_insufficient_data":
                 print(f"Skipped {rel_path} (insufficient data)...")
             elif status == "skipped_invalid_name":
                 print(f"Skipped {rel_path} (invalid season name)...")
+
+    # If every season for a competition failed the normal bar, still keep the
+    # latest raw file with at least one valid row so cup/projection fallbacks
+    # and early-season tables have something to work with.
+    latest_by_comp = {}
+    for rel_path in target_files:
+        comp = os.path.dirname(rel_path).replace("\\", "/") or "Unknown"
+        start_year = parse_season_start_year(os.path.basename(rel_path)) or 0
+        prev = latest_by_comp.get(comp)
+        if prev is None or start_year > prev[0]:
+            latest_by_comp[comp] = (start_year, rel_path)
+    for comp, (_, rel_path) in sorted(latest_by_comp.items()):
+        if comp in processed_comps:
+            continue
+        ok, _, status = process_one_file(rel_path, force_min_rows=CURRENT_SEASON_MIN_ROWS)
+        if ok:
+            print(f"Processed {rel_path} (fallback: only sparse raw data for {comp})...")
+        else:
+            print(f"Skipped {rel_path} (fallback still insufficient for {comp})...")
 
     print("All files processed.")
 

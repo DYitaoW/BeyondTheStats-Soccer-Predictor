@@ -21,7 +21,7 @@ PROCESSED_FOLDER = os.path.join(BASE_DIR, "Data", "Processed_Data")
 SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})(?:-(\d{2}))?\.csv$", re.IGNORECASE)
 MIN_START_YEAR = 2002
 MIN_ROWS = 100
-CURRENT_SEASON_MIN_ROWS = 20
+CURRENT_SEASON_MIN_ROWS = season_calendar.CURRENT_SEASON_MIN_ROWS
 PROCESS_WORKERS = int(os.getenv("SOCCER_PROCESS_WORKERS", str(max(1, (os.cpu_count() or 2) // 2))))
 USE_GPU_DF = os.getenv("SOCCER_USE_GPU_DF", "1").strip().lower() not in {"0", "false", "no"}
 

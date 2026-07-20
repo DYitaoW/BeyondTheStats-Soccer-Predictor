@@ -176,27 +176,43 @@ def load_future_fixtures_from_espn(competition, year=None):
     if not espn_id:
         return pd.DataFrame()
 
-    target_year = int(year or datetime.now(UTC).year)
     today = pd.Timestamp(datetime.now(UTC).date())
+    # Scan through the competition's active season window (European: Jul→May),
+    # not just Dec 31 of the calendar year.
+    try:
+        import season_calendar as sc
+        _start, end = sc.fixture_search_bounds(competition, reference_date=today)
+        end = max(end, today)
+    except Exception:
+        target_year = int(year or datetime.now(UTC).year)
+        end = pd.Timestamp(f"{target_year}-12-31")
     start = today
-    end = pd.Timestamp(f"{target_year}-12-31")
     rows = []
     seen = set()
+    empty_streak = 0
     day = start
     while day <= end:
         url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
         try:
             data = fetch_json(url, timeout=20)
         except Exception:
-            day += timedelta(days=1)
+            empty_streak += 1
+            day += timedelta(days=7 if empty_streak >= 5 else 1)
             continue
 
-        for event in data.get("events", []) or []:
+        events = data.get("events", []) or []
+        if not events:
+            empty_streak += 1
+            day += timedelta(days=7 if empty_streak >= 5 else 1)
+            continue
+        empty_streak = 0
+
+        for event in events:
             event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
             if pd.isna(event_date):
                 continue
             match_date = event_date.tz_convert(EASTERN_TZ).tz_localize(None).normalize()
-            if match_date.year != target_year or match_date < today:
+            if match_date < today or match_date > end:
                 continue
 
             competitions = event.get("competitions", [])
@@ -610,26 +626,13 @@ def _predict_matches_batch(ctx, fixture_pairs, competition_hint):
 
 
 def _expected_current_season_year(competition):
-    """Return the expected start year for the current season of *competition*.
-
-    Cross-year European leagues (England, France, Germany, etc.) start in
-    Aug/Sep, so in July 2026 the current season is 2026-27 (start=2026).
-    Single-year leagues (MLS, Argentina, Brazil, etc.) use calendar years.
-    """
-    now = datetime.now()
-    country = competition.split("/")[0] if "/" in competition else ""
-    # European leagues that use a fall-to-spring (cross-year) calendar
-    cross_year_countries = {
-        "England", "France", "Germany", "Italy", "Spain", "Portugal",
-        "Netherlands", "Belgium", "Scotland", "Turkey", "Austria",
-        "Switzerland", "Greece", "Denmark", "Poland", "Romania",
-        "Japan",  # J-League switched to cross-year format
-    }
-    if country in cross_year_countries:
-        # Current season started last year if before August
+    """Return the expected start year for the current season of *competition*."""
+    try:
+        import season_calendar as sc
+        return sc.expected_season_start_year(competition)
+    except Exception:
+        now = datetime.now()
         return now.year if now.month >= 7 else now.year - 1
-    # Single-year (calendar) leagues
-    return now.year
 
 
 def _fetch_espn_teams(competition):
@@ -691,8 +694,12 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         for _, row in df.iterrows():
             raw_home = str(row["HomeTeam"]).strip()
             raw_away = str(row["AwayTeam"]).strip()
-            home = pm.resolve_team_name(raw_home, ctx["available_teams"]) or raw_home
-            away = pm.resolve_team_name(raw_away, ctx["available_teams"]) or raw_away
+            home = pm.resolve_team_name(raw_home, ctx["available_teams"])
+            away = pm.resolve_team_name(raw_away, ctx["available_teams"])
+            # Skip unresolved names so ESPN/API aliases cannot create duplicate
+            # table rows beside the canonical football-data names.
+            if not home or not away or home not in table or away not in table:
+                continue
             seen_pairs.add((home, away))
             ftr = str(row.get("FTR", "")).strip()
             hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
@@ -902,9 +909,37 @@ def main():
     if not latest:
         raise ValueError(f"No raw season files found in {RAW_DIR}")
 
+    # June is the European club off-season — skip projections until July when
+    # the next season (e.g. 26-27) becomes the active target.
+    try:
+        import season_calendar as sc
+        if sc.is_european_club_offseason():
+            european = {
+                comp: path for comp, path in latest.items()
+                if not sc.competition_uses_calendar_year(comp)
+            }
+            calendar = {
+                comp: path for comp, path in latest.items()
+                if sc.competition_uses_calendar_year(comp)
+            }
+            if european:
+                print(
+                    f"[skip] European club off-season (June) — "
+                    f"deferring {len(european)} league projection(s) until July"
+                )
+            latest = calendar
+    except Exception:
+        pass
+
     all_tables = []
     all_future = []
     comps = sorted(latest.items())
+    if not comps:
+        print("No competitions left to project.")
+        os.makedirs(OUT_DIR, exist_ok=True)
+        pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)
+        pd.DataFrame(all_future).to_csv(OUT_MATCHES, index=False)
+        return
 
     if comp_workers <= 1 or len(comps) <= 1:
         for competition, path in comps:

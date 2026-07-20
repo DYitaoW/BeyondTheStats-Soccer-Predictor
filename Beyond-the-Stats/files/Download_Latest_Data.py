@@ -9,14 +9,18 @@ marked complete and never re-downloaded.  The 2025-26 / 2026-27 seasons use
 unique filenames so they coexist in the same directory.
 """
 import os
+import sys
 import urllib.request
 from datetime import datetime
 from io import StringIO
 
 import pandas as pd
 
-
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+import season_calendar
+
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 
 
@@ -72,12 +76,12 @@ NEW_FORMAT_COMPETITIONS = [
 ]
 NEW_FORMAT_REQUIRED_COLUMNS = ["Season", "Date", "Home", "Away", "HG", "AG", "Res"]
 NEW_FORMAT_MIN_ROWS = 100
-NEW_FORMAT_CURRENT_SEASON_MIN_ROWS = 20
+NEW_FORMAT_CURRENT_SEASON_MIN_ROWS = season_calendar.CURRENT_SEASON_MIN_ROWS
 
 GENERAL_REQUIRED_COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR", "HS", "HST", "AS", "AST"]
 MIN_COMPLETENESS_RATIO = 0.90
 MIN_ROWS = 200
-CURRENT_SEASON_MIN_ROWS = 20
+CURRENT_SEASON_MIN_ROWS = season_calendar.CURRENT_SEASON_MIN_ROWS
 MIN_START_YEAR = 2002
 REFRESH_RECENT_SEASONS = 2
 
@@ -95,7 +99,7 @@ def download_bytes(url):
         return response.read()
 
 
-def has_required_general_data(csv_bytes, start_year, current_year):
+def has_required_general_data(csv_bytes, start_year, current_year, file_prefix=""):
     try:
         text = csv_bytes.decode("utf-8")
     except UnicodeDecodeError:
@@ -112,8 +116,11 @@ def has_required_general_data(csv_bytes, start_year, current_year):
     if any(col not in df.columns for col in GENERAL_REQUIRED_COLUMNS):
         return False
 
-    # Keep current in-progress season (e.g. 2025-26 during 2026) with relaxed row/completeness checks.
-    in_progress_season = start_year == (current_year - 1)
+    # Keep the active season (e.g. 2026-27 from July 2026) with a 1-row floor.
+    file_name = f"{file_prefix}{start_year}-{(start_year + 1) % 100:02d}.csv" if file_prefix else ""
+    in_progress_season = season_calendar.is_in_progress_season(
+        start_year, file_name, current_year=current_year
+    )
     if in_progress_season:
         return len(df) >= CURRENT_SEASON_MIN_ROWS
 
@@ -203,7 +210,9 @@ def download_new_format_competition(source, current_year):
         season_rows = df[df["SeasonInt"] == start_year].drop(columns=["SeasonInt"]).copy()
         if season_rows.empty:
             continue
-        in_progress_season = start_year == (current_year - 1)
+        in_progress_season = season_calendar.is_in_progress_season(
+            start_year, f"{prefix}{season_label(start_year)}.csv", current_year=current_year
+        )
         min_rows = NEW_FORMAT_CURRENT_SEASON_MIN_ROWS if in_progress_season else NEW_FORMAT_MIN_ROWS
         if len(season_rows) < min_rows:
             continue
@@ -260,7 +269,7 @@ def main():
             except Exception:
                 continue
 
-            if not has_required_general_data(csv_bytes, start_year, current_year):
+            if not has_required_general_data(csv_bytes, start_year, current_year, file_prefix=prefix):
                 continue
 
             write_bytes(out_path, csv_bytes)
