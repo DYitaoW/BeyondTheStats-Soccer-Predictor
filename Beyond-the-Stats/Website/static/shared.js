@@ -320,8 +320,8 @@ if (tab === "home") {
     tabLeagueTable.classList.add("active");
     panelLeagueTable.classList.remove("hidden");
 } else if (tab === "world-cup") {
-    tabWorldCup.classList.add("active");
-    panelWorldCup.classList.remove("hidden");
+    if (tabWorldCup) tabWorldCup.classList.add("active");
+    if (panelWorldCup) panelWorldCup.classList.remove("hidden");
 } else if (tab === "players") {
     tabPlayers.classList.add("active");
     panelPlayers.classList.remove("hidden");
@@ -1182,7 +1182,17 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
     const PAGE_SIZE = 30;
     let currentPage = 0;
 
-    const todayStr = new Date().toISOString().slice(0, 10);
+    let todayStr;
+    try {
+        todayStr = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/New_York",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(new Date());
+    } catch (_err) {
+        todayStr = new Date().toISOString().slice(0, 10);
+    }
 
     // Upcoming tab hides stale fixtures; home can opt into historical date ranges.
     const futureRows = options.includePast ? visibleRows : visibleRows.filter(r => {
@@ -1459,7 +1469,7 @@ function renderTopPicks(rows) {
                 ...(upcomingCache.mls || []),
                 ...(upcomingCache.extra || []),
                 ...(upcomingCache.cups || []),
-                ...(upcomingCache.worldcup || []),
+                ...(upcomingCache["world-cup"] || []),
             ]
                 .filter(isValidProbabilityRow)
         );
@@ -1616,6 +1626,10 @@ if (isCupMode) {
 }
 renderUpcoming(target, rows, selectedLeague);
 renderTopPicks();
+const initialPayload = upcomingStatsCache[mode];
+if (typeof renderStats === "function" && statsTarget && initialPayload) {
+    renderStats(statsTarget, initialPayload.stats, initialPayload.league_stats, selectedLeague);
+}
 if (typeof _liveRefreshIntervalId === "number") {
     clearInterval(_liveRefreshIntervalId);
 }
@@ -1640,8 +1654,7 @@ if (!isCupMode && !isFriendliesMode) {
         }
     }, 120000);
 }
-
-
+}
 
 function inferH2HMode(team1, team2) {
 const t1 = String(team1 || "").trim().toLowerCase();

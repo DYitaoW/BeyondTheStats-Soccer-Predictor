@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026070905') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026072002') }}">
 </head>
 <body class="dark-mode" data-active-page="world-cup">
   <main class="page">
@@ -29,7 +29,6 @@
 
       <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
         <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
-        <a id="tab-world-cup" class="tab-btn world-cup-highlight {{ 'active' if active_page == 'world-cup' else '' }}" href="/world-cup">World Cup 2026</a>
         <a id="tab-global" class="tab-btn {{ 'active' if active_page == 'global' else '' }}" href="/upcoming-matches">Upcoming Matches</a>
         <a id="tab-cups" class="tab-btn {{ 'active' if active_page == 'cups' else '' }}" href="/cups">Cups</a>
         <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
@@ -40,15 +39,6 @@
 
         </section>
         
-    <section id="panel-world-cup" class="{{ '' if active_page == 'world-cup' else 'hidden' }}">
-      <div class="card">
-        <h3>2026 FIFA World Cup Projection</h3>
-        <p class="section-subtitle">
-          Simulated World Cup below is a representation of a SINGLE random simulation, not an aggregate result. FLUKY RESULTS MAY OCCUR
-        </p>
-      </div>
-      <div id="world-cup-view" class="card">Loading World Cup projection...</div>
-    </section>
       <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
       <p>
@@ -59,7 +49,7 @@
       <p>&copy; 2026 Beyond The Stats</p>
     </footer>
   </main>
-  <script src="{{ url_for('static', filename='shared.js', v='2026070904') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026072002') }}"></script>
   <script src="{{ url_for('static', filename='world_cup.js', v='2026070301') }}"></script>
 </body>
 </html>
