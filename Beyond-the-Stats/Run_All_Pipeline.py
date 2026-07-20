@@ -54,7 +54,9 @@ LAST_REFRESH_FILE = SP_DIR / "Data" / "last_refresh.json"
 PIPELINE_STATUS_FILE = SP_DIR / "Data" / "pipeline_status.json"
 
 _KNOWN_WORLD_CUP_WINDOWS = [
-    (datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 7, 25, tzinfo=UTC)),
+    # 2026 World Cup window closed after the tournament ended (Jul 2026).
+    # Re-enable / extend when preparing the next World Cup cycle.
+    # (datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 7, 25, tzinfo=UTC)),
     (datetime(2030, 5, 1, tzinfo=UTC), datetime(2030, 7, 31, tzinfo=UTC)),
 ]
 
@@ -311,15 +313,17 @@ def _run_global_subpipeline(args, api_token):
         upcoming_cmd,
         continue_on_error=args.continue_on_error,
     )
-    sub["global_projected_league_tables"] = run_step(
-        "[global] Projected league tables",
-        _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
-        continue_on_error=args.continue_on_error,
-        timeout=PROJECTED_TABLE_TIMEOUT_S["global"],
-    )
+    # Upcoming cups before projected tables so all upcoming-game CSVs are
+    # produced first (and available to the website) before the heavier
+    # Monte Carlo projection step.
     sub["global_upcoming_cups"] = run_step(
         "[global] Upcoming cup predictions",
         [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.cup_window_days)],
+        continue_on_error=args.continue_on_error,
+    )
+    sub["global_projected_league_tables"] = run_step(
+        "[global] Projected league tables",
+        _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
         continue_on_error=args.continue_on_error,
     )
     if _world_cup_is_active():
