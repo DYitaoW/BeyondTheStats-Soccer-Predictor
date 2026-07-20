@@ -1,0 +1,1796 @@
+:root {
+  --bg: #eaedef;
+  --bg-soft: #d5dadf;
+  --card: #f5f6f7;
+  --text: #11161c;
+  --muted: #5c6873;
+  --border: #b8c0c8;
+  --primary: #5c6873;
+  --primary-strong: #4b5660;
+  --accent-warm: #b8943b;
+  --danger: #c94f4b;
+  --green-pct: #287a49;
+  --card-bg: var(--card);
+  --card-border: var(--border);
+  --text-color: var(--text);
+  --accent-color: var(--primary);
+  --btn-bg: var(--primary);
+  --btn-text: #ffffff;
+  --btn-border: transparent;
+  --btn-hover-bg: var(--primary-strong);
+  --btn-hover-text: #ffffff;
+  --btn-secondary-bg: rgba(245, 246, 247, 0.9);
+  --btn-secondary-text: var(--muted);
+  --btn-secondary-border: var(--border);
+  --btn-secondary-hover-bg: var(--primary);
+  --btn-secondary-hover-text: #ffffff;
+  --input-bg: #ffffff;
+  --input-text: var(--text);
+  --input-border: var(--border);
+  --topbar-bg: #f5f6f7;
+  --topbar-border: var(--border);
+  --table-header-bg: #dce0e5;
+  --table-header-text: var(--text);
+  --sidebar-bg: #eef1f3;
+  --hero-accent: rgba(92, 104, 115, 0.10);
+}
+
+body.dark-mode {
+  --bg: #0f1115;
+  --bg-soft: #181b21;
+  --card: #1d2128;
+  --text: #e3e7ed;
+  --muted: #8f9aa8;
+  --border: #2d333c;
+  --primary: #8f9aa8;
+  --primary-strong: #7a8594;
+  --accent-warm: #c9a345;
+  --danger: #f07575;
+  --green-pct: #48b065;
+  --btn-bg: var(--primary);
+  --btn-text: #0f1115;
+  --btn-border: transparent;
+  --btn-hover-bg: var(--primary-strong);
+  --btn-hover-text: #ffffff;
+  --btn-secondary-bg: rgba(29, 33, 40, 0.95);
+  --btn-secondary-text: var(--muted);
+  --btn-secondary-border: var(--border);
+  --btn-secondary-hover-bg: var(--primary);
+  --btn-secondary-hover-text: #0f1115;
+  --input-bg: #14171d;
+  --input-text: var(--text);
+  --input-border: var(--border);
+  --topbar-bg: rgba(15, 17, 21, 0.92);
+  --topbar-border: var(--border);
+  --table-header-bg: #14171d;
+  --table-header-text: var(--text);
+  --sidebar-bg: #181b22;
+  --hero-accent: rgba(143, 154, 168, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.page {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 20px 16px 32px;
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  width: 100vw;
+  margin: -20px 0 18px calc(50% - 50vw);
+  padding: 12px max(16px, calc((100vw - 1320px) / 2 + 16px));
+  border-bottom: 1px solid var(--topbar-border);
+  border-radius: 0;
+  background: var(--topbar-bg);
+  display: grid;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.site-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ios-app-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(90deg, rgba(240, 180, 41, 0.18), rgba(240, 180, 41, 0.08));
+  color: #f0b429;
+  border: 1px solid rgba(240, 180, 41, 0.4);
+  border-radius: 10px;
+  padding: 8px 14px;
+  margin: 12px 0 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.ios-app-banner-icon {
+  font-size: 1.05rem;
+}
+
+.ios-app-banner-text {
+  letter-spacing: 0.2px;
+}
+
+.ios-app-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #f0b429;
+  background: rgba(240, 180, 41, 0.08);
+  border: 1px solid rgba(240, 180, 41, 0.4);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-right: 10px;
+}
+
+.ios-app-indicator-icon {
+  font-size: 0.95rem;
+}
+
+@media (max-width: 720px) {
+  .ios-app-indicator-text {
+    display: none;
+  }
+  .ios-app-indicator {
+    padding: 6px 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .ios-app-indicator {
+    display: none;
+  }
+  .site-header-top {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .brand-name {
+    font-size: 0.85rem;
+  }
+  .brand-sub {
+    font-size: 0.7rem;
+  }
+  .header-actions {
+    margin-left: auto;
+  }
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.brand-home-btn {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.brand-mark {
+  width: 80px;
+  height: 80px;
+  border-radius: 5px;
+  display: block;
+  object-fit: cover;
+}
+
+.brand-name {
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+
+.brand-sub {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.theme-toggle {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+
+.header-link {
+  display: inline-block;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none !important;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.header-link:hover,
+.header-link:focus,
+.header-link:visited {
+  text-decoration: none !important;
+}
+.header-link:hover {
+  background: var(--bg-elev);
+}
+.header-link.active {
+  background: var(--bg-elev);
+}
+
+.tab-soon {
+  color: var(--muted);
+  font-size: 0.78em;
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.site-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.site-nav-btn {
+  margin: 0;
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: 999px;
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
+  padding: 7px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.site-nav-btn:hover {
+  color: var(--btn-secondary-hover-text);
+  background: var(--btn-secondary-hover-bg);
+}
+
+.hero {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--card) 0%, var(--hero-accent) 100%);
+  padding: 24px 20px;
+  margin-bottom: 18px;
+}
+
+.hero-badge {
+  display: inline-flex;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+  border: 1px solid rgba(92, 104, 115, 0.3);
+  background: rgba(92, 104, 115, 0.08);
+}
+
+h1 {
+  margin: 10px 0 6px;
+  font-size: clamp(1.7rem, 4vw, 2.7rem);
+  line-height: 1.1;
+}
+
+.sub {
+  margin: 0;
+  color: var(--muted);
+}
+
+.hero-stats {
+  margin-top: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.hero-stat {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--sidebar-bg);
+}
+
+.hero-stat-value {
+  display: block;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--green-pct);
+}
+
+.hero-stat-label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.home-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.home-main {
+  min-width: 0;
+}
+
+.home-sidebar {
+  position: sticky;
+  top: 120px;
+  max-height: calc(100vh - 140px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar-bg);
+}
+
+.home-sidebar h3 {
+  margin: 0 0 4px;
+}
+
+.home-league-sidebar {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
+  margin-top: 8px;
+}
+
+.home-league-item {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--card);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.home-league-item:hover,
+.home-league-item:focus-visible {
+  border-color: var(--primary);
+  background: var(--hero-accent);
+  transform: translateX(-2px);
+  outline: none;
+}
+
+.home-league-item-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-league-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.home-league-pct {
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--green-pct);
+  white-space: nowrap;
+}
+
+.home-league-country {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.home-league-winner {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: var(--text);
+  opacity: 0.9;
+}
+
+.section-subtitle {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.section-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.section-header-row .section-subtitle {
+  margin-bottom: 0;
+}
+
+.date-range-picker {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.date-toggle-btn {
+  margin: 0;
+  min-width: 104px;
+}
+
+.date-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 80;
+  width: min(280px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 12px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+}
+
+.date-popover button {
+  width: 100%;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.main-tabs {
+  position: static;
+  z-index: 40;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  width: 100%;
+}
+
+.site-header .tabs {
+  margin: 0;
+  justify-content: flex-start;
+}
+
+.tab-btn {
+  margin: 0;
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: 12px;
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
+  text-decoration: none;
+  padding: 12px 18px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.tab-btn.active {
+  color: var(--btn-text);
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.tab-btn.cup-tab-empty {
+  opacity: 0.72;
+}
+
+.tab-btn.world-cup-highlight {
+  border-color: #f0b429;
+  color: #f0b429;
+  background: rgba(240, 180, 41, 0.08);
+  font-weight: 700;
+  position: relative;
+}
+.tab-btn.world-cup-highlight:hover {
+  background: rgba(240, 180, 41, 0.18);
+  color: #f5c14b;
+}
+.tab-btn.world-cup-highlight.active {
+  background: #f0b429;
+  color: #1a1300;
+  border-color: #f0b429;
+}
+.tab-btn.world-cup-highlight::after {
+  content: "NEW";
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  background: #f0b429;
+  color: #1a1300;
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 2px 5px;
+  border-radius: 6px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+}
+
+.position-odds-best {
+  background: rgba(72, 176, 101, 0.18);
+  color: var(--green-pct);
+  font-weight: 800;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+h3 {
+  margin: 0 0 8px;
+  font-size: 1.24rem;
+}
+
+h4 {
+  margin: 8px 0;
+  font-size: 1.06rem;
+}
+
+label {
+  display: block;
+  margin: 10px 0 6px;
+  font-weight: 600;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--input-border);
+  border-radius: 10px;
+  color: var(--input-text);
+  background: var(--input-bg);
+  padding: 10px 11px;
+}
+
+button {
+  margin-top: 12px;
+  border: 1px solid var(--btn-border);
+  border-radius: 10px;
+  color: var(--btn-text);
+  background: var(--btn-bg);
+  padding: 10px 13px;
+  font-weight: 700;
+}
+
+button:hover {
+  color: var(--btn-hover-text);
+  background: var(--btn-hover-bg);
+}
+
+.top-picks-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pick-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: #0e1620;
+  position: relative;
+  color: var(--text);
+}
+
+.pick-card:hover {
+  background: #0a121b;
+}
+
+.pick-rank {
+  margin: 0;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: var(--primary);
+  font-weight: 800;
+  font-size: 0.78rem;
+}
+
+.pick-league {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.pick-match {
+  margin: 0;
+  font-weight: 700;
+}
+
+.pick-prediction,
+.pick-confidence {
+  margin: 6px 0 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.muted-placeholder {
+  color: var(--muted);
+  margin: 0;
+}
+
+.hidden {
+  display: none;
+}
+
+.error {
+  border-color: #5f2a2a;
+  color: #ffd1d1;
+  background: #2b1717;
+}
+
+.match-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  background: #101822;
+}
+
+.day-title {
+  font-size: 0.95rem;
+  color: var(--muted);
+  margin: 8px 0 10px;
+  font-weight: 700;
+}
+
+.kick-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+  contain: layout style;
+}
+
+.kick-match-card {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.kick-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+
+.kick-head-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.quality-pill,
+.live-pill {
+  border-radius: 999px;
+  border: 1px solid rgba(92, 104, 115, 0.35);
+  background: rgba(92, 104, 115, 0.08);
+  color: var(--text);
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  font-weight: 700;
+}
+
+.no-prediction-pill {
+  border-style: dashed;
+}
+
+.provisional-pill {
+  font-style: italic;
+}
+
+.live-pill {
+  border-color: var(--green-pct);
+  color: var(--green-pct);
+  background: rgba(72, 176, 101, 0.12);
+}
+
+.prediction-note {
+  font-style: italic;
+  color: var(--muted);
+}
+
+.kick-league {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.confidence-pill {
+  border-radius: 999px;
+  border: 1px solid rgba(72, 176, 101, 0.4);
+  color: var(--green-pct);
+  background: rgba(72, 176, 101, 0.12);
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  font-weight: 700;
+}
+
+/* Light mode polish for stats + predictions */
+body:not(.dark-mode) .hero-stat {
+  background: linear-gradient(180deg, #f6f8fc, #eef3f9);
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .hero-stat-value {
+  color: var(--green-pct);
+}
+
+body:not(.dark-mode) .stat-chip {
+  background: #eef1f3;
+  color: #2b3a4a;
+  border-color: #b8c0c8;
+}
+
+body:not(.dark-mode) .match-row {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .match-toggle:hover {
+  background: rgba(92, 104, 115, 0.08);
+}
+
+body:not(.dark-mode) .confidence-pill {
+  border-color: rgba(40, 122, 73, 0.35);
+  color: var(--green-pct);
+  background: rgba(40, 122, 73, 0.12);
+}
+
+body:not(.dark-mode) .pick-card {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .pick-card:hover {
+  background: #eef3f9;
+}
+
+body:not(.dark-mode) .match-card {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .player-card {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .prediction-card {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .conference-title {
+  background: #eef2f7;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .world-cup-summary-item,
+body:not(.dark-mode) .world-cup-odds-card,
+body:not(.dark-mode) .world-cup-table-card,
+body:not(.dark-mode) .world-cup-match-card {
+  background: #f7f9fc;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .world-cup-probabilities {
+  background: #d6dde7;
+}
+
+body:not(.dark-mode) .probability-track {
+  background: #d6dde7;
+}
+
+body:not(.dark-mode) .notification {
+  background: #ffffff;
+  color: #0a1118;
+  border-color: #b8c7d7;
+}
+
+body:not(.dark-mode) .position-odds-best {
+  background: rgba(40, 122, 73, 0.18);
+  color: var(--green-pct);
+}
+
+body:not(.dark-mode) .position-odds-cell {
+  background: rgba(15, 26, 36, 0.06);
+}
+
+.match-row.match-correct {
+  border-color: #3a7d51;
+  background: #122118;
+}
+
+body:not(.dark-mode) .match-row.match-correct {
+  border-color: rgba(76, 170, 104, 0.55);
+  background: rgba(76, 170, 104, 0.12);
+  color: #0a1118;
+}
+
+.match-row.match-wrong {
+  border-color: #824646;
+  background: #291718;
+}
+
+body:not(.dark-mode) .match-row.match-wrong {
+  border-color: rgba(217, 83, 79, 0.55);
+  background: rgba(217, 83, 79, 0.12);
+  color: #0a1118;
+}
+
+.match-toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 0;
+  padding: 8px 8px 6px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+}
+
+.match-toggle:hover {
+  background: rgba(92, 104, 115, 0.06);
+}
+
+.matchup {
+  font-weight: 800;
+  margin-bottom: 4px;
+  font-size: 1.06rem;
+}
+
+.match-meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.winner-line {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.match-details {
+  border-top: 1px dashed var(--border);
+  margin-top: 8px;
+  padding: 8px 8px 2px;
+}
+
+.probability-wrap {
+  margin: 12px 0;
+}
+
+.probability-track {
+  display: flex;
+  height: 8px;
+  width: 100%;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #2b3947;
+  margin: 7px 0;
+}
+
+.probability-track > div {
+  height: 100%;
+}
+
+.probability-track > div:nth-child(1) {
+  background: #55d37a;
+}
+
+.probability-track > div:nth-child(2) {
+  background: #93a4b3;
+}
+
+.probability-track > div:nth-child(3) {
+  background: #8f9aa8;
+}
+
+.probability-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.result-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stats-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.stat-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: var(--muted);
+  background: #111922;
+  font-size: 0.8rem;
+}
+
+.table-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.league-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#league-table-view {
+  overflow-x: auto;
+}
+
+.league-table th,
+.league-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 6px;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.league-table th {
+  background: var(--table-header-bg);
+  color: var(--table-header-text);
+  font-weight: 700;
+}
+
+.table-first td {
+  background: rgba(81, 179, 104, 0.18);
+}
+
+.table-bottom td {
+  background: rgba(179, 81, 81, 0.2);
+}
+
+.table-playoff-orange td {
+  background: rgba(194, 142, 70, 0.2);
+}
+
+.table-promo-blue td {
+  background: rgba(69, 115, 179, 0.22);
+}
+
+.cup-top8-chip {
+  border-color: rgba(81, 179, 104, 0.45);
+  background: rgba(81, 179, 104, 0.18);
+}
+
+.cup-playoff-chip {
+  border-color: rgba(69, 115, 179, 0.45);
+  background: rgba(69, 115, 179, 0.22);
+}
+
+.table-playoff-purple td {
+  background: rgba(113, 78, 163, 0.23);
+}
+
+.table-second-pink td {
+  background: rgba(174, 84, 122, 0.23);
+}
+
+.bracket-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-x: auto;
+}
+
+.cup-bracket-container {
+  flex-direction: row;
+  align-items: flex-start;
+  padding-bottom: 6px;
+}
+
+.conference-title {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #111922;
+  text-align: center;
+  font-weight: 700;
+}
+
+.bracket-tree {
+  display: flex;
+  gap: 14px;
+}
+
+.bracket-round {
+  min-width: 180px;
+}
+
+.match-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px;
+  margin-bottom: 10px;
+  background: #111922;
+}
+
+.match-card .match-title {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.match-card .team {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding: 4px 0;
+}
+
+.match-card .team:last-child {
+  border-bottom: 0;
+}
+
+.match-card .team.winner {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.mls-cup-container {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 14px;
+}
+
+.mls-cup-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+}
+
+.mls-cup-winner {
+  margin-top: 8px;
+  color: var(--text);
+  font-weight: 800;
+  font-size: 1.12rem;
+}
+
+.player-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.player-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #111922;
+  padding: 12px;
+  text-align: center;
+}
+
+.player-team {
+  color: var(--muted);
+}
+
+.player-stat-badge {
+  display: inline-block;
+  border-radius: 999px;
+  background: #233141;
+  color: var(--text);
+  padding: 3px 8px;
+  font-size: 0.8rem;
+}
+
+.h2h-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.h2h-col {
+  flex: 1;
+  min-width: 260px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 0;
+}
+
+.stat-label {
+  color: var(--muted);
+}
+
+.stat-header-row {
+  font-weight: 700;
+  border-bottom: 1px solid var(--primary);
+}
+
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.leaderboard-table th,
+.leaderboard-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 6px;
+}
+
+.prediction-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #111922;
+  padding: 10px;
+  margin-bottom: 9px;
+}
+
+/* World Cup summary cards keep key projection facts visible above the long tables. */
+.world-cup-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.world-cup-summary-item,
+.world-cup-odds-card,
+.world-cup-table-card,
+.world-cup-match-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #111922;
+  padding: 12px;
+}
+
+.summary-label {
+  color: var(--muted);
+  display: block;
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+}
+
+/* World Cup sections separate standings, fixtures, and knockout rounds without nested cards. */
+.world-cup-section {
+  border-top: 1px solid var(--border);
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
+.world-cup-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.world-cup-section h4,
+.world-cup-round h5,
+.world-cup-table-card h5 {
+  margin: 0 0 10px;
+}
+
+.world-cup-round {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #111922;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.world-cup-round > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 4px 0;
+  user-select: none;
+}
+
+.world-cup-round > summary::-webkit-details-marker {
+  display: none;
+}
+
+.world-cup-round > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.world-cup-round[open] > summary::before {
+  content: "▾";
+  color: var(--primary);
+}
+
+.world-cup-round-label {
+  flex: 1;
+}
+
+.world-cup-round-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  font-style: italic;
+}
+
+.world-cup-round[open] .world-cup-round-hint {
+  display: none;
+}
+
+.world-cup-round > .world-cup-fixture-grid {
+  margin-top: 10px;
+}
+
+.world-cup-rules {
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* Position-odds cell: small bar with a percentage label, used in the toggle view. */
+.position-odds-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.position-odds-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, rgba(92, 104, 115, 0.45), rgba(92, 104, 115, 0.7));
+  z-index: 0;
+}
+
+.position-odds-label {
+  position: relative;
+  z-index: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.world-cup-odds-grid,
+.world-cup-group-grid,
+.world-cup-fixture-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.world-cup-odds-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.world-cup-group-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+/* World Cup page: 2 columns × 6 rows so the 12 group tables fit side by side
+   without forcing a horizontal scroll on the section. */
+.world-cup-group-grid.world-cup-groups-2x6 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row;
+}
+
+@media (max-width: 900px) {
+  .world-cup-group-grid.world-cup-groups-2x6 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.world-cup-fixture-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.group-fixtures-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.group-fixtures-btn {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 38px;
+  line-height: 1.2;
+}
+
+.group-fixtures-btn:hover {
+  background: var(--bg-elev);
+}
+
+.group-fixtures-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--btn-text);
+}
+
+.world-cup-odds-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* World Cup tables use compact cells so all football stats remain scannable. */
+.world-cup-table {
+  font-size: 0.82rem;
+  width: 100%;
+  table-layout: fixed;
+}
+.world-cup-table th,
+.world-cup-table td {
+  padding: 6px 4px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Best Third-Place table: very tight cell padding + row spacing so all 12 columns
+   fit compactly. */
+.world-cup-table.third-place-table th,
+.world-cup-table.third-place-table td {
+  padding: 3px 2px;
+  font-size: 0.78rem;
+  line-height: 1.15;
+}
+.world-cup-table.third-place-table th:nth-child(1),
+.world-cup-table.third-place-table td:nth-child(1) {
+  width: 8%;
+}
+.world-cup-table.third-place-table th:nth-child(2),
+.world-cup-table.third-place-table td:nth-child(2) {
+  width: 7%;
+}
+.world-cup-table.third-place-table th:nth-child(3),
+.world-cup-table.third-place-table td:nth-child(3) {
+  width: 25%;
+  text-align: left;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.world-cup-table.third-place-table th:nth-child(n+4),
+.world-cup-table.third-place-table td:nth-child(n+4) {
+  width: 6%;
+}
+.world-cup-table th:nth-child(1),
+.world-cup-table td:nth-child(1) {
+  width: 38%;
+  text-align: left;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.world-cup-table th:nth-child(n+2),
+.world-cup-table td:nth-child(n+2) {
+  width: 7.75%;
+}
+
+/* Position-odds table: 5 columns (Team + 1st/2nd/3rd/4th) needs a different split. */
+.world-cup-table.position-odds-table {
+  table-layout: fixed;
+}
+.world-cup-table.position-odds-table th:nth-child(1),
+.world-cup-table.position-odds-table td:nth-child(1) {
+  width: 30%;
+  text-align: left;
+}
+.world-cup-table.position-odds-table th:nth-child(n+2),
+.world-cup-table.position-odds-table td:nth-child(n+2) {
+  width: 17.5%;
+}
+
+.world-cup-table th:first-child,
+.world-cup-table td:first-child {
+  text-align: left;
+}
+
+.qualified-row td:first-child,
+.winner-team {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* World Cup match cards show scorelines and probability splits in a stable layout. */
+.match-card-top,
+.match-card-score,
+.match-card-meta {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.match-card-top {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+.match-card-score {
+  align-items: center;
+  font-size: 0.95rem;
+}
+
+.match-card-score strong {
+  color: var(--text);
+  font-size: 1.15rem;
+  white-space: nowrap;
+}
+
+.match-card-meta {
+  color: var(--muted);
+  font-size: 0.84rem;
+  margin-top: 8px;
+}
+
+.world-cup-probabilities {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #233141;
+  margin-top: 10px;
+}
+
+.world-cup-probabilities span:nth-child(1) {
+  background: #55d37a;
+}
+
+.world-cup-probabilities span:nth-child(2) {
+  background: #93a4b3;
+}
+
+.world-cup-probabilities span:nth-child(3) {
+  background: #8f9aa8;
+}
+
+.pred-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pred-btn {
+  margin-top: 8px;
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: 999px;
+  color: var(--btn-secondary-text);
+  background: var(--btn-secondary-bg);
+  padding: 6px 10px;
+}
+
+.pred-btn.selected {
+  color: var(--btn-text);
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.notification-area {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notification {
+  background: #0f1a24;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  animation: fadeIn 0.2s forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeOut {
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+.site-footer {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 16px 4px 6px;
+}
+
+@media (max-width: 900px) {
+  .hero-stats,
+  .top-picks-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .home-sidebar {
+    position: static;
+    max-height: none;
+    order: 2;
+  }
+
+  .home-main {
+    order: 1;
+  }
+
+  .home-league-sidebar {
+    max-height: 360px;
+  }
+
+
+.error-message {
+  color: #ff6b6b;
+  background-color: rgba(255, 107, 107, 0.1);
+  border-left: 4px solid #ff6b6b;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: 0.95rem;
+}
+
+.info-message {
+  color: #4ecdc4;
+  background-color: rgba(78, 205, 196, 0.1);
+  border-left: 4px solid #4ecdc4;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: 0.95rem;
+}
+
+.loading-message {
+  color: var(--muted);
+  background-color: rgba(155, 155, 155, 0.1);
+  border-left: 4px solid var(--muted);
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: 0.95rem;
+  font-style: italic;
+}
+
+  .kick-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+
+  .tab-btn {
+    white-space: nowrap;
+  }
+
+  .site-nav {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .section-header-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .date-range-picker,
+  .date-toggle-btn {
+    width: 100%;
+  }
+
+  .date-popover {
+    left: 0;
+    right: auto;
+    width: 100%;
+  }
+
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.match-card-probability-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 4px;
+}
+
+.match-card-probability-labels span {
+  flex: 1;
+  text-align: center;
+}
+
+.match-card-probability-labels strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pagination-controls {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 8px;
+}
+.pagination-controls .page-btn {
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: 999px;
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.pagination-controls .page-btn:hover:not(:disabled) {
+  background: var(--btn-secondary-hover-bg);
+  color: var(--btn-secondary-hover-text);
+}
+.pagination-controls .page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pagination-controls .page-info {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0 12px;
+}
+
+.legal-doc {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 2rem;
+}
+
+.legal-nav {
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+}
+
+.legal-body h2 {
+  font-size: 1.55rem;
+  line-height: 1.25;
+  margin: 0 0 0.75rem;
+}
+
+.legal-body h3 {
+  font-size: 1.05rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.legal-body p {
+  margin: 0 0 0.85rem;
+  line-height: 1.55;
+}
+
+.legal-body ul {
+  margin: 0 0 0.85rem;
+  padding-left: 1.25rem;
+  line-height: 1.55;
+}
+
+.legal-body li {
+  margin: 0.25rem 0;
+}
+
+.legal-meta {
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+}

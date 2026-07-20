@@ -120,7 +120,7 @@ def strip_jinja(html: str) -> str:
 
 
 def inject_api_base_into_shared_js(out_static_dir: Path, api_base: str) -> None:
-    """Prepend BTS_API_BASE + fetch wrapper to shared.js."""
+    """Ensure BTS_API_BASE points at the API host (source JS already wraps fetch)."""
     if not api_base:
         return
     target = out_static_dir / "shared.js"
@@ -128,18 +128,17 @@ def inject_api_base_into_shared_js(out_static_dir: Path, api_base: str) -> None:
         print(f"[build] WARNING: {target} not found; skipping API base injection", file=sys.stderr)
         return
     text = target.read_text(encoding="utf-8")
-    if "window.BTS_API_BASE" in text and "window.__origFetch" in text:
-        return
-    injection = (
-        f'// Auto-injected by build_static_frontend.py\n'
-        f'window.BTS_API_BASE = "{api_base}";\n'
-        f'window.__origFetch = window.fetch;\n'
-        f'window.fetch = function(u, o) {{\n'
-        f'  if (typeof u === "string" && u.startsWith("/api/")) u = window.BTS_API_BASE + u;\n'
-        f'  return window.__origFetch(u, o);\n'
-        f'}};\n'
-    )
-    target.write_text(injection + text, encoding="utf-8")
+    needle = 'window.BTS_API_BASE = window.BTS_API_BASE || "https://api.beyondthestatsapp.com";'
+    replacement = f'window.BTS_API_BASE = window.BTS_API_BASE || "{api_base.rstrip("/")}";'
+    if needle in text:
+        text = text.replace(needle, replacement, 1)
+    elif f'window.BTS_API_BASE = "{api_base}' not in text and "window.BTS_API_BASE =" not in text[:500]:
+        text = (
+            f'// Auto-injected by build_static_frontend.py\n'
+            f'window.BTS_API_BASE = "{api_base.rstrip("/")}";\n'
+            + text
+        )
+    target.write_text(text, encoding="utf-8")
 
 
 def strip_inactive_panels(html: str) -> str:
@@ -192,9 +191,16 @@ def write_404(out_dir: Path) -> None:
 def write_redirects(out_dir: Path) -> None:
     """Cloudflare Pages redirects for clean URLs and archived World Cup page."""
     lines = [
-        "/privacy /privacy.html 200",
-        "/terms /terms.html 200",
-        "/subscriptions /subscriptions.html 200",
+        # Prefer directory indexes (always work). Keep .html aliases too.
+        "/privacy /privacy/index.html 200",
+        "/privacy/ /privacy/index.html 200",
+        "/privacy.html /privacy/index.html 200",
+        "/terms /terms/index.html 200",
+        "/terms/ /terms/index.html 200",
+        "/terms.html /terms/index.html 200",
+        "/subscriptions /subscriptions/index.html 200",
+        "/subscriptions/ /subscriptions/index.html 200",
+        "/subscriptions.html /subscriptions/index.html 200",
         "/world-cup /index.html 302",
         "/world-cup.html /index.html 302",
         "",
@@ -203,19 +209,17 @@ def write_redirects(out_dir: Path) -> None:
 
 
 def rewrite_absolute_site_links(html: str, site_origin: str = "https://beyondthestatsapp.com") -> str:
-    """Point absolute marketing-site legal URLs at static .html files.
-
-    Absolute ``/privacy`` links work via ``_redirects`` on Cloudflare Pages, but
-    rewriting them to ``.html`` keeps local/static previews working too.
-    """
+    """Point absolute marketing-site legal URLs at static directory indexes."""
     origin = site_origin.rstrip("/")
-    for route, filename in (
-        ("/privacy", "privacy.html"),
-        ("/terms", "terms.html"),
-        ("/subscriptions", "subscriptions.html"),
+    for route, directory in (
+        ("/privacy", "privacy"),
+        ("/terms", "terms"),
+        ("/subscriptions", "subscriptions"),
     ):
-        html = html.replace(f'href="{origin}{route}"', f'href="/{filename}"')
-        html = html.replace(f'href="{origin}{route}/"', f'href="/{filename}"')
+        html = html.replace(f'href="{origin}{route}"', f'href="/{directory}/"')
+        html = html.replace(f'href="{origin}{route}/"', f'href="/{directory}/"')
+        html = html.replace(f'href="/{route.lstrip("/")}.html"', f'href="/{directory}/"')
+        html = html.replace(f'href="{route}"', f'href="/{directory}/"')
     return html
 
 
@@ -225,9 +229,9 @@ def verify_static_build(out_dir: Path, api_base: str = "") -> None:
         "index.html",
         "upcoming-matches.html",
         "about.html",
-        "privacy.html",
-        "terms.html",
-        "subscriptions.html",
+        "privacy/index.html",
+        "terms/index.html",
+        "subscriptions/index.html",
         "_redirects",
         "static/shared.js",
         "static/home.js",
@@ -238,27 +242,31 @@ def verify_static_build(out_dir: Path, api_base: str = "") -> None:
         raise SystemExit(f"[build] FATAL: missing required static files: {missing}")
 
     shared = (out_dir / "static" / "shared.js").read_text(encoding="utf-8")
+    home_js = (out_dir / "static" / "home.js").read_text(encoding="utf-8")
     if shared.count("{") != shared.count("}"):
         raise SystemExit("[build] FATAL: static/shared.js has unbalanced braces")
     if "async function loadUpcoming" not in shared or "function inferH2HMode" not in shared:
         raise SystemExit("[build] FATAL: static/shared.js missing loadUpcoming/inferH2HMode")
-    # Ensure loadUpcoming is closed before the next top-level function.
     load_chunk = shared[shared.index("async function loadUpcoming") : shared.index("function inferH2HMode")]
     if load_chunk.count("{") != load_chunk.count("}"):
         raise SystemExit("[build] FATAL: loadUpcoming is not closed (Upcoming page would break)")
+    if "api.beyondthestatsapp.com" not in shared and (api_base and api_base not in shared):
+        raise SystemExit("[build] FATAL: shared.js missing API base host")
+    if '"/api/home/' in home_js or "'/api/home/" in home_js or "`/api/home/" in home_js:
+        raise SystemExit("[build] FATAL: deprecated /api/home/* still referenced in static JS")
+    if '"/api/home/' in shared or "'/api/home/" in shared or "`/api/home/" in shared:
+        raise SystemExit("[build] FATAL: deprecated /api/home/* still referenced in static JS")
+    if "/api/upcoming/" not in home_js and "/api/upcoming/" not in shared:
+        raise SystemExit("[build] FATAL: static JS does not call /api/upcoming/*")
 
     index_html = (out_dir / "index.html").read_text(encoding="utf-8")
-    home_js = (out_dir / "static" / "home.js").read_text(encoding="utf-8")
     for needle in ("loadHomeWorldCup", "wc-winner-odds", "wc-projected-groups", "World Cup 2026"):
         if needle in index_html or needle in home_js:
             raise SystemExit(f"[build] FATAL: World Cup UI remnant still in static home ({needle!r})")
 
-    privacy = (out_dir / "privacy.html").read_text(encoding="utf-8")
+    privacy = (out_dir / "privacy" / "index.html").read_text(encoding="utf-8")
     if "Beyond the Stats Privacy Policy" not in privacy or len(privacy) < 1000:
-        raise SystemExit("[build] FATAL: privacy.html is empty or incomplete")
-
-    if api_base and f'window.BTS_API_BASE = "{api_base}"' not in shared:
-        raise SystemExit(f"[build] FATAL: BTS_API_BASE not injected as {api_base!r}")
+        raise SystemExit("[build] FATAL: privacy/index.html is empty or incomplete")
 
     if (out_dir / "world-cup.html").exists():
         raise SystemExit("[build] FATAL: world-cup.html should not ship on the static site")
@@ -267,10 +275,10 @@ def verify_static_build(out_dir: Path, api_base: str = "") -> None:
 
 
 def render_legal_pages(out_dir: Path, api_base: str = "") -> int:
-    """Render Privacy / Terms / Subscriptions HTML with real document bodies.
+    """Render Privacy / Terms / Subscriptions as directory indexes for Pages.
 
-    The generic Jinja strip would leave these pages empty because the body is
-    injected via ``{{ body_html | safe }}``.
+    Cloudflare Pages serves ``/privacy`` from ``privacy/index.html`` reliably.
+    Flat ``privacy.html`` alone often 404s depending on html_handling settings.
     """
     website_dir = str(WEBSITE)
     if website_dir not in sys.path:
@@ -293,9 +301,15 @@ def render_legal_pages(out_dir: Path, api_base: str = "") -> int:
         html = html.replace("{{ doc.api_url }}", api_url)
         html = strip_jinja(html)
         html = rewrite_absolute_site_links(html)
+        # Directory index: /privacy/ -> privacy/index.html
+        dir_name = filename.replace(".html", "")
+        target_dir = out_dir / dir_name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "index.html").write_text(html, encoding="utf-8")
+        # Flat alias for older links
         (out_dir / filename).write_text(html, encoding="utf-8")
         written += 1
-        print(f"[build] legal {doc_id} -> {filename} ({len(html):,} bytes)")
+        print(f"[build] legal {doc_id} -> {dir_name}/index.html (+ {filename})")
     return written
 
 
