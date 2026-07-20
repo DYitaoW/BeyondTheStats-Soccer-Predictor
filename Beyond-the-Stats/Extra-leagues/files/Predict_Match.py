@@ -344,10 +344,15 @@ def parse_start_year_from_key(season_key):
 
 
 def expected_current_latest_start_year(reference_date=None) -> int:
-    ref = datetime.now() if reference_date is None else reference_date
-    if ref.month >= 7:
-        return ref.year
-    return ref.year - 1
+    """European Jul 15 flip via season_calendar when available."""
+    try:
+        import season_calendar as sc
+        return sc.european_season_start_year(reference_date)
+    except Exception:
+        ref = datetime.now() if reference_date is None else reference_date
+        if ref.month > 7 or (ref.month == 7 and ref.day >= 15):
+            return ref.year
+        return ref.year - 1
 
 
 def season_recency_coefficient(latest_start_year, season_start_year):

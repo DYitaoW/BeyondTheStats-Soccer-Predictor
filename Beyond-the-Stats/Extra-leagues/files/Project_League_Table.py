@@ -17,6 +17,12 @@ import pandas as pd
 
 import Predict_Match as pm
 
+# Beyond-the-Stats root (sibling of Extra-leagues/) for shared season helpers.
+_SP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _SP_DIR not in sys.path:
+    sys.path.insert(0, _SP_DIR)
+import season_calendar
+
 
 class AveragedProbaClassifier:
     # Cache compatibility shim for pickles created when Predict_Match was __main__.
@@ -655,18 +661,13 @@ def predict_match(ctx, home_team, away_team, competition_hint):
 
 def _expected_current_season_year(competition):
     """Return the expected start year for the current season of *competition*."""
-    now = datetime.now()
-    country = competition.split("/")[0] if "/" in competition else ""
-    cross_year_countries = {
-        "Austria", "Switzerland", "Greece", "Denmark", "Poland",
-        "Japan", "Bulgaria", "Cyprus", "Czech Republic",
-        "Israel", "Moldova", "Serbia", "Ukraine", "Romania",
-        "Croatia", "Hungary", "Slovakia", "Slovenia",
-        "Netherlands", "Belgium", "Scotland", "Turkey",
-    }
-    if country in cross_year_countries:
-        return now.year if now.month >= 7 else now.year - 1
-    return now.year
+    try:
+        return season_calendar.expected_season_start_year(competition)
+    except Exception:
+        now = datetime.now()
+        if now.month > 7 or (now.month == 7 and now.day >= 15):
+            return now.year
+        return now.year - 1
 
 
 def _fetch_espn_teams(competition):
@@ -746,7 +747,10 @@ def project_competition(ctx, competition, raw_file):
                 return [], []
             teams = sorted(static_roster)
 
-        print(f"  No current-season CSV — using ESPN fallback ({len(teams)} teams)")
+        print(
+            f"  No current-season CSV (typical Jul–Aug before games) — "
+            f"using ESPN/roster PATH B ({len(teams)} teams)"
+        )
 
         # Build a minimal df with resolved team names and no played results
         espn_future = _load_espn_fixtures(competition, ctx)
@@ -910,9 +914,36 @@ def main():
     if not latest:
         raise ValueError(f"No raw season files found in {RAW_DIR}")
 
+    # June through mid-July: skip European-style Extra leagues until Jul 15+.
+    # Calendar-year Extra leagues (if any) keep projecting.
+    try:
+        if season_calendar.is_european_club_offseason():
+            european = {
+                comp: path for comp, path in latest.items()
+                if not season_calendar.competition_uses_calendar_year(comp)
+            }
+            calendar = {
+                comp: path for comp, path in latest.items()
+                if season_calendar.competition_uses_calendar_year(comp)
+            }
+            if european:
+                print(
+                    f"[skip] European club off-season (Jun–Jul 14) — "
+                    f"deferring {len(european)} Extra league projection(s) until Jul 15+"
+                )
+            latest = calendar
+    except Exception:
+        pass
+
     all_tables = []
     all_future = []
     comps = sorted(latest.items())
+    if not comps:
+        print("No competitions left to project.")
+        os.makedirs(OUT_DIR, exist_ok=True)
+        pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)
+        pd.DataFrame(all_future).to_csv(OUT_MATCHES, index=False)
+        return
 
     if comp_workers <= 1 or len(comps) <= 1:
         for competition, path in comps:

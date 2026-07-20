@@ -498,10 +498,98 @@ def _apply_result(table, home, away, hg, ag, is_real):
         away_stats["Pts"] += 1
 
 
+def _is_unknown_team(name):
+    """True for empty / placeholder / seed / TBD labels that are not real clubs."""
+    text = str(name or "").strip()
+    if not text:
+        return True
+    lower = text.lower()
+    if lower in {"tbd", "draw", "tie", "unknown"}:
+        return True
+    if lower.startswith("seed "):
+        return True
+    tokens = (
+        "group ",
+        "winner",
+        "runner",
+        "third place",
+        "round of",
+        "quarterfinal",
+        "quarter-final",
+        "semifinal",
+        "semi-final",
+        "playoff ",
+        "qualifier",
+        "to be determined",
+    )
+    return any(token in lower for token in tokens)
+
+
+def _is_known_team(name):
+    return not _is_unknown_team(name)
+
+
+def _fallback_winner_when_prediction_missing(home_team, away_team):
+    """When odds/data fail: known team beats unknown; both unknown (or both known) → tie."""
+    home = str(home_team or "").strip()
+    away = str(away_team or "").strip()
+    home_known = _is_known_team(home)
+    away_known = _is_known_team(away)
+    if home_known and not away_known:
+        return home
+    if away_known and not home_known:
+        return away
+    return "Draw"
+
+
+def _fallback_predicted_score(home_team, away_team):
+    """Scoreline matching ``_fallback_winner_when_prediction_missing`` (1-0 / 0-1 / 0-0)."""
+    winner = _fallback_winner_when_prediction_missing(home_team, away_team)
+    home = str(home_team or "").strip()
+    away = str(away_team or "").strip()
+    if winner == home:
+        return 1, 0
+    if winner == away:
+        return 0, 1
+    return 0, 0
+
+
+def _lookup_match_probs(predictions_index, home_team, away_team):
+    """Return (prob_home, prob_away) from index, trying both orientations."""
+    if not predictions_index:
+        return 0.0, 0.0
+    hm = str(home_team or "").strip().lower()
+    aw = str(away_team or "").strip().lower()
+    entry = predictions_index.get((hm, aw), {})
+    ph = _safe_float(entry.get("prob_home"), 0)
+    pa = _safe_float(entry.get("prob_away"), 0)
+    if ph == 0 and pa == 0:
+        rev = predictions_index.get((aw, hm), {})
+        ph = _safe_float(rev.get("prob_away"), 0)
+        pa = _safe_float(rev.get("prob_home"), 0)
+    return ph, pa
+
+
+def _pick_projected_winner(home_team, away_team, predictions_index=None):
+    """Prefer model probs; else known-team / tie fallback."""
+    ph, pa = _lookup_match_probs(predictions_index, home_team, away_team)
+    total = ph + pa
+    if total > 0:
+        return home_team if ph >= pa else away_team
+    return _fallback_winner_when_prediction_missing(home_team, away_team)
+
+
 def _predicted_score(row):
-    hg = _numeric_int(row.get("pred_home_goals"), 0)
-    ag = _numeric_int(row.get("pred_away_goals"), 0)
+    home = str(row.get("home_team", "")).strip()
+    away = str(row.get("away_team", "")).strip()
+    schedule_only = str(row.get("schedule_only", "")).strip().lower() in {"1", "true", "yes"}
     predicted = str(row.get("predicted_result", "")).strip().upper()
+    hg = _numeric_int(row.get("pred_home_goals"), None)
+    ag = _numeric_int(row.get("pred_away_goals"), None)
+
+    if schedule_only or predicted not in {"H", "D", "A"} or hg is None or ag is None:
+        return _fallback_predicted_score(home, away)
+
     if predicted == "H" and hg <= ag:
         hg = ag + 1
     elif predicted == "A" and ag <= hg:
@@ -588,11 +676,18 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
 def _winner_label(row):
     actual = str(row.get("actual_result", "")).strip().upper()
     predicted = str(row.get("predicted_result", "")).strip().upper()
+    home = str(row.get("home_team", "")).strip()
+    away = str(row.get("away_team", "")).strip()
+    schedule_only = str(row.get("schedule_only", "")).strip().lower() in {"1", "true", "yes"}
     result = actual if actual in {"H", "D", "A"} else predicted
     if result == "H":
-        return str(row.get("home_team", "")).strip()
+        return home
     if result == "A":
-        return str(row.get("away_team", "")).strip()
+        return away
+    if result == "D":
+        return "Draw"
+    if schedule_only or result not in {"H", "D", "A"}:
+        return _fallback_winner_when_prediction_missing(home, away)
     return "Draw"
 
 
@@ -621,7 +716,9 @@ def _seed_name(ranked_rows, seed):
     return f"Seed {seed}"
 
 
-def _uefa_match(stage, slot, home_team, away_team, winner=None):
+def _uefa_match(stage, slot, home_team, away_team, winner=None, predictions_index=None):
+    if winner is None:
+        winner = _pick_projected_winner(home_team, away_team, predictions_index)
     return {
         "stage": stage,
         "slot": slot,
@@ -629,7 +726,7 @@ def _uefa_match(stage, slot, home_team, away_team, winner=None):
         "home_team": home_team,
         "away_team": away_team,
         "status": "Projected",
-        "winner": winner or home_team,
+        "winner": winner,
         "actual_home_goals": None,
         "actual_away_goals": None,
         "pred_home_goals": None,
@@ -638,7 +735,7 @@ def _uefa_match(stage, slot, home_team, away_team, winner=None):
     }
 
 
-def _build_uefa_bracket_from_table(competition, table_rows):
+def _build_uefa_bracket_from_table(competition, table_rows, predictions_index=None):
     def position_value(row):
         pos = pd.to_numeric(row.get("position"), errors="coerce")
         return int(pos) if pd.notna(pos) else 999
@@ -653,9 +750,11 @@ def _build_uefa_bracket_from_table(competition, table_rows):
     for idx, (high_seed, low_seed) in enumerate(playoff_pairs, start=1):
         high_team = _seed_name(ranked_rows, high_seed)
         low_team = _seed_name(ranked_rows, low_seed)
-        winner = high_team
+        winner = _pick_projected_winner(high_team, low_team, predictions_index)
         playoff_winners.append(winner)
-        playoff_matches.append(_uefa_match("First Round Playoff", idx, high_team, low_team, winner))
+        playoff_matches.append(
+            _uefa_match("First Round Playoff", idx, high_team, low_team, winner, predictions_index)
+        )
 
     top_seed_order = [1, 8, 4, 5, 2, 7, 3, 6]
     round_of_16 = []
@@ -663,31 +762,38 @@ def _build_uefa_bracket_from_table(competition, table_rows):
     for idx, seed in enumerate(top_seed_order, start=1):
         top_seed = _seed_name(ranked_rows, seed)
         playoff_winner = playoff_winners[idx - 1] if idx - 1 < len(playoff_winners) else f"Playoff Winner {idx}"
-        winner = top_seed
+        winner = _pick_projected_winner(top_seed, playoff_winner, predictions_index)
         round_of_16_winners.append(winner)
-        round_of_16.append(_uefa_match("Round of 16", idx, top_seed, playoff_winner, winner))
+        round_of_16.append(
+            _uefa_match("Round of 16", idx, top_seed, playoff_winner, winner, predictions_index)
+        )
 
     quarterfinals = []
     semifinalists = []
     for idx in range(0, 8, 2):
         home = round_of_16_winners[idx] if idx < len(round_of_16_winners) else f"R16 Winner {idx + 1}"
         away = round_of_16_winners[idx + 1] if idx + 1 < len(round_of_16_winners) else f"R16 Winner {idx + 2}"
-        winner = home
+        winner = _pick_projected_winner(home, away, predictions_index)
         semifinalists.append(winner)
-        quarterfinals.append(_uefa_match("Quarterfinals", (idx // 2) + 1, home, away, winner))
+        quarterfinals.append(
+            _uefa_match("Quarterfinals", (idx // 2) + 1, home, away, winner, predictions_index)
+        )
 
     semifinals = []
     finalists = []
     for idx in range(0, 4, 2):
         home = semifinalists[idx] if idx < len(semifinalists) else f"Quarterfinal Winner {idx + 1}"
         away = semifinalists[idx + 1] if idx + 1 < len(semifinalists) else f"Quarterfinal Winner {idx + 2}"
-        winner = home
+        winner = _pick_projected_winner(home, away, predictions_index)
         finalists.append(winner)
-        semifinals.append(_uefa_match("Semifinals", (idx // 2) + 1, home, away, winner))
+        semifinals.append(
+            _uefa_match("Semifinals", (idx // 2) + 1, home, away, winner, predictions_index)
+        )
 
     final_home = finalists[0] if finalists else "Semifinal Winner 1"
     final_away = finalists[1] if len(finalists) > 1 else "Semifinal Winner 2"
-    final = [_uefa_match("Final", 1, final_home, final_away, final_home)]
+    final_winner = _pick_projected_winner(final_home, final_away, predictions_index)
+    final = [_uefa_match("Final", 1, final_home, final_away, final_winner, predictions_index)]
 
     return {
         "competition": competition,
@@ -773,7 +879,7 @@ def _build_uefa_bracket_with_draws(competition_name, table_rows, predictions_ind
     - Simulates playoff round with seeding constraints
     - Calculates probabilities for each possible opponent
     """
-    bracket = _build_uefa_bracket_from_table(competition_name, table_rows)
+    bracket = _build_uefa_bracket_from_table(competition_name, table_rows, predictions_index)
     
     # Run simulation with draw constraints
     sim_info = _simulate_cup_tournament(
@@ -1039,13 +1145,7 @@ def _simulate_cup_tournament(competition_name, rounds_data, predictions_index, n
 
                 # If previous round feeds into this match, check if teams updated
                 # (handled below by updating home/away from previous winners)
-                ph = _safe_float(predictions_index.get((hm.lower(), aw.lower()), {}).get("prob_home"), 0)
-                pa = _safe_float(predictions_index.get((hm.lower(), aw.lower()), {}).get("prob_away"), 0)
-                # Also try reversed
-                if ph == 0 and pa == 0:
-                    rev = predictions_index.get((aw.lower(), hm.lower()), {})
-                    ph = _safe_float(rev.get("prob_away"), 0)
-                    pa = _safe_float(rev.get("prob_home"), 0)
+                ph, pa = _lookup_match_probs(predictions_index, hm, aw)
 
                 # Draw probability is redistributed proportionally
                 total = ph + pa
@@ -1053,7 +1153,8 @@ def _simulate_cup_tournament(competition_name, rounds_data, predictions_index, n
                     p_home = ph / total
                     winner = hm if rng.random() < p_home else aw
                 else:
-                    winner = str(m.get("winner", hm) or hm)
+                    # No model odds: known team advances; otherwise treat as a tie.
+                    winner = _fallback_winner_when_prediction_missing(hm, aw)
 
                 winners.append({"slot": slot, "winner": winner, "home_team": hm, "away_team": aw})
 
