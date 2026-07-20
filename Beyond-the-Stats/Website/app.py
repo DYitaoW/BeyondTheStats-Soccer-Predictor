@@ -2560,6 +2560,10 @@ def api_league_data(competition):
          "real": {"standings": {"groups": [...], "standings_layout": "...", ...}},
          "bracket": {"projected": {...}, "knockout": {...}, "odds_knockout": {...}},
          "fixtures": [...]}
+
+    For ``United States/MLS``, ``bracket.projected`` is the full MLS Cup playoff
+    bracket JSON when available, and ``mls_winners_odds.mls_cup`` carries Cup
+    winner probabilities (also mirrored under ``predicted.mls_cup``).
     """
     comp = competition.strip()
 
