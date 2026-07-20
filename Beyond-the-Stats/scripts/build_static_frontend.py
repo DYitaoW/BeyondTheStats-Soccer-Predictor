@@ -47,7 +47,6 @@ TEMPLATE_RENAMES = {
     "upcoming_matches.html": "upcoming-matches.html",
     "head_to_head.html": "head-to-head.html",
     "league_tables.html": "league-tables.html",
-    "world_cup.html": "world-cup.html",
 }
 
 # Flask route -> static filename mapping for in-page href rewriting.
@@ -57,7 +56,6 @@ ROUTE_TO_FILE = {
     "/cups": "cups.html",
     "/head-to-head": "head-to-head.html",
     "/league-tables": "league-tables.html",
-    "/world-cup": "world-cup.html",
     "/players": "players.html",
     "/tactics": "tactics.html",
     "/about": "about.html",
@@ -67,7 +65,8 @@ ROUTE_TO_FILE = {
 }
 
 # legal.html is rendered separately with real document bodies (not Jinja-stripped).
-SKIP_STATIC_TEMPLATES = {"legal.html"}
+# world_cup.html is archived — do not ship it on the static marketing site.
+SKIP_STATIC_TEMPLATES = {"legal.html", "world_cup.html"}
 
 LEGAL_STATIC_PAGES = {
     "privacy": "privacy.html",
@@ -191,14 +190,80 @@ def write_404(out_dir: Path) -> None:
 
 
 def write_redirects(out_dir: Path) -> None:
-    """Cloudflare Pages redirects for clean legal URLs."""
+    """Cloudflare Pages redirects for clean URLs and archived World Cup page."""
     lines = [
         "/privacy /privacy.html 200",
         "/terms /terms.html 200",
         "/subscriptions /subscriptions.html 200",
+        "/world-cup /index.html 302",
+        "/world-cup.html /index.html 302",
         "",
     ]
     (out_dir / "_redirects").write_text("\n".join(lines), encoding="utf-8")
+
+
+def rewrite_absolute_site_links(html: str, site_origin: str = "https://beyondthestatsapp.com") -> str:
+    """Point absolute marketing-site legal URLs at static .html files.
+
+    Absolute ``/privacy`` links work via ``_redirects`` on Cloudflare Pages, but
+    rewriting them to ``.html`` keeps local/static previews working too.
+    """
+    origin = site_origin.rstrip("/")
+    for route, filename in (
+        ("/privacy", "privacy.html"),
+        ("/terms", "terms.html"),
+        ("/subscriptions", "subscriptions.html"),
+    ):
+        html = html.replace(f'href="{origin}{route}"', f'href="/{filename}"')
+        html = html.replace(f'href="{origin}{route}/"', f'href="/{filename}"')
+    return html
+
+
+def verify_static_build(out_dir: Path, api_base: str = "") -> None:
+    """Fail the build if critical static assets are missing or still broken."""
+    required = [
+        "index.html",
+        "upcoming-matches.html",
+        "about.html",
+        "privacy.html",
+        "terms.html",
+        "subscriptions.html",
+        "_redirects",
+        "static/shared.js",
+        "static/home.js",
+        "static/styles.css",
+    ]
+    missing = [name for name in required if not (out_dir / name).is_file()]
+    if missing:
+        raise SystemExit(f"[build] FATAL: missing required static files: {missing}")
+
+    shared = (out_dir / "static" / "shared.js").read_text(encoding="utf-8")
+    if shared.count("{") != shared.count("}"):
+        raise SystemExit("[build] FATAL: static/shared.js has unbalanced braces")
+    if "async function loadUpcoming" not in shared or "function inferH2HMode" not in shared:
+        raise SystemExit("[build] FATAL: static/shared.js missing loadUpcoming/inferH2HMode")
+    # Ensure loadUpcoming is closed before the next top-level function.
+    load_chunk = shared[shared.index("async function loadUpcoming") : shared.index("function inferH2HMode")]
+    if load_chunk.count("{") != load_chunk.count("}"):
+        raise SystemExit("[build] FATAL: loadUpcoming is not closed (Upcoming page would break)")
+
+    index_html = (out_dir / "index.html").read_text(encoding="utf-8")
+    home_js = (out_dir / "static" / "home.js").read_text(encoding="utf-8")
+    for needle in ("loadHomeWorldCup", "wc-winner-odds", "wc-projected-groups", "World Cup 2026"):
+        if needle in index_html or needle in home_js:
+            raise SystemExit(f"[build] FATAL: World Cup UI remnant still in static home ({needle!r})")
+
+    privacy = (out_dir / "privacy.html").read_text(encoding="utf-8")
+    if "Beyond the Stats Privacy Policy" not in privacy or len(privacy) < 1000:
+        raise SystemExit("[build] FATAL: privacy.html is empty or incomplete")
+
+    if api_base and f'window.BTS_API_BASE = "{api_base}"' not in shared:
+        raise SystemExit(f"[build] FATAL: BTS_API_BASE not injected as {api_base!r}")
+
+    if (out_dir / "world-cup.html").exists():
+        raise SystemExit("[build] FATAL: world-cup.html should not ship on the static site")
+
+    print("[build] verification passed")
 
 
 def render_legal_pages(out_dir: Path, api_base: str = "") -> int:
@@ -227,6 +292,7 @@ def render_legal_pages(out_dir: Path, api_base: str = "") -> int:
         html = html.replace("{{ body_html | safe }}", body_html)
         html = html.replace("{{ doc.api_url }}", api_url)
         html = strip_jinja(html)
+        html = rewrite_absolute_site_links(html)
         (out_dir / filename).write_text(html, encoding="utf-8")
         written += 1
         print(f"[build] legal {doc_id} -> {filename} ({len(html):,} bytes)")
@@ -291,6 +357,7 @@ def main() -> int:
         html = src.read_text(encoding="utf-8")
         html = strip_jinja(html)
         html = strip_inactive_panels(html)
+        html = rewrite_absolute_site_links(html)
         target.write_text(html, encoding="utf-8")
         n_templates += 1
         print(f"[build] template {src.name} -> {target_name} ({len(html):,} bytes)")
@@ -332,6 +399,9 @@ def main() -> int:
     # 6. Clean URL redirects for legal pages on Cloudflare Pages
     write_redirects(out_dir)
     print("[build] wrote _redirects")
+
+    # 7. Guardrails so a broken Upcoming/World Cup/legal build cannot ship
+    verify_static_build(out_dir, api_base=args.api_base)
 
     # Summary
     total = sum(p.stat().st_size for p in out_dir.rglob("*") if p.is_file())

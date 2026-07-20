@@ -6,6 +6,7 @@ on:
     paths:
       - "Beyond-the-Stats/Website/**"
       - "Beyond-the-Stats/scripts/build_static_frontend.py"
+      - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
 concurrency:
@@ -15,9 +16,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: Beyond-the-Stats
     steps:
       - uses: actions/checkout@v4
 
@@ -29,17 +27,37 @@ jobs:
           cache-dependency-path: Beyond-the-Stats/requirements.txt
 
       - name: Install dependencies
+        working-directory: Beyond-the-Stats
         run: pip install -r requirements.txt
 
       - name: Build static frontend
+        working-directory: Beyond-the-Stats
         run: |
           python scripts/build_static_frontend.py \
             --api-base "https://api.beyondthestatsapp.com" \
             --out public --clean
+
+      - name: Verify static build output
+        working-directory: Beyond-the-Stats
+        run: |
+          test -f public/index.html
+          test -f public/privacy.html
+          test -f public/terms.html
+          test -f public/subscriptions.html
+          test -f public/upcoming-matches.html
+          test -f public/static/shared.js
+          test -f public/_redirects
+          ! test -f public/world-cup.html
+          ! grep -q 'loadHomeWorldCup\|wc-winner-odds\|World Cup 2026' public/index.html public/static/home.js
+          node --check public/static/shared.js
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: Beyond-the-Stats
           command: pages deploy public --project-name=beyond-the-stats
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
