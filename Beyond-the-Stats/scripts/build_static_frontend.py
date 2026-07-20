@@ -61,6 +61,18 @@ ROUTE_TO_FILE = {
     "/players": "players.html",
     "/tactics": "tactics.html",
     "/about": "about.html",
+    "/privacy": "privacy.html",
+    "/terms": "terms.html",
+    "/subscriptions": "subscriptions.html",
+}
+
+# legal.html is rendered separately with real document bodies (not Jinja-stripped).
+SKIP_STATIC_TEMPLATES = {"legal.html"}
+
+LEGAL_STATIC_PAGES = {
+    "privacy": "privacy.html",
+    "terms": "terms.html",
+    "subscriptions": "subscriptions.html",
 }
 
 # Each route appears as href="/foo" in the source HTML; rewrite to .html file.
@@ -178,6 +190,49 @@ def write_404(out_dir: Path) -> None:
     (out_dir / "404.html").write_text(html, encoding="utf-8")
 
 
+def write_redirects(out_dir: Path) -> None:
+    """Cloudflare Pages redirects for clean legal URLs."""
+    lines = [
+        "/privacy /privacy.html 200",
+        "/terms /terms.html 200",
+        "/subscriptions /subscriptions.html 200",
+        "",
+    ]
+    (out_dir / "_redirects").write_text("\n".join(lines), encoding="utf-8")
+
+
+def render_legal_pages(out_dir: Path, api_base: str = "") -> int:
+    """Render Privacy / Terms / Subscriptions HTML with real document bodies.
+
+    The generic Jinja strip would leave these pages empty because the body is
+    injected via ``{{ body_html | safe }}``.
+    """
+    website_dir = str(WEBSITE)
+    if website_dir not in sys.path:
+        sys.path.insert(0, website_dir)
+    from legal_docs import get_legal_document, plain_text_to_html_paragraphs
+
+    template = (TEMPLATES / "legal.html").read_text(encoding="utf-8")
+    api_root = (api_base or "").rstrip("/")
+    written = 0
+    for doc_id, filename in LEGAL_STATIC_PAGES.items():
+        doc = get_legal_document(doc_id)
+        if not doc:
+            print(f"[build] WARNING: legal doc {doc_id!r} missing; skip", file=sys.stderr)
+            continue
+        body_html = plain_text_to_html_paragraphs(doc["body"])
+        api_url = f"{api_root}{doc['api_url']}" if api_root else doc["api_url"]
+        html = template
+        html = html.replace("{{ doc.title }}", doc["title"])
+        html = html.replace("{{ body_html | safe }}", body_html)
+        html = html.replace("{{ doc.api_url }}", api_url)
+        html = strip_jinja(html)
+        (out_dir / filename).write_text(html, encoding="utf-8")
+        written += 1
+        print(f"[build] legal {doc_id} -> {filename} ({len(html):,} bytes)")
+    return written
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument(
@@ -229,6 +284,8 @@ def main() -> int:
     # 1. Templates
     n_templates = 0
     for src in sorted(TEMPLATES.glob("*.html")):
+        if src.name in SKIP_STATIC_TEMPLATES:
+            continue
         target_name = TEMPLATE_RENAMES.get(src.name, src.name)
         target = out_dir / target_name
         html = src.read_text(encoding="utf-8")
@@ -238,6 +295,10 @@ def main() -> int:
         n_templates += 1
         print(f"[build] template {src.name} -> {target_name} ({len(html):,} bytes)")
     print(f"[build] wrote {n_templates} HTML files")
+
+    # 1b. Legal pages (need real document bodies; not Jinja-stripped shells)
+    n_legal = render_legal_pages(out_dir, api_base=args.api_base)
+    print(f"[build] wrote {n_legal} legal HTML files")
 
     # 2. Static
     if STATIC.is_dir():
@@ -268,7 +329,9 @@ def main() -> int:
     write_404(out_dir)
     print(f"[build] wrote 404.html")
 
-    # 6. (no _redirects needed — all navigation uses direct .html file links)
+    # 6. Clean URL redirects for legal pages on Cloudflare Pages
+    write_redirects(out_dir)
+    print("[build] wrote _redirects")
 
     # Summary
     total = sum(p.stat().st_size for p in out_dir.rglob("*") if p.is_file())

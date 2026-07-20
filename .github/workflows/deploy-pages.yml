@@ -34,7 +34,7 @@ jobs:
       - name: Build static frontend
         run: |
           python scripts/build_static_frontend.py \
-            --api-base "https://api.beyondthestats.com" \
+            --api-base "https://api.beyondthestatsapp.com" \
             --out public --clean
 
       - name: Deploy to Cloudflare Pages
