@@ -34,6 +34,7 @@ from predictions import (
 from standings import (
     _build_fallback_standings,
     _compute_standings_from_history,
+    _dedupe_standings_groups,
     _load_league_teams,
     _normalize_team_name,
     _UEFA_COMPETITIONS,
@@ -290,57 +291,17 @@ def _load_real_standings(comp_name: str) -> dict | None:
     Prior-season history is excluded via ``filter_games_to_active_season``.
     When the active window has no games yet (typical Jul–mid-Aug), return the
     roster placeholder instead of a stale end-of-season table.
+
+    Deduping / roster alignment happen inside standings helpers so real tables
+    share the same football-data canonical team set as predicted tables.
     """
     result = _compute_standings_from_history(comp_name)
     if result and result.get("groups"):
-        result = _dedupe_standings_groups(result, comp_name)
         return result
     fallback = _build_fallback_standings(comp_name)
     if fallback:
-        return _dedupe_standings_groups(fallback, comp_name)
+        return fallback
     return None
-
-
-def _dedupe_standings_groups(standings: dict, comp_name: str) -> dict:
-    """Collapse duplicate team rows that survived incomplete name mapping."""
-    if not standings or not isinstance(standings.get("groups"), list):
-        return standings
-    from competition_rules import resolve_competition_query
-
-    base_comp, _view = resolve_competition_query(comp_name)
-    new_groups = []
-    for group in standings["groups"]:
-        entries = group.get("entries") or []
-        by_key: dict[str, dict] = {}
-        order: list[str] = []
-        for entry in entries:
-            team = str(entry.get("team", "")).strip()
-            if not team:
-                continue
-            canon = _normalize_team_name(team, base_comp)
-            key = canon.lower()
-            if key not in by_key:
-                cloned = dict(entry)
-                cloned["team"] = canon
-                by_key[key] = cloned
-                order.append(key)
-            else:
-                existing = by_key[key]
-                try:
-                    if int(entry.get("P") or 0) > int(existing.get("P") or 0):
-                        cloned = dict(entry)
-                        cloned["team"] = canon
-                        by_key[key] = cloned
-                except Exception:
-                    pass
-        deduped = [by_key[k] for k in order]
-        for idx, row in enumerate(deduped, start=1):
-            row["rank"] = idx
-            row["position"] = idx
-        new_groups.append({**group, "entries": deduped})
-    out = dict(standings)
-    out["groups"] = new_groups
-    return out
 
 
 def _infer_groups_from_fixtures(comp_name: str, comp_table: list[dict]) -> list[dict] | None:
