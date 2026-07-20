@@ -18,6 +18,22 @@ import pandas as pd
 import Predict_Match as pm
 
 
+class AveragedProbaClassifier:
+    # Cache compatibility shim for pickles created when Predict_Match was __main__.
+    def __init__(self, models):
+        self.models = models
+        self.classes_ = models[0].classes_
+
+    def predict_proba(self, X):
+        matrices = [model.predict_proba(X) for model in self.models]
+        return sum(matrices) / len(matrices)
+
+    def predict(self, X):
+        avg = self.predict_proba(X)
+        idx = avg.argmax(axis=1)
+        return self.classes_[idx]
+
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
@@ -298,10 +314,20 @@ def load_context():
         rebuild_model_cache_once()
 
     try:
+        # Caches pickled from Predict_Match.py as __main__ need this alias.
+        setattr(sys.modules.get("__main__"), "AveragedProbaClassifier", pm.AveragedProbaClassifier)
+    except Exception:
+        pass
+
+    try:
         bundle = joblib.load(pm.MODEL_CACHE)
     except Exception as exc:
-        print(f"[model-cache] failed to load cache ({exc.__class__.__name__}); rebuilding...")
+        print(f"[model-cache] failed to load cache ({exc.__class__.__name__}: {exc}); rebuilding...")
         rebuild_model_cache_once()
+        try:
+            setattr(sys.modules.get("__main__"), "AveragedProbaClassifier", pm.AveragedProbaClassifier)
+        except Exception:
+            pass
         bundle = joblib.load(pm.MODEL_CACHE)
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
         print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
@@ -761,6 +787,7 @@ def project_competition(ctx, competition, raw_file):
             {
                 "competition": competition,
                 "match_date": match_date,
+                "match_datetime_utc": "",
                 "home_team": home,
                 "away_team": away,
                 "predicted_result": pred_res,

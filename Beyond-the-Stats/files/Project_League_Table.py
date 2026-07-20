@@ -284,10 +284,20 @@ def load_context():
         rebuild_model_cache_once()
 
     try:
+        # Caches pickled from Predict_Match.py as __main__ need this alias.
+        setattr(sys.modules.get("__main__"), "AveragedProbaClassifier", pm.AveragedProbaClassifier)
+    except Exception:
+        pass
+
+    try:
         bundle = joblib.load(pm.MODEL_CACHE)
     except Exception as exc:
-        print(f"[model-cache] failed to load cache ({exc.__class__.__name__}); rebuilding...")
+        print(f"[model-cache] failed to load cache ({exc.__class__.__name__}: {exc}); rebuilding...")
         rebuild_model_cache_once()
+        try:
+            setattr(sys.modules.get("__main__"), "AveragedProbaClassifier", pm.AveragedProbaClassifier)
+        except Exception:
+            pass
         bundle = joblib.load(pm.MODEL_CACHE)
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
         print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
@@ -785,6 +795,7 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
             {
                 "competition": competition,
                 "match_date": match_date,
+                "match_datetime_utc": "",
                 "home_team": home,
                 "away_team": away,
                 "predicted_result": pred_res,

@@ -1139,6 +1139,12 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
             return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
     if "schedule_only" not in frame.columns:
         frame["schedule_only"] = "0"
+    # Projected-future CSVs (and some older merges) omit kickoff columns.
+    # sort_values below requires them to exist even when blank.
+    if "match_datetime_utc" not in frame.columns:
+        frame["match_datetime_utc"] = ""
+    if "match_datetime_et" not in frame.columns:
+        frame["match_datetime_et"] = ""
     prediction_required = ["predicted_result", "prob_home", "prob_draw", "prob_away"]
     for col in prediction_required:
         if col not in frame.columns:
