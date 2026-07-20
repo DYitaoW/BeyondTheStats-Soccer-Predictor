@@ -51,7 +51,7 @@ COMP_TO_DIRS = {
     "Mexico/Liga MX":             ["MLS/Data/Raw_Data/Mexico/Liga MX",
                                    "Extra-leagues/Data/Raw_Data/Mexico/Liga MX"],
     "Argentina/Primera Division": ["Extra-leagues/Data/Raw_Data/Argentina/Primera Division"],
-    "Brazil/Serie A":            ["Extra-leagues/Data/Raw_Data/Brazil/Serie A"],
+    "Brazil/Brasileirão":            ["Extra-leagues/Data/Raw_Data/Brazil/Brasileirão"],
     "Japan/J1 League":           ["Extra-leagues/Data/Raw_Data/Japan/J1 League"],
 }
 

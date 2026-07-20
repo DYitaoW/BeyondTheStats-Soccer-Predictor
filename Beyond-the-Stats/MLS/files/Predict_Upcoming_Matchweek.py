@@ -89,12 +89,15 @@ TEAM_KEY_ALIASES = {
     "caosasuna": "osasuna",
     "uslecce": "lecce",
     "borussiadortmund": "dortmund",
-    "lafc": "losangelesfc",
+    # Keep in sync with team_mapping_groups.TEAM_KEY_ALIASES for MLS shorts.
     "lagalaxy": "losangelesgalaxy",
-    "losangelesfc": "losangelesfc",
     "losangelesgalaxy": "losangelesgalaxy",
+    "lafc": "losangeles",
+    "losangelesfc": "losangeles",
+    "losangeles": "losangeles",
     "stlouiscity": "stlouiscity",
     "stlouiscitysc": "stlouiscity",
+    "rsl": "realsaltlake",
     "dcunited": "dcunited",
     "newyorkcityfc": "newyorkcity",
     "newyorkredbulls": "newyorkredbulls",
@@ -336,13 +339,30 @@ def resolve_live_team_name(raw_name, competition, context, mapping=None):
     valid_names = tmg.candidate_teams_for_competition(competition, context)
 
     raw = str(raw_name).strip()
+    if not raw:
+        return None
+
+    # Hard aliases for known ESPN short forms (also covered by normalize keys).
+    if competition == MLS_COMPETITION_NAME:
+        hard = {
+            "LA Galaxy": "Los Angeles Galaxy",
+            "LAFC": "Los Angeles FC",
+            "RSL": "Real Salt Lake",
+            "St. Louis CITY SC": "St. Louis City",
+            "St Louis CITY SC": "St. Louis City",
+            "St. Louis City SC": "St. Louis City",
+        }
+        hit = hard.get(raw)
+        if hit and hit in context.get("available_teams", []):
+            return hit
+
     flat_map = _load_name_mapping_flat()
     mapped = flat_map.get(raw.lower())
-    if mapped:
-        if mapped in valid_names:
-            return mapped
-        if mapped in context["available_teams"]:
-            return mapped
+    # Ignore sticky blank mappings so aliases/fuzzy can recover.
+    if mapped and mapped in valid_names:
+        return mapped
+    if mapped and mapped in context["available_teams"]:
+        return mapped
 
     if mapping is not None:
         canonical, _source = tmg.lookup_mapped_name(raw_name, competition, mapping)
@@ -390,6 +410,7 @@ def update_team_mapping_from_fixtures(fixtures, context, mapping):
                 if not target and api_name not in canonical_names:
                     blanks_added += 1
             elif existing != target and target:
+                # Overwrite stale/wrong mapping, including previous blank recoveries.
                 tmg.store_team_mapping(
                     updated,
                     competition,

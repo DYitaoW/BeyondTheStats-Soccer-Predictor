@@ -22,7 +22,7 @@ MIN_START_YEAR = 2002
 # correctly relative to the main global-pipeline leagues (see
 # files/Sort_Data.py's DEFAULT_LEAGUE_STRENGTH for the top tiers).
 DEFAULT_LEAGUE_STRENGTH = {
-    "Brazil/Serie A": 0.75,
+    "Brazil/Brasileirão": 0.75,
     "Argentina/Primera Division": 0.70,
     "Japan/J1 League": 0.60,
 }

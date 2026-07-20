@@ -22,7 +22,7 @@ import team_mapping_groups as tmg
 # Extra-league ESPN feeds not always present in LIVE_SCORE_COMPETITIONS.
 EXTRA_ESPN_COMPETITIONS = {
     "Argentina/Primera Division": "arg.1",
-    "Brazil/Serie A": "bra.1",
+    "Brazil/Brasileirão": "bra.1",
     "Japan/J1 League": "jpn.1",
 }
 

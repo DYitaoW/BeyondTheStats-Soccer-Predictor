@@ -76,7 +76,7 @@ ESPN_IDS = {
     "Slovenia/PrvaLiga": "svn.1",
     "Bulgaria/First League": "bul.1",
     "Argentina/Primera Division": "arg.1",
-    "Brazil/Serie A": "bra.1",
+    "Brazil/Brasileirão": "bra.1",
     "Japan/J1 League": "jpn.1",
     "England/FA Cup": "eng.fa",
     "England/League Cup": "eng.efl",

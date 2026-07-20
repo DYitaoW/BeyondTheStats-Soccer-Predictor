@@ -28,7 +28,7 @@ LEAGUES = [
     "Romania/Liga I", "Sweden/Allsvenskan",
     "Poland/Ekstraklasa",
     "Mexico/Liga MX", "Argentina/Primera Division",
-    "Brazil/Serie A", "Japan/J1 League",
+    "Brazil/Brasileirão", "Japan/J1 League",
     "CONCACAF/Leagues Cup",
     # ── MLS sub-competitions (for bracket display) ──────────────
     "United States/MLS - Supporters Shield Table",
