@@ -1025,7 +1025,7 @@ _ESPN_STATS_IDS = {
     "Italy/Coppa Italia": "ita.coppa",
     "France/Coupe de France": "fra.coupe_de_france",
     "Argentina/Primera Division": "arg.1",
-    "Brazil/Serie A": "bra.1",
+    "Brazil/Brasileirão": "bra.1",
     "Japan/J1 League": "jpn.1",
     "Austria/Bundesliga": "aut.1",
     "Switzerland/Super League": "sui.1",

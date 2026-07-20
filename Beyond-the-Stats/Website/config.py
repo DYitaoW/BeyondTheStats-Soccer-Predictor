@@ -317,7 +317,7 @@ GLOBAL_DATASET_COMPETITIONS = (
 )
 EXTRA_DATASET_COMPETITIONS = (
     "Argentina/Primera Division",
-    "Brazil/Serie A",
+    "Brazil/Brasileirão",
     "Japan/J1 League",
     "Netherlands/Eredivisie",
     "Belgium/First Division A",

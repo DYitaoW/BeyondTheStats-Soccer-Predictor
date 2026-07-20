@@ -868,11 +868,15 @@ def resolve_team_name(raw_name, valid_names):
         return None
 
     def normalize(name):
-        name = name.lower().strip()
-
-        name = name.replace("&", "and")
-        name = re.sub(r"[^a-z0-9]+", "", name)
-        return name
+        # Prefer shared MLS/ESPN key aliases (LA Galaxy → Los Angeles Galaxy, etc.).
+        try:
+            import team_mapping_groups as tmg
+            return tmg.normalize_team_key(name)
+        except Exception:
+            name = name.lower().strip()
+            name = name.replace("&", "and")
+            name = re.sub(r"[^a-z0-9]+", "", name)
+            return name
 
     mapping = _load_name_mapping()
     mapped = mapping.get(raw_name.strip().lower())

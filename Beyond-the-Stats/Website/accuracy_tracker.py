@@ -69,7 +69,7 @@ _UPCOMING_CSV_MODE_MAP = {
     "Poland/Ekstraklasa": "extra",
     "Mexico/Liga MX": "mls",
     "Argentina/Primera Division": "extra",
-    "Brazil/Serie A": "extra",
+    "Brazil/Brasileirão": "extra",
     "Japan/J1 League": "extra",
     "CONCACAF/Leagues Cup": "cups",
     "Azerbaijan/Premier League": "extra",
