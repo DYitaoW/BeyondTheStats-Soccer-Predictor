@@ -146,7 +146,7 @@ def _load_upcoming_roster(competition):
 
 EXTRA_ESPN_COMPETITIONS = {
     "Argentina/Primera Division": "arg.1",
-    "Brazil/Serie A": "bra.1",
+    "Brazil/Brasileirão": "bra.1",
     "Japan/J1 League": "jpn.1",
     "Netherlands/Eredivisie": "ned.1",
     "Belgium/First Division A": "bel.1",

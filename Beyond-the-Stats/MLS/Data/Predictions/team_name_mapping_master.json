@@ -71,7 +71,7 @@
     "Chicago Fire FC": "Chicago Fire",
     "Seattle Sounders FC": "Seattle Sounders",
     "St. Louis CITY SC": "St. Louis City",
-    "LA Galaxy": "",
+    "LA Galaxy": "Los Angeles Galaxy",
     "LAFC": "Los Angeles FC",
     "Atlanta United FC": "Atlanta Utd",
     "Charlotte FC": "Charlotte",
@@ -83,6 +83,9 @@
     "Orlando City SC": "Orlando City",
     "Minnesota United FC": "Minnesota United",
     "MLS All-Stars": "",
-    "Liga MX All-Stars": ""
+    "Liga MX All-Stars": "",
+    "St. Louis City SC": "St. Louis City",
+    "St Louis CITY SC": "St. Louis City",
+    "RSL": "Real Salt Lake"
   }
 }

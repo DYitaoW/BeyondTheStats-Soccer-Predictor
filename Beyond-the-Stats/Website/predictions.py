@@ -17,6 +17,11 @@ import joblib
 import pandas as pd
 
 import config
+try:
+    import competition_ids
+except ImportError:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import competition_ids
 from math_utils import (
     _compute_asian_handicap,
     _compute_clean_sheet,
@@ -1137,6 +1142,10 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
     for col in required:
         if col not in frame.columns:
             return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
+
+    frame["competition"] = (
+        frame["competition"].astype(str).str.strip().map(competition_ids.canonical_competition_id)
+    )
     if "schedule_only" not in frame.columns:
         frame["schedule_only"] = "0"
     # Projected-future CSVs (and some older merges) omit kickoff columns.
@@ -1466,7 +1475,9 @@ def _load_projected_tables(csv_path):
         return {"leagues": [], "tables": {}}
 
     frame = frame.copy()
-    frame["competition"] = frame["competition"].astype(str).str.strip()
+    frame["competition"] = (
+        frame["competition"].astype(str).str.strip().map(competition_ids.canonical_competition_id)
+    )
     frame = frame[frame["competition"] != ""]
     if frame.empty:
         return {"leagues": [], "tables": {}}

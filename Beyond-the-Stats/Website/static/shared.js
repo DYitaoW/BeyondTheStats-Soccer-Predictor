@@ -140,11 +140,36 @@ const MLS_LEAGUES = [
 ];
 const OTHER_LEAGUES = [
     "Argentina/Primera Division",
-    "Brazil/Serie A",
+    "Brazil/Brasileirão",
     "Japan/J1 League",
 ];
 const FRIENDLIES_LEAGUES = ["Club Friendlies"];
 const WORLD_CUP_OPTIONS = ["FIFA/World Cup"];
+
+// Clearer labels when Country/League keys collide on the short league name.
+const COMPETITION_DISPLAY_NAMES = {
+    "Brazil/Brasileirão": "Brasileirão",
+    "Italy/Serie A": "Serie A",
+    "England/Premier League": "Premier League",
+    "Ukraine/Premier League": "Ukrainian Premier League",
+    "Israel/Premier League": "Israeli Premier League",
+    "Azerbaijan/Premier League": "Azerbaijan Premier League",
+    "Kazakhstan/Premier League": "Kazakhstan Premier League",
+    "Belarus/Premier League": "Belarus Premier League",
+    "Germany/Bundesliga": "Bundesliga",
+    "Austria/Bundesliga": "Austrian Bundesliga",
+    "Switzerland/Super League": "Swiss Super League",
+    "Greece/Super League": "Super League Greece",
+    "Turkey/Super Lig": "Süper Lig",
+    "Slovakia/Super Liga": "Slovak Super Liga",
+};
+
+function competitionDisplayName(competition) {
+    const key = String(competition || "").trim();
+    if (COMPETITION_DISPLAY_NAMES[key]) return COMPETITION_DISPLAY_NAMES[key];
+    if (key.includes("/")) return key.split("/").slice(1).join("/");
+    return key;
+}
 
 function getLeaguesForSource(source) {
     if (source === "mls") return [...MLS_LEAGUES];
@@ -555,11 +580,11 @@ const rows = payload.tables[selectedLeague];
 // since it surfaces the same data (chance of finishing 1st / 2nd / ...) in a
 // more detailed grid per team.
 if (tablePositionOddsMode) {
-    leagueTableView.innerHTML = `<h3>${selectedLeague}</h3>${renderPositionOddsRows(rows, selectedLeague)}`;
+    leagueTableView.innerHTML = `<h3>${competitionDisplayName(selectedLeague)}</h3>${renderPositionOddsRows(rows, selectedLeague)}`;
 } else if (tableViewMode === "probability") {
-    leagueTableView.innerHTML = `<h3>${selectedLeague}</h3>${renderLeagueProbabilityRows(rows)}`;
+    leagueTableView.innerHTML = `<h3>${competitionDisplayName(selectedLeague)}</h3>${renderLeagueProbabilityRows(rows)}`;
 } else {
-    leagueTableView.innerHTML = `<h3>${selectedLeague}</h3>${renderLeagueTableRows(rows, selectedLeague)}`;
+    leagueTableView.innerHTML = `<h3>${competitionDisplayName(selectedLeague)}</h3>${renderLeagueTableRows(rows, selectedLeague)}`;
 }
 }
 
@@ -680,7 +705,7 @@ const orderedLeagues = [...hardcodedLeagues].sort((a, b) => {
 for (const league of orderedLeagues) {
     const option = document.createElement("option");
     option.value = league;
-    option.textContent = league;
+    option.textContent = competitionDisplayName(league);
     selectEl.appendChild(option);
 }
 if (includeMlsBracket) {
@@ -1555,7 +1580,7 @@ if (!leagues.length) {
 for (const league of leagues) {
     const option = document.createElement("option");
     option.value = league;
-    option.textContent = league;
+    option.textContent = competitionDisplayName(league);
     selectEl.appendChild(option);
 }
 return leagues[0];

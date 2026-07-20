@@ -37,7 +37,7 @@ EASTERN_TZ = ZoneInfo("America/New_York")
 # Extra-league competitions with ESPN scoreboard coverage for full-season fixtures.
 EXTRA_ESPN_COMPETITIONS = {
     "Argentina/Primera Division": "arg.1",
-    "Brazil/Serie A": "bra.1",
+    "Brazil/Brasileirão": "bra.1",
     "Japan/J1 League": "jpn.1",
     "Netherlands/Eredivisie": "ned.1",
     "Belgium/First Division A": "bel.1",
@@ -50,7 +50,7 @@ EXTRA_ESPN_COMPETITIONS = {
 # the global Data/Raw_Data/ directory, which is scanned at prediction time.
 EXTRA_COMPETITIONS = frozenset({
     "Argentina/Primera Division",
-    "Brazil/Serie A",
+    "Brazil/Brasileirão",
     "Japan/J1 League",
     "Netherlands/Eredivisie",
     "Austria/Bundesliga",

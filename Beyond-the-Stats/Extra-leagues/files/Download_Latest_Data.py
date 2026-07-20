@@ -39,7 +39,7 @@ SOURCES = [
     # Americas / Asia only — Liga MX moved to MLS pipeline; Austria/Romania/Poland
     # moved to the global European pipeline (see files/Download_Latest_Data.py).
     {"country": "Argentina",      "league": "Primera Division",    "type": "new",  "url": "https://www.football-data.co.uk/new/ARG.csv",  "file_prefix": "argstat"},
-    {"country": "Brazil",         "league": "Serie A",             "type": "new",  "url": "https://www.football-data.co.uk/new/BRA.csv",  "file_prefix": "brastat"},
+    {"country": "Brazil",         "league": "Brasileirão",         "type": "new",  "url": "https://www.football-data.co.uk/new/BRA.csv",  "file_prefix": "brastat"},
     {"country": "Japan",          "league": "J1 League",           "type": "new",  "url": "https://www.football-data.co.uk/new/JPN.csv",  "file_prefix": "jpnstat"},
 ]
 
@@ -136,6 +136,15 @@ def _download_mmz4281_season(source, start_year, current_year):
 def main():
     os.makedirs(RAW_DATA_DIR, exist_ok=True)
     current_year = datetime.now().year
+
+    # Legacy folder rename: Brazil/Serie A → Brazil/Brasileirão
+    for base_name in ("Raw_Data", "Processed_Data"):
+        legacy = os.path.join(BASE_DIR, "Data", base_name, "Brazil", "Serie A")
+        modern = os.path.join(BASE_DIR, "Data", base_name, "Brazil", "Brasileirão")
+        if os.path.isdir(legacy) and not os.path.isdir(modern):
+            os.makedirs(os.path.dirname(modern), exist_ok=True)
+            os.rename(legacy, modern)
+            print(f"Renamed legacy folder: {legacy} → {modern}")
 
     for source in SOURCES:
         country = source["country"]

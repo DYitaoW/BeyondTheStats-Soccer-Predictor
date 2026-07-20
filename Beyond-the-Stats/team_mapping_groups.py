@@ -16,6 +16,22 @@ CONCACAF_REGION_PREFIXES = (
     "Mexico/",
 )
 
+# Normalized-key aliases so ESPN short names match football-data canonicals.
+# Keys/values are post-stop-word strings (no spaces/punctuation).
+TEAM_KEY_ALIASES = {
+    # MLS — ESPN short forms vs football-data.co.uk USA.csv names
+    "lagalaxy": "losangelesgalaxy",
+    "losangelesgalaxy": "losangelesgalaxy",
+    # "Los Angeles FC" drops stop-word "fc" → losangeles; ESPN "LAFC" → lafc
+    "lafc": "losangeles",
+    "losangelesfc": "losangeles",
+    "rsl": "realsaltlake",
+    "intermiamicf": "intermiami",
+    "atlantautd": "atlanta",
+    "atlantaunited": "atlanta",
+    "atlantaunitedfc": "atlanta",
+}
+
 
 def normalize_team_key(name) -> str:
     if not name:
@@ -60,7 +76,8 @@ def normalize_team_key(name) -> str:
         "united",
     }
     parts = [p for p in parts if p not in stop_words]
-    return "".join(parts)
+    key = "".join(parts)
+    return TEAM_KEY_ALIASES.get(key, key)
 
 
 def competition_country(competition: str) -> str | None:
