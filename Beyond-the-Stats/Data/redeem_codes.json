@@ -1,27 +1,10 @@
 [
   {
     "code": "TEST1MO",
-    "value": "premium_1mo",
-    "message": "Temporary test code — 1 month premium",
-    "active": true
+    "value": true
   },
   {
     "code": "CREDITS50",
-    "value": "credits_50",
-    "message": "Temporary test code — 50 credits",
-    "active": true
-  },
-  {
-    "code": "EXPIREDDEMO",
-    "value": "premium_1mo",
-    "message": "Expired demo (should fail)",
-    "active": true,
-    "expires_at": "2020-01-01T00:00:00Z"
-  },
-  {
-    "code": "INACTIVEDEMO",
-    "value": "premium_1mo",
-    "message": "Inactive demo (should fail)",
-    "active": false
+    "value": true
   }
 ]

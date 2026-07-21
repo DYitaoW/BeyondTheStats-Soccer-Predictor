@@ -545,8 +545,8 @@ ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").spli
 
 # ── Redeem Codes ──────────────────────────────────────────────────
 # Absolute path: <Beyond-the-Stats>/Data/redeem_codes.json
-# (i.e. next to standings_cache.json / live_score_history.json).
-# See redeem_codes.example.json for the expected shape.
+# Format: [{"code": "CODEHERE", "value": true}, ...]
+# See redeem_codes.example.json.
 
 REDEEM_CODES_FILE = os.path.join(PROJECT_DIR, "Data", "redeem_codes.json")
 
