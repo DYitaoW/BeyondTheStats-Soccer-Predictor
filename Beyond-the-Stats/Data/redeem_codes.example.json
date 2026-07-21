@@ -1,0 +1,9 @@
+[
+  {
+    "code": "YOURCODEHERE",
+    "value": "premium_1mo",
+    "message": "Optional human-readable description",
+    "active": true,
+    "expires_at": "2027-12-31T23:59:59Z"
+  }
+]

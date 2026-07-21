@@ -1471,36 +1471,111 @@ def api_redeem():
     Body (JSON):
         code (str, required) — the promo code to redeem
 
-    Response:
-        ok (bool)
-        value (str) — the redeemed value (e.g. ``"premium_1mo"``, ``"credits_50"``)
-        message (str) — human-readable description
+    Response (success):
+        ok (bool) — always ``true`` on a valid redeem
+        value — reward payload from the code entry (string or object)
+        message (str) — human-readable description when provided
 
     Errors:
-        400 — missing code
-        404 — unknown/expired code
+        400 — missing / invalid code body
+        404 — unknown / inactive / expired code
+        ``ok`` is always a boolean (never the reward value).
     """
     payload = request.get_json(silent=True) or {}
+    # Also accept form / query for simple clients.
     raw = payload.get("code", "")
+    if raw in (None, "") and request.args.get("code"):
+        raw = request.args.get("code", "")
     if not isinstance(raw, str):
-        return jsonify({"ok": False})
-    code = raw.strip().upper()
+        return jsonify({"ok": False, "error": "code must be a string"}), 400
+    code = _normalize_redeem_code(raw)
     if not code or len(code) > 200:
-        return jsonify({"ok": False})
+        return jsonify({"ok": False, "error": "missing or invalid code"}), 400
 
-    codes = _load_json_payload(config.REDEEM_CODES_FILE)
-    if not isinstance(codes, list):
-        return jsonify({"ok": False})
+    entries = _load_redeem_code_entries()
+    if not entries:
+        return jsonify({
+            "ok": False,
+            "error": "redeem codes unavailable",
+            "detail": f"Expected JSON at {config.REDEEM_CODES_FILE}",
+        }), 404
 
-    for entry in codes:
-        if str(entry.get("code", "")).strip().upper() == code:
-            return jsonify({"ok": entry.get("value", False)})
+    now = datetime.now(timezone.utc)
+    matched = None
+    for entry in entries:
+        if _normalize_redeem_code(entry.get("code", "")) != code:
+            continue
+        matched = entry
+        break
 
-    return jsonify({"ok": False})
+    if matched is None:
+        return jsonify({"ok": False, "error": "unknown code"}), 404
+
+    if matched.get("active") is False:
+        return jsonify({"ok": False, "error": "code inactive"}), 404
+
+    expires_raw = matched.get("expires_at") or matched.get("expires")
+    if expires_raw:
+        try:
+            expires = datetime.fromisoformat(str(expires_raw).replace("Z", "+00:00"))
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if now > expires:
+                return jsonify({"ok": False, "error": "code expired"}), 404
+        except Exception:
+            pass
+
+    value = matched.get("value", matched.get("reward", True))
+    response = {
+        "ok": True,
+        "value": value,
+        "code": code,
+    }
+    message = matched.get("message") or matched.get("description")
+    if message:
+        response["message"] = str(message)
+    return jsonify(response)
 
 
-@app.get("/api/live-scores")
+def _normalize_redeem_code(raw) -> str:
+    """Uppercase + strip; ignore internal spaces/hyphens for matching."""
+    text = str(raw or "").strip().upper()
+    return "".join(ch for ch in text if ch.isalnum())
 
+
+def _load_redeem_code_entries() -> list[dict]:
+    """Load redeem codes from ``Data/redeem_codes.json``.
+
+    Accepted shapes:
+      1. List of objects:
+         ``[{"code": "TEST1MO", "value": "premium_1mo", "message": "..."}]``
+      2. Dict of code → value:
+         ``{"TEST1MO": "premium_1mo", "CREDITS50": "credits_50"}``
+      3. Wrapped dict:
+         ``{"codes": [ ... same as (1) ... ]}``
+    """
+    payload = _load_json_payload(config.REDEEM_CODES_FILE)
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [e for e in payload if isinstance(e, dict)]
+    if isinstance(payload, dict):
+        wrapped = payload.get("codes")
+        if isinstance(wrapped, list):
+            return [e for e in wrapped if isinstance(e, dict)]
+        # Flat map: {"CODE": "value"} or {"CODE": {"value": ...}}
+        entries = []
+        for key, val in payload.items():
+            if key in {"codes", "version", "updated_at"}:
+                continue
+            if isinstance(val, dict):
+                entry = dict(val)
+                entry.setdefault("code", key)
+                entries.append(entry)
+            else:
+                entries.append({"code": key, "value": val})
+        return entries
+    return []
 
 
 @app.get("/api/live-scores")

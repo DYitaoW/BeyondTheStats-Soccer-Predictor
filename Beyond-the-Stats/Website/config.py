@@ -544,6 +544,9 @@ APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "0").strip().lower() in {"
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
 # ── Redeem Codes ──────────────────────────────────────────────────
+# Absolute path: <Beyond-the-Stats>/Data/redeem_codes.json
+# (i.e. next to standings_cache.json / live_score_history.json).
+# See redeem_codes.example.json for the expected shape.
 
 REDEEM_CODES_FILE = os.path.join(PROJECT_DIR, "Data", "redeem_codes.json")
 
