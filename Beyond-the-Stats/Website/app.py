@@ -33,9 +33,16 @@ from accuracy_tracker import (
     _build_persistent_accuracy_stats,
     _compute_accuracy_stats,
     _compute_league_accuracy_stats,
+    _load_prediction_tracking,
     update_accuracy_history_files,
 )
-from espn_api import _fetch_competition_schedule, _fetch_competition_scores, _fetch_competition_teams, _fetch_team_info
+from espn_api import (
+    _fetch_competition_schedule,
+    _fetch_competition_scores,
+    _fetch_competition_teams,
+    _fetch_team_info,
+    _ROSTER_CACHE,
+)
 from knockout import (
     _append_projected_cup_matches,
     _build_cup_knockout_payload,
@@ -718,6 +725,138 @@ def api_teams():
     return jsonify({"teams": display_teams})
 
 
+def _resolve_team_api_payload(team_input: str, mode: str):
+    """Build the single-team API payload used by ``/api/team``."""
+    mode = (mode or "global").strip().lower()
+    if mode not in {"global", "mls", "extra"}:
+        mode = "global"
+
+    if mode == "mls":
+        pm_mod = pm_mls
+    elif mode == "extra":
+        pm_mod = pm_extra
+    else:
+        pm_mod = pm_global
+
+    head_to_head, current_form = _load_h2h_and_form(pm_mod)
+    form_teams = current_form.get("teams", {}) if isinstance(current_form, dict) else {}
+    h2h_root = head_to_head if isinstance(head_to_head, dict) else {}
+
+    team = _team_name_for_db(team_input)
+    team_lower = team.lower()
+
+    # Prefer exact DB key, then case-insensitive match in form / h2h maps.
+    form_key = team if team in form_teams else next(
+        (name for name in form_teams if str(name).strip().lower() == team_lower),
+        team,
+    )
+    h2h_key = team if team in h2h_root else next(
+        (name for name in h2h_root if str(name).strip().lower() == team_lower),
+        team,
+    )
+
+    team_form = _normalize_recent_form_payload(form_teams.get(form_key, {}))
+    recent_matches = _load_team_recent_matches(team, pm_mod.PROCESSED_DIR, 10)
+
+    all_h2h = {}
+    for opponent, payload in (h2h_root.get(h2h_key) or {}).items():
+        all_h2h[opponent] = _normalize_h2h_payload(payload)
+
+    upcoming = []
+    csv_path = config.UPCOMING_CSV_FILES.get(mode) or config.UPCOMING_CSV_FILES.get("global")
+    if csv_path and os.path.exists(csv_path):
+        try:
+            frame = pd.read_csv(csv_path, dtype=str)
+            for _, row in frame.iterrows():
+                home = str(row.get("home_team", "") or "").strip()
+                away = str(row.get("away_team", "") or "").strip()
+                if team_lower not in (home.lower(), away.lower()):
+                    continue
+                upcoming.append({
+                    "competition": str(row.get("competition", "") or "").strip(),
+                    "match_date": str(row.get("match_date", "") or "").strip(),
+                    "match_datetime_utc": _utc_to_et(str(row.get("match_datetime_utc", "") or "").strip()),
+                    "home_team": home,
+                    "away_team": away,
+                    "predicted_result": str(row.get("predicted_result", "") or "").strip(),
+                })
+        except Exception:
+            pass
+
+    team_pred_data = {}
+    tracking = _load_prediction_tracking()
+    pt = tracking.get("per_team", {}) if isinstance(tracking, dict) else {}
+    if isinstance(pt, dict):
+        if team in pt:
+            team_pred_data = pt[team]
+        else:
+            for tname, tdata in pt.items():
+                if str(tname).strip().lower() == team_lower:
+                    team_pred_data = tdata
+                    break
+
+    return {
+        "ok": True,
+        "team": team,
+        "display_team": _team_name_for_display(team),
+        "mode": mode,
+        "form": team_form,
+        "recent_matches": recent_matches,
+        "upcoming_games": upcoming,
+        "head_to_head": all_h2h,
+        "prediction_accuracy": team_pred_data,
+    }
+
+
+@app.get("/api/team")
+@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
+def api_team():
+    """Return form, recent results, upcoming games, and H2H for one team.
+
+    Query params:
+        team  -- team name (required)
+        mode  -- global / mls / extra (default: global)
+    """
+    team_input = request.args.get("team", "").strip()
+    mode = request.args.get("mode", "global").strip().lower()
+    if not team_input:
+        return jsonify({"ok": False, "error": "Missing team"}), 400
+    return jsonify(_resolve_team_api_payload(team_input, mode))
+
+
+@app.get("/api/team/<path:team_name>")
+@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
+def api_team_by_path(team_name):
+    """Path-style alias for ``/api/team?team=...`` (e.g. ``/api/team/Arsenal``)."""
+    mode = request.args.get("mode", "global").strip().lower()
+    team_input = str(team_name or "").strip()
+    if not team_input:
+        return jsonify({"ok": False, "error": "Missing team"}), 400
+    return jsonify(_resolve_team_api_payload(team_input, mode))
+
+
+@app.get("/api/teams/<team_id>/roster")
+def api_team_roster(team_id):
+    """Return full roster and season stats for a team by ESPN team ID.
+
+    Query params:
+        competition  -- required, e.g. ``England/Premier League``
+        refresh      -- if ``1``/``true``, bypass cache
+    """
+    comp = request.args.get("competition", "").strip()
+    if not comp:
+        return jsonify({"ok": False, "error": "Missing 'competition' query parameter"}), 400
+    if comp not in config.LIVE_SCORE_COMPETITIONS:
+        return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
+    espn_id = config.LIVE_SCORE_COMPETITIONS[comp]
+    if request.args.get("refresh", "").strip().lower() in ("1", "true"):
+        _ROSTER_CACHE.pop(f"roster_{comp}_{team_id}", None)
+    info = _fetch_team_info(comp, espn_id, team_id)
+    if info is None:
+        return jsonify({"ok": False, "error": f"Could not fetch roster for team {team_id}"}), 502
+    return jsonify({"ok": True, "team": info})
+
+
 @app.get("/api/legal")
 def api_legal_index():
     """List Privacy Policy, Terms of Service, and subscription disclosure endpoints."""
@@ -779,6 +918,9 @@ def api_help():
     """Return a listing of every /api/ route with a short description."""
     routes = [
         ("/api/teams", "GET", "List selectable teams for a given mode (?mode=global|mls|extra)"),
+        ("/api/team", "GET", "Single-team form, recent matches, upcoming, H2H (?team=&mode=)"),
+        ("/api/team/<team>", "GET", "Path-style single-team lookup (same payload as /api/team)"),
+        ("/api/teams/<team_id>/roster", "GET", "ESPN roster/stats for a team (?competition=)"),
         ("/api/legal", "GET", "List Privacy Policy, Terms of Service, and subscription disclosure endpoints"),
         ("/api/legal/privacy", "GET", "Full Privacy Policy text (JSON)"),
         ("/api/legal/terms", "GET", "Full Terms of Service text (JSON)"),
@@ -799,9 +941,9 @@ def api_help():
         ("/api/h2h", "GET", "Head-to-head stats between two teams (?home=&away=)"),
         ("/api/scorers", "GET", "Top scorers data"),
         ("/api/stats", "GET", "Aggregate prediction statistics"),
-        ("/api/predict", "POST", "Run global predictions (triggers pipeline)"),
-        ("/api/predict/mls", "POST", "Run MLS-only predictions"),
-        ("/api/predict/extra", "POST", "Run extra-league predictions"),
+        ("/api/predict", "POST", "Predict a single matchup (? JSON: home_team, away_team, mode)"),
+        ("/api/predict/mls", "POST", "Predict a single MLS matchup"),
+        ("/api/predict/extra", "POST", "Predict a single extra-league matchup"),
         ("/api/pipeline/status", "GET", "Pipeline health: step pass/fail + last refresh"),
         ("/api/pipeline/logs", "GET", "Pipeline terminal output (tail, WARN/ERROR filters)"),
         ("/api/refresh", "POST", "Trigger background pipeline refresh (light, no model retrain)"),
@@ -1463,9 +1605,6 @@ def api_predict():
         away_team (str, required)
         mode (str, optional) — "global" (default), "mls", or "extra"
     """
-    if not _mutation_authorized():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
     payload = request.get_json(silent=True) or request.form
     home_team = str(payload.get("home_team", "")).strip()
     away_team = str(payload.get("away_team", "")).strip()
@@ -1482,9 +1621,6 @@ def api_predict():
 @app.post("/api/predict/mls")
 def api_predict_mls():
     """Predict a single MLS matchup from user input."""
-    if not _mutation_authorized():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
     payload = request.get_json(silent=True) or request.form
     home_team = str(payload.get("home_team", "")).strip()
     away_team = str(payload.get("away_team", "")).strip()
@@ -1498,9 +1634,6 @@ def api_predict_mls():
 @app.post("/api/predict/extra")
 def api_predict_extra():
     """Predict a single extra-league matchup from user input."""
-    if not _mutation_authorized():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
     payload = request.get_json(silent=True) or request.form
     home_team = str(payload.get("home_team", "")).strip()
     away_team = str(payload.get("away_team", "")).strip()
@@ -1636,34 +1769,35 @@ def api_live_scores():
 
 
 @app.get("/api/h2h")
+@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
 def api_h2h():
     """Return head-to-head and form data for two teams."""
     team1_input = request.args.get("team1", "").strip()
     team2_input = request.args.get("team2", "").strip()
     mode = request.args.get("mode", "global").strip().lower()
-    
-    if config.STATIC_PREDICTIONS:
-        if mode == "mls":
-            pm_mod = pm_mls
-        elif mode == "extra":
-            pm_mod = pm_extra
-        else:
-            pm_mod = pm_global
-        head_to_head, current_form = _load_h2h_and_form(pm_mod)
-        ctx = type("StaticCtx", (), {"head_to_head": head_to_head, "current_form": current_form})
-    else:
-        ctx = get_context(mode)
-    
+
     if not team1_input or not team2_input:
         return jsonify({"ok": False, "error": "Missing teams"}), 400
+
+    if mode == "mls":
+        pm_mod = pm_mls
+    elif mode == "extra":
+        pm_mod = pm_extra
+    else:
+        pm_mod = pm_global
+
+    # Always load H2H/form JSON directly — never pull in the full ML model context.
+    head_to_head, current_form = _load_h2h_and_form(pm_mod)
+    form_teams = current_form.get("teams", {}) if isinstance(current_form, dict) else {}
+
     team1 = _team_name_for_db(team1_input)
     team2 = _team_name_for_db(team2_input)
-        
-    t1_form = _normalize_recent_form_payload(ctx.current_form.get("teams", {}).get(team1, {}))
-    t2_form = _normalize_recent_form_payload(ctx.current_form.get("teams", {}).get(team2, {}))
-    
-    h2h_data = _normalize_h2h_payload(ctx.head_to_head.get(team1, {}).get(team2))
-    h2h_data_reverse = _normalize_h2h_payload(ctx.head_to_head.get(team2, {}).get(team1))
+
+    t1_form = _normalize_recent_form_payload(form_teams.get(team1, {}))
+    t2_form = _normalize_recent_form_payload(form_teams.get(team2, {}))
+
+    h2h_data = _normalize_h2h_payload((head_to_head or {}).get(team1, {}).get(team2))
+    h2h_data_reverse = _normalize_h2h_payload((head_to_head or {}).get(team2, {}).get(team1))
     h2h_total_games = max(h2h_data.get("games", 0), h2h_data_reverse.get("games", 0))
 
     return jsonify({
