@@ -1475,11 +1475,14 @@ def api_redeem():
 
         [{"code": "CODEHERE", "value": true}]
 
+    Codes are case-sensitive and may contain letters and digits only
+    (no spaces or special characters).
+
     Response (success):
         ``{"ok": true, "value": <entry.value>}``
 
     Errors:
-        400 — missing / invalid code body
+        400 — missing / invalid code body (empty or non-alphanumeric)
         404 — unknown code or codes file missing
     """
     payload = request.get_json(silent=True) or {}
@@ -1489,7 +1492,13 @@ def api_redeem():
     if not isinstance(raw, str):
         return jsonify({"ok": False, "error": "code must be a string"}), 400
 
-    code = _normalize_redeem_code(raw)
+    code = _parse_redeem_code(raw)
+    if code is None:
+        return jsonify({
+            "ok": False,
+            "error": "missing or invalid code",
+            "detail": "code must be letters and digits only (case-sensitive)",
+        }), 400
     if not code or len(code) > 200:
         return jsonify({"ok": False, "error": "missing or invalid code"}), 400
 
@@ -1502,11 +1511,10 @@ def api_redeem():
         }), 404
 
     for entry in entries:
-        entry_code = _normalize_redeem_code(entry.get("code", ""))
+        entry_code = _parse_redeem_code(entry.get("code", ""))
         if not entry_code:
             continue
-        # Exact match after normalize (trim + casefold). Both sides use the
-        # same normalizer so "AbC" / " abc " / "ABC" all compare equal.
+        # Case-sensitive exact match (alphanumeric only on both sides).
         if entry_code == code:
             return jsonify({
                 "ok": True,
@@ -1516,16 +1524,23 @@ def api_redeem():
     return jsonify({"ok": False, "error": "unknown code"}), 404
 
 
-def _normalize_redeem_code(raw) -> str:
-    """Normalize a redeem code for comparison.
+def _parse_redeem_code(raw) -> str | None:
+    """Parse a redeem code for case-sensitive comparison.
 
-    - coerce to string
-    - strip leading/trailing whitespace
-    - collapse internal whitespace to a single space
-    - uppercase (case-insensitive match)
+    Rules:
+      - strip leading/trailing whitespace only
+      - allow letters (A–Z, a–z) and digits (0–9) only
+      - no spaces or special characters inside the code
+      - case is preserved (``AbC`` ≠ ``abc``)
+
+    Returns ``None`` when the code contains disallowed characters.
     """
-    text = str(raw or "").strip().upper()
-    return " ".join(text.split())
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if not text.isalnum():
+        return None
+    return text
 
 
 def _load_redeem_code_entries() -> list[dict]:
@@ -1545,8 +1560,11 @@ def _load_redeem_code_entries() -> list[dict]:
         code = item.get("code")
         if code is None or str(code).strip() == "":
             continue
+        parsed = _parse_redeem_code(code)
+        if not parsed:
+            continue
         entries.append({
-            "code": code,
+            "code": parsed,
             "value": item.get("value", True),
         })
     return entries
