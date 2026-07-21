@@ -15,6 +15,12 @@ import pandas as pd
 import Download_Latest_Data as download_latest
 import Predict_Match as pm
 
+# Beyond-the-Stats root (sibling of MLS/) for shared schedule helpers.
+_SP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _SP_DIR not in sys.path:
+    sys.path.insert(0, _SP_DIR)
+import projection_schedule as proj_sched  # noqa: E402
+
 
 class AveragedProbaClassifier:
     # Compatibility shim so old model_cache.pkl entries serialized from __main__
@@ -1106,17 +1112,8 @@ def project_liga_mx_competition(ctx, competition, raw_file):
 
     n_teams, n_played = _peek_counts()
     now = datetime.now()
-    is_current_season = csv_start_year is not None and csv_start_year == expected_year
-    prior_finished = (
-        csv_start_year is not None
-        and expected_year is not None
-        and csv_start_year < expected_year
-        and n_played >= 30
-        and now.month in (7, 8)
-    )
-    use_path_a = is_current_season or (
-        not prior_finished and (n_teams >= 18 or n_played >= 20 or ((now.month >= 9 or now.month <= 5) and n_teams >= 16))
-    )
+    is_current_season = proj_sched.prefer_current_season_csv(csv_start_year, expected_year)
+    use_path_a = is_current_season
 
     if use_path_a:
         # ── PATH A: Current-season CSV exists ──────────────────────────
@@ -1173,34 +1170,21 @@ def project_liga_mx_competition(ctx, competition, raw_file):
             return [], [], None
         print(
             f"  No current-season CSV (26-27 preseason) — "
-            f"Liga MX PATH B ({len(teams)} teams, 0 played)"
+            f"Liga MX PATH B ({len(teams)} teams, "
+            f"~{proj_sched.expected_games_per_team(competition, len(teams))} games/team active tournament)"
         )
-        espn_future = load_future_fixtures_from_espn(competition)
+        # Active short tournament = single round-robin (17 games for 18 clubs),
+        # not ESPN upcoming + full-year double RR.
         rows = []
         seen_ordered = set()
-        if not espn_future.empty:
-            for _, r in espn_future.iterrows():
-                home = pm.resolve_team_name(str(r.get("HomeTeam", "")).strip(), ctx["available_teams"])
-                away = pm.resolve_team_name(str(r.get("AwayTeam", "")).strip(), ctx["available_teams"])
-                if not home or not away or home not in teams or away not in teams:
-                    continue
-                rows.append({
-                    "Date": str(r.get("Date", "")),
-                    "HomeTeam": home,
-                    "AwayTeam": away,
-                    "FTHG": None, "FTAG": None, "FTR": "",
-                })
-                seen_ordered.add((home, away))
-        # Full-season home-and-away schedule (Apertura + Clausura ≈ 34 games/team)
-        for home in teams:
-            for away in teams:
-                if home == away or (home, away) in seen_ordered:
-                    continue
-                seen_ordered.add((home, away))
-                rows.append({
-                    "Date": "", "HomeTeam": home, "AwayTeam": away,
-                    "FTHG": None, "FTAG": None, "FTR": "",
-                })
+        for home, away in proj_sched.build_fixtures_for_competition(competition, teams):
+            if (home, away) in seen_ordered:
+                continue
+            seen_ordered.add((home, away))
+            rows.append({
+                "Date": "", "HomeTeam": home, "AwayTeam": away,
+                "FTHG": None, "FTAG": None, "FTR": "",
+            })
         df = pd.DataFrame(rows)
         df["DateParsed"] = pd.to_datetime(df["Date"], errors="coerce")
 

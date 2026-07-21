@@ -1358,12 +1358,21 @@ def competition_format_spec(comp_name: str) -> dict:
 
     if layout == STANDINGS_LAYOUT_SINGLE:
         spec["notes"].append("Single round-robin table ranked by points, then tiebreakers.")
+        spec["extensions"]["regular_season_meetings_per_pair"] = 2
+        spec["notes"].append(
+            "Regular season: each club plays every other club home and away "
+            "((n-1)*2 games; e.g. 38 for a 20-team league)."
+        )
     elif layout == STANDINGS_LAYOUT_MLS:
         spec["notes"].append(
             "Supporters Shield overall table plus separate Eastern and Western conference tables."
         )
         spec["extensions"]["playoff_format"] = "mls_cup"
         spec["extensions"]["conferences"] = ["Eastern Conference", "Western Conference"]
+        spec["extensions"]["regular_season_matches"] = 34
+        spec["notes"].append(
+            "MLS regular season is conference-aware (~34 games), not a full league double round-robin."
+        )
     elif layout == STANDINGS_LAYOUT_LIGA_MX:
         active = active_liga_mx_tournament_label()
         spec["extensions"]["active_tournament"] = active
@@ -1387,8 +1396,14 @@ def competition_format_spec(comp_name: str) -> dict:
         spec["notes"].append(
             "Regular season then championship / Europe / relegation playoff groups after 30 matches."
         )
+        spec["extensions"]["regular_season_meetings_per_pair"] = 2
     elif layout == STANDINGS_LAYOUT_SCOTTISH:
         spec["notes"].append("Single table until 33 matches, then top-six / bottom-six split groups.")
+        spec["extensions"]["regular_season_meetings_per_pair"] = 3
+        spec["extensions"]["regular_season_matches_before_split"] = 33
+        spec["notes"].append(
+            "First phase: each club meets every other club three times (33 games for 12 clubs)."
+        )
     elif layout == STANDINGS_LAYOUT_LEAGUE_PHASE:
         spec["notes"].append("Single league-phase table; top sides advance to two-legged knockout rounds.")
         spec["extensions"]["knockout"] = True

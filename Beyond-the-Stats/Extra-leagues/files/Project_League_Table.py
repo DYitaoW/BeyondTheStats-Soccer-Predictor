@@ -22,6 +22,7 @@ _SP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file
 if _SP_DIR not in sys.path:
     sys.path.insert(0, _SP_DIR)
 import season_calendar
+import projection_schedule as proj_sched
 
 
 class AveragedProbaClassifier:
@@ -56,6 +57,7 @@ ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{esp
 EASTERN_TZ = ZoneInfo("America/New_York")
 SHARED_MAPPING_FILE = os.path.join(BASE_DIR, "..", "..", "Data", "team_name_mapping_master.json")
 LEAGUE_TEAMS_FILE = os.path.join(BASE_DIR, "..", "Data", "Predictions", "league_teams.json")
+CURRENT_SEASON_TEAMS_FILE = os.path.join(BASE_DIR, "..", "Data", "Predictions", "current_season_teams.json")
 
 
 def _sibling_competitions(competition, mapping):
@@ -130,23 +132,32 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
         print(f"  Mapping: auto-added {added} entry/ies to {SHARED_MAPPING_FILE}")
 
 
-def _load_upcoming_roster(competition):
-    """Load team roster for the upcoming season from league_teams.json.
-
-    Returns a sorted list of team names, or None if the competition is
-    not found in the roster file.
-    """
-    if not os.path.exists(LEAGUE_TEAMS_FILE):
+def _load_roster_from_json(path, competition):
+    """Return sorted team names for *competition* from a roster JSON, or None."""
+    if not path or not os.path.exists(path):
         return None
     try:
-        with open(LEAGUE_TEAMS_FILE, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        if not isinstance(data, dict):
+            return None
         roster = data.get(competition)
         if isinstance(roster, list) and len(roster) > 1:
-            return sorted(set(r.strip() for r in roster if r and r.strip()))
+            return sorted({str(r).strip() for r in roster if str(r).strip()})
     except Exception:
         pass
     return None
+
+
+def _load_current_season_roster(competition):
+    return _load_roster_from_json(CURRENT_SEASON_TEAMS_FILE, competition)
+
+
+def _load_upcoming_roster(competition):
+    """Prefer ``current_season_teams.json`` over historical ``league_teams.json``."""
+    return _load_current_season_roster(competition) or _load_roster_from_json(
+        LEAGUE_TEAMS_FILE, competition
+    )
 
 
 EXTRA_ESPN_COMPETITIONS = {
@@ -504,14 +515,7 @@ def clone_table(table):
 
 
 # Leagues where the first tiebreaker is head-to-head (points > GD > GF) then overall GD > GF > name.
-H2H_LEAGUES = {
-    "Spain/La Liga", "Spain/La Liga 2",
-    "Italy/Serie A", "Italy/Serie B",
-    "Portugal/Liga Portugal",
-    "Belgium/First Division A",
-    "Turkey/Super Lig",
-    "Mexico/Liga MX",
-}
+H2H_LEAGUES = set(proj_sched.H2H_TIEBREAKER_COMPETITIONS)
 
 
 def _compute_h2h_scores(tied_teams, all_matches):
@@ -701,25 +705,8 @@ def _peek_csv_team_and_played_counts(raw_file):
 
 
 def _prefer_csv_path_a(competition, raw_file, csv_start_year, expected_year):
-    """Prefer CSV + home/away (PATH A) once a full roster / midseason sample exists."""
-    if csv_start_year is not None and expected_year is not None and csv_start_year == expected_year:
-        return True
-    n_teams, n_played = _peek_csv_team_and_played_counts(raw_file)
-    now = datetime.now()
-    prior_finished = (
-        csv_start_year is not None
-        and expected_year is not None
-        and csv_start_year < expected_year
-        and n_played >= 30
-        and now.month in (7, 8)
-    )
-    if prior_finished:
-        return False
-    if n_teams >= 18 or n_played >= 20:
-        return True
-    if (now.month >= 9 or now.month <= 5) and n_teams >= 16:
-        return True
-    return False
+    """True only when the CSV is the expected current season (PATH A)."""
+    return proj_sched.prefer_current_season_csv(csv_start_year, expected_year)
 
 
 def _fetch_espn_teams(competition):
@@ -773,21 +760,21 @@ def project_competition(ctx, competition, raw_file):
         raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
         teams = sorted({r for t in raw_teams if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
     else:
-        # ── PATH B: No current-season CSV — ESPN/roster, zero played ──
+        # ── PATH B: No current-season CSV — roster then format-aware slate ──
         sim_runs = min(sim_runs, PATH_B_SIMULATION_RUNS)
         teams = None
-        espn_teams = _fetch_espn_teams(competition) or []
-        if espn_teams:
+
+        def _resolve_roster(raw_names, label):
             resolved = set()
             unresolved = []
-            for t in espn_teams:
+            for t in raw_names:
                 r = pm.resolve_team_name(t, ctx["available_teams"])
                 if r:
                     resolved.add(r)
                 else:
                     unresolved.append(t)
             if unresolved:
-                print(f"  Unresolved ESPN teams in {competition}: {sorted(set(unresolved))}")
+                print(f"  Unresolved {label} teams in {competition}: {sorted(set(unresolved))}")
                 _append_mapping_if_missing(
                     competition, unresolved, ctx["available_teams"], _load_upcoming_roster(competition)
                 )
@@ -795,47 +782,43 @@ def project_competition(ctx, competition, raw_file):
                     r = pm.resolve_team_name(t, ctx["available_teams"])
                     if r:
                         resolved.add(r)
-            teams = sorted(resolved) if resolved else None
+            return sorted(resolved) if resolved else None
+
+        current_roster = _load_current_season_roster(competition)
+        if current_roster:
+            teams = _resolve_roster(current_roster, "current_season")
+            if teams:
+                print(f"  PATH B roster from current_season_teams.json ({len(teams)} teams)")
+
         if not teams:
-            static_roster = _load_upcoming_roster(competition) or []
-            resolved_roster = []
-            unresolved_roster = []
-            for t in static_roster:
-                r = pm.resolve_team_name(t, ctx["available_teams"])
-                if r:
-                    resolved_roster.append(r)
-                else:
-                    unresolved_roster.append(t)
-            if unresolved_roster:
-                _append_mapping_if_missing(
-                    competition, unresolved_roster, ctx["available_teams"], static_roster
-                )
-                for t in unresolved_roster:
-                    r = pm.resolve_team_name(t, ctx["available_teams"])
-                    if r:
-                        resolved_roster.append(r)
-            teams = sorted(set(resolved_roster))
+            espn_teams = _fetch_espn_teams(competition) or []
+            if espn_teams:
+                teams = _resolve_roster(espn_teams, "ESPN")
+
+        if not teams:
+            static_roster = _load_roster_from_json(LEAGUE_TEAMS_FILE, competition) or []
+            teams = _resolve_roster(static_roster, "league_teams")
             if not teams:
                 print(f"  No current-season file and no resolved ESPN/roster for {competition}")
                 return [], []
 
         print(
             f"  No current-season CSV (PATH B) — "
-            f"{len(teams)} resolved teams, {sim_runs} sims (skip long ESPN crawl)"
+            f"{len(teams)} resolved teams, {sim_runs} sims, "
+            f"~{proj_sched.expected_games_per_team(competition, len(teams))} games/team"
         )
 
-        # PATH B: skip multi-month ESPN scoreboard crawl; synthesize full H2H slate.
+        # PATH B: synthesize format-aware slate (default home/away double RR).
         rows = []
         seen = set()
-        for home in teams:
-            for away in teams:
-                if home == away or (home, away) in seen:
-                    continue
-                seen.add((home, away))
-                rows.append({
-                    "Date": "", "HomeTeam": home, "AwayTeam": away,
-                    "FTHG": None, "FTAG": None, "FTR": "",
-                })
+        for home, away in proj_sched.build_fixtures_for_competition(competition, teams):
+            if (home, away) in seen:
+                continue
+            seen.add((home, away))
+            rows.append({
+                "Date": "", "HomeTeam": home, "AwayTeam": away,
+                "FTHG": None, "FTAG": None, "FTR": "",
+            })
         df = pd.DataFrame(rows)
         df["DateParsed"] = pd.to_datetime(df["Date"], errors="coerce")
 
@@ -886,7 +869,7 @@ def project_competition(ctx, competition, raw_file):
         is_played = ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag)
 
         # PATH B (no current-season CSV): never treat rows as already played.
-        if is_played and is_current_season:
+        if is_played and use_path_a:
             apply_result(table, home, away, int(hg), int(ag), is_real=True)
             real_matches.append((home, away, int(hg), int(ag)))
             continue
@@ -898,16 +881,14 @@ def project_competition(ctx, competition, raw_file):
         )
 
     # Fill remaining synthetic pairs for any teams not yet connected
-    for home in teams:
-        resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
-        for away in teams:
-            if home == away:
-                continue
-            resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
-            if (resolved_home, resolved_away) in seen_pairs:
-                continue
-            seen_pairs.add((resolved_home, resolved_away))
-            add_future_prediction(resolved_home, resolved_away, "")
+    missing_pairs: list[tuple[str, str]] = []
+    added = proj_sched.fill_missing_fixtures(
+        competition, teams, seen_pairs, missing_pairs, None
+    )
+    for home, away in missing_pairs:
+        add_future_prediction(home, away, "")
+    if added:
+        print(f"  Generated {added} remaining format-aware fixture(s)")
 
     stat_sums, position_counts = run_monte_carlo(teams, table, future_predictions, sim_runs, competition=competition, all_matches=real_matches)
     averaged = {}
