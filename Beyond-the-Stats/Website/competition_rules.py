@@ -387,6 +387,15 @@ def canonical_team_name(name: str, competition: str = "") -> str:
     text = str(name or "").strip()
     if not text:
         return ""
+    base_comp, _view = resolve_competition_query(competition)
+    # Leagues Cup / MLS: never let Serie A "Inter" win over Inter Miami.
+    if base_comp in {"CONCACAF/Leagues Cup", "United States/MLS"} or str(base_comp).startswith("United States/MLS"):
+        lower = text.lower()
+        if lower in {"inter", "miami", "inter miami", "inter miami cf", "intermiamicf", "intermiami"}:
+            return "Inter Miami"
+        mapped = _load_mls_canonical_names().get(normalize_team_key(text))
+        if mapped:
+            return mapped
     if competition == "United States/MLS" or competition.startswith("United States/MLS"):
         mapped = _load_mls_canonical_names().get(normalize_team_key(text))
         if mapped:
@@ -398,12 +407,21 @@ def canonical_team_name(name: str, competition: str = "") -> str:
         try:
             with open(path, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
-            base_comp, _view = resolve_competition_query(competition)
-            comp_map = payload.get(base_comp) or payload.get(competition) or {}
-            if isinstance(comp_map, dict):
-                lower = text.lower()
-                lower_and = lower.replace(" & ", " and ").replace("&", " and ")
-                key = normalize_team_key(text)
+            # Prefer the competition map, then sibling MLS/Liga MX maps for Leagues Cup.
+            maps_to_try: list[dict] = []
+            for key in (base_comp, competition):
+                comp_map = payload.get(key) if key else None
+                if isinstance(comp_map, dict) and comp_map not in maps_to_try:
+                    maps_to_try.append(comp_map)
+            if base_comp == "CONCACAF/Leagues Cup":
+                for sibling in ("United States/MLS", config.LIGA_MX_COMPETITION):
+                    sibling_map = payload.get(sibling)
+                    if isinstance(sibling_map, dict) and sibling_map not in maps_to_try:
+                        maps_to_try.append(sibling_map)
+            lower = text.lower()
+            lower_and = lower.replace(" & ", " and ").replace("&", " and ")
+            key = normalize_team_key(text)
+            for comp_map in maps_to_try:
                 key_to_canons: dict[str, set[str]] = {}
                 for raw_name, canonical in comp_map.items():
                     raw = str(raw_name or "").strip()
@@ -1000,6 +1018,15 @@ def classify_match_stage(game: dict, comp_name: str, team_to_group: dict[str, st
     if fmt and fmt.get("format") == "knockout":
         return "knockout"
 
+    if fmt and fmt.get("format") == "dual_league_phase_then_knockout":
+        # Phase One (MLS↔Liga MX) vs knockout rounds (QF+).
+        if KNOCKOUT_ROUND_RE.search(round_lower) or "third place" in round_lower:
+            return "knockout"
+        if "phase one" in round_lower or "phase 1" in round_lower:
+            return "group"
+        # Default unfinished / unlabeled matches to Phase One.
+        return "group"
+
     if fmt and fmt.get("format") == "group_stage_then_knockout":
         lookup = team_to_group or {}
         home = str(game.get("home_team", "")).strip()
@@ -1144,6 +1171,11 @@ STANDINGS_LAYOUT_SCOTTISH = "scottish_split"
 STANDINGS_LAYOUT_LEAGUE_PHASE = "league_phase"
 STANDINGS_LAYOUT_CUP_GROUPS = "cup_groups"
 STANDINGS_LAYOUT_LIGA_MX = "liga_mx_tournament"
+STANDINGS_LAYOUT_LEAGUES_CUP = "leagues_cup_dual"
+
+LEAGUES_CUP_COMPETITION = "CONCACAF/Leagues Cup"
+LEAGUES_CUP_TABLE_MLS = "MLS"
+LEAGUES_CUP_TABLE_LIGA_MX = "Liga MX"
 
 # Leagues that rank tied teams by head-to-head record before goal difference.
 H2H_TIEBREAKER_COMPETITIONS = frozenset({
@@ -1165,6 +1197,8 @@ def standings_layout_for(comp_name: str) -> str:
         return STANDINGS_LAYOUT_LIGA_MX
     if base_comp == "United States/MLS" or mls_view:
         return STANDINGS_LAYOUT_MLS
+    if base_comp == LEAGUES_CUP_COMPETITION:
+        return STANDINGS_LAYOUT_LEAGUES_CUP
     if "belgium" in base_comp.lower():
         return STANDINGS_LAYOUT_BELGIAN
     if "scotland" in base_comp.lower() or "scottish" in base_comp.lower():
@@ -1172,11 +1206,72 @@ def standings_layout_for(comp_name: str) -> str:
     if base_comp in _UEFA_COMPETITIONS:
         return STANDINGS_LAYOUT_LEAGUE_PHASE
     fmt = cup_format(base_comp)
+    if fmt and fmt.get("format") == "dual_league_phase_then_knockout":
+        return STANDINGS_LAYOUT_LEAGUES_CUP
     if fmt and fmt.get("format") == "league_phase_then_knockout":
         return STANDINGS_LAYOUT_LEAGUE_PHASE
     if fmt and fmt.get("format") == "group_stage_then_knockout":
         return STANDINGS_LAYOUT_CUP_GROUPS
     return STANDINGS_LAYOUT_SINGLE
+
+
+def _liga_mx_roster_keys() -> set[str]:
+    """Normalized keys for Liga MX clubs (league_teams + mapping canons)."""
+    keys: set[str] = set()
+    try:
+        path = config.LEAGUE_TEAMS_FILE
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            for team in data.get(config.LIGA_MX_COMPETITION) or []:
+                k = normalize_team_key(team)
+                if k:
+                    keys.add(k)
+    except Exception:
+        pass
+    try:
+        path = config.TEAM_NAME_DISPLAY_MAPPING_FILE
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            for raw, canon in (payload.get(config.LIGA_MX_COMPETITION) or {}).items():
+                for candidate in (raw, canon):
+                    k = normalize_team_key(candidate)
+                    if k:
+                        keys.add(k)
+    except Exception:
+        pass
+    return keys
+
+
+def leagues_cup_table_side(team_name: str) -> str | None:
+    """Return ``MLS`` or ``Liga MX`` for a Leagues Cup club, else None."""
+    text = str(team_name or "").strip()
+    if not text:
+        return None
+    # Explicit Inter Miami short-name guard before Serie A "Inter" collisions.
+    lower = text.lower()
+    if lower in {"inter", "miami", "inter miami", "inter miami cf"}:
+        return LEAGUES_CUP_TABLE_MLS
+    if mls_conference(text):
+        return LEAGUES_CUP_TABLE_MLS
+    mls_canon = canonical_team_name(text, "United States/MLS") or text
+    key = normalize_team_key(mls_canon)
+    for team in list(MLS_EASTERN_CONFERENCE_TEAMS) + list(MLS_WESTERN_CONFERENCE_TEAMS):
+        tk = normalize_team_key(team)
+        if not tk or not key:
+            continue
+        if key == tk or (len(key) >= 6 and (key in tk or tk in key)):
+            return LEAGUES_CUP_TABLE_MLS
+    liga_canon = canonical_team_name(text, config.LIGA_MX_COMPETITION) or text
+    liga_key = normalize_team_key(liga_canon)
+    liga_keys = _liga_mx_roster_keys()
+    if liga_key and liga_key in liga_keys:
+        return LEAGUES_CUP_TABLE_LIGA_MX
+    # Fallback: mapped Liga MX display names often omit accents.
+    if liga_key and any(liga_key == k or liga_key in k or k in liga_key for k in liga_keys if len(k) >= 4):
+        return LEAGUES_CUP_TABLE_LIGA_MX
+    return None
 
 
 def uses_h2h_tiebreaker(comp_name: str) -> bool:
@@ -1276,6 +1371,19 @@ def competition_format_spec(comp_name: str) -> dict:
     elif layout == STANDINGS_LAYOUT_CUP_GROUPS:
         spec["notes"].append("Group-stage tables with knockout rounds for advancing teams.")
         spec["extensions"]["knockout"] = True
+    elif layout == STANDINGS_LAYOUT_LEAGUES_CUP:
+        spec["notes"].append(
+            "Separate MLS and Liga MX Phase One tables. Every Phase One match is "
+            "MLS vs Liga MX — clubs do not play within their own table."
+        )
+        spec["notes"].append(
+            "No-draw points: 3 for a regulation win, 2 for a shootout win, 1 for a shootout loss."
+        )
+        spec["extensions"]["league_tables"] = [LEAGUES_CUP_TABLE_MLS, LEAGUES_CUP_TABLE_LIGA_MX]
+        spec["extensions"]["advance_per_table"] = 4
+        spec["extensions"]["phase_one_matches"] = 3
+        spec["extensions"]["knockout"] = True
+        spec["extensions"]["no_draws"] = True
 
     if cup_fmt:
         spec["format"] = cup_fmt.get("format")
@@ -1303,6 +1411,8 @@ def expected_standings_group_names(comp_name: str) -> list[str] | None:
         return ["Supporters Shield", "Eastern Conference", "Western Conference"]
     if layout == STANDINGS_LAYOUT_LEAGUE_PHASE:
         return ["League Phase"]
+    if layout == STANDINGS_LAYOUT_LEAGUES_CUP:
+        return [LEAGUES_CUP_TABLE_MLS, LEAGUES_CUP_TABLE_LIGA_MX]
     if layout == STANDINGS_LAYOUT_BELGIAN:
         return None
     if layout == STANDINGS_LAYOUT_SCOTTISH:
@@ -1454,6 +1564,14 @@ def build_structured_standings_groups(comp_name: str, teams: list[str]) -> list[
 
     if layout == STANDINGS_LAYOUT_LEAGUE_PHASE:
         return [{"name": "League Phase", "entries": _entries_from_teams(team_list)}]
+
+    if layout == STANDINGS_LAYOUT_LEAGUES_CUP:
+        mls_teams = [t for t in team_list if leagues_cup_table_side(t) == LEAGUES_CUP_TABLE_MLS]
+        liga_teams = [t for t in team_list if leagues_cup_table_side(t) == LEAGUES_CUP_TABLE_LIGA_MX]
+        return [
+            {"name": LEAGUES_CUP_TABLE_MLS, "entries": _entries_from_teams(mls_teams)},
+            {"name": LEAGUES_CUP_TABLE_LIGA_MX, "entries": _entries_from_teams(liga_teams)},
+        ]
 
     if base_comp == "FIFA/World Cup":
         fmt = cup_format(base_comp)

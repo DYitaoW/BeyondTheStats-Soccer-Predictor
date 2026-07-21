@@ -93,7 +93,7 @@ const cupProjectionConfigs = [
 { key: "uecl", label: "Conference League", competition: "UEFA/Conference League", aliases: ["UEFA/Conference League", "Europe/Conference League"], hasTable: true, leaguePhaseMatches: 6 },
 { key: "fa-cup", label: "FA Cup", competition: "England/FA Cup", aliases: ["England/FA Cup"], hasTable: false, leaguePhaseMatches: null },
 { key: "league-cup", label: "League Cup", competition: "England/League Cup", aliases: ["England/League Cup"], hasTable: false, leaguePhaseMatches: null },
-{ key: "leagues-cup", label: "Leagues Cup", competition: "CONCACAF/Leagues Cup", aliases: ["CONCACAF/Leagues Cup"], hasTable: true, leaguePhaseMatches: 3 },
+{ key: "leagues-cup", label: "Leagues Cup", competition: "CONCACAF/Leagues Cup", aliases: ["CONCACAF/Leagues Cup"], hasTable: true, leaguePhaseMatches: 3, dualTables: true, advanceNote: "Top 4 MLS + Top 4 Liga MX → Quarter-finals" },
 { key: "dfb-pokal", label: "DFB-Pokal", competition: "Germany/DFB-Pokal", aliases: ["Germany/DFB-Pokal"], hasTable: false, leaguePhaseMatches: null },
 { key: "coppa-italia", label: "Coppa Italia", competition: "Italy/Coppa Italia", aliases: ["Italy/Coppa Italia"], hasTable: false, leaguePhaseMatches: null },
 { key: "copa-del-rey", label: "Copa del Rey", competition: "Spain/Copa del Rey", aliases: ["Spain/Copa del Rey"], hasTable: false, leaguePhaseMatches: null },
@@ -947,8 +947,21 @@ const rows = payload && payload.tables ? (payload.tables[competition] || []) : [
 const phaseMatches = config.leaguePhaseMatches || 8;
 if (!rows.length) {
     cupTableView.innerHTML = `
-    <h3>${escapeHtml(config.label)} League Phase Table</h3>
+    <h3>${escapeHtml(config.label)} ${config.dualTables ? "Phase One Tables" : "League Phase Table"}</h3>
     <p>No league-phase table data available yet. Run cup predictions and Track_Cup_Results.py to populate this table.</p>
+    `;
+    return;
+}
+if (config.dualTables) {
+    cupTableView.innerHTML = `
+    <h3>${escapeHtml(config.label)} Phase One</h3>
+    <p class="note">Each club plays ${phaseMatches} MLS↔Liga MX matches. Separate MLS and Liga MX tables — clubs do not play within their own table. Points: 3 regulation win, 2 shootout win, 1 shootout loss. ${escapeHtml(config.advanceNote || "Top 4 from each table advance to Quarter-finals.")}</p>
+    <div class="stats-row">
+    <span class="stat-chip">MLS table</span>
+    <span class="stat-chip">Liga MX table</span>
+    <span class="stat-chip">QF → SF → 3rd & Final</span>
+    </div>
+    ${renderLeagueTableRows(rows, competition)}
     `;
     return;
 }

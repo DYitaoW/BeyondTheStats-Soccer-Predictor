@@ -119,6 +119,26 @@ def _build_knockout_framework(comp_name):
              ]},
             {"name": "MLS Cup", "order": 4, "matches_count": 1},
         ],
+        "CONCACAF/Leagues Cup": [
+            {"name": "Quarter-finals", "order": 1, "matches_count": 4,
+             "matchups": [
+                 {"slot": 1, "label": "MLS 1 vs Liga MX 4",
+                  "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 2, "label": "MLS 2 vs Liga MX 3",
+                  "feeds_to": {"round": "Semi-finals", "slot": 1}},
+                 {"slot": 3, "label": "MLS 3 vs Liga MX 2",
+                  "feeds_to": {"round": "Semi-finals", "slot": 2}},
+                 {"slot": 4, "label": "MLS 4 vs Liga MX 1",
+                  "feeds_to": {"round": "Semi-finals", "slot": 2}},
+             ]},
+            {"name": "Semi-finals", "order": 2, "matches_count": 2,
+             "matchups": [
+                 {"slot": 1, "feeds_to": {"round": "Final", "slot": 1}},
+                 {"slot": 2, "feeds_to": {"round": "Final", "slot": 1}},
+             ]},
+            {"name": "Third Place", "order": 3, "matches_count": 1},
+            {"name": "Final", "order": 4, "matches_count": 1},
+        ],
     }
 
     def _domestic_cup_framework(stages, two_leg_rounds=None):
@@ -139,7 +159,7 @@ def _build_knockout_framework(comp_name):
     frameworks = {}
     for c in ("UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
               "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
-              "FIFA/World Cup"):
+              "FIFA/World Cup", "CONCACAF/Leagues Cup"):
         if c in uefa_rounds:
             frameworks[c] = uefa_rounds[c]
         elif c.startswith("Europe/"):
@@ -147,7 +167,8 @@ def _build_knockout_framework(comp_name):
             if uefa_key in uefa_rounds:
                 frameworks[c] = uefa_rounds[uefa_key]
     for c, fmt in config._CUP_FORMATS.items():
-        stages = fmt.get("stages") or []
+        # Prefer knockout_rounds so Phase One / group stages are not treated as KO.
+        stages = fmt.get("knockout_rounds") or fmt.get("stages") or []
         if stages and c not in frameworks:
             frameworks[c] = _domestic_cup_framework(stages, fmt.get("two_leg_rounds"))
 
