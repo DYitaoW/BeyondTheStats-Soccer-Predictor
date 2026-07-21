@@ -960,7 +960,7 @@ def api_help():
         ("/api/live-activities/unregister", "POST", "Remove a Live Activity registration"),
         ("/api/live-activities/update", "POST", "Push a content-state update to Live Activities for a match"),
         ("/api/live-activities/end", "POST", "End/dismiss Live Activities for a match"),
-        ("/api/redeem", "POST", "Redeem a promo code"),
+        ("/api/redeem", "GET/POST", "Redeem a promo code (?code= or JSON body)"),
         ("/api/info/changes", "GET", "App changes changelog entries"),
         ("/api/info/roadmap", "GET", "App planned features/roadmap"),
         ("/api/info/upcoming", "GET", "App upcoming features"),
@@ -1644,11 +1644,11 @@ def api_predict_extra():
     return jsonify({"ok": True, "prediction": result})
 
 
-@app.post("/api/redeem")
+@app.route("/api/redeem", methods=["GET", "POST"])
 def api_redeem():
     """Redeem a promo code.
 
-    Body (JSON):
+    Body (JSON) or query param:
         code (str, required) — the promo code to redeem
 
     File format (``Data/redeem_codes.json``)::
@@ -1661,9 +1661,12 @@ def api_redeem():
     Response (success):
         ``{"ok": true, "value": <entry.value>}``
 
+    Response (unknown code):
+        ``{"ok": false, "error": "unknown code"}`` with HTTP 200
+
     Errors:
         400 — missing / invalid code body (empty or non-alphanumeric)
-        404 — unknown code or codes file missing
+        503 — codes file missing or unreadable on the server
     """
     payload = request.get_json(silent=True) or {}
     raw = payload.get("code", "")
@@ -1688,7 +1691,7 @@ def api_redeem():
             "ok": False,
             "error": "redeem codes unavailable",
             "detail": f"Expected JSON list at {config.REDEEM_CODES_FILE}",
-        }), 404
+        }), 503
 
     for entry in entries:
         entry_code = _parse_redeem_code(entry.get("code", ""))
@@ -1701,7 +1704,7 @@ def api_redeem():
                 "value": entry.get("value", True),
             })
 
-    return jsonify({"ok": False, "error": "unknown code"}), 404
+    return jsonify({"ok": False, "error": "unknown code"})
 
 
 def _parse_redeem_code(raw) -> str | None:
@@ -1730,7 +1733,12 @@ def _load_redeem_code_entries() -> list[dict]:
 
         [{"code": "CODEHERE", "value": true}, ...]
     """
-    payload = _load_json_payload(config.REDEEM_CODES_FILE)
+    path = config.REDEEM_CODES_FILE
+    payload = _load_json_payload(path)
+    if not isinstance(payload, list):
+        example_path = os.path.join(config.PROJECT_DIR, "Data", "redeem_codes.example.json")
+        if path != example_path and os.path.isfile(example_path):
+            payload = _load_json_payload(example_path)
     if not isinstance(payload, list):
         return []
     entries = []

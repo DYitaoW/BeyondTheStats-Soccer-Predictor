@@ -61,6 +61,8 @@ ENDPOINTS = [
     ("POST", "/api/refresh", "Trigger refresh (POST)"),
     ("POST", "/api/notifications", "Send notification (POST)"),
     ("POST", "/api/notifications/register", "Register device (POST)"),
+    ("POST", "/api/redeem", "Redeem code (POST)"),
+    ("GET", "/api/redeem?code=TEST1MO", "Redeem code (GET)"),
     ("POST", "/api/feedback", "Submit feedback (POST)"),
 ]
 
@@ -72,6 +74,7 @@ POST_BODIES = {
     "/api/refresh": {},
     "/api/notifications": {},
     "/api/notifications/register": {},
+    "/api/redeem": {"code": "TEST1MO"},
     "/api/feedback": {"feedback": "test"},
 }
 
