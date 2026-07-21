@@ -15,3 +15,11 @@ def post_worker_init(worker):
         start_apns_worker()
     except Exception as exc:
         worker.log.exception("post_worker_init failed: %s", exc)
+
+    # Warm history index so the first /api/league-data call is not cold.
+    try:
+        from competition_rules import warm_competition_games_cache
+
+        warm_competition_games_cache(force=True)
+    except Exception as exc:
+        worker.log.warning("games cache warm failed: %s", exc)

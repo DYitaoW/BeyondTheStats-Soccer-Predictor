@@ -9,6 +9,8 @@ services:
       - key: PYTHON_VERSION
         value: 3.12.6
       - key: API_RATE_LIMIT_PER_MINUTE
-        value: 60
+        value: 100
+      - key: REDEEM_RATE_LIMIT_PER_MINUTE
+        value: 5
       - key: MUTATION_API_TOKEN
         value: "change-me-to-a-long-random-secret"
