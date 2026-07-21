@@ -52,7 +52,7 @@ COMPETITION_SIM_RUNS = {
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
-MAPPING_FILE = os.path.join(BASE_DIR, "..", "..", "Data", "team_name_mapping_master.json")
+MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "team_name_mapping_master.json")
 LEAGUE_TEAMS_FILE = os.path.join(OUT_DIR, "league_teams.json")
 CURRENT_SEASON_TEAMS_FILE = os.path.join(OUT_DIR, "current_season_teams.json")
 
