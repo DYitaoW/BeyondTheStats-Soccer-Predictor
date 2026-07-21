@@ -250,58 +250,90 @@ def _canonical_roster_teams(comp_name: str) -> list[str]:
 
 
 def _align_standings_to_canonical_roster(standings: dict, comp_name: str) -> dict:
-    """Re-key real rows onto the predicted roster; drop unmapped alias orphans.
+    """Re-key real rows onto mapped canons; drop alias orphans when roster known.
 
-    Intended relationship: real table = same teams as predicted, stats only
-    from played results. Orphan alias rows that do not resolve into the roster
-    (and have no mapped twin) are dropped so ESPN/football-data dual names
-    cannot inflate the table.
+    Runs for every standings layout (single table, Liga MX tournament, MLS
+    conferences, etc.). Every team name is passed through the shared mapping
+    so ESPN/football-data dual labels cannot inflate the table.
     """
     if not standings or not isinstance(standings.get("groups"), list):
         return standings
     roster = _canonical_roster_teams(comp_name)
-    if not roster:
-        return standings
-    roster_set = set(roster)
     base_comp, _view = resolve_competition_query(comp_name)
-    # Only align simple single-table / placeholder layouts (Premier League etc.).
     layout = str(standings.get("standings_layout") or "")
-    if layout and layout not in {"single_table", ""}:
-        # Still rename entries to canonicals via dedupe; keep structure.
-        return standings
+
+    def _merge_entry(existing: dict, incoming: dict, canon: str) -> dict:
+        """Prefer the fuller row; when both have games, keep higher P."""
+        try:
+            if int(incoming.get("P") or 0) >= int(existing.get("P") or 0):
+                merged = dict(incoming)
+                merged["team"] = canon
+                return merged
+        except Exception:
+            merged = dict(incoming)
+            merged["team"] = canon
+            return merged
+        return existing
+
+    def _roster_for_group(group_name: str) -> list[str]:
+        if not roster:
+            return []
+        name = str(group_name or "")
+        if layout == "mls_conferences":
+            if name == "Eastern Conference":
+                return [t for t in roster if mls_conference(t) == "east"]
+            if name == "Western Conference":
+                return [t for t in roster if mls_conference(t) == "west"]
+            # Supporters Shield / overall uses full roster
+            return list(roster)
+        # Liga MX tournament / single table / league phase / cup groups: full roster
+        return list(roster)
+
     new_groups = []
     for group in standings["groups"]:
         entries = group.get("entries") or []
-        # Skip alignment for multi-group cups / conferences.
-        if len(standings["groups"]) > 1 and str(group.get("name") or "") not in {
-            "Overall", "Regular Season", "League Phase", "Supporters Shield",
-        }:
-            new_groups.append(group)
-            continue
-        by_team: dict[str, dict] = {t: {
-            "team": t, "rank": 0, "position": 0,
-            "P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-        } for t in roster}
+        group_name = str(group.get("name") or "")
+        # Always collapse aliases inside the group first.
+        by_key: dict[str, dict] = {}
+        order: list[str] = []
         for entry in entries:
-            team = _normalize_team_name(str(entry.get("team", "")).strip(), base_comp)
-            if not team:
+            raw = str(entry.get("team", "")).strip()
+            if not raw:
                 continue
-            if team not in roster_set:
-                # Unmapped alias — drop rather than keep a duplicate row.
+            canon = _normalize_team_name(raw, base_comp)
+            if not canon:
                 continue
-            existing = by_team[team]
-            try:
-                if int(entry.get("P") or 0) >= int(existing.get("P") or 0):
-                    merged = dict(entry)
-                    merged["team"] = team
-                    by_team[team] = merged
-            except Exception:
-                merged = dict(entry)
-                merged["team"] = team
-                by_team[team] = merged
-        # Rank by standard GD tiebreak for zeroed/partial tables.
+            key = canon.lower()
+            if key not in by_key:
+                cloned = dict(entry)
+                cloned["team"] = canon
+                by_key[key] = cloned
+                order.append(key)
+            else:
+                by_key[key] = _merge_entry(by_key[key], entry, canon)
+
+        group_roster = _roster_for_group(group_name)
+        if group_roster:
+            roster_set = set(group_roster)
+            by_team = {
+                t: {
+                    "team": t, "rank": 0, "position": 0,
+                    "P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
+                }
+                for t in group_roster
+            }
+            for key in order:
+                row = by_key[key]
+                team = row["team"]
+                if team not in roster_set:
+                    continue
+                by_team[team] = _merge_entry(by_team[team], row, team)
+            ranked_rows = list(by_team.values())
+        else:
+            ranked_rows = [by_key[k] for k in order]
+
         ranked = sorted(
-            by_team.values(),
+            ranked_rows,
             key=lambda r: (
                 -int(r.get("Pts") or 0),
                 -int(r.get("GD") or 0),
@@ -572,6 +604,24 @@ def _upsert_live_score_history(games, as_of=None):
                 inserted = 0
                 updated = 0
                 for row in incoming:
+                    # Always map team names through the master alias file so
+                    # ESPN display names cannot create duplicate standings rows.
+                    comp = str(row.get("competition", "")).strip()
+                    if comp:
+                        try:
+                            ht = canonical_team_name(row.get("home_team"), comp)
+                            at = canonical_team_name(row.get("away_team"), comp)
+                            if ht:
+                                row["home_team"] = ht
+                            if at:
+                                row["away_team"] = at
+                            winner = str(row.get("winner") or "").strip()
+                            if winner:
+                                mapped_w = canonical_team_name(winner, comp)
+                                if mapped_w:
+                                    row["winner"] = mapped_w
+                        except Exception:
+                            pass
                     key = _live_history_game_key(row)
                     if not key:
                         keyless.append(row)
@@ -661,7 +711,9 @@ def _compute_standings_from_history(comp_name):
     if base_comp == config.LIGA_MX_COMPETITION or base_comp.startswith("Mexico/"):
         # Liga MX already has tournament filtering; re-apply after season filter.
         try:
-            comp_games = filter_games_to_liga_mx_tournament(comp_games, base_comp) or comp_games
+            comp_games = filter_games_to_liga_mx_tournament(
+                comp_games, active_liga_mx_tournament_label()
+            ) or comp_games
         except Exception:
             pass
     if not comp_games:

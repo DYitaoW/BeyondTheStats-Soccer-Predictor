@@ -1087,9 +1087,38 @@ def project_liga_mx_competition(ctx, competition, raw_file):
 
     csv_start_year = pm.parse_season_start_year(os.path.basename(raw_file))
     expected_year = sc.expected_season_start_year(competition)
-    is_current_season = csv_start_year is not None and csv_start_year == expected_year
 
-    if is_current_season:
+    def _peek_counts():
+        try:
+            frame = normalize_raw_df(pd.read_csv(raw_file))
+        except Exception:
+            return 0, 0
+        if "HomeTeam" not in frame.columns:
+            return 0, 0
+        teams = set(frame["HomeTeam"].dropna().astype(str).str.strip()) | set(
+            frame["AwayTeam"].dropna().astype(str).str.strip()
+        )
+        teams.discard("")
+        played = 0
+        if "FTR" in frame.columns:
+            played = int(frame["FTR"].astype(str).str.strip().isin(["H", "D", "A"]).sum())
+        return len(teams), played
+
+    n_teams, n_played = _peek_counts()
+    now = datetime.now()
+    is_current_season = csv_start_year is not None and csv_start_year == expected_year
+    prior_finished = (
+        csv_start_year is not None
+        and expected_year is not None
+        and csv_start_year < expected_year
+        and n_played >= 30
+        and now.month in (7, 8)
+    )
+    use_path_a = is_current_season or (
+        not prior_finished and (n_teams >= 18 or n_played >= 20 or ((now.month >= 9 or now.month <= 5) and n_teams >= 16))
+    )
+
+    if use_path_a:
         # ── PATH A: Current-season CSV exists ──────────────────────────
         df = normalize_raw_df(pd.read_csv(raw_file))
         required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}

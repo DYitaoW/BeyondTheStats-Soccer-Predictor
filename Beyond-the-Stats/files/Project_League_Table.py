@@ -654,6 +654,56 @@ def _expected_current_season_year(competition):
         return now.year - 1
 
 
+def _peek_csv_team_and_played_counts(raw_file):
+    """Return (unique_team_count, played_row_count) for a season CSV."""
+    try:
+        df = pd.read_csv(raw_file)
+    except Exception:
+        return 0, 0
+    if "HomeTeam" not in df.columns or "AwayTeam" not in df.columns:
+        return 0, 0
+    homes = df["HomeTeam"].dropna().astype(str).str.strip()
+    aways = df["AwayTeam"].dropna().astype(str).str.strip()
+    teams = set(homes) | set(aways)
+    teams.discard("")
+    played = 0
+    if "FTR" in df.columns:
+        ftr = df["FTR"].astype(str).str.strip()
+        played = int(ftr.isin(["H", "D", "A"]).sum())
+    elif "FTHG" in df.columns and "FTAG" in df.columns:
+        played = int(pd.to_numeric(df["FTHG"], errors="coerce").notna().sum())
+    return len(teams), played
+
+
+def _prefer_csv_path_a(competition, raw_file, csv_start_year, expected_year):
+    """True when midseason CSV + home/away projection should be used (PATH A).
+
+    Prefer the original season CSV whenever:
+      * the file is the expected current season, or
+      * it already has a full/near-full roster (18+ teams) or 20+ played rows,
+        except a clearly finished prior season during Jul–Aug preseason.
+    """
+    if csv_start_year is not None and expected_year is not None and csv_start_year == expected_year:
+        return True
+    n_teams, n_played = _peek_csv_team_and_played_counts(raw_file)
+    now = datetime.now()
+    prior_finished = (
+        csv_start_year is not None
+        and expected_year is not None
+        and csv_start_year < expected_year
+        and n_played >= 30
+        and now.month in (7, 8)
+    )
+    if prior_finished:
+        return False
+    if n_teams >= 18 or n_played >= 20:
+        return True
+    # September–May: if we can see a substantial roster, stay on CSV+H/A.
+    if (now.month >= 9 or now.month <= 5) and n_teams >= 16:
+        return True
+    return False
+
+
 def _fetch_espn_teams(competition):
     """Fetch current team list from ESPN /teams endpoint.
 
@@ -689,9 +739,9 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
     # Determine if this CSV represents the current season or a past season
     csv_start_year = pm.parse_season_start_year(os.path.basename(raw_file))
     expected_year = _expected_current_season_year(competition)
-    is_current_season = csv_start_year is not None and csv_start_year == expected_year
+    use_path_a = _prefer_csv_path_a(competition, raw_file, csv_start_year, expected_year)
 
-    if is_current_season:
+    if use_path_a:
         # ── PATH A: Current-season CSV exists ──────────────────────────
         df = pd.read_csv(raw_file).copy()
         required = {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
