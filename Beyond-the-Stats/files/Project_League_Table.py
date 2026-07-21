@@ -31,6 +31,10 @@ import Predict_Match as pm
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+import projection_schedule as proj_sched  # noqa: E402
+
 FILES_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 OUT_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
@@ -454,14 +458,7 @@ def clone_table(table):
 
 
 # Leagues where the first tiebreaker is head-to-head (points > GD > GF) then overall GD > GF > name.
-H2H_LEAGUES = {
-    "Spain/La Liga", "Spain/La Liga 2",
-    "Italy/Serie A", "Italy/Serie B",
-    "Portugal/Liga Portugal",
-    "Belgium/First Division A",
-    "Turkey/Super Lig",
-    "Mexico/Liga MX",
-}
+H2H_LEAGUES = set(proj_sched.H2H_TIEBREAKER_COMPETITIONS)
 
 
 def _compute_h2h_scores(tied_teams, all_matches):
@@ -676,32 +673,12 @@ def _peek_csv_team_and_played_counts(raw_file):
 
 
 def _prefer_csv_path_a(competition, raw_file, csv_start_year, expected_year):
-    """True when midseason CSV + home/away projection should be used (PATH A).
+    """True only when the CSV is the expected current season (PATH A).
 
-    Prefer the original season CSV whenever:
-      * the file is the expected current season, or
-      * it already has a full/near-full roster (18+ teams) or 20+ played rows,
-        except a clearly finished prior season during Jul–Aug preseason.
+    Prior-season files always use PATH B so finished results cannot block a
+    full synthetic remaining schedule.
     """
-    if csv_start_year is not None and expected_year is not None and csv_start_year == expected_year:
-        return True
-    n_teams, n_played = _peek_csv_team_and_played_counts(raw_file)
-    now = datetime.now()
-    prior_finished = (
-        csv_start_year is not None
-        and expected_year is not None
-        and csv_start_year < expected_year
-        and n_played >= 30
-        and now.month in (7, 8)
-    )
-    if prior_finished:
-        return False
-    if n_teams >= 18 or n_played >= 20:
-        return True
-    # September–May: if we can see a substantial roster, stay on CSV+H/A.
-    if (now.month >= 9 or now.month <= 5) and n_teams >= 16:
-        return True
-    return False
+    return proj_sched.prefer_current_season_csv(csv_start_year, expected_year)
 
 
 def _fetch_espn_teams(competition):
@@ -788,13 +765,14 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         if not espn_fixtures.empty:
             _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates, seen_pairs, ctx)
 
-        # Fill remaining gaps with synthetic home/away pairs
-        _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx)
+        # Fill remaining gaps with format-aware home/away (or Scottish 3-round) pairs
+        _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx, competition=competition)
 
     else:
         # ── PATH B: No current-season CSV or CSV is from a past season ──
         # Use ESPN to get the current season team list
         espn_teams = _fetch_espn_teams(competition)
+        teams = None
         if espn_teams:
             resolved = set()
             unresolved = []
@@ -826,9 +804,10 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
                     resolved_static.append(r)
             teams = sorted(set(resolved_static)) if resolved_static else sorted(static_roster)
 
+        games_each = proj_sched.expected_games_per_team(competition, len(teams))
         print(
-            f"  No current-season CSV (typical Jul–Aug before games) — "
-            f"using ESPN/roster PATH B ({len(teams)} teams)"
+            f"  No current-season CSV — PATH B roster ({len(teams)} teams, "
+            f"~{games_each} games/team via format-aware round-robin)"
         )
         table = init_table(teams)
         real_matches = []
@@ -836,13 +815,9 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         future_dates = []
         seen_pairs = set()
 
-        # First try ESPN for any upcoming fixtures
-        espn_fixtures = load_future_fixtures_from_espn(competition)
-        if not espn_fixtures.empty:
-            _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates, seen_pairs, ctx)
-
-        # Generate full home/away schedule for any missing pairs
-        _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx)
+        # Do not rely on ESPN upcoming scoreboards for PATH B — synthesize
+        # the full remaining slate from the competition format.
+        _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx, competition=competition)
 
     if not future_pairs:
         print(f"  No fixtures to project for {competition}")
@@ -942,23 +917,22 @@ def _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates,
         print(f"  ESPN: loaded {espn_count} future fixtures for {competition}")
 
 
-def _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx):
-    """Generate remaining home/away pairs that haven't been seen."""
-    added = 0
-    for home in teams:
-        resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
-        for away in teams:
-            if home == away:
-                continue
-            resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
-            if (resolved_home, resolved_away) in seen_pairs:
-                continue
-            seen_pairs.add((resolved_home, resolved_away))
-            future_pairs.append((resolved_home, resolved_away))
-            future_dates.append("")
-            added += 1
+def _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx, competition=None):
+    """Generate remaining fixtures from the competition's schedule format.
+
+    Default: double round-robin home/away = (n-1)*2 games per team.
+    Special formats (Scottish 3-round, Liga MX single RR) via projection_schedule.
+    """
+    added = proj_sched.fill_missing_fixtures(
+        competition or "",
+        teams,
+        seen_pairs,
+        future_pairs,
+        future_dates,
+    )
     if added:
-        print(f"  Generated {added} remaining home/away fixture(s)")
+        games = proj_sched.expected_games_per_team(competition or "", len(teams))
+        print(f"  Generated {added} fixture(s) (format target ~{games} games/team)")
 
 
 def parse_cli_args():

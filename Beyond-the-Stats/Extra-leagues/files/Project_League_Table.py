@@ -22,6 +22,7 @@ _SP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file
 if _SP_DIR not in sys.path:
     sys.path.insert(0, _SP_DIR)
 import season_calendar
+import projection_schedule as proj_sched
 
 
 class AveragedProbaClassifier:
@@ -504,14 +505,7 @@ def clone_table(table):
 
 
 # Leagues where the first tiebreaker is head-to-head (points > GD > GF) then overall GD > GF > name.
-H2H_LEAGUES = {
-    "Spain/La Liga", "Spain/La Liga 2",
-    "Italy/Serie A", "Italy/Serie B",
-    "Portugal/Liga Portugal",
-    "Belgium/First Division A",
-    "Turkey/Super Lig",
-    "Mexico/Liga MX",
-}
+H2H_LEAGUES = set(proj_sched.H2H_TIEBREAKER_COMPETITIONS)
 
 
 def _compute_h2h_scores(tied_teams, all_matches):
@@ -701,25 +695,8 @@ def _peek_csv_team_and_played_counts(raw_file):
 
 
 def _prefer_csv_path_a(competition, raw_file, csv_start_year, expected_year):
-    """Prefer CSV + home/away (PATH A) once a full roster / midseason sample exists."""
-    if csv_start_year is not None and expected_year is not None and csv_start_year == expected_year:
-        return True
-    n_teams, n_played = _peek_csv_team_and_played_counts(raw_file)
-    now = datetime.now()
-    prior_finished = (
-        csv_start_year is not None
-        and expected_year is not None
-        and csv_start_year < expected_year
-        and n_played >= 30
-        and now.month in (7, 8)
-    )
-    if prior_finished:
-        return False
-    if n_teams >= 18 or n_played >= 20:
-        return True
-    if (now.month >= 9 or now.month <= 5) and n_teams >= 16:
-        return True
-    return False
+    """True only when the CSV is the expected current season (PATH A)."""
+    return proj_sched.prefer_current_season_csv(csv_start_year, expected_year)
 
 
 def _fetch_espn_teams(competition):
@@ -821,21 +798,21 @@ def project_competition(ctx, competition, raw_file):
 
         print(
             f"  No current-season CSV (PATH B) — "
-            f"{len(teams)} resolved teams, {sim_runs} sims (skip long ESPN crawl)"
+            f"{len(teams)} resolved teams, {sim_runs} sims, "
+            f"~{proj_sched.expected_games_per_team(competition, len(teams))} games/team"
         )
 
-        # PATH B: skip multi-month ESPN scoreboard crawl; synthesize full H2H slate.
+        # PATH B: synthesize format-aware slate (default home/away double RR).
         rows = []
         seen = set()
-        for home in teams:
-            for away in teams:
-                if home == away or (home, away) in seen:
-                    continue
-                seen.add((home, away))
-                rows.append({
-                    "Date": "", "HomeTeam": home, "AwayTeam": away,
-                    "FTHG": None, "FTAG": None, "FTR": "",
-                })
+        for home, away in proj_sched.build_fixtures_for_competition(competition, teams):
+            if (home, away) in seen:
+                continue
+            seen.add((home, away))
+            rows.append({
+                "Date": "", "HomeTeam": home, "AwayTeam": away,
+                "FTHG": None, "FTAG": None, "FTR": "",
+            })
         df = pd.DataFrame(rows)
         df["DateParsed"] = pd.to_datetime(df["Date"], errors="coerce")
 
@@ -886,7 +863,7 @@ def project_competition(ctx, competition, raw_file):
         is_played = ftr in {"H", "D", "A"} and pd.notna(hg) and pd.notna(ag)
 
         # PATH B (no current-season CSV): never treat rows as already played.
-        if is_played and is_current_season:
+        if is_played and use_path_a:
             apply_result(table, home, away, int(hg), int(ag), is_real=True)
             real_matches.append((home, away, int(hg), int(ag)))
             continue
@@ -898,16 +875,14 @@ def project_competition(ctx, competition, raw_file):
         )
 
     # Fill remaining synthetic pairs for any teams not yet connected
-    for home in teams:
-        resolved_home = pm.resolve_team_name(home, ctx["available_teams"]) or home
-        for away in teams:
-            if home == away:
-                continue
-            resolved_away = pm.resolve_team_name(away, ctx["available_teams"]) or away
-            if (resolved_home, resolved_away) in seen_pairs:
-                continue
-            seen_pairs.add((resolved_home, resolved_away))
-            add_future_prediction(resolved_home, resolved_away, "")
+    added = proj_sched.fill_missing_fixtures(
+        competition, teams, seen_pairs, future_pairs := [], None
+    )
+    # fill_missing_fixtures appends to a list of pairs — convert to predictions
+    for home, away in future_pairs:
+        add_future_prediction(home, away, "")
+    if added:
+        print(f"  Generated {added} remaining format-aware fixture(s)")
 
     stat_sums, position_counts = run_monte_carlo(teams, table, future_predictions, sim_runs, competition=competition, all_matches=real_matches)
     averaged = {}
