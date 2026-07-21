@@ -361,66 +361,46 @@ def _align_standings_to_canonical_roster(standings: dict, comp_name: str) -> dic
     roster = _canonical_roster_teams(comp_name)
     base_comp, _view = resolve_competition_query(comp_name)
     layout = str(standings.get("standings_layout") or "")
-    if layout and layout not in {"single_table", "", "leagues_cup_dual"}:
-        # Still rename entries to canonicals via dedupe; keep structure.
-        return standings
-    new_groups = []
-    for group in standings["groups"]:
-        entries = group.get("entries") or []
-        # Skip alignment for multi-group cups / conferences — except Leagues Cup
-        # dual MLS / Liga MX tables, which share the predicted roster per side.
-        group_name = str(group.get("name") or "")
+
+    def _merge_entry(existing: dict, incoming: dict, canon: str) -> dict:
+        """Prefer the fuller row; when both have games, keep higher P."""
+        try:
+            if int(incoming.get("P") or 0) >= int(existing.get("P") or 0):
+                merged = dict(incoming)
+                merged["team"] = canon
+                return merged
+        except Exception:
+            merged = dict(incoming)
+            merged["team"] = canon
+            return merged
+        return existing
+
+    def _roster_for_group(group_name: str) -> list[str]:
+        if not roster:
+            return []
+        name = str(group_name or "")
         if layout == "leagues_cup_dual":
             try:
                 from competition_rules import leagues_cup_table_side
-                side_roster = [t for t in roster if leagues_cup_table_side(t) == group_name]
+                return [t for t in roster if leagues_cup_table_side(t) == name]
             except Exception:
-                side_roster = list(roster)
-            if not side_roster:
-                new_groups.append(group)
-                continue
-            by_team: dict[str, dict] = {t: {
-                "team": t, "rank": 0, "position": 0,
-                "P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-            } for t in side_roster}
-            side_set = set(side_roster)
-            for entry in entries:
-                team = _normalize_team_name(str(entry.get("team", "")).strip(), base_comp)
-                if not team or team not in side_set:
-                    continue
-                existing = by_team[team]
-                try:
-                    if int(entry.get("P") or 0) >= int(existing.get("P") or 0):
-                        merged = dict(entry)
-                        merged["team"] = team
-                        by_team[team] = merged
-                except Exception:
-                    merged = dict(entry)
-                    merged["team"] = team
-                    by_team[team] = merged
-            ranked = sorted(
-                by_team.values(),
-                key=lambda r: (
-                    -int(r.get("Pts") or 0),
-                    -int(r.get("GD") or 0),
-                    -int(r.get("GF") or 0),
-                    str(r.get("team") or ""),
-                ),
-            )
-            for idx, row in enumerate(ranked, start=1):
-                row["rank"] = idx
-                row["position"] = idx
-            new_groups.append({**group, "entries": ranked})
-            continue
-        if len(standings["groups"]) > 1 and group_name not in {
-            "Overall", "Regular Season", "League Phase", "Supporters Shield",
-        }:
-            new_groups.append(group)
-            continue
-        by_team: dict[str, dict] = {t: {
-            "team": t, "rank": 0, "position": 0,
-            "P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
-        } for t in roster}
+                return list(roster)
+        if layout == "mls_conferences":
+            if name == "Eastern Conference":
+                return [t for t in roster if mls_conference(t) == "east"]
+            if name == "Western Conference":
+                return [t for t in roster if mls_conference(t) == "west"]
+            return list(roster)
+        return list(roster)
+
+    new_groups = []
+    for group in standings["groups"]:
+        entries = group.get("entries") or []
+        group_name = str(group.get("name") or "")
+
+        # Always collapse aliases inside the group first.
+        by_key: dict[str, dict] = {}
+        order: list[str] = []
         for entry in entries:
             raw = str(entry.get("team", "")).strip()
             if not raw:
