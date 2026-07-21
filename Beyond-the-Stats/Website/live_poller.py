@@ -618,8 +618,18 @@ def _live_score_poller_loop():
                 for comp_name in comps_to_refresh:
                     table = _compute_standings_from_history(comp_name)
                     if table:
+                        try:
+                            from standings import _sanitize_real_standings
+                            table = _sanitize_real_standings(table, comp_name) or table
+                        except Exception:
+                            pass
                         with _real_tables_lock:
                             _real_tables[comp_name] = table
+                        try:
+                            from standings import _persist_real_tables
+                            _persist_real_tables()
+                        except Exception:
+                            pass
             except Exception:
                 import traceback
                 traceback.print_exc()

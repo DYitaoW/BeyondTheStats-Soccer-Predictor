@@ -560,7 +560,11 @@ def _build_real_standings():
         sys.path.insert(0, str(website_dir))
 
     try:
-        from standings import _build_fallback_standings, _compute_standings_from_history
+        from standings import (
+            _build_fallback_standings,
+            _compute_standings_from_history,
+            _sanitize_real_standings,
+        )
         from competition_rules import MLS_TABLE_VIEWS
     except ImportError as exc:
         print(f"  [real-standings] Could not import Website standings: {exc}")
@@ -569,24 +573,26 @@ def _build_real_standings():
     known_comps = sorted(_REAL_TABLE_COMPETITIONS | _CUP_COMPETITIONS | {"FIFA/World Cup"})
     standings: dict[str, dict] = {}
     for comp_name in known_comps:
+        # Daily refresh: CSV-backed history compute + always sanitize so ESPN
+        # aliases cannot persist as duplicate rows beside football-data canons.
         table = _compute_standings_from_history(comp_name)
         if table:
-            standings[comp_name] = table
+            standings[comp_name] = _sanitize_real_standings(table, comp_name) or table
             continue
         fallback = _build_fallback_standings(comp_name)
         if fallback:
-            standings[comp_name] = fallback
+            standings[comp_name] = _sanitize_real_standings(fallback, comp_name) or fallback
 
     for alias in MLS_TABLE_VIEWS:
         if alias in standings:
             continue
         sub = _compute_standings_from_history(alias)
         if sub:
-            standings[alias] = sub
+            standings[alias] = _sanitize_real_standings(sub, alias) or sub
         else:
             fallback = _build_fallback_standings(alias)
             if fallback:
-                standings[alias] = fallback
+                standings[alias] = _sanitize_real_standings(fallback, alias) or fallback
 
     if standings:
         try:

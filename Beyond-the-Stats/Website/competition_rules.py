@@ -263,14 +263,17 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
     _batch_mls_or_liga_mx(by_comp, seen_by_comp, "United States/MLS",
                           _find_latest_mls_season_file(), resolve_mls_team_name)
 
-    # ── 8. Liga MX season CSV ────────────────────────────────────
+    # ── 8. Liga MX season CSV (map every name like MLS) ───────────
     _batch_mls_or_liga_mx(by_comp, seen_by_comp, config.LIGA_MX_COMPETITION,
-                          _find_latest_liga_mx_season_file())
+                          _find_latest_liga_mx_season_file(), resolve_liga_mx_team_name)
 
-    # ── 9. MLS team name resolution (all sources, not just CSV) ──
+    # ── 9. MLS / Liga MX name resolution (all sources, not just CSV) ──
     for g in by_comp.get("United States/MLS", []):
         g["home_team"] = resolve_mls_team_name(g.get("home_team", ""))
         g["away_team"] = resolve_mls_team_name(g.get("away_team", ""))
+    for g in by_comp.get(config.LIGA_MX_COMPETITION, []):
+        g["home_team"] = resolve_liga_mx_team_name(g.get("home_team", ""))
+        g["away_team"] = resolve_liga_mx_team_name(g.get("away_team", ""))
 
     return dict(by_comp)
 
@@ -537,6 +540,19 @@ def resolve_mls_team_name(raw_name: str) -> str:
         team_key = normalize_team_key(team)
         if key == team_key or key in team_key or team_key in key:
             return team
+    return raw
+
+
+def resolve_liga_mx_team_name(raw_name: str) -> str:
+    """Map ESPN/display Liga MX names onto football-data CSV canons."""
+    raw = str(raw_name or "").strip()
+    if not raw:
+        return ""
+    mapped = canonical_team_name(raw, config.LIGA_MX_COMPETITION)
+    if mapped and mapped != raw:
+        return mapped
+    if mapped:
+        return mapped
     return raw
 
 
@@ -1162,7 +1178,8 @@ def annotate_knockout_rounds(matches: list[dict], comp_name: str) -> list[dict]:
 
 
 # ── Real standings layout & tiebreaker rules (canonical) ─────────────
-# Built into standings_cache.json at pipeline write time — not reshaped on API read.
+# Built into standings_cache.json at pipeline write time. API readers always
+# re-sanitize (dedupe + roster align) before serving so alias duplicates cannot ship.
 
 STANDINGS_LAYOUT_SINGLE = "single_table"
 STANDINGS_LAYOUT_MLS = "mls_conferences"
