@@ -1651,7 +1651,7 @@ def api_redeem():
     Body (JSON) or query param:
         code (str, required) — the promo code to redeem
 
-    File format (``Data/redeem_codes.json``)::
+    File format (``Data/redeem_codes.json`` next to ``team_name_mapping_master.json``)::
 
         [{"code": "CODEHERE", "value": true}]
 
@@ -1727,7 +1727,7 @@ def _parse_redeem_code(raw) -> str | None:
 
 
 def _load_redeem_code_entries() -> list[dict]:
-    """Load redeem codes from ``Data/redeem_codes.json``.
+    """Load redeem codes from repo ``Data/redeem_codes.json``.
 
     Expected shape only::
 
@@ -1736,8 +1736,8 @@ def _load_redeem_code_entries() -> list[dict]:
     path = config.REDEEM_CODES_FILE
     payload = _load_json_payload(path)
     if not isinstance(payload, list):
-        example_path = os.path.join(config.PROJECT_DIR, "Data", "redeem_codes.example.json")
-        if path != example_path and os.path.isfile(example_path):
+        example_path = getattr(config, "REDEEM_CODES_EXAMPLE_FILE", "")
+        if example_path and path != example_path and os.path.isfile(example_path):
             payload = _load_json_payload(example_path)
     if not isinstance(payload, list):
         return []
