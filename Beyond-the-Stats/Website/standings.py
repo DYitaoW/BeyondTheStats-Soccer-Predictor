@@ -541,11 +541,17 @@ def _live_history_game_key(game):
     if match_id:
         return f"id:{match_id}"
     game_date = _live_history_game_date(game)
-    competition = str(game.get("competition", "") or "").strip().lower()
-    home = str(game.get("home_team", "") or "").strip().lower()
-    away = str(game.get("away_team", "") or "").strip().lower()
+    competition = str(game.get("competition", "") or "").strip()
+    home_raw = str(game.get("home_team", "") or "").strip()
+    away_raw = str(game.get("away_team", "") or "").strip()
+    try:
+        home = (canonical_team_name(home_raw, competition) or home_raw).lower()
+        away = (canonical_team_name(away_raw, competition) or away_raw).lower()
+    except Exception:
+        home = home_raw.lower()
+        away = away_raw.lower()
     if game_date and home and away:
-        return f"fixture:{game_date.isoformat()}|{competition}|{home}|{away}"
+        return f"fixture:{game_date.isoformat()}|{competition.lower()}|{home}|{away}"
     return ""
 
 

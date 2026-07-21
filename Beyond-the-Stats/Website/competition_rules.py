@@ -1151,7 +1151,8 @@ def annotate_knockout_rounds(matches: list[dict], comp_name: str) -> list[dict]:
 
 
 # ── Real standings layout & tiebreaker rules (canonical) ─────────────
-# Built into standings_cache.json at pipeline write time — not reshaped on API read.
+# Built into standings_cache.json at pipeline write time. API readers always
+# re-sanitize (dedupe + roster align) before serving so alias duplicates cannot ship.
 
 STANDINGS_LAYOUT_SINGLE = "single_table"
 STANDINGS_LAYOUT_MLS = "mls_conferences"
