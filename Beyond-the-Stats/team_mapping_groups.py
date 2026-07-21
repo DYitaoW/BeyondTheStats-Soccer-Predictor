@@ -205,11 +205,31 @@ def fuzzy_resolve_team_name(raw_name: str, valid_names: list[str]) -> str | None
     contained_by_raw = [
         team for team in valid_names if normalize_team_key(team) and normalize_team_key(team) in key
     ]
-    if len(contained_by_raw) == 1:
-        return contained_by_raw[0]
+    if contained_by_raw:
+        # Prefer the longest key so "Inter" never beats "Inter Miami" when the
+        # raw name is "Inter Miami" / "Inter Miami CF".
+        contained_by_raw.sort(key=lambda t: len(normalize_team_key(t) or ""), reverse=True)
+        best = contained_by_raw[0]
+        best_key = normalize_team_key(best) or ""
+        # Reject a strict prefix of another valid name that also matches the raw key
+        # (e.g. "Inter" inside "Inter Miami") unless it is the only candidate.
+        longer_also = [
+            t for t in valid_names
+            if (normalize_team_key(t) or "").startswith(best_key)
+            and len(normalize_team_key(t) or "") > len(best_key)
+            and (normalize_team_key(t) or "") in key
+        ]
+        if longer_also:
+            longer_also.sort(key=lambda t: len(normalize_team_key(t) or ""), reverse=True)
+            return longer_also[0]
+        if len(contained_by_raw) == 1 or len(normalize_team_key(contained_by_raw[0]) or "") > len(
+            normalize_team_key(contained_by_raw[1]) or ""
+        ):
+            return best
 
     contains = [team for team in valid_names if key in normalize_team_key(team)]
-    if len(contains) == 1:
+    if contains:
+        contains.sort(key=lambda t: len(normalize_team_key(t) or ""), reverse=True)
         return contains[0]
 
     close = difflib.get_close_matches(key, list(by_key.keys()), n=1, cutoff=0.88)

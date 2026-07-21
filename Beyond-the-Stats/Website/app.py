@@ -2489,7 +2489,11 @@ def api_league_tables():
         for comp_name in config._CUP_FORMATS:
             if comp_name not in known_cups:
                 known_cups.add(comp_name)
+        # World Cup is temporarily excluded from the cups competitions API.
+        known_cups.discard("FIFA/World Cup")
         data["leagues"] = sorted(known_cups)
+        if isinstance(data.get("tables"), dict):
+            data["tables"].pop("FIFA/World Cup", None)
         cup_formats = {}
         if isinstance(brackets, dict):
             comps = brackets.get("competitions", brackets)
@@ -2726,23 +2730,23 @@ def api_league_leaders():
                                 c["predicted_winner"] = champion
                                 c["predicted_winner_odds"] = round(prob * 100, 1)
 
-    # Also add World Cup as a cup
-    wc_file = os.path.join(config.PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
-    if os.path.exists(wc_file):
-        try:
-            with open(wc_file, "r") as f:
-                wc = json.load(f)
-            wc_champion = wc.get("champion")
-            wc_probs = wc.get("winner_probabilities") or {}
-            wc_prob = wc_probs.get(wc_champion, None) if wc_champion else None
-            if not any(c["competition"] == "FIFA/World Cup" for c in cups):
-                cups.append({
-                    "competition": "FIFA/World Cup",
-                    "predicted_winner": wc_champion or "—",
-                    "predicted_winner_odds": round(wc_prob * 100, 1) if wc_prob is not None else None,
-                })
-        except Exception:
-            pass
+    # World Cup temporarily excluded from cups competitions API.
+    # wc_file = os.path.join(config.PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+    # if os.path.exists(wc_file):
+    #     try:
+    #         with open(wc_file, "r") as f:
+    #             wc = json.load(f)
+    #         wc_champion = wc.get("champion")
+    #         wc_probs = wc.get("winner_probabilities") or {}
+    #         wc_prob = wc_probs.get(wc_champion, None) if wc_champion else None
+    #         if not any(c["competition"] == "FIFA/World Cup" for c in cups):
+    #             cups.append({
+    #                 "competition": "FIFA/World Cup",
+    #                 "predicted_winner": wc_champion or "—",
+    #                 "predicted_winner_odds": round(wc_prob * 100, 1) if wc_prob is not None else None,
+    #             })
+    #     except Exception:
+    #         pass
 
     # ── Include all known competitions with predictions or real tables ──
     cup_set = set(c["competition"] for c in cups)

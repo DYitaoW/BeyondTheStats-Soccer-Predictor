@@ -129,6 +129,10 @@ LEAGUE_API_EXCLUDED_COMPETITIONS = {
     "Croatia/HNL",
     "Hungary/NB I",
     "Israel/Premier League",
+    # football-data code DK1 historically returned German Bundesliga rows;
+    # keep ESPN den.1 live-score wiring but hide from league-facing APIs until
+    # Extra/domestic history is ESPN-only and decontaminated.
+    "Denmark/Danish Superliga",
     # UEFA/cup fallback roster only — no upcoming API, no domestic history
     "Czech Republic/First League",
     "Serbia/SuperLiga",
@@ -465,33 +469,55 @@ _CUP_FORMATS = {
         "final_neutral": False,
     },
     "CONCACAF/Leagues Cup": {
-        "format": "group_stage_then_knockout",
-        "description": "Group stage (3 matches per team across MLS and Liga MX clubs) followed by single-elimination knockout rounds.",
-        "group_count": 4,
-        "group_stage_matches_per_team": 3,
+        # 2026 format: cross-league Phase One (MLS vs Liga MX only), then QF+.
+        "format": "dual_league_phase_then_knockout",
+        "description": (
+            "Phase One: each club plays 3 MLS↔Liga MX matches. Separate MLS and "
+            "Liga MX tables (teams do not play within their own league table). "
+            "No draws — 3 pts regulation win, 2 pts shootout win, 1 pt shootout loss. "
+            "Top 4 from each table advance to Quarter-finals → Semi-finals → "
+            "Third Place & Final."
+        ),
+        "phase_one_matches_per_team": 3,
         "league_phase_matches": 3,
-        "stages": ["Group Stage", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
-        "knockout_rounds": ["Round of 16", "Quarter-finals", "Semi-finals", "Final"],
-        "two_leg_rounds": [],
-        "final_neutral": True,
-    },
-    "FIFA/World Cup": {
-        "format": "group_stage_then_knockout",
-        "description": "12 groups of 4 teams (3 group matches each). Top two plus eight best third-place teams advance to a fixed Round of 32 knockout bracket.",
-        "group_count": 12,
-        "group_stage_matches_per_team": 3,
-        "group_labels": list("ABCDEFGHIJKL"),
-        "stages": [
-            "Group Stage", "Round of 32", "Round of 16", "Quarter-finals",
-            "Semi-finals", "Third Place", "Final",
-        ],
-        "knockout_rounds": [
-            "Round of 32", "Round of 16", "Quarter-finals",
-            "Semi-finals", "Third Place", "Final",
+        "league_tables": ["MLS", "Liga MX"],
+        "advance_per_table": 4,
+        "points": {
+            "regulation_win": 3,
+            "shootout_win": 2,
+            "shootout_loss": 1,
+        },
+        "no_draws": True,
+        "stages": ["Phase One", "Quarter-finals", "Semi-finals", "Third Place", "Final"],
+        "knockout_rounds": ["Quarter-finals", "Semi-finals", "Third Place", "Final"],
+        "knockout_seedings": [
+            "MLS 1 vs Liga MX 4",
+            "MLS 2 vs Liga MX 3",
+            "MLS 3 vs Liga MX 2",
+            "MLS 4 vs Liga MX 1",
         ],
         "two_leg_rounds": [],
         "final_neutral": True,
     },
+    # World Cup temporarily hidden from cups competitions APIs (keep definition
+    # for dedicated /api/world-cup and competition-data paths).
+    # "FIFA/World Cup": {
+    #     "format": "group_stage_then_knockout",
+    #     "description": "12 groups of 4 teams (3 group matches each). Top two plus eight best third-place teams advance to a fixed Round of 32 knockout bracket.",
+    #     "group_count": 12,
+    #     "group_stage_matches_per_team": 3,
+    #     "group_labels": list("ABCDEFGHIJKL"),
+    #     "stages": [
+    #         "Group Stage", "Round of 32", "Round of 16", "Quarter-finals",
+    #         "Semi-finals", "Third Place", "Final",
+    #     ],
+    #     "knockout_rounds": [
+    #         "Round of 32", "Round of 16", "Quarter-finals",
+    #         "Semi-finals", "Third Place", "Final",
+    #     ],
+    #     "two_leg_rounds": [],
+    #     "final_neutral": True,
+    # },
 }
 
 # Mobile app / website tournament keys → canonical competition names.

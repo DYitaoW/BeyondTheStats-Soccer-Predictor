@@ -16,6 +16,7 @@ from competition_rules import (
     competition_format_spec,
     resolve_competition_query,
     standings_layout_for,
+    STANDINGS_LAYOUT_LEAGUES_CUP,
     STANDINGS_LAYOUT_MLS,
 )
 from knockout import (
@@ -241,7 +242,32 @@ def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict]
 
     fmt = competition_format_spec(comp_name)
 
-    # For cup competitions with group stages (like Leagues Cup), try ESPN standings first
+    # Leagues Cup 2026: split projected rows into MLS vs Liga MX tables.
+    if standings_layout_for(comp_name) == STANDINGS_LAYOUT_LEAGUES_CUP and comp_table:
+        from competition_rules import (
+            LEAGUES_CUP_TABLE_LIGA_MX,
+            LEAGUES_CUP_TABLE_MLS,
+            leagues_cup_table_side,
+        )
+        buckets = {
+            LEAGUES_CUP_TABLE_MLS: [],
+            LEAGUES_CUP_TABLE_LIGA_MX: [],
+        }
+        for row in _rows_to_group_entries(comp_table):
+            side = leagues_cup_table_side(str(row.get("team", "")).strip())
+            if side in buckets:
+                buckets[side].append(row)
+        for entries in buckets.values():
+            entries.sort(key=lambda e: e.get("rank") or e.get("position") or 999)
+            for idx, entry in enumerate(entries, start=1):
+                entry["rank"] = idx
+                entry["position"] = idx
+        return [
+            {"name": LEAGUES_CUP_TABLE_MLS, "entries": buckets[LEAGUES_CUP_TABLE_MLS]},
+            {"name": LEAGUES_CUP_TABLE_LIGA_MX, "entries": buckets[LEAGUES_CUP_TABLE_LIGA_MX]},
+        ]
+
+    # For cup competitions with group stages (like World Cup), try ESPN standings first
     if fmt and fmt.get("format") == "group_stage_then_knockout" and comp_table:
         from standings import _get_or_fetch_standings
         espn_standings = _get_or_fetch_standings(comp_name, computed=False)

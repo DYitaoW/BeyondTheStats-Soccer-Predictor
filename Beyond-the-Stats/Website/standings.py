@@ -87,17 +87,117 @@ def _normalize_team_name(name: str, competition: str) -> str:
         pass
     mapping = _load_team_display_mapping()
     lower = text.lower()
-    comp_map = mapping.get(competition, {})
-    for raw, canon in comp_map.items():
-        if str(raw).lower().strip() == lower and str(canon).strip():
-            return str(canon).strip()
-    for comp_entries in mapping.values():
+    base_comp = competition
+    try:
+        from competition_rules import resolve_competition_query
+        base_comp, _view = resolve_competition_query(competition)
+    except Exception:
+        pass
+    # Competition-scoped lookup first (and Leagues Cup sibling maps).
+    maps_to_try = []
+    for key in (competition, base_comp):
+        comp_map = mapping.get(key) if key else None
+        if isinstance(comp_map, dict) and comp_map not in maps_to_try:
+            maps_to_try.append(comp_map)
+    if base_comp == "CONCACAF/Leagues Cup":
+        for sibling in ("United States/MLS", "Mexico/Liga MX"):
+            sibling_map = mapping.get(sibling)
+            if isinstance(sibling_map, dict) and sibling_map not in maps_to_try:
+                maps_to_try.append(sibling_map)
+    for comp_map in maps_to_try:
+        for raw, canon in comp_map.items():
+            if str(raw).lower().strip() == lower and str(canon).strip():
+                return str(canon).strip()
+    # Do NOT fall through to unrelated competitions for short / ambiguous
+    # names like "Inter" (Serie A) vs "Inter Miami" (MLS / Leagues Cup).
+    if lower in {"inter", "miami"} and base_comp in {
+        "CONCACAF/Leagues Cup", "United States/MLS",
+    }:
+        return "Inter Miami"
+    if len(lower) <= 5:
+        return text
+    for comp_key, comp_entries in mapping.items():
         if not isinstance(comp_entries, dict):
+            continue
+        if comp_key in {competition, base_comp}:
+            continue
+        # Skip cross-country collisions for CONCACAF/MLS contexts.
+        if base_comp.startswith(("CONCACAF/", "United States/", "Mexico/")) and not str(comp_key).startswith(
+            ("CONCACAF/", "United States/", "Mexico/")
+        ):
             continue
         for raw, canon in comp_entries.items():
             if str(raw).lower().strip() == lower and str(canon).strip():
                 return str(canon).strip()
     return text
+
+
+def _filter_games_to_known_roster(games: list, competition: str) -> list:
+    """Keep only matches where both sides resolve into the competition roster.
+
+    Used for Denmark/Danish Superliga where historical football-data ``DK1``
+    feeds sometimes mixed in German Bundesliga clubs.
+    """
+    if not games:
+        return []
+    roster_keys: set[str] = set()
+    try:
+        league_teams = _load_league_teams()
+        for team in league_teams.get(competition) or []:
+            k = normalize_team_key(_normalize_team_name(str(team), competition) or team)
+            if k:
+                roster_keys.add(k)
+    except Exception:
+        pass
+    try:
+        if os.path.exists(config.CURRENT_SEASON_TEAMS_FILE):
+            with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
+                current = json.load(fh)
+            for team in (current.get(competition) or []):
+                k = normalize_team_key(_normalize_team_name(str(team), competition) or team)
+                if k:
+                    roster_keys.add(k)
+    except Exception:
+        pass
+    # Always include football-data short names from the mapping file.
+    try:
+        mapping = _load_team_display_mapping().get(competition) or {}
+        for raw, canon in mapping.items():
+            for candidate in (raw, canon):
+                k = normalize_team_key(candidate)
+                if k:
+                    roster_keys.add(k)
+    except Exception:
+        pass
+    if not roster_keys:
+        return list(games)
+
+    german_block = {
+        "bayern", "dortmund", "leverkusen", "stuttgart", "frankfurt", "wolfsburg",
+        "gladbach", "leipzig", "hoffenheim", "augsburg", "heidenheim", "bochum",
+        "mainz", "unionberlin", "koln", "koeln", "werder", "freiburg", "stpauli",
+        "hamburger", "schalke",
+    }
+
+    def _ok(team: str) -> bool:
+        canon = _normalize_team_name(team, competition) or team
+        key = normalize_team_key(canon)
+        if not key:
+            return False
+        if any(g in key for g in german_block):
+            return False
+        if key in roster_keys:
+            return True
+        # Allow close roster containment for accent/spelling variants.
+        return any(key in rk or rk in key for rk in roster_keys if len(rk) >= 4 and len(key) >= 4)
+
+    out = []
+    for game in games:
+        ht = str(game.get("home_team", "")).strip()
+        at = str(game.get("away_team", "")).strip()
+        if ht and at and _ok(ht) and _ok(at):
+            out.append(game)
+    return out
 
 
 def _dedupe_standings_groups(standings: dict, comp_name: str) -> dict:
@@ -202,14 +302,58 @@ def _align_standings_to_canonical_roster(standings: dict, comp_name: str) -> dic
     base_comp, _view = resolve_competition_query(comp_name)
     # Only align simple single-table / placeholder layouts (Premier League etc.).
     layout = str(standings.get("standings_layout") or "")
-    if layout and layout not in {"single_table", ""}:
+    if layout and layout not in {"single_table", "", "leagues_cup_dual"}:
         # Still rename entries to canonicals via dedupe; keep structure.
         return standings
     new_groups = []
     for group in standings["groups"]:
         entries = group.get("entries") or []
-        # Skip alignment for multi-group cups / conferences.
-        if len(standings["groups"]) > 1 and str(group.get("name") or "") not in {
+        # Skip alignment for multi-group cups / conferences — except Leagues Cup
+        # dual MLS / Liga MX tables, which share the predicted roster per side.
+        group_name = str(group.get("name") or "")
+        if layout == "leagues_cup_dual":
+            try:
+                from competition_rules import leagues_cup_table_side
+                side_roster = [t for t in roster if leagues_cup_table_side(t) == group_name]
+            except Exception:
+                side_roster = list(roster)
+            if not side_roster:
+                new_groups.append(group)
+                continue
+            by_team: dict[str, dict] = {t: {
+                "team": t, "rank": 0, "position": 0,
+                "P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
+            } for t in side_roster}
+            side_set = set(side_roster)
+            for entry in entries:
+                team = _normalize_team_name(str(entry.get("team", "")).strip(), base_comp)
+                if not team or team not in side_set:
+                    continue
+                existing = by_team[team]
+                try:
+                    if int(entry.get("P") or 0) >= int(existing.get("P") or 0):
+                        merged = dict(entry)
+                        merged["team"] = team
+                        by_team[team] = merged
+                except Exception:
+                    merged = dict(entry)
+                    merged["team"] = team
+                    by_team[team] = merged
+            ranked = sorted(
+                by_team.values(),
+                key=lambda r: (
+                    -int(r.get("Pts") or 0),
+                    -int(r.get("GD") or 0),
+                    -int(r.get("GF") or 0),
+                    str(r.get("team") or ""),
+                ),
+            )
+            for idx, row in enumerate(ranked, start=1):
+                row["rank"] = idx
+                row["position"] = idx
+            new_groups.append({**group, "entries": ranked})
+            continue
+        if len(standings["groups"]) > 1 and group_name not in {
             "Overall", "Regular Season", "League Phase", "Supporters Shield",
         }:
             new_groups.append(group)
@@ -579,6 +723,9 @@ def _compute_standings_from_history(comp_name):
         collect_competition_games(comp_name),
         base_comp,
     )
+    # Denmark: drop any non-roster (e.g. historical DK1→Bundesliga) contamination.
+    if base_comp == "Denmark/Danish Superliga":
+        comp_games = _filter_games_to_known_roster(comp_games, base_comp)
     if base_comp == config.LIGA_MX_COMPETITION or base_comp.startswith("Mexico/"):
         # Liga MX already has tournament filtering; re-apply after season filter.
         try:
@@ -634,7 +781,11 @@ def _compute_standings_from_history(comp_name):
     has_groups = bool(group_stage_games) or any(
         "group" in str(g.get("round", "")).lower() for g in comp_games
     )
-    if fmt and fmt.get("format") in {"group_stage_then_knockout", "league_phase_then_knockout"}:
+    if fmt and fmt.get("format") in {
+        "group_stage_then_knockout",
+        "league_phase_then_knockout",
+        "dual_league_phase_then_knockout",
+    }:
         has_groups = bool(group_stage_games)
 
     def _extract_group(round_name):
@@ -673,7 +824,7 @@ def _compute_standings_from_history(comp_name):
             table[t] = {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0}
         return table
 
-    def _apply_result(table, home, away, hg, ag):
+    def _apply_result(table, home, away, hg, ag, game=None):
         hs = table.setdefault(home, {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0})
         at = table.setdefault(away, {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0})
         hs["P"] += 1; at["P"] += 1
@@ -681,10 +832,29 @@ def _compute_standings_from_history(comp_name):
         at["GF"] += int(ag); at["GA"] += int(hg)
         hs["GD"] = hs["GF"] - hs["GA"]
         at["GD"] = at["GF"] - at["GA"]
+        no_draws = bool((fmt or {}).get("no_draws"))
+        decided_pk = bool(game and (
+            game.get("decided_by_penalties")
+            or "pen" in str(game.get("detail") or game.get("status_detail") or "").lower()
+        ))
+        winner = str((game or {}).get("winner") or "").strip()
         if hg > ag:
             hs["W"] += 1; at["L"] += 1; hs["Pts"] += 3
         elif ag > hg:
             at["W"] += 1; hs["L"] += 1; at["Pts"] += 3
+        elif no_draws and (decided_pk or winner):
+            # Leagues Cup style: regulation draw → shootout awards 2 / 1.
+            win_team = winner
+            if not win_team:
+                win_team = home  # last resort; prefer explicit winner
+            if win_team == away or (not winner and False):
+                at["W"] += 1; hs["L"] += 1
+                at["Pts"] += 2; hs["Pts"] += 1
+            else:
+                hs["W"] += 1; at["L"] += 1
+                hs["Pts"] += 2; at["Pts"] += 1
+            hs["D"] = hs.get("D", 0)
+            at["D"] = at.get("D", 0)
         else:
             hs["D"] += 1; at["D"] += 1; hs["Pts"] += 1; at["Pts"] += 1
 
@@ -713,6 +883,92 @@ def _compute_standings_from_history(comp_name):
                 for team in sorted_tied:
                     result.append((team, table[team]))
         return result
+
+    # ── Leagues Cup 2026: dual MLS / Liga MX Phase One tables ─────
+    if base_comp == "CONCACAF/Leagues Cup" or (
+        fmt and fmt.get("format") == "dual_league_phase_then_knockout"
+    ):
+        from competition_rules import (
+            LEAGUES_CUP_TABLE_LIGA_MX,
+            LEAGUES_CUP_TABLE_MLS,
+            leagues_cup_table_side,
+        )
+
+        def _outcome_points(home, away, hg, ag, game):
+            """Return (home_pts, away_pts, home_wdl, away_wdl) for one match."""
+            no_draws = bool((fmt or {}).get("no_draws"))
+            decided_pk = bool(game and (
+                game.get("decided_by_penalties")
+                or "pen" in str(game.get("detail") or game.get("status_detail") or "").lower()
+            ))
+            winner = str((game or {}).get("winner") or "").strip()
+            if hg > ag:
+                return 3, 0, "W", "L"
+            if ag > hg:
+                return 0, 3, "L", "W"
+            if no_draws and (decided_pk or winner):
+                if winner == away:
+                    return 1, 2, "L", "W"
+                return 2, 1, "W", "L"
+            return 1, 1, "D", "D"
+
+        def _credit_team(table, team, gf, ga, pts, wdl):
+            row = table.setdefault(
+                team, {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0}
+            )
+            row["P"] += 1
+            row["GF"] += int(gf)
+            row["GA"] += int(ga)
+            row["GD"] = row["GF"] - row["GA"]
+            row["Pts"] += int(pts)
+            if wdl == "W":
+                row["W"] += 1
+            elif wdl == "L":
+                row["L"] += 1
+            else:
+                row["D"] += 1
+
+        phase_games = group_stage_games or [
+            g for g in comp_games
+            if classify_match_stage(g, base_comp, team_to_group) != "knockout"
+        ]
+        mls_table = {}
+        liga_table = {}
+        for g in phase_games:
+            ht = str(g.get("home_team", "")).strip()
+            at = str(g.get("away_team", "")).strip()
+            if not ht or not at:
+                continue
+            try:
+                hs = int(g.get("home_score", 0))
+                as_ = int(g.get("away_score", 0))
+            except (TypeError, ValueError):
+                continue
+            hp, ap, hwdl, awdl = _outcome_points(ht, at, hs, as_, g)
+            side_map = {
+                LEAGUES_CUP_TABLE_MLS: mls_table,
+                LEAGUES_CUP_TABLE_LIGA_MX: liga_table,
+            }
+            home_side = leagues_cup_table_side(ht)
+            away_side = leagues_cup_table_side(at)
+            if home_side in side_map:
+                _credit_team(side_map[home_side], ht, hs, as_, hp, hwdl)
+            if away_side in side_map:
+                _credit_team(side_map[away_side], at, as_, hs, ap, awdl)
+
+        def _entries(table):
+            ranked = _rank_table(table)
+            return [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
+
+        groups = [
+            {"name": LEAGUES_CUP_TABLE_MLS, "entries": _entries(mls_table)},
+            {"name": LEAGUES_CUP_TABLE_LIGA_MX, "entries": _entries(liga_table)},
+        ]
+        return _finalize(
+            groups,
+            source="computed",
+            current_phase=current_competition_phase(comp_games, base_comp),
+        )
 
     # ── World Cup / group-stage cups ─────────────────────────────
     if base_comp == "FIFA/World Cup" or (
