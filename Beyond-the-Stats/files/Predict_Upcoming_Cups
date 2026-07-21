@@ -946,10 +946,27 @@ def _load_name_mapping_flat():
         with open(TEAM_MAPPING_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         flat = {}
+        # Prefer longer / more specific canons when the same raw key appears
+        # in multiple competitions (e.g. "Inter" Serie A vs Leagues Cup).
         for comp, entries in data.items():
-            if isinstance(entries, dict):
-                for k, v in entries.items():
-                    flat[k.strip().lower()] = v
+            if not isinstance(entries, dict):
+                continue
+            for k, v in entries.items():
+                key = k.strip().lower()
+                if not key:
+                    continue
+                # Leagues Cup / MLS Inter Miami aliases win over Serie A Inter.
+                if key in {"inter", "miami", "inter miami", "inter miami cf"} and str(comp).startswith(
+                    ("CONCACAF/", "United States/")
+                ):
+                    flat[key] = v
+                    continue
+                if key not in flat:
+                    flat[key] = v
+                    continue
+                # Keep the longer canonical when colliding.
+                if len(str(v)) > len(str(flat[key])):
+                    flat[key] = v
         _name_mapping_flat = flat
     except Exception:
         _name_mapping_flat = {}

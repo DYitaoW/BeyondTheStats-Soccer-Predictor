@@ -54,7 +54,7 @@ UEFA_TABLE_COMPETITIONS = {
     "Europe/Champions League",
     "Europe/Europa League",
     "Europe/Conference League",
-    "CONCACAF/Leagues Cup",
+    # Leagues Cup 2026 uses dual MLS/Liga MX tables — not UEFA league-phase.
 }
 UEFA_LEAGUE_PHASE_MATCHES = {
     "UEFA/Champions League": 8,
@@ -63,7 +63,6 @@ UEFA_LEAGUE_PHASE_MATCHES = {
     "Europe/Europa League": 8,
     "UEFA/Conference League": 6,
     "Europe/Conference League": 6,
-    "CONCACAF/Leagues Cup": 3,
 }
 UEFA_PRIMARY_COMPETITIONS = [
     "UEFA/Champions League",
@@ -154,13 +153,18 @@ CUP_FORMAT_RULES = {
         "allows_lower_league": True,
     },
     "CONCACAF/Leagues Cup": {
-        "format": "group_stage_then_knockout",
-        "description": "Group stage with MLS and Liga MX clubs, then single-elimination knockout rounds.",
-        "typical_rounds": ["Group Stage", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+        "format": "dual_league_phase_then_knockout",
+        "description": (
+            "Phase One: 3 MLS↔Liga MX matches per club; separate MLS and Liga MX "
+            "tables; top 4 each advance to Quarter-finals. No draws (3/2/1 points)."
+        ),
+        "typical_rounds": ["Phase One", "Quarter-finals", "Semi-finals", "Third Place", "Final"],
         "two_leg_rounds": [],
         "final_neutral": True,
-        "draw_type": "seeded_groups",
+        "draw_type": "seeded_dual_tables",
         "allows_lower_league": False,
+        "no_draws": True,
+        "advance_per_table": 4,
     },
 }
 
