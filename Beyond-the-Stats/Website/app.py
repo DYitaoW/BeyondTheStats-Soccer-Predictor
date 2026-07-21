@@ -1472,36 +1472,103 @@ def api_redeem():
     Body (JSON):
         code (str, required) — the promo code to redeem
 
-    Response:
-        ok (bool)
-        value (str) — the redeemed value (e.g. ``"premium_1mo"``, ``"credits_50"``)
-        message (str) — human-readable description
+    File format (``Data/redeem_codes.json``)::
+
+        [{"code": "CODEHERE", "value": true}]
+
+    Codes are case-sensitive and may contain letters and digits only
+    (no spaces or special characters).
+
+    Response (success):
+        ``{"ok": true, "value": <entry.value>}``
 
     Errors:
-        400 — missing code
-        404 — unknown/expired code
+        400 — missing / invalid code body (empty or non-alphanumeric)
+        404 — unknown code or codes file missing
     """
     payload = request.get_json(silent=True) or {}
     raw = payload.get("code", "")
+    if raw in (None, "") and request.args.get("code"):
+        raw = request.args.get("code", "")
     if not isinstance(raw, str):
-        return jsonify({"ok": False})
-    code = raw.strip().upper()
+        return jsonify({"ok": False, "error": "code must be a string"}), 400
+
+    code = _parse_redeem_code(raw)
+    if code is None:
+        return jsonify({
+            "ok": False,
+            "error": "missing or invalid code",
+            "detail": "code must be letters and digits only (case-sensitive)",
+        }), 400
     if not code or len(code) > 200:
-        return jsonify({"ok": False})
+        return jsonify({"ok": False, "error": "missing or invalid code"}), 400
 
-    codes = _load_json_payload(config.REDEEM_CODES_FILE)
-    if not isinstance(codes, list):
-        return jsonify({"ok": False})
+    entries = _load_redeem_code_entries()
+    if not entries:
+        return jsonify({
+            "ok": False,
+            "error": "redeem codes unavailable",
+            "detail": f"Expected JSON list at {config.REDEEM_CODES_FILE}",
+        }), 404
 
-    for entry in codes:
-        if str(entry.get("code", "")).strip().upper() == code:
-            return jsonify({"ok": entry.get("value", False)})
+    for entry in entries:
+        entry_code = _parse_redeem_code(entry.get("code", ""))
+        if not entry_code:
+            continue
+        # Case-sensitive exact match (alphanumeric only on both sides).
+        if entry_code == code:
+            return jsonify({
+                "ok": True,
+                "value": entry.get("value", True),
+            })
 
-    return jsonify({"ok": False})
+    return jsonify({"ok": False, "error": "unknown code"}), 404
 
 
-@app.get("/api/live-scores")
+def _parse_redeem_code(raw) -> str | None:
+    """Parse a redeem code for case-sensitive comparison.
 
+    Rules:
+      - strip leading/trailing whitespace only
+      - allow letters (A–Z, a–z) and digits (0–9) only
+      - no spaces or special characters inside the code
+      - case is preserved (``AbC`` ≠ ``abc``)
+
+    Returns ``None`` when the code contains disallowed characters.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if not text.isalnum():
+        return None
+    return text
+
+
+def _load_redeem_code_entries() -> list[dict]:
+    """Load redeem codes from ``Data/redeem_codes.json``.
+
+    Expected shape only::
+
+        [{"code": "CODEHERE", "value": true}, ...]
+    """
+    payload = _load_json_payload(config.REDEEM_CODES_FILE)
+    if not isinstance(payload, list):
+        return []
+    entries = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        code = item.get("code")
+        if code is None or str(code).strip() == "":
+            continue
+        parsed = _parse_redeem_code(code)
+        if not parsed:
+            continue
+        entries.append({
+            "code": parsed,
+            "value": item.get("value", True),
+        })
+    return entries
 
 
 @app.get("/api/live-scores")
