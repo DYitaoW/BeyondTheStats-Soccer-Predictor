@@ -28,6 +28,7 @@ if config.PROJECT_DIR not in sys.path:
     sys.path.insert(0, config.PROJECT_DIR)
 import pipeline_log
 from cache import _cache_clear_pattern, _cached_response
+from rate_limit import check_rate_limit, client_identifier
 from accuracy_tracker import (
     _build_persistent_accuracy_stats,
     _compute_accuracy_stats,
@@ -229,6 +230,51 @@ def _handle_cors_preflight():
         # Build a minimal preflight response; after_request adds the
         # Access-Control-* headers based on the Origin.
         return ("", 204)
+
+
+@app.before_request
+def _enforce_api_rate_limits():
+    """Per-IP rate limits for all ``/api/*`` calls (redeem is tighter)."""
+    if request.method == "OPTIONS":
+        return None
+    path = request.path or ""
+    if not path.startswith("/api/"):
+        return None
+
+    client_id = client_identifier()
+    allowed, retry_after = check_rate_limit(
+        "api",
+        config.API_RATE_LIMIT_PER_MINUTE,
+        60,
+        client_id=client_id,
+    )
+    if not allowed:
+        resp = jsonify({
+            "ok": False,
+            "error": "rate_limit_exceeded",
+            "detail": f"Limit {config.API_RATE_LIMIT_PER_MINUTE} requests per minute",
+        })
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(retry_after or 60)
+        return resp
+
+    if path.rstrip("/") == "/api/redeem":
+        allowed, retry_after = check_rate_limit(
+            "redeem",
+            config.REDEEM_RATE_LIMIT_PER_MINUTE,
+            60,
+            client_id=client_id,
+        )
+        if not allowed:
+            resp = jsonify({
+                "ok": False,
+                "error": "rate_limit_exceeded",
+                "detail": f"Redeem limit {config.REDEEM_RATE_LIMIT_PER_MINUTE} requests per minute",
+            })
+            resp.status_code = 429
+            resp.headers["Retry-After"] = str(retry_after or 60)
+            return resp
+    return None
 
 
 

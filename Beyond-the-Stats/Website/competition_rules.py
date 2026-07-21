@@ -1065,16 +1065,23 @@ def collect_competition_games(comp_name: str) -> list[dict]:
     are read **once** instead of once per competition — critical when the
     caller iterates over dozens of leagues.
     """
+    warm_competition_games_cache()
+    base_comp, _view = resolve_competition_query(comp_name)
+    return (_ALL_GAMES_BY_COMPETITION or {}).get(base_comp, [])
+
+
+def warm_competition_games_cache(force: bool = False) -> None:
+    """Ensure the batch games index is loaded (call from gunicorn worker init)."""
     global _ALL_GAMES_BY_COMPETITION, _ALL_GAMES_CACHE_TIME
     now = time.time()
     if (
-        _ALL_GAMES_BY_COMPETITION is None
-        or (now - _ALL_GAMES_CACHE_TIME) > _ALL_GAMES_CACHE_TTL
+        not force
+        and _ALL_GAMES_BY_COMPETITION is not None
+        and (now - _ALL_GAMES_CACHE_TIME) <= _ALL_GAMES_CACHE_TTL
     ):
-        _ALL_GAMES_BY_COMPETITION = _batch_load_all_games()
-        _ALL_GAMES_CACHE_TIME = now
-    base_comp, _view = resolve_competition_query(comp_name)
-    return _ALL_GAMES_BY_COMPETITION.get(base_comp, [])
+        return
+    _ALL_GAMES_BY_COMPETITION = _batch_load_all_games()
+    _ALL_GAMES_CACHE_TIME = now
 
 
 def filter_games_by_stage(games: list[dict], comp_name: str, stage: str) -> list[dict]:

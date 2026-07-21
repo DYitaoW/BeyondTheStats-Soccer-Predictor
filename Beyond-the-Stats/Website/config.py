@@ -97,6 +97,11 @@ _API_CACHE_MAX_AGE = int(os.environ.get("API_CACHE_MAX_AGE", "300"))
 _STATIC_CACHE_MAX_AGE = int(os.environ.get("STATIC_CACHE_MAX_AGE", "86400"))
 STATIC_PREDICTIONS_CACHE = os.environ.get("STATIC_PREDICTIONS_CACHE", "0").strip().lower() in {"1", "true", "yes"}
 
+# ── API Rate Limits (per client IP / minute) ───────────────────────
+# Applied to all ``/api/*`` routes. ``/api/redeem`` also has a tighter cap.
+API_RATE_LIMIT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_PER_MINUTE", "100"))
+REDEEM_RATE_LIMIT_PER_MINUTE = int(os.environ.get("REDEEM_RATE_LIMIT_PER_MINUTE", "5"))
+
 # ── Feature Flags ─────────────────────────────────────────────────
 
 # Prefer precomputed prediction CSVs for /api/predict and team lists.

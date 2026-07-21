@@ -57,6 +57,18 @@ import pipeline_log  # noqa: E402
 import model_cache_util  # noqa: E402
 
 
+def _warm_website_caches() -> None:
+    """Preload competition history so the first league-data request is warm."""
+    try:
+        if str(WEBSITE_DIR) not in sys.path:
+            sys.path.insert(0, str(WEBSITE_DIR))
+        from competition_rules import warm_competition_games_cache
+
+        warm_competition_games_cache(force=True)
+    except Exception:
+        LOG.exception("[flask] failed to warm competition games cache")
+
+
 @dataclass
 class BackendConfig:
     """All tunable knobs for the backend server."""
@@ -223,6 +235,7 @@ class BackendServer:
             options["post_worker_init"] = lambda _worker: (
                 website_app.start_live_score_poller(),
                 website_app.start_apns_worker(),
+                _warm_website_caches(),
             )
             FlaskApp(website_app.app, options).run()
         except Exception as exc:

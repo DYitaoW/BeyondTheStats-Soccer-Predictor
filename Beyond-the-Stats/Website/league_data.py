@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import config
@@ -37,6 +39,8 @@ from standings import (
     _dedupe_standings_groups,
     _load_league_teams,
     _normalize_team_name,
+    _real_tables,
+    _real_tables_lock,
     _UEFA_COMPETITIONS,
 )
 
@@ -55,6 +59,12 @@ _MLS_WEST_TEAMS = {
     "St. Louis City", "Vancouver Whitecaps",
 }
 
+# Process-local league-data cache (avoids disk JSON parse on hot path).
+_LEAGUE_DATA_MEM: dict[str, tuple[float, dict]] = {}
+_LEAGUE_DATA_MEM_LOCK = threading.Lock()
+_LEAGUE_DATA_BUILD_LOCKS: dict[str, threading.Lock] = {}
+_LEAGUE_DATA_BUILD_LOCKS_GUARD = threading.Lock()
+
 
 def _slugify_competition(competition):
     out = (competition or "").strip().lower()
@@ -70,18 +80,56 @@ def _league_data_cache_path(comp_name):
     return os.path.join(config.LEAGUE_DATA_DIR, f"{slug}.json")
 
 
+def _league_data_ttl_seconds() -> float:
+    return float(getattr(config, "CACHE_TTL_LONG", 600))
+
+
+def _mem_get_league_data(comp_name: str) -> dict | None:
+    now = time.time()
+    with _LEAGUE_DATA_MEM_LOCK:
+        entry = _LEAGUE_DATA_MEM.get(comp_name)
+        if not entry:
+            return None
+        expires_at, payload = entry
+        if now >= expires_at:
+            _LEAGUE_DATA_MEM.pop(comp_name, None)
+            return None
+        return payload
+
+
+def _mem_set_league_data(comp_name: str, payload: dict) -> None:
+    expires_at = time.time() + _league_data_ttl_seconds()
+    with _LEAGUE_DATA_MEM_LOCK:
+        _LEAGUE_DATA_MEM[comp_name] = (expires_at, payload)
+
+
+def _build_lock_for(comp_name: str) -> threading.Lock:
+    with _LEAGUE_DATA_BUILD_LOCKS_GUARD:
+        lock = _LEAGUE_DATA_BUILD_LOCKS.get(comp_name)
+        if lock is None:
+            lock = threading.Lock()
+            _LEAGUE_DATA_BUILD_LOCKS[comp_name] = lock
+        return lock
+
+
 def _load_league_data_from_cache(comp_name):
+    mem = _mem_get_league_data(comp_name)
+    if mem is not None:
+        return mem
+
     path = _league_data_cache_path(comp_name)
     if os.path.exists(path):
         try:
             age = datetime.now(timezone.utc).timestamp() - os.path.getmtime(path)
             # Short TTL so preseason roster / PATH B fixes show up quickly.
-            if age > float(getattr(config, "CACHE_TTL_LONG", 600)):
+            if age > _league_data_ttl_seconds():
                 return None
             with open(path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
             if _mls_league_data_cache_missing_cup(comp_name, payload):
                 return None
+            if isinstance(payload, dict):
+                _mem_set_league_data(comp_name, payload)
             return payload
         except Exception:
             pass
@@ -115,8 +163,11 @@ def _write_league_data_cache(comp_name, payload):
     path = _league_data_cache_path(comp_name)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        # Compact JSON — faster write/read than pretty-printed caches.
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2, default=str)
+            json.dump(payload, f, ensure_ascii=False, separators=(",", ":"), default=str)
+        if isinstance(payload, dict):
+            _mem_set_league_data(comp_name, payload)
     except Exception:
         pass
 
@@ -205,9 +256,18 @@ def _load_mls_predicted_groups() -> list[dict]:
     return groups
 
 
-def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict] | None:
+def _load_predicted_groups(
+    comp_name: str,
+    comp_table: list[dict],
+    real_standings: dict | None = None,
+) -> list[dict] | None:
     base_comp, mls_view = resolve_competition_query(comp_name)
     layout = standings_layout_for(comp_name)
+
+    def _real():
+        if real_standings is not None:
+            return real_standings
+        return _load_real_standings(comp_name)
 
     if layout == STANDINGS_LAYOUT_MLS:
         if mls_view:
@@ -219,7 +279,7 @@ def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict]
             label = view_map.get(mls_view)
             if label and comp_table:
                 return [{"name": label, "entries": _rows_to_group_entries(comp_table)}]
-            real = _load_real_standings(comp_name)
+            real = _real()
             if real and real.get("groups"):
                 target = label
                 if target:
@@ -230,7 +290,7 @@ def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict]
         groups = _load_mls_predicted_groups()
         if groups:
             return groups
-        real = _load_real_standings(comp_name)
+        real = _real()
         if real and real.get("groups"):
             return real["groups"]
         league_teams = _load_league_teams()
@@ -268,7 +328,7 @@ def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict]
         if groups:
             return groups
 
-    real = _load_real_standings(comp_name)
+    real = _real()
     if real and isinstance(real.get("groups"), list) and real["groups"]:
         if comp_table:
             group_name = str(real["groups"][0].get("name") or "Overall")
@@ -285,6 +345,19 @@ def _load_predicted_groups(comp_name: str, comp_table: list[dict]) -> list[dict]
     return None
 
 
+def _standings_entry_fresh(entry: dict | None) -> bool:
+    if not isinstance(entry, dict) or not entry.get("groups"):
+        return False
+    updated = entry.get("updated_at", "")
+    if not updated:
+        return True  # Persisted tables without timestamp are still usable.
+    try:
+        age = (datetime.now() - datetime.fromisoformat(str(updated))).total_seconds()
+    except Exception:
+        return True
+    return age < float(getattr(config, "REAL_TABLES_CACHE_TTL", 300))
+
+
 def _load_real_standings(comp_name: str) -> dict | None:
     """Active-season real table, or a zeroed current roster in preseason.
 
@@ -295,11 +368,22 @@ def _load_real_standings(comp_name: str) -> dict | None:
     Deduping / roster alignment happen inside standings helpers so real tables
     share the same football-data canonical team set as predicted tables.
     """
+    with _real_tables_lock:
+        cached = _real_tables.get(comp_name)
+    if _standings_entry_fresh(cached):
+        return cached
+
     result = _compute_standings_from_history(comp_name)
     if result and result.get("groups"):
         return result
     fallback = _build_fallback_standings(comp_name)
     if fallback:
+        # Cache fallbacks so predicted-groups + payload build share one compute.
+        if "updated_at" not in fallback:
+            fallback = dict(fallback)
+            fallback["updated_at"] = datetime.now().isoformat()
+        with _real_tables_lock:
+            _real_tables[comp_name] = fallback
         return fallback
     return None
 
@@ -817,6 +901,16 @@ def build_league_data_payload(comp_name: str) -> dict:
     if cached is not None:
         return cached
 
+    # Single-flight: concurrent cache misses for the same competition share one build.
+    lock = _build_lock_for(comp)
+    with lock:
+        cached = _load_league_data_from_cache(comp)
+        if cached is not None:
+            return cached
+        return _build_league_data_payload_uncached(comp)
+
+
+def _build_league_data_payload_uncached(comp: str) -> dict:
     fmt = competition_format_spec(comp)
 
     comp_table = _load_usable_projected_table(comp)
@@ -850,9 +944,10 @@ def build_league_data_payload(comp_name: str) -> dict:
             predicted_table.append(base)
         winner_fields = _build_winner_probability_payload(predicted_table) if predicted_table else winner_fields
 
-    position_odds = _build_position_odds(predicted_table)
-    predicted_groups = _load_predicted_groups(comp, predicted_table)
+    # Load real standings once — predicted groups reuse the same object.
     real_standings = _load_real_standings(comp)
+    position_odds = _build_position_odds(predicted_table)
+    predicted_groups = _load_predicted_groups(comp, predicted_table, real_standings=real_standings)
     bracket = _build_bracket_section(comp)
     fixtures = _load_fixtures(comp)
 

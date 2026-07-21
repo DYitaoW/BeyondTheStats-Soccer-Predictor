@@ -572,6 +572,20 @@ def _compute_standings_from_history(comp_name):
     Applies correct tiebreakers per league (GD-first vs H2H-first).
     Returns ``None`` if no completed games are available.
     """
+    # Prefer a fresh in-memory / persisted table before re-scanning history files.
+    with _real_tables_lock:
+        cached = _real_tables.get(comp_name)
+    if isinstance(cached, dict) and cached.get("groups"):
+        updated = cached.get("updated_at", "")
+        if not updated:
+            return cached
+        try:
+            age = (datetime.now() - datetime.fromisoformat(str(updated))).total_seconds()
+        except Exception:
+            return cached
+        if age < float(getattr(config, "REAL_TABLES_CACHE_TTL", 300)):
+            return cached
+
     base_comp, mls_view = resolve_competition_query(comp_name)
     # Only count games from the active season window (drops prior May finales
     # during Jul–Aug preseason when no new-season CSV exists yet).
