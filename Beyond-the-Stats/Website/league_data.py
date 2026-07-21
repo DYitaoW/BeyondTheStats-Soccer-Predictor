@@ -860,6 +860,60 @@ def _enrich_mls_payload(comp: str, payload: dict) -> dict:
     return payload
 
 
+def _current_season_roster_keys(comp_name: str) -> set[str] | None:
+    """Lowercased canonical team keys from ``current_season_teams.json``, or None."""
+    base_comp, _ = resolve_competition_query(comp_name)
+    try:
+        if not os.path.exists(config.CURRENT_SEASON_TEAMS_FILE):
+            return None
+        with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
+            current = json.load(fh)
+        if not isinstance(current, dict):
+            return None
+        roster = current.get(comp_name) or current.get(base_comp)
+        if not isinstance(roster, list) or len(roster) < 8:
+            return None
+        keys: set[str] = set()
+        for team in roster:
+            canon = _normalize_team_name(str(team).strip(), base_comp)
+            if canon:
+                keys.add(canon.lower())
+        return keys or None
+    except Exception:
+        return None
+
+
+def _projected_roster_mismatches_current_season(comp_name: str, rows: list[dict]) -> bool:
+    """True when projected teams look like a prior season vs current_season_teams.
+
+    Catches stale Premier League CSVs that still list relegated clubs
+    (Ipswich/Leicester/Southampton) after promotion/relegation updates.
+    """
+    expected = _current_season_roster_keys(comp_name)
+    if not expected or not rows:
+        return False
+    projected: set[str] = set()
+    base_comp, _ = resolve_competition_query(comp_name)
+    for row in rows:
+        team = str(row.get("team", "")).strip()
+        if not team:
+            continue
+        canon = _normalize_team_name(team, base_comp)
+        if canon:
+            projected.add(canon.lower())
+    if len(projected) < 8:
+        return False
+    overlap = len(projected & expected)
+    # Require strong agreement with the curated upcoming roster.
+    if overlap < max(8, int(0.7 * len(expected))):
+        return True
+    # Also flag when several expected clubs are missing (promoted sides).
+    missing = expected - projected
+    if len(missing) >= 2 and overlap < len(expected) - 1:
+        return True
+    return False
+
+
 def _projected_table_looks_like_completed_prior_season(comp_name: str, rows: list[dict]) -> bool:
     """True when projected rows look like a finished prior season (preseason stale CSV).
 
@@ -869,6 +923,8 @@ def _projected_table_looks_like_completed_prior_season(comp_name: str, rows: lis
     """
     if not rows or len(rows) < 8:
         return False
+    if _projected_roster_mismatches_current_season(comp_name, rows):
+        return True
     played_real = []
     played_total = []
     for row in rows:

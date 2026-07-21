@@ -54,6 +54,7 @@ EASTERN_TZ = ZoneInfo("America/New_York")
 
 MAPPING_FILE = os.path.join(BASE_DIR, "..", "..", "Data", "team_name_mapping_master.json")
 LEAGUE_TEAMS_FILE = os.path.join(OUT_DIR, "league_teams.json")
+CURRENT_SEASON_TEAMS_FILE = os.path.join(OUT_DIR, "current_season_teams.json")
 
 
 def _sibling_competitions(competition, mapping):
@@ -137,23 +138,37 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
         print(f"  Mapping: auto-added {added} entry/ies to {MAPPING_FILE}")
 
 
-def _load_upcoming_roster(competition):
-    """Load team roster for the upcoming season from league_teams.json.
-
-    Returns a sorted list of team names, or None if the competition is
-    not found in the roster file.
-    """
-    if not os.path.exists(LEAGUE_TEAMS_FILE):
+def _load_roster_from_json(path, competition):
+    """Return sorted team names for *competition* from a roster JSON, or None."""
+    if not path or not os.path.exists(path):
         return None
     try:
-        with open(LEAGUE_TEAMS_FILE, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        if not isinstance(data, dict):
+            return None
         roster = data.get(competition)
         if isinstance(roster, list) and len(roster) > 1:
-            return sorted(set(r.strip() for r in roster if r and r.strip()))
+            return sorted({str(r).strip() for r in roster if str(r).strip()})
     except Exception:
         pass
     return None
+
+
+def _load_current_season_roster(competition):
+    """Prefer ``current_season_teams.json`` (promotion/relegation updates)."""
+    return _load_roster_from_json(CURRENT_SEASON_TEAMS_FILE, competition)
+
+
+def _load_upcoming_roster(competition):
+    """Load the upcoming-season roster.
+
+    Prefers ``current_season_teams.json`` (manually / pipeline-updated for the
+    active season) over the broader historical ``league_teams.json``.
+    """
+    return _load_current_season_roster(competition) or _load_roster_from_json(
+        LEAGUE_TEAMS_FILE, competition
+    )
 
 
 ESPN_LEAGUE_IDS = {
@@ -770,43 +785,54 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
 
     else:
         # ── PATH B: No current-season CSV or CSV is from a past season ──
-        # Use ESPN to get the current season team list
-        espn_teams = _fetch_espn_teams(competition)
+        # Roster priority: current_season_teams.json → ESPN → league_teams.json
+        # (ESPN can lag or mix Championship clubs during the transition window.)
         teams = None
-        if espn_teams:
+
+        def _resolve_roster(raw_names, label):
             resolved = set()
             unresolved = []
-            for t in espn_teams:
+            for t in raw_names:
                 r = pm.resolve_team_name(t, ctx["available_teams"])
                 if r:
                     resolved.add(r)
                 else:
                     unresolved.append(t)
             if unresolved:
-                print(f"  Unresolved ESPN teams in {competition}: {sorted(set(unresolved))}")
-                _append_mapping_if_missing(competition, unresolved, ctx["available_teams"], _load_upcoming_roster(competition))
-                # Re-check any newly mapped names
+                print(f"  Unresolved {label} teams in {competition}: {sorted(set(unresolved))}")
+                _append_mapping_if_missing(
+                    competition, unresolved, ctx["available_teams"], _load_upcoming_roster(competition)
+                )
                 for t in unresolved:
                     r = pm.resolve_team_name(t, ctx["available_teams"])
                     if r:
                         resolved.add(r)
-            teams = sorted(resolved) if resolved else None
+            return sorted(resolved) if resolved else None
+
+        current_roster = _load_current_season_roster(competition)
+        if current_roster:
+            teams = _resolve_roster(current_roster, "current_season")
+            if teams:
+                print(f"  PATH B roster from current_season_teams.json ({len(teams)} teams)")
+
         if not teams:
-            # Last resort: static roster from league_teams.json
-            static_roster = _load_upcoming_roster(competition)
+            espn_teams = _fetch_espn_teams(competition)
+            if espn_teams:
+                teams = _resolve_roster(espn_teams, "ESPN")
+                if teams:
+                    print(f"  PATH B roster from ESPN ({len(teams)} teams)")
+
+        if not teams:
+            static_roster = _load_roster_from_json(LEAGUE_TEAMS_FILE, competition)
             if not static_roster:
                 print(f"  No current-season file and no ESPN/roster data for {competition}")
                 return [], []
-            resolved_static = []
-            for t in static_roster:
-                r = pm.resolve_team_name(t, ctx["available_teams"])
-                if r:
-                    resolved_static.append(r)
-            teams = sorted(set(resolved_static)) if resolved_static else sorted(static_roster)
+            teams = _resolve_roster(static_roster, "league_teams") or sorted(static_roster)
+            print(f"  PATH B roster from league_teams.json ({len(teams)} teams)")
 
         games_each = proj_sched.expected_games_per_team(competition, len(teams))
         print(
-            f"  No current-season CSV — PATH B roster ({len(teams)} teams, "
+            f"  No current-season CSV — PATH B ({len(teams)} teams, "
             f"~{games_each} games/team via format-aware round-robin)"
         )
         table = init_table(teams)
