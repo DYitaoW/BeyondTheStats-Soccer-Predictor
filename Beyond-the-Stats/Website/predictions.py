@@ -464,26 +464,58 @@ def _load_teams_from_team_data(pm_mod):
 
 
 def _load_h2h_and_form(pm_mod, use_cache=True):
+    """Load head-to-head + current-form maps for one predictor mode.
+
+    Prefers on-disk ``head_to_head.json`` / ``current_form.json`` so the
+    ``/api/h2h`` path stays fast. Only falls back to scanning processed
+    training CSVs when those JSON files are missing or invalid.
+    """
     cache_key = pm_mod.TEAM_DATA_DIR
-    if use_cache and cache_key in _h2h_form_cache:
-        mtime_sum, result = _h2h_form_cache[cache_key]
-        # Check if either JSON file has changed since we cached.
-        h2h_path = os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json")
-        form_path = os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json")
-        current_sum = 0.0
-        for p in (h2h_path, form_path):
+    h2h_path = os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json")
+    form_path = os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json")
+
+    def _mtime_sum():
+        total = 0.0
+        for path in (h2h_path, form_path):
             try:
-                current_sum += os.path.getmtime(p)
+                total += os.path.getmtime(path)
             except Exception:
                 pass
-        if current_sum == mtime_sum:
+        return total
+
+    if use_cache and cache_key in _h2h_form_cache:
+        mtime_sum, result = _h2h_form_cache[cache_key]
+        if _mtime_sum() == mtime_sum:
             return result
-    head_to_head = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json"))
-    current_form = pm_mod.load_json_if_exists(os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json"))
+
+    head_to_head = pm_mod.load_json_if_exists(h2h_path)
+    current_form = pm_mod.load_json_if_exists(form_path)
+
+    json_ok = (
+        isinstance(head_to_head, dict)
+        and isinstance(current_form, dict)
+        and isinstance(current_form.get("teams"), dict)
+    )
+    if json_ok:
+        try:
+            head_to_head = pm_mod.replace_nan_with_sentinel(head_to_head)
+            current_form = pm_mod.replace_nan_with_sentinel(current_form)
+        except Exception:
+            pass
+        result = (head_to_head or {}, current_form)
+        if use_cache:
+            _h2h_form_cache[cache_key] = (_mtime_sum(), result)
+        return result
+
+    # Slow path: rebuild from processed matches when JSON is missing/invalid.
     try:
         matches, season_files = pm_mod.load_training_matches(pm_mod.PROCESSED_DIR)
     except (ValueError, FileNotFoundError, OSError):
-        return head_to_head or {}, {"teams": {}}
+        result = (head_to_head or {}, current_form if isinstance(current_form, dict) else {"teams": {}})
+        if use_cache:
+            _h2h_form_cache[cache_key] = (_mtime_sum(), result)
+        return result
+
     dynamic_form = pm_mod.build_dynamic_form_from_matches(matches)
 
     if (
@@ -517,15 +549,7 @@ def _load_h2h_and_form(pm_mod, use_cache=True):
 
     result = (head_to_head or {}, current_form)
     if use_cache:
-        # Compute an mtime summary for cache invalidation.
-        mtime_sum = 0.0
-        for p in (os.path.join(pm_mod.TEAM_DATA_DIR, "head_to_head.json"),
-                  os.path.join(pm_mod.TEAM_DATA_DIR, "current_form.json")):
-            try:
-                mtime_sum += os.path.getmtime(p)
-            except Exception:
-                pass
-        _h2h_form_cache[cache_key] = (mtime_sum, result)
+        _h2h_form_cache[cache_key] = (_mtime_sum(), result)
     return result
 
 def _load_context(pm_mod):

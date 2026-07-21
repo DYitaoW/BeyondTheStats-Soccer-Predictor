@@ -752,9 +752,9 @@ def api_help():
         ("/api/h2h", "GET", "Head-to-head stats between two teams (?home=&away=)"),
         ("/api/scorers", "GET", "Top scorers data"),
         ("/api/stats", "GET", "Aggregate prediction statistics"),
-        ("/api/predict", "POST", "Run global predictions (triggers pipeline)"),
-        ("/api/predict/mls", "POST", "Run MLS-only predictions"),
-        ("/api/predict/extra", "POST", "Run extra-league predictions"),
+        ("/api/predict", "POST", "Predict a single matchup (? JSON: home_team, away_team, mode)"),
+        ("/api/predict/mls", "POST", "Predict a single MLS matchup"),
+        ("/api/predict/extra", "POST", "Predict a single extra-league matchup"),
         ("/api/pipeline/status", "GET", "Pipeline health: step pass/fail + last refresh"),
         ("/api/pipeline/logs", "GET", "Pipeline terminal output (tail, WARN/ERROR filters)"),
         ("/api/refresh", "POST", "Trigger background pipeline refresh (light, no model retrain)"),
@@ -1416,9 +1416,6 @@ def api_predict():
         away_team (str, required)
         mode (str, optional) — "global" (default), "mls", or "extra"
     """
-    if not _mutation_authorized():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
     payload = request.get_json(silent=True) or request.form
     home_team = str(payload.get("home_team", "")).strip()
     away_team = str(payload.get("away_team", "")).strip()
@@ -1435,9 +1432,6 @@ def api_predict():
 @app.post("/api/predict/mls")
 def api_predict_mls():
     """Predict a single MLS matchup from user input."""
-    if not _mutation_authorized():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
     payload = request.get_json(silent=True) or request.form
     home_team = str(payload.get("home_team", "")).strip()
     away_team = str(payload.get("away_team", "")).strip()
@@ -1451,9 +1445,6 @@ def api_predict_mls():
 @app.post("/api/predict/extra")
 def api_predict_extra():
     """Predict a single extra-league matchup from user input."""
-    if not _mutation_authorized():
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
     payload = request.get_json(silent=True) or request.form
     home_team = str(payload.get("home_team", "")).strip()
     away_team = str(payload.get("away_team", "")).strip()
@@ -1522,34 +1513,35 @@ def api_live_scores():
 
 
 @app.get("/api/h2h")
+@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
 def api_h2h():
     """Return head-to-head and form data for two teams."""
     team1_input = request.args.get("team1", "").strip()
     team2_input = request.args.get("team2", "").strip()
     mode = request.args.get("mode", "global").strip().lower()
-    
-    if config.STATIC_PREDICTIONS:
-        if mode == "mls":
-            pm_mod = pm_mls
-        elif mode == "extra":
-            pm_mod = pm_extra
-        else:
-            pm_mod = pm_global
-        head_to_head, current_form = _load_h2h_and_form(pm_mod)
-        ctx = type("StaticCtx", (), {"head_to_head": head_to_head, "current_form": current_form})
-    else:
-        ctx = get_context(mode)
-    
+
     if not team1_input or not team2_input:
         return jsonify({"ok": False, "error": "Missing teams"}), 400
+
+    if mode == "mls":
+        pm_mod = pm_mls
+    elif mode == "extra":
+        pm_mod = pm_extra
+    else:
+        pm_mod = pm_global
+
+    # Always load H2H/form JSON directly — never pull in the full ML model context.
+    head_to_head, current_form = _load_h2h_and_form(pm_mod)
+    form_teams = current_form.get("teams", {}) if isinstance(current_form, dict) else {}
+
     team1 = _team_name_for_db(team1_input)
     team2 = _team_name_for_db(team2_input)
-        
-    t1_form = _normalize_recent_form_payload(ctx.current_form.get("teams", {}).get(team1, {}))
-    t2_form = _normalize_recent_form_payload(ctx.current_form.get("teams", {}).get(team2, {}))
-    
-    h2h_data = _normalize_h2h_payload(ctx.head_to_head.get(team1, {}).get(team2))
-    h2h_data_reverse = _normalize_h2h_payload(ctx.head_to_head.get(team2, {}).get(team1))
+
+    t1_form = _normalize_recent_form_payload(form_teams.get(team1, {}))
+    t2_form = _normalize_recent_form_payload(form_teams.get(team2, {}))
+
+    h2h_data = _normalize_h2h_payload((head_to_head or {}).get(team1, {}).get(team2))
+    h2h_data_reverse = _normalize_h2h_payload((head_to_head or {}).get(team2, {}).get(team1))
     h2h_total_games = max(h2h_data.get("games", 0), h2h_data_reverse.get("games", 0))
 
     return jsonify({
