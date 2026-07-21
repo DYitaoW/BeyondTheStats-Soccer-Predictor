@@ -874,40 +874,82 @@ def _load_name_mapping():
     if not isinstance(raw, dict):
         _name_mapping_cache = {}
         return _name_mapping_cache
+
+    def _norm_key(name):
+        text = str(name or "").lower().strip().replace("&", "and")
+        return re.sub(r"[^a-z0-9]+", "", text)
+
     flat = {}
-    for comp, entries in raw.items():
+    for _comp, entries in raw.items():
         if not isinstance(entries, dict):
             continue
         for display_name, canonical_name in entries.items():
-            if display_name and canonical_name:
-                flat[display_name.strip().lower()] = canonical_name.strip()
+            if not display_name or not canonical_name:
+                continue
+            canon = str(canonical_name).strip()
+            alias = str(display_name).strip()
+            flat[alias.lower()] = canon
+            norm = _norm_key(alias)
+            if norm:
+                flat.setdefault(norm, canon)
     _name_mapping_cache = flat
     return flat
 
 
 def resolve_team_name(raw_name, valid_names):
+    """Map an API/ESPN/display name onto a name present in *valid_names*."""
     if not raw_name:
         return None
 
     def normalize(name):
-        name = name.lower().strip()
-
+        name = str(name).lower().strip()
         name = name.replace("&", "and")
         name = re.sub(r"[^a-z0-9]+", "", name)
         return name
 
-    mapping = _load_name_mapping()
-    mapped = mapping.get(raw_name.strip().lower())
-    if mapped and mapped in valid_names:
-        return mapped
+    valid_list = [str(t) for t in (valid_names or []) if str(t).strip()]
+    if not valid_list:
+        return None
+    valid_set = set(valid_list)
+    alias_map = {normalize(team): team for team in valid_list}
 
-    key = normalize(raw_name)
-    alias_map = {normalize(team): team for team in valid_names}
-    direct = alias_map.get(key)
+    def from_candidate(candidate):
+        if not candidate:
+            return None
+        text = str(candidate).strip()
+        if text in valid_set:
+            return text
+        return alias_map.get(normalize(text))
+
+    mapping = _load_name_mapping()
+    raw = str(raw_name).strip()
+    lower = raw.lower()
+
+    for key in (lower, normalize(raw)):
+        hit = from_candidate(mapping.get(key))
+        if hit:
+            return hit
+
+    hit = from_candidate(raw)
+    if hit:
+        return hit
+
+    direct = alias_map.get(normalize(raw))
     if direct:
         return direct
 
-    candidates = [team for team in valid_names if key and key in normalize(team)]
+    stripped = re.sub(r"\s+(AFC|FC)\s*$", "", raw, flags=re.IGNORECASE).strip()
+    if stripped and stripped.lower() != lower:
+        for key in (stripped.lower(), normalize(stripped)):
+            hit = from_candidate(mapping.get(key))
+            if hit:
+                return hit
+        hit = from_candidate(stripped) or alias_map.get(normalize(stripped))
+        if hit:
+            return hit
+
+    key = normalize(raw)
+    candidates = [team for team in valid_list if key and key in normalize(team)]
     if len(candidates) == 1:
         return candidates[0]
 
