@@ -183,7 +183,8 @@ def _should_build_model_cache(args, label: str, predict_script: Path) -> tuple[b
 PROJECTED_TABLE_TIMEOUT_S = {
     "global": 3600,  # many competitions
     "mls": 2700,
-    "extra": 2700,
+    # Extra PATH B can still be heavy; prefer finishing over parallel kill (-9).
+    "extra": 3600,
 }
 
 
@@ -404,7 +405,9 @@ def _run_extra_subpipeline(args, api_token):
     """Run the extra-leagues sub-pipeline (smaller European / S. American / Asian leagues)."""
     py = sys.executable
     sub = {}
-    comp_workers = _resolve_competition_workers(args)
+    # Extra PATH B + Monte Carlo under nested workers is a frequent OOM/SIGKILL
+    # source (-9) when global/MLS already run in parallel. Keep this sequential.
+    comp_workers = 1
     sub["extra_download_process_sort"] = run_step(
         "[extra] Download/process/sort latest data",
         [py, str(EXTRA_FILES_DIR / "Download_Latest_Data.py")],

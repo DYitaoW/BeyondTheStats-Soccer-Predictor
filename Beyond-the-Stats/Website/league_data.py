@@ -116,7 +116,11 @@ def _build_lock_for(comp_name: str) -> threading.Lock:
 def _load_league_data_from_cache(comp_name):
     mem = _mem_get_league_data(comp_name)
     if mem is not None:
-        return mem
+        if _league_data_cache_is_stale_zeroed(comp_name, mem):
+            with _LEAGUE_DATA_MEM_LOCK:
+                _LEAGUE_DATA_MEM.pop(comp_name, None)
+        else:
+            return mem
 
     path = _league_data_cache_path(comp_name)
     if os.path.exists(path):
@@ -129,12 +133,39 @@ def _load_league_data_from_cache(comp_name):
                 payload = json.load(f)
             if _mls_league_data_cache_missing_cup(comp_name, payload):
                 return None
+            if _league_data_cache_is_stale_zeroed(comp_name, payload):
+                return None
             if isinstance(payload, dict):
                 _mem_set_league_data(comp_name, payload)
             return payload
         except Exception:
             pass
     return None
+
+
+def _league_data_cache_is_stale_zeroed(comp_name: str, payload: dict) -> bool:
+    """True when cached predicted rows are all zeros but better projections exist."""
+    if not isinstance(payload, dict):
+        return True
+    table = ((payload.get("predicted") or {}).get("table")) or []
+    if not table:
+        return False
+    try:
+        all_zero = all(float(r.get("sim_runs") or 0) <= 0 for r in table)
+    except Exception:
+        all_zero = True
+    if not all_zero:
+        return False
+    try:
+        rows = _load_usable_projected_table(comp_name) or []
+    except Exception:
+        rows = []
+    if not rows:
+        return False
+    try:
+        return any(float(r.get("sim_runs") or 0) > 0 for r in rows)
+    except Exception:
+        return False
 
 
 def _mls_league_data_cache_missing_cup(comp_name: str, payload: dict) -> bool:

@@ -103,7 +103,7 @@ TEAM_KEY_ALIASES = {
     "newyorkredbulls": "newyorkredbulls",
     "sportingkansascity": "kansascity",
     "intermiamicf": "intermiami",
-    "cfmontreal": "montreal",
+    "cfmontreal": "cfmontreal",
     "atlantaunitedfc": "atlantaunited",
     "atlantaunited": "atlantaunited",
 }
