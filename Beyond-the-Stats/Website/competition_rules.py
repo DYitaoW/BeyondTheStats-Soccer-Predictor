@@ -368,6 +368,12 @@ def _load_mls_canonical_names() -> dict[str, str]:
     if _mls_name_cache is not None:
         return _mls_name_cache
     mapping: dict[str, str] = {}
+    # Prefer names that match the live MLS conference rosters so slug aliases
+    # (cfmontreal → Montreal) cannot overwrite CF Montreal / NY Red Bulls.
+    preferred = {
+        normalize_team_key(t): t
+        for t in list(MLS_EASTERN_CONFERENCE_TEAMS) + list(MLS_WESTERN_CONFERENCE_TEAMS)
+    }
     path = config.TEAM_NAME_DISPLAY_MAPPING_FILE
     if os.path.exists(path):
         try:
@@ -378,10 +384,25 @@ def _load_mls_canonical_names() -> dict[str, str]:
                 for raw_name, canonical in comp_map.items():
                     raw = str(raw_name or "").strip()
                     canon = str(canonical or "").strip() or raw
-                    if raw:
-                        mapping[normalize_team_key(raw)] = canon
+                    if not raw:
+                        continue
+                    key = normalize_team_key(raw)
+                    if not key:
+                        continue
+                    # Identity / roster canons win over abbreviated leftovers.
+                    if key in preferred:
+                        mapping[key] = preferred[key]
+                        continue
+                    canon_key = normalize_team_key(canon)
+                    if canon_key in preferred:
+                        mapping[key] = preferred[canon_key]
+                        continue
+                    if key not in mapping:
+                        mapping[key] = canon
         except Exception:
             pass
+    for key, team in preferred.items():
+        mapping.setdefault(key, team)
     _mls_name_cache = mapping
     return mapping
 

@@ -138,6 +138,13 @@ def load_model_cache_bundle(pm_mod, season_files, rebuild_fn: Callable[[], None]
     fingerprint = pm_mod.data_fingerprint(season_files)
 
     def _reload():
+        # Drop a corrupt pickle so rebuild cannot keep reloading the same bad file.
+        try:
+            if os.path.exists(pm_mod.MODEL_CACHE):
+                os.remove(pm_mod.MODEL_CACHE)
+                print(f"[model-cache] removed unloadable cache at {pm_mod.MODEL_CACHE}")
+        except Exception as exc:
+            print(f"[model-cache] could not remove unloadable cache ({exc.__class__.__name__})")
         rebuild_fn()
         return joblib.load(pm_mod.MODEL_CACHE)
 

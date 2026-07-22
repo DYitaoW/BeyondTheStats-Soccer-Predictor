@@ -1676,6 +1676,67 @@ def _build_mls_winners_odds_bundle() -> dict:
     return bundle
 
 
+def _slugify_competition_for_leagueresult(competition: str) -> str:
+    out = (competition or "").strip().lower()
+    out = out.replace("/", "_").replace(" ", "_").replace("-", "_")
+    out = out.replace(".", "").replace(",", "").replace("'", "")
+    while "__" in out:
+        out = out.replace("__", "_")
+    return out.strip("_") or "unknown"
+
+
+def _rows_from_leagueresult_json(comp_name: str) -> list[dict]:
+    """Load published LeagueResult JSON rows when projected CSV is missing."""
+    lookup_names = [str(comp_name or "").strip()]
+    alias = PROJECTED_WINNER_COMP_ALIASES.get(lookup_names[0])
+    if alias and alias not in lookup_names:
+        lookup_names.append(alias)
+    # MLS base → Supporters Shield published file.
+    if lookup_names[0] == "United States/MLS":
+        lookup_names.append(MLS_SHIELD_TABLE)
+
+    slugs = []
+    for name in lookup_names:
+        if not name:
+            continue
+        slug = _slugify_competition_for_leagueresult(name)
+        if slug and slug not in slugs:
+            slugs.append(slug)
+
+    for region in ("Other", "Europe", "National"):
+        for slug in slugs:
+            path = os.path.join(config.PROJECT_DIR, "Output", region, "LeagueResult", f"{slug}.json")
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            except Exception:
+                continue
+            teams_raw = payload.get("teams") if isinstance(payload, dict) else None
+            if not isinstance(teams_raw, list) or not teams_raw:
+                continue
+            rows = []
+            for entry in teams_raw:
+                if not isinstance(entry, dict):
+                    continue
+                team = str(entry.get("team") or "").strip()
+                if not team:
+                    continue
+                row = dict(entry)
+                row["team"] = team
+                # LeagueResult already stores position_odds as a dict.
+                if isinstance(row.get("position_odds"), str):
+                    try:
+                        row["position_odds"] = json.loads(row["position_odds"])
+                    except Exception:
+                        row["position_odds"] = {}
+                rows.append(row)
+            if rows:
+                return rows
+    return []
+
+
 def _load_projected_competition_table(comp_name: str) -> list[dict]:
     """Return projected table rows for a competition from any pipeline CSV."""
     lookup_names = [str(comp_name or "").strip()]
@@ -1690,21 +1751,31 @@ def _load_projected_competition_table(comp_name: str) -> list[dict]:
             table = (proj.get("tables") or {}).get(lookup)
             if table:
                 return table
-    return []
+    # CSV may be absent after a killed Extra/MLS projection step; LeagueResult
+    # is the published artifact Daily_Pipeline already wrote from a good run.
+    return _rows_from_leagueresult_json(comp_name)
 
 
 def _build_winner_probability_payload(comp_table: list[dict]) -> dict:
     """Build World Cup-style winner odds fields from projected table rows."""
+    from competition_rules import normalize_team_key
+
     winner_probabilities: dict[str, float] = {}
     winners_odds: list[dict] = []
     champion = None
     sim_runs = None
     best_pct = -1.0
+    seen_keys: set[str] = set()
 
     for row in comp_table:
         team = str(row.get("team", "")).strip()
         if not team:
             continue
+        key = normalize_team_key(team)
+        if key and key in seen_keys:
+            continue
+        if key:
+            seen_keys.add(key)
         if sim_runs is None and row.get("sim_runs") is not None:
             sim_runs = row.get("sim_runs")
         try:
@@ -1725,6 +1796,21 @@ def _build_winner_probability_payload(comp_table: list[dict]) -> dict:
             if pct_f > best_pct:
                 best_pct = pct_f
                 champion = team
+
+    # Keep each odds table on a single 100% pie (Shield / East / West / Cup separately).
+    total = sum(winner_probabilities.values())
+    if total > 0 and abs(total - 100.0) > 0.05:
+        scale = 100.0 / total
+        winner_probabilities = {
+            team: round(pct * scale, 2) for team, pct in winner_probabilities.items()
+        }
+        drift = round(100.0 - sum(winner_probabilities.values()), 2)
+        if champion and champion in winner_probabilities and drift:
+            winner_probabilities[champion] = round(winner_probabilities[champion] + drift, 2)
+        for entry in winners_odds:
+            team = entry.get("team")
+            if team in winner_probabilities:
+                entry["win_league_pct"] = winner_probabilities[team]
 
     winners_odds.sort(key=lambda x: x.get("win_league_pct") or 0, reverse=True)
     payload: dict = {"winners_odds": winners_odds}

@@ -42,6 +42,9 @@ OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
 OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
 RNG = random.Random()
 SIMULATION_RUNS = 1000
+# Preseason PATH B synthesizes a full home/away slate; fewer sims keep the
+# daily pipeline inside its timeout while still producing usable odds.
+PATH_B_SIMULATION_RUNS = 120
 COMPETITION_SIM_RUNS = {
     "England/Premier League": 2500,
     "Spain/La Liga": 2500,
@@ -729,9 +732,13 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
     sim_runs = COMPETITION_SIM_RUNS.get(competition, sim_runs)
 
     # Determine if this CSV represents the current season or a past season
-    csv_start_year = pm.parse_season_start_year(os.path.basename(raw_file))
-    expected_year = _expected_current_season_year(competition)
-    use_path_a = _prefer_csv_path_a(competition, raw_file, csv_start_year, expected_year)
+    if raw_file and os.path.exists(raw_file):
+        csv_start_year = pm.parse_season_start_year(os.path.basename(raw_file))
+        expected_year = _expected_current_season_year(competition)
+        use_path_a = _prefer_csv_path_a(competition, raw_file, csv_start_year, expected_year)
+    else:
+        csv_start_year = None
+        use_path_a = False
 
     if use_path_a:
         # ── PATH A: Current-season CSV exists ──────────────────────────
@@ -787,6 +794,7 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         # ── PATH B: No current-season CSV or CSV is from a past season ──
         # Roster priority: current_season_teams.json → ESPN → league_teams.json
         # (ESPN can lag or mix Championship clubs during the transition window.)
+        sim_runs = min(int(sim_runs), PATH_B_SIMULATION_RUNS)
         teams = None
 
         def _resolve_roster(raw_names, label):
@@ -961,6 +969,30 @@ def _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx,
         print(f"  Generated {added} fixture(s) (format target ~{games} games/team)")
 
 
+def _merge_roster_only_competitions(latest: dict) -> dict:
+    """Ensure current_season_teams leagues are projected even without a raw CSV."""
+    out = dict(latest or {})
+    try:
+        if not os.path.exists(CURRENT_SEASON_TEAMS_FILE):
+            return out
+        with open(CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            return out
+        for comp, roster in data.items():
+            if not isinstance(roster, list) or len(roster) < 2:
+                continue
+            if comp in out:
+                continue
+            if "/MLS -" in comp or "UEFA/" in comp or comp.endswith(" Cup"):
+                continue
+            out[comp] = None
+            print(f"  PATH B roster-only competition queued: {comp}")
+    except Exception:
+        return out
+    return out
+
+
 def parse_cli_args():
     parser = argparse.ArgumentParser(description="Project remaining fixtures onto a Monte-Carlo season.")
     parser.add_argument(
@@ -983,9 +1015,10 @@ def main():
     sim_runs = max(1, int(args.sim_runs))
     comp_workers = max(1, int(args.competition_workers))
     ctx = load_context()
-    latest = latest_raw_file_per_competition(RAW_DIR)
+    latest = latest_raw_file_per_competition(RAW_DIR) or {}
+    latest = _merge_roster_only_competitions(latest)
     if not latest:
-        raise ValueError(f"No raw season files found in {RAW_DIR}")
+        raise ValueError(f"No raw season files or current-season rosters found in {RAW_DIR}")
 
     # June through mid-July is the European club off-season — skip projections
     # until on/after Jul 15 when the next season (e.g. 26-27) becomes active.
@@ -1013,7 +1046,7 @@ def main():
 
     all_tables = []
     all_future = []
-    comps = sorted(latest.items())
+    comps = sorted(latest.items(), key=lambda kv: kv[0])
     if not comps:
         print("No competitions left to project.")
         os.makedirs(OUT_DIR, exist_ok=True)
@@ -1023,9 +1056,13 @@ def main():
 
     if comp_workers <= 1 or len(comps) <= 1:
         for competition, path in comps:
-            table_rows, future_rows = project_competition(ctx, competition, path, sim_runs)
-            all_tables.extend(table_rows)
-            all_future.extend(future_rows)
+            try:
+                table_rows, future_rows = project_competition(ctx, competition, path, sim_runs)
+                all_tables.extend(table_rows)
+                all_future.extend(future_rows)
+                print(f"  [{competition}] done ({len(table_rows)} rows)")
+            except Exception as e:
+                print(f"  [{competition}] ERROR: {e}")
     else:
         max_workers = min(comp_workers, len(comps))
         print(f"  Processing {len(comps)} competitions with {max_workers} workers")

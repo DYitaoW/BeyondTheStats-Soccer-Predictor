@@ -653,23 +653,24 @@ def build_cup_probability_columns(cup_win_counts, team, total_runs):
     }
 
 
-def build_probability_columns(position_counts, team, total_teams):
+def build_probability_columns(position_counts, team, total_teams, total_runs=None):
     counts = position_counts.get(team, {})
+    runs = max(1, int(total_runs if total_runs is not None else SIMULATION_RUNS))
     most_likely_pos, most_likely_count = max(counts.items(), key=lambda kv: kv[1], default=(1, 0))
     top_n = min(4, total_teams)
     bottom_cutoff = max(1, total_teams - 2)
     position_odds = {
-        str(rank): round((counts.get(rank, 0) / SIMULATION_RUNS) * 100.0, 2)
+        str(rank): round((counts.get(rank, 0) / runs) * 100.0, 2)
         for rank in range(1, total_teams + 1)
     }
     return {
-        "win_league_pct": round((counts.get(1, 0) / SIMULATION_RUNS) * 100.0, 2),
-        "top4_pct": round((sum(v for k, v in counts.items() if k <= top_n) / SIMULATION_RUNS) * 100.0, 2),
-        "bottom3_pct": round((sum(v for k, v in counts.items() if k >= bottom_cutoff) / SIMULATION_RUNS) * 100.0, 2),
+        "win_league_pct": round((counts.get(1, 0) / runs) * 100.0, 2),
+        "top4_pct": round((sum(v for k, v in counts.items() if k <= top_n) / runs) * 100.0, 2),
+        "bottom3_pct": round((sum(v for k, v in counts.items() if k >= bottom_cutoff) / runs) * 100.0, 2),
         "most_likely_position": int(most_likely_pos),
-        "most_likely_position_pct": round((most_likely_count / SIMULATION_RUNS) * 100.0, 2),
+        "most_likely_position_pct": round((most_likely_count / runs) * 100.0, 2),
         "position_odds_json": json.dumps(position_odds, separators=(",", ":"), sort_keys=True),
-        "sim_runs": int(SIMULATION_RUNS),
+        "sim_runs": int(runs),
     }
 
 
@@ -1499,7 +1500,7 @@ def project_competition(ctx, competition, raw_file):
                     "position": pos,
                     "team": team,
                     **stats,
-                    **build_probability_columns(pos_counts, team, total_teams),
+                    **build_probability_columns(pos_counts, team, total_teams, SIMULATION_RUNS),
                 }
             )
         return rows
