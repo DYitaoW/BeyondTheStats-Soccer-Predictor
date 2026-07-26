@@ -809,6 +809,8 @@ def project_competition(ctx, competition, raw_file):
             static_roster = _load_roster_from_json(LEAGUE_TEAMS_FILE, competition) or []
             teams = _resolve_roster(static_roster, "league_teams")
             if not teams:
+                teams = sorted({r for t in static_roster if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
+            if not teams:
                 print(f"  No current-season file and no resolved ESPN/roster for {competition}")
                 return [], []
 
@@ -951,27 +953,29 @@ def project_competition(ctx, competition, raw_file):
 
 
 def _merge_roster_only_competitions(latest: dict) -> dict:
-    """Ensure current_season_teams leagues are projected even without a raw CSV."""
+    """Ensure current_season_teams and league_teams leagues are projected even without a raw CSV."""
     out = dict(latest or {})
-    try:
-        if not os.path.exists(CURRENT_SEASON_TEAMS_FILE):
-            return out
-        with open(CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        if not isinstance(data, dict):
-            return out
-        for comp, roster in data.items():
-            if not isinstance(roster, list) or len(roster) < 2:
+    seen = set(out.keys())
+    for filepath, label in [(CURRENT_SEASON_TEAMS_FILE, "current_season_teams"), (LEAGUE_TEAMS_FILE, "league_teams")]:
+        try:
+            if not os.path.exists(filepath):
                 continue
-            if comp in out:
+            with open(filepath, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if not isinstance(data, dict):
                 continue
-            # Skip cups / non-league shells.
-            if "/MLS -" in comp or comp.endswith(" Cup") or "UEFA/" in comp:
-                continue
-            out[comp] = None
-            print(f"  PATH B roster-only competition queued: {comp}")
-    except Exception:
-        return out
+            for comp, roster in data.items():
+                if not isinstance(roster, list) or len(roster) < 2:
+                    continue
+                if comp in seen:
+                    continue
+                if "/MLS -" in comp or comp.endswith(" Cup") or "UEFA/" in comp:
+                    continue
+                seen.add(comp)
+                out[comp] = None
+                print(f"  PATH B roster-only competition queued ({label}): {comp}")
+        except Exception:
+            continue
     return out
 
 

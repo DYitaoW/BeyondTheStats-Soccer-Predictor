@@ -818,7 +818,7 @@ def _publish_all_upcoming(output_dir, source_paths):
 
 
 def _publish_windowed_upcoming(output_dir, source_paths):
-    """Write Output/Upcoming/four_week_window.csv (prev week → next 2 weeks)."""
+    """Write Output/Upcoming/four_week_window.csv (past 14 days → next 21 days)."""
     from zoneinfo import ZoneInfo
     all_rows = []
     for src in source_paths:
@@ -829,9 +829,8 @@ def _publish_windowed_upcoming(output_dir, source_paths):
         return None
 
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
-    current_week_start = today_et - timedelta(days=today_et.weekday())
-    window_start = current_week_start - timedelta(days=7)
-    window_end = current_week_start + timedelta(days=20)
+    window_start = today_et - timedelta(days=14)
+    window_end = today_et + timedelta(days=21)
 
     seen = set()
     filtered = []

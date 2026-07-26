@@ -38,6 +38,9 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GLOBAL_PREDICTIONS_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 MLS_PREDICTIONS_FILE = os.path.join(BASE_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
 EXTRA_PREDICTIONS_FILE = os.path.join(BASE_DIR, "Extra-leagues", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
+CUP_PREDICTIONS_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "upcoming_cup_predictions.csv")
+NATIONAL_PREDICTIONS_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "upcoming_national_team_predictions.csv")
+FRIENDLIES_PREDICTIONS_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "upcoming_club_friendlies.csv")
 SHARED_MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "team_name_mapping_master.json")
 ESPN_NAMES_FILE = os.path.join(BASE_DIR, "Data", "Predictions", "espn_team_names_seen.json")
 ACCURACY_TOTALS_FILE = os.path.join(BASE_DIR, "Website", "files", "accuracy_totals.json")
@@ -57,6 +60,21 @@ ESPN_COMPETITION_KEYS = {
     "France/Ligue 2": "fra.2",
     "Portugal/Liga Portugal": "por.1",
     "United States/MLS": "usa.1",
+    # Cup competitions
+    "England/FA Cup": "eng.fa",
+    "England/League Cup": "eng.efl",
+    "UEFA/Champions League": "uefa.champions",
+    "UEFA/Europa League": "uefa.europa",
+    "UEFA/Conference League": "uefa.europa.conf",
+    "Europe/Champions League": "uefa.champions",
+    "Europe/Europa League": "uefa.europa",
+    "Europe/Conference League": "uefa.europa.conf",
+    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
+    "United States/US Open Cup": "usa.open_cup",
+    # National team competitions
+    "FIFA/World Cup": "fifa.world",
+    "FIFA/Friendly": "fifa.friendly",
+    "UEFA/European Championship": "uefa.euro",
 }
 DEFAULT_ESPN_FETCH_WORKERS = 8
 MLS_COMPETITION = "United States/MLS"
@@ -564,11 +582,10 @@ def save_completed_rows_to_past_games(frame, today=None):
             new_rows.append(row_dict)
 
     existing = list(existing_by_key.values()) + keyless_existing
-    # Prune rows older than previous full week (keep current week + previous full week)
+    # Prune rows older than 14 days (keep past_games for 4week window)
     try:
         today_local = datetime.now(ZoneInfo("America/New_York")).date()
-        current_week_start = today_local - timedelta(days=today_local.weekday())
-        cutoff = current_week_start - timedelta(days=7)
+        cutoff = today_local - timedelta(days=14)
         before = len(existing)
 
         def keep_row(row):
@@ -854,9 +871,12 @@ def main():
     global_df = load_predictions(GLOBAL_PREDICTIONS_FILE)
     mls_df = load_predictions(MLS_PREDICTIONS_FILE)
     extra_df = load_predictions(EXTRA_PREDICTIONS_FILE)
+    cup_df = load_predictions(CUP_PREDICTIONS_FILE)
+    national_df = load_predictions(NATIONAL_PREDICTIONS_FILE)
+    friendlies_df = load_predictions(FRIENDLIES_PREDICTIONS_FILE)
     totals = load_accuracy_totals(ACCURACY_TOTALS_FILE)
 
-    if global_df is None and mls_df is None:
+    if global_df is None and mls_df is None and extra_df is None and cup_df is None and national_df is None and friendlies_df is None:
         raise ValueError("No predictions CSV files found to update.")
 
     shared_mapping = load_shared_mapping()
@@ -872,14 +892,29 @@ def main():
         extra_results, extra_mapping_updates, extra_unresolved, extra_seen_names = build_results_index_from_espn(
             extra_df, shared_mapping, fetch_workers=args.espn_fetch_workers
         )
+        cup_results, cup_mapping_updates, cup_unresolved, cup_seen_names = build_results_index_from_espn(
+            cup_df, shared_mapping, fetch_workers=args.espn_fetch_workers
+        )
+        national_results, national_mapping_updates, national_unresolved, national_seen_names = build_results_index_from_espn(
+            national_df, shared_mapping, fetch_workers=args.espn_fetch_workers
+        )
+        friendlies_results, friendlies_mapping_updates, friendlies_unresolved, friendlies_seen_names = build_results_index_from_espn(
+            friendlies_df, shared_mapping, fetch_workers=args.espn_fetch_workers
+        )
     else:
         global_results, global_mapping_updates, global_unresolved, global_seen_names = {}, {}, {}, {}
         mls_results, mls_mapping_updates, mls_unresolved, mls_seen_names = {}, {}, {}, {}
         extra_results, extra_mapping_updates, extra_unresolved, extra_seen_names = {}, {}, {}, {}
+        cup_results, cup_mapping_updates, cup_unresolved, cup_seen_names = {}, {}, {}, {}
+        national_results, national_mapping_updates, national_unresolved, national_seen_names = {}, {}, {}, {}
+        friendlies_results, friendlies_mapping_updates, friendlies_unresolved, friendlies_seen_names = {}, {}, {}, {}
 
     shared_mapping, global_added, global_drift = apply_mapping_updates(shared_mapping, global_mapping_updates)
     shared_mapping, mls_added, mls_drift = apply_mapping_updates(shared_mapping, mls_mapping_updates)
     shared_mapping, extra_added, extra_drift = apply_mapping_updates(shared_mapping, extra_mapping_updates)
+    shared_mapping, cup_added, cup_drift = apply_mapping_updates(shared_mapping, cup_mapping_updates)
+    shared_mapping, national_added, national_drift = apply_mapping_updates(shared_mapping, national_mapping_updates)
+    shared_mapping, friendlies_added, friendlies_drift = apply_mapping_updates(shared_mapping, friendlies_mapping_updates)
     save_mapping(SHARED_MAPPING_FILE, shared_mapping)
     save_json(
         ESPN_NAMES_FILE,
@@ -888,6 +923,9 @@ def main():
             "global": global_seen_names,
             "mls": mls_seen_names,
             "extra": extra_seen_names,
+            "cup": cup_seen_names,
+            "national": national_seen_names,
+            "friendlies": friendlies_seen_names,
         },
     )
 
@@ -904,8 +942,6 @@ def main():
     extra_cleaned = 0
     extra_future_cleared = 0
     extra_removed_completed = 0
-
-    extra_removed_completed = 0
     if extra_df is not None:
         today_et = datetime.now(EASTERN_TZ).date()
         extra_df, extra_future_cleared = clear_future_settled_rows(extra_df, today_et)
@@ -914,9 +950,45 @@ def main():
         if needs_resettle and extra_results:
             extra_df, extra_updates = update_frame_with_results(extra_df, extra_results)
         extra_totals_added = update_accuracy_totals_from_frame(totals, extra_df)
-        save_completed_rows_to_past_games(extra_df, today=prev_thursday)
-        extra_df, extra_removed_completed = drop_completed_rows(extra_df, today=prev_thursday)
+        save_completed_rows_to_past_games(extra_df, today=today_et)
+        extra_df, extra_removed_completed = drop_completed_rows(extra_df, today=today_et)
         extra_df.to_csv(EXTRA_PREDICTIONS_FILE, index=False)
+
+    cup_removed_completed = 0
+    if cup_df is not None:
+        today_et = datetime.now(EASTERN_TZ).date()
+        cup_df, cup_future_cleared = clear_future_settled_rows(cup_df, today_et)
+        if args.cleanup_all:
+            cup_df, cup_cleaned = cleanup_all_settled_rows(cup_df)
+        if needs_resettle and cup_results:
+            cup_df, cup_updates = update_frame_with_results(cup_df, cup_results)
+        save_completed_rows_to_past_games(cup_df, today=today_et)
+        cup_df, cup_removed_completed = drop_completed_rows(cup_df, today=today_et)
+        cup_df.to_csv(CUP_PREDICTIONS_FILE, index=False)
+
+    national_removed_completed = 0
+    if national_df is not None:
+        today_et = datetime.now(EASTERN_TZ).date()
+        national_df, national_future_cleared = clear_future_settled_rows(national_df, today_et)
+        if args.cleanup_all:
+            national_df, national_cleaned = cleanup_all_settled_rows(national_df)
+        if needs_resettle and national_results:
+            national_df, national_updates = update_frame_with_results(national_df, national_results)
+        save_completed_rows_to_past_games(national_df, today=today_et)
+        national_df, national_removed_completed = drop_completed_rows(national_df, today=today_et)
+        national_df.to_csv(NATIONAL_PREDICTIONS_FILE, index=False)
+
+    friendlies_removed_completed = 0
+    if friendlies_df is not None:
+        today_et = datetime.now(EASTERN_TZ).date()
+        friendlies_df, friendlies_future_cleared = clear_future_settled_rows(friendlies_df, today_et)
+        if args.cleanup_all:
+            friendlies_df, friendlies_cleaned = cleanup_all_settled_rows(friendlies_df)
+        if needs_resettle and friendlies_results:
+            friendlies_df, friendlies_updates = update_frame_with_results(friendlies_df, friendlies_results)
+        save_completed_rows_to_past_games(friendlies_df, today=today_et)
+        friendlies_df, friendlies_removed_completed = drop_completed_rows(friendlies_df, today=today_et)
+        friendlies_df.to_csv(FRIENDLIES_PREDICTIONS_FILE, index=False)
 
     totals["updated_at_utc"] = datetime.now(UTC).replace(microsecond=0).isoformat()
     save_json(ACCURACY_TOTALS_FILE, totals)
@@ -926,6 +998,10 @@ def main():
         print(f"MLS predictions cleanup cleared: {mls_cleaned}")
     print(f"Global mapping auto-added: {global_added} (drift detected: {global_drift})")
     print(f"MLS mapping auto-added: {mls_added} (drift detected: {mls_drift})")
+    print(f"Extra mapping auto-added: {extra_added} (drift detected: {extra_drift})")
+    print(f"Cup mapping auto-added: {cup_added} (drift detected: {cup_drift})")
+    print(f"National mapping auto-added: {national_added} (drift detected: {national_drift})")
+    print(f"Friendlies mapping auto-added: {friendlies_added} (drift detected: {friendlies_drift})")
     if global_unresolved:
         print(f"Global unresolved ESPN names by league: {global_unresolved}")
     if mls_unresolved:
@@ -942,6 +1018,16 @@ def main():
     if extra_df is not None:
         print(f"Extra predictions updated: {extra_updates}")
         print(f"Extra completed rows removed: {extra_removed_completed}")
+        print(f"Extra totals entries added: {extra_totals_added}")
+    if cup_df is not None:
+        print(f"Cup predictions updated: {cup_updates}")
+        print(f"Cup completed rows removed: {cup_removed_completed}")
+    if national_df is not None:
+        print(f"National predictions updated: {national_updates}")
+        print(f"National completed rows removed: {national_removed_completed}")
+    if friendlies_df is not None:
+        print(f"Friendlies predictions updated: {friendlies_updates}")
+        print(f"Friendlies completed rows removed: {friendlies_removed_completed}")
     print(f"ESPN names seen file: {ESPN_NAMES_FILE}")
     print(f"Accuracy totals file: {ACCURACY_TOTALS_FILE}")
     print("Done.")

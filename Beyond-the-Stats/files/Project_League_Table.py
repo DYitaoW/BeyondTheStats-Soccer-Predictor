@@ -835,7 +835,13 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
             if not static_roster:
                 print(f"  No current-season file and no ESPN/roster data for {competition}")
                 return [], []
-            teams = _resolve_roster(static_roster, "league_teams") or sorted(static_roster)
+            teams = _resolve_roster(static_roster, "league_teams")
+            if not teams:
+                # Final attempt: direct mapping lookup on each raw name
+                teams = sorted({r for t in static_roster if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
+            if not teams:
+                print(f"  No current-season file and no resolved ESPN/roster for {competition}")
+                return [], []
             print(f"  PATH B roster from league_teams.json ({len(teams)} teams)")
 
         games_each = proj_sched.expected_games_per_team(competition, len(teams))
@@ -970,26 +976,29 @@ def _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx,
 
 
 def _merge_roster_only_competitions(latest: dict) -> dict:
-    """Ensure current_season_teams leagues are projected even without a raw CSV."""
+    """Ensure current_season_teams and league_teams leagues are projected even without a raw CSV."""
     out = dict(latest or {})
-    try:
-        if not os.path.exists(CURRENT_SEASON_TEAMS_FILE):
-            return out
-        with open(CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        if not isinstance(data, dict):
-            return out
-        for comp, roster in data.items():
-            if not isinstance(roster, list) or len(roster) < 2:
+    seen = set(out.keys())
+    for filepath, label in [(CURRENT_SEASON_TEAMS_FILE, "current_season_teams"), (LEAGUE_TEAMS_FILE, "league_teams")]:
+        try:
+            if not os.path.exists(filepath):
                 continue
-            if comp in out:
+            with open(filepath, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if not isinstance(data, dict):
                 continue
-            if "/MLS -" in comp or "UEFA/" in comp or comp.endswith(" Cup"):
-                continue
-            out[comp] = None
-            print(f"  PATH B roster-only competition queued: {comp}")
-    except Exception:
-        return out
+            for comp, roster in data.items():
+                if not isinstance(roster, list) or len(roster) < 2:
+                    continue
+                if comp in seen:
+                    continue
+                if "/MLS -" in comp or "UEFA/" in comp or comp.endswith(" Cup"):
+                    continue
+                seen.add(comp)
+                out[comp] = None
+                print(f"  PATH B roster-only competition queued ({label}): {comp}")
+        except Exception:
+            continue
     return out
 
 
