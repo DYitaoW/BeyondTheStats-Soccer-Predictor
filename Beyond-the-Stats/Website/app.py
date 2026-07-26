@@ -1157,26 +1157,6 @@ def api_upcoming(mode):
         all_rows = deduped_rows
         if is_filtered:
             all_rows = [r for r in all_rows if _match_window(str(r.get("match_date_iso", "")))]
-        # 4week mode: merge in completed games from past_games.json so pre-match
-        # predictions are preserved for games already settled within the window.
-        if four_week_mode:
-            archive = _load_json_payload(config.PAST_GAMES_FILE)
-            if isinstance(archive, list):
-                for r in archive:
-                    if _is_placeholder_game(r):
-                        continue
-                    _enrich_json_past_row(r)
-                    date_val = _past_row_date_iso(r)
-                    r["match_date_iso"] = date_val
-                    if not _match_window(date_val):
-                        continue
-                    ck = "|".join(
-                        str(r.get(k, "")).strip().lower()
-                        for k in ("match_date_iso", "competition", "home_team", "away_team")
-                    )
-                    if ck and ck not in seen_keys:
-                        seen_keys.add(ck)
-                        all_rows.append(r)
         # Re-sort aggregated rows: date → league → time
         all_rows.sort(key=lambda r: (
             _row_date_iso(r),

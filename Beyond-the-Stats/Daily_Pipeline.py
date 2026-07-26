@@ -58,6 +58,7 @@ PREDICTIONS_DIR = SP_DIR / "Data" / "Predictions"
 MLS_PREDICTIONS_DIR = SP_DIR / "MLS" / "Data" / "Predictions"
 EXTRA_PREDICTIONS_DIR = SP_DIR / "Extra-leagues" / "Data" / "Predictions"
 OUTPUT_DIR = SP_DIR / "Output"
+PAST_GAMES_FILE = PREDICTIONS_DIR / "past_games.json"
 DEFAULT_FEED_FILE = OUTPUT_DIR / "mobile_app_feed.json"
 LOCAL_KEYS_FILE = FILES_DIR / "local_api_keys.json"
 
@@ -621,6 +622,13 @@ _UPCOMING_CSV_FIELDS = (
     "prob_home",
     "prob_draw",
     "prob_away",
+    # Past-game fields (populated only for settled games)
+    "actual_result",
+    "actual_home_goals",
+    "actual_away_goals",
+    "is_correct",
+    "prediction_key",
+    "settled_at_utc",
 )
 
 
@@ -818,47 +826,95 @@ def _publish_all_upcoming(output_dir, source_paths):
 
 
 def _publish_windowed_upcoming(output_dir, source_paths):
-    """Write Output/Upcoming/four_week_window.csv (past 14 days → next 21 days)."""
+    """Incrementally update Output/Upcoming/four_week_window.csv.
+
+    Merges in new rows from source CSVs and past_games.json, removes games
+    older than 14 days, and never clears the file — if the pipeline fails
+    partway through, previously written data survives.
+    """
     from zoneinfo import ZoneInfo
-    all_rows = []
-    for src in source_paths:
-        if not src or not src.exists():
-            continue
-        all_rows.extend(_read_csv(src))
-    if not all_rows:
-        return None
+
+    def _row_key(r):
+        pk = str(r.get("prediction_key", "") or "").strip()
+        if pk:
+            return ("pk", pk.lower())
+        comp = r.get("competition", "").strip()
+        home = r.get("home_team", "").strip()
+        away = r.get("away_team", "").strip()
+        md = str(r.get("match_date_iso") or r.get("match_date", "")).strip()[:10]
+        return ("fixture", comp.lower(), home.lower(), away.lower(), md)
+
+    def _row_date(r):
+        raw = str(r.get("match_date_iso") or r.get("match_date", "")).strip()[:10]
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+
+    out_dir = output_dir / "Upcoming"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "four_week_window.csv"
 
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
     window_start = today_et - timedelta(days=14)
     window_end = today_et + timedelta(days=21)
 
-    seen = set()
-    filtered = []
-    for r in all_rows:
-        key = (
-            r.get("competition", "").strip(),
-            r.get("home_team", "").strip(),
-            r.get("away_team", "").strip(),
-            r.get("match_date", "").strip(),
-        )
-        if key in seen:
+    # ── Load existing rows ──────────────────────────────────────────────
+    existing = _read_csv(out_path)
+    seen = {}
+    for r in existing:
+        k = _row_key(r)
+        seen[k] = r
+
+    # ── Merge source CSVs ───────────────────────────────────────────────
+    for src in source_paths:
+        if not src or not src.exists():
             continue
-        seen.add(key)
+        for r in _read_csv(src):
+            k = _row_key(r)
+            if k not in seen:
+                try:
+                    d = _row_date(r)
+                except (ValueError, TypeError):
+                    continue
+                if d < window_start or d > window_end:
+                    continue
+                seen[k] = r
+
+    # ── Merge past_games.json ───────────────────────────────────────────
+    past_games = _load_json(PAST_GAMES_FILE)
+    if isinstance(past_games, list):
+        for r in past_games:
+            k = _row_key(r)
+            if k in seen:
+                continue
+            try:
+                d = _row_date(r)
+            except (ValueError, TypeError):
+                continue
+            if d < window_start or d > window_end:
+                continue
+            out = {f: (r.get(f) or "") for f in _UPCOMING_CSV_FIELDS}
+            if not out.get("match_date") and r.get("match_date_iso"):
+                out["match_date"] = str(r["match_date_iso"]).strip()[:10]
+            seen[k] = out
+
+    # ── Prune rows outside window ───────────────────────────────────────
+    rows = list(seen.values())
+    kept = []
+    for r in rows:
         try:
-            d = datetime.strptime(str(r.get("match_date", ""))[:10], "%Y-%m-%d").date()
+            d = _row_date(r)
         except (ValueError, TypeError):
             continue
         if d < window_start or d > window_end:
             continue
-        filtered.append(r)
+        kept.append(r)
 
-    out_dir = output_dir / "Upcoming"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "four_week_window.csv"
+    if not kept:
+        return None
+
     with out_path.open("w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=_UPCOMING_CSV_FIELDS)
         w.writeheader()
-        for r in filtered:
+        for r in kept:
             w.writerow({k: r.get(k, "") for k in _UPCOMING_CSV_FIELDS})
     return out_path
 
