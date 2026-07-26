@@ -1085,15 +1085,14 @@ def api_upcoming(mode):
             except (ValueError, TypeError):
                 return False
             if window_include_past:
-                # Calendar-week mode: previous Mon-Sun + current + next 2 weeks
+                # 4week mode: past 14 days + next 21 days
                 try:
                     from zoneinfo import ZoneInfo
                     today_et = datetime.now(ZoneInfo("America/New_York")).date()
                 except Exception:
                     today_et = datetime.now(timezone.utc).date()
-                current_week_start = today_et - timedelta(days=today_et.weekday())
-                lower = current_week_start - timedelta(days=7)
-                cutoff = current_week_start + timedelta(days=20)
+                lower = today_et - timedelta(days=14)
+                cutoff = today_et + timedelta(days=21)
             else:
                 today = datetime.now(timezone.utc).date()
                 lower = today
@@ -2133,6 +2132,26 @@ def api_register_device():
     else:
         device_tokens.add(token)
     return jsonify({"ok": True, "registered": True})
+
+
+@app.post("/api/notifications/unregister")
+def api_unregister_device():
+    """Remove a device token — stop receiving push notifications.
+
+    Body params:
+        token    (str, required) — device push token to remove
+        platform (str)           — ``"ios"`` or ``"generic"`` (default)
+    """
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get("token", "")).strip()
+    if not token:
+        return jsonify({"ok": False, "error": "token required"}), 400
+    platform = str(payload.get("platform", "generic")).strip().lower()
+    if platform == "ios":
+        ios_device_tokens.discard(token)
+    else:
+        device_tokens.discard(token)
+    return jsonify({"ok": True, "removed": True})
 
 
 # ── Live Activity endpoints (iOS 16.1+) ────────────────────────────

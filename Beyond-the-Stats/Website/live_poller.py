@@ -51,6 +51,8 @@ _live_scores_lock = threading.RLock()
 
 _live_summary_cache: dict[str, dict] = {}
 _live_summary_cache_lock = threading.Lock()
+_notified_events: dict[str, set] = {}
+_notified_events_lock = threading.Lock()
 _last_friendlies_sync_ts = 0.0
 _FRIENDLIES_SYNC_INTERVAL_S = 900
 
@@ -653,6 +655,8 @@ def _live_score_poller_loop():
                             cur_home = g.get("home_score")
                             cur_away = g.get("away_score")
                             cur_minute = g.get("clock") or g.get("match_minute") or 0
+                            home_team = g.get("home_team", "")
+                            away_team = g.get("away_team", "")
                             # Match ended
                             if prev and prev[1] != "post" and cur_status == "post":
                                 activities = _la.for_match(mid, comp_name)
@@ -662,6 +666,10 @@ def _live_score_poller_loop():
                                         "token": entry["activity_token"],
                                         "event": "end",
                                         "content_state": {
+                                            "match_id": mid,
+                                            "competition": comp_name,
+                                            "home_team": home_team,
+                                            "away_team": away_team,
                                             "home_score": cur_home,
                                             "away_score": cur_away,
                                             "status": "finished",
@@ -676,6 +684,10 @@ def _live_score_poller_loop():
                                 if not activities:
                                     continue
                                 state = {
+                                    "match_id": mid,
+                                    "competition": comp_name,
+                                    "home_team": home_team,
+                                    "away_team": away_team,
                                     "home_score": cur_home,
                                     "away_score": cur_away,
                                     "status": cur_status,
@@ -812,6 +824,94 @@ def _live_score_poller_loop():
                                 persistent = g.setdefault(arr_key, [])
                                 persistent.extend(new_items)
                                 g[f"_{arr_key}_len"] = len(batch)
+
+            # ── Event push notifications (goals, red cards, halftime) ──
+            try:
+                from notifications import _apns_notification_queue, ios_device_tokens
+
+                with _live_scores_lock, _notified_events_lock:
+                    for comp_name, comp_data in _live_scores.items():
+                        for g in comp_data.get("games", []):
+                            mid = g.get("match_id")
+                            if not mid:
+                                continue
+                            cur_status = g.get("status", "")
+                            if cur_status not in ("in", "post"):
+                                continue
+
+                            notified = _notified_events.setdefault(mid, set())
+
+                            # Key events: goals, red cards
+                            for ev in (g.get("key_events") or []):
+                                ev_type = str(ev.get("type", "")).lower().strip()
+                                if ev_type not in ("goal", "red card"):
+                                    continue
+                                ev_id = f"{ev_type}|{ev.get('clock', '')}|{ev.get('athlete_id', '')}"
+                                if ev_id in notified:
+                                    continue
+                                notified.add(ev_id)
+
+                                clock = ev.get("clock", "")
+                                text = ev.get("text", "") or ev.get("short_text", "")
+                                ht = g.get("home_team", "")
+                                at = g.get("away_team", "")
+                                hs = g.get("home_score", "-")
+                                as_ = g.get("away_score", "-")
+                                title = "Goal" if ev_type == "goal" else "Red Card"
+                                body = f"{ht} {hs}-{as_} {at} ({clock}')"
+                                if text:
+                                    body = f"{body} - {text}"
+
+                                for token in list(ios_device_tokens):
+                                    _apns_notification_queue.append({
+                                        "token": token,
+                                        "title": title,
+                                        "body": body,
+                                        "badge": 0,
+                                        "match_id": mid,
+                                        "competition": comp_name,
+                                    })
+
+                            # Halftime: detected when period string first contains "halftime"
+                            period_raw = str(g.get("period", "") or g.get("clock", "") or "").lower()
+                            if "halftime" in period_raw or period_raw in ("ht", "half"):
+                                ht_id = f"halftime|{mid}"
+                                if ht_id not in notified:
+                                    notified.add(ht_id)
+                                    ht = g.get("home_team", "")
+                                    at = g.get("away_team", "")
+                                    hs = g.get("home_score", "-")
+                                    as_ = g.get("away_score", "-")
+                                    for token in list(ios_device_tokens):
+                                        _apns_notification_queue.append({
+                                            "token": token,
+                                            "title": "Halftime",
+                                            "body": f"{ht} {hs}-{as_} {at} - Halftime",
+                                            "badge": 0,
+                                            "match_id": mid,
+                                            "competition": comp_name,
+                                        })
+
+                            # Match started (pre -> in)
+                            p = prev_statuses.get(mid)
+                            if p and p[1] == "pre" and cur_status == "in":
+                                start_id = f"start|{mid}"
+                                if start_id not in notified:
+                                    notified.add(start_id)
+                                    ht = g.get("home_team", "")
+                                    at = g.get("away_team", "")
+                                    for token in list(ios_device_tokens):
+                                        _apns_notification_queue.append({
+                                            "token": token,
+                                            "title": "Match Started",
+                                            "body": f"{ht} vs {at} - Kickoff!",
+                                            "badge": 0,
+                                            "match_id": mid,
+                                            "competition": comp_name,
+                                        })
+            except Exception:
+                import traceback
+                traceback.print_exc()
 
             # Compute live in-play predictions for active games.
             try:

@@ -1557,7 +1557,11 @@ def main():
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR)
     if not latest:
-        raise ValueError(f"No raw season files found in {RAW_DIR}")
+        print("No raw season files found — using synthetic/ESPN-only schedule for MLS")
+        latest = {MLS_COMPETITION: None}
+    elif MLS_COMPETITION not in latest:
+        # MLS itself has no CSV but other competitions (e.g. Liga MX) do
+        latest[MLS_COMPETITION] = None
 
     all_tables = []
     all_future = []
