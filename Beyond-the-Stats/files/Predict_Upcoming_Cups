@@ -907,9 +907,52 @@ def load_team_mapping(path):
 
 
 def save_team_mapping(path, mapping):
+    """Merge *mapping* entries into *path*, preserving existing entries.
+
+    New entries (competition or api_name not previously seen) are appended to
+    ``team_name_mapping_master_new.json`` in the same directory so they can be
+    reviewed and merged into the git-main master file manually.
+    """
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    existing = load_team_mapping(path)
+    if not isinstance(existing, dict):
+        existing = {}
+    new_additions = {}
+    for competition, entries in mapping.items():
+        if not isinstance(entries, dict):
+            continue
+        if competition not in existing:
+            existing[competition] = {}
+            new_additions[competition] = {}
+        for api_name, mapped_name in entries.items():
+            key = str(api_name).strip()
+            if not key:
+                continue
+            if key not in existing[competition]:
+                existing[competition][key] = str(mapped_name).strip()
+                new_additions.setdefault(competition, {})[key] = str(mapped_name).strip()
     with open(path, "w", encoding="utf-8") as file:
-        json.dump(mapping, file, indent=2, ensure_ascii=False)
+        json.dump(existing, file, indent=2, ensure_ascii=False)
+    if new_additions:
+        log_path = os.path.join(os.path.dirname(path), "team_name_mapping_master_new.json")
+        log_data = {}
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    log_data = json.load(f)
+            except Exception:
+                pass
+        if not isinstance(log_data, dict):
+            log_data = {}
+        for comp, entries in new_additions.items():
+            if comp not in log_data:
+                log_data[comp] = {}
+            for k, v in entries.items():
+                if k not in log_data[comp]:
+                    log_data[comp][k] = v
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump(log_data, f, indent=2, ensure_ascii=False)
+        print(f"  Mapping: {sum(len(e) for e in new_additions.values())} new entries logged to {log_path}")
 
 
 def load_shared_mapping():
@@ -1394,57 +1437,65 @@ def inject_fallback_team(team_name, competition, season_key, context):
             },
         )
     else:
+        preseason_known = context.get("preseason_known_teams", set())
+        is_preseason_only = team_name in preseason_known
+        # Newly promoted / relegation-battling teams get a weakness factor:
+        # fewer goals scored, more conceded, fewer points.
+        prom = 0.85 if is_preseason_only else 1.0
+
         comp_teams = [t for t, comp in team_competition_map.items() if comp == competition]
         comp_overall_rows = [overall_teams[t] for t in comp_teams if t in overall_teams]
         season_rows = list(season_teams.get(season_key, {}).values()) if season_key in season_teams else []
 
         overall_teams[team_name] = {
             "games": max(1, int(round(mean_from_dicts(comp_overall_rows, "games", 30)))),
-            "goals_scored": mean_from_dicts(comp_overall_rows, "goals_scored", 40.0),
-            "goals_conceded": mean_from_dicts(comp_overall_rows, "goals_conceded", 40.0),
+            "goals_scored": mean_from_dicts(comp_overall_rows, "goals_scored", 40.0) * prom,
+            "goals_conceded": mean_from_dicts(comp_overall_rows, "goals_conceded", 40.0) / prom,
             "home_games": max(1, int(round(mean_from_dicts(comp_overall_rows, "home_games", 15)))),
             "away_games": max(1, int(round(mean_from_dicts(comp_overall_rows, "away_games", 15)))),
-            "home_goals_scored": mean_from_dicts(comp_overall_rows, "home_goals_scored", 20.0),
-            "away_goals_scored": mean_from_dicts(comp_overall_rows, "away_goals_scored", 20.0),
-            "avg_goals_scored": mean_from_dicts(comp_overall_rows, "avg_goals_scored", 1.35),
-            "avg_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_goals_conceded", 1.35),
-            "avg_home_goals_scored": mean_from_dicts(comp_overall_rows, "avg_home_goals_scored", 1.45),
-            "avg_home_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_home_goals_conceded", 1.20),
-            "avg_away_goals_scored": mean_from_dicts(comp_overall_rows, "avg_away_goals_scored", 1.20),
-            "avg_away_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_away_goals_conceded", 1.45),
-            "avg_home_shots_for": mean_from_dicts(comp_overall_rows, "avg_home_shots_for", 12.0),
-            "avg_home_shots_against": mean_from_dicts(comp_overall_rows, "avg_home_shots_against", 12.0),
-            "avg_away_shots_for": mean_from_dicts(comp_overall_rows, "avg_away_shots_for", 10.5),
-            "avg_away_shots_against": mean_from_dicts(comp_overall_rows, "avg_away_shots_against", 12.5),
-            "weighted_avg_goals_scored": mean_from_dicts(comp_overall_rows, "weighted_avg_goals_scored", 1.35),
+            "home_goals_scored": mean_from_dicts(comp_overall_rows, "home_goals_scored", 20.0) * prom,
+            "away_goals_scored": mean_from_dicts(comp_overall_rows, "away_goals_scored", 20.0) * prom,
+            "avg_goals_scored": mean_from_dicts(comp_overall_rows, "avg_goals_scored", 1.35) * prom,
+            "avg_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_goals_conceded", 1.35) / prom,
+            "avg_home_goals_scored": mean_from_dicts(comp_overall_rows, "avg_home_goals_scored", 1.45) * prom,
+            "avg_home_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_home_goals_conceded", 1.20) / prom,
+            "avg_away_goals_scored": mean_from_dicts(comp_overall_rows, "avg_away_goals_scored", 1.20) * prom,
+            "avg_away_goals_conceded": mean_from_dicts(comp_overall_rows, "avg_away_goals_conceded", 1.45) / prom,
+            "avg_home_shots_for": mean_from_dicts(comp_overall_rows, "avg_home_shots_for", 12.0) * prom,
+            "avg_home_shots_against": mean_from_dicts(comp_overall_rows, "avg_home_shots_against", 12.0) / prom,
+            "avg_away_shots_for": mean_from_dicts(comp_overall_rows, "avg_away_shots_for", 10.5) * prom,
+            "avg_away_shots_against": mean_from_dicts(comp_overall_rows, "avg_away_shots_against", 12.5) / prom,
+            "weighted_avg_goals_scored": mean_from_dicts(comp_overall_rows, "weighted_avg_goals_scored", 1.35) * prom,
         }
+        prom_season = (0.75 if is_preseason_only else 1.0)
         season_teams.setdefault(season_key, {})
         season_teams[season_key][team_name] = {
             "games": max(1, int(round(mean_from_dicts(season_rows, "games", 20)))),
-            "points": mean_from_dicts(season_rows, "points", 28.0),
-            "avg_goals_scored": mean_from_dicts(season_rows, "avg_goals_scored", 1.30),
-            "avg_goals_conceded": mean_from_dicts(season_rows, "avg_goals_conceded", 1.30),
-            "avg_home_goals_scored": mean_from_dicts(season_rows, "avg_home_goals_scored", 1.45),
-            "avg_home_goals_conceded": mean_from_dicts(season_rows, "avg_home_goals_conceded", 1.20),
-            "avg_away_goals_scored": mean_from_dicts(season_rows, "avg_away_goals_scored", 1.15),
-            "avg_away_goals_conceded": mean_from_dicts(season_rows, "avg_away_goals_conceded", 1.50),
-            "avg_home_shots_for": mean_from_dicts(season_rows, "avg_home_shots_for", 12.0),
-            "avg_home_shots_against": mean_from_dicts(season_rows, "avg_home_shots_against", 12.0),
-            "avg_away_shots_for": mean_from_dicts(season_rows, "avg_away_shots_for", 10.5),
-            "avg_away_shots_against": mean_from_dicts(season_rows, "avg_away_shots_against", 12.5),
+            "points": mean_from_dicts(season_rows, "points", 28.0) * prom_season,
+            "avg_goals_scored": mean_from_dicts(season_rows, "avg_goals_scored", 1.30) * prom,
+            "avg_goals_conceded": mean_from_dicts(season_rows, "avg_goals_conceded", 1.30) / prom,
+            "avg_home_goals_scored": mean_from_dicts(season_rows, "avg_home_goals_scored", 1.45) * prom,
+            "avg_home_goals_conceded": mean_from_dicts(season_rows, "avg_home_goals_conceded", 1.20) / prom,
+            "avg_away_goals_scored": mean_from_dicts(season_rows, "avg_away_goals_scored", 1.15) * prom,
+            "avg_away_goals_conceded": mean_from_dicts(season_rows, "avg_away_goals_conceded", 1.50) / prom,
+            "avg_home_shots_for": mean_from_dicts(season_rows, "avg_home_shots_for", 12.0) * prom,
+            "avg_home_shots_against": mean_from_dicts(season_rows, "avg_home_shots_against", 12.0) / prom,
+            "avg_away_shots_for": mean_from_dicts(season_rows, "avg_away_shots_for", 10.5) * prom,
+            "avg_away_shots_against": mean_from_dicts(season_rows, "avg_away_shots_against", 12.5) / prom,
         }
         current_form.setdefault("teams", {})
+        form_prom = 0.80 if is_preseason_only else 1.0
         current_form["teams"].setdefault(
             team_name,
             {
-                "points_last_10": 12.0,
-                "wins_last_10": 3.0,
-                "losses_last_10": 3.0,
-                "avg_goals_for_last_10": 1.2,
-                "avg_goals_against_last_10": 1.2,
-                "previous_match_win_odds": 2.8,
+                "points_last_10": 12.0 * form_prom,
+                "wins_last_10": 3.0 * form_prom,
+                "losses_last_10": max(1, 10 - int(round(3.0 * form_prom)) - 3),
+                "avg_goals_for_last_10": 1.2 * prom,
+                "avg_goals_against_last_10": 1.2 / prom,
+                "previous_match_win_odds": 2.8 / form_prom,
                 "previous_match_draw_odds": 3.3,
-                "previous_match_lose_odds": 2.8,
+                "previous_match_lose_odds": 2.8 / form_prom,
             },
         )
 
@@ -1494,13 +1545,22 @@ def load_preseason_json(path):
     return payload if isinstance(payload, dict) else {}
 
 
-def apply_preseason_league_fallback_to_context(context):
-    """Inject provisional 2026-27 league context when live season data is absent.
+TOP_FALLBACK_LEAGUES = frozenset({
+    "England/Premier League",
+    "Spain/La Liga",
+    "Italy/Serie A",
+    "Germany/Bundesliga",
+    "France/Ligue 1",
+})
 
-    This does not overwrite real trained team stats. It only adds league
-    strength entries and a team->league hint list so upcoming cup fixtures
-    involving not-yet-seen 2026-27 clubs can pass through to the existing
-    unknown-team fallback path.
+
+def apply_preseason_league_fallback_to_context(context):
+    """Inject provisional 2026-27 league context for top-5 domestic leagues.
+
+    Only the big-5 European leagues (Premier League, La Liga, Serie A,
+    Bundesliga, Ligue 1) use the preseason fallback.  Other leagues wait
+    until their regular-season CSV appears and passes the month/team-count
+    gates in ``_prefer_csv_path_a``.
     """
     payload = load_preseason_json(PRESEASON_LEAGUE_FALLBACK_FILE)
     leagues = payload.get("leagues", {}) if isinstance(payload, dict) else {}
@@ -1517,6 +1577,8 @@ def apply_preseason_league_fallback_to_context(context):
             continue
         league = str(league).strip()
         if not league:
+            continue
+        if league not in TOP_FALLBACK_LEAGUES:
             continue
         try:
             strength = float(info.get("league_strength"))
@@ -1663,19 +1725,11 @@ def load_upcoming_matchweek_fixtures_from_espn(window_days, competition_name, es
 
     print(f"Attempting to load fixtures for competition: {competition_name} (espn_id: {espn_id}) from ESPN...")
 
-    debug_dir = os.path.join(PREDICTIONS_DIR, "espn_raw_debug")
-    os.makedirs(debug_dir, exist_ok=True)
-
     for offset in range(0, max(1, lookahead_days + 1)):
         day = today + pd.Timedelta(days=offset)
         url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
         try:
             data = fetch_json(url, timeout=30)
-            # Save raw response for debug
-            debug_file = os.path.join(debug_dir, f"{competition_name.replace('/', '_').replace(' ', '_')}_{day.strftime('%Y%m%d')}.json")
-            with open(debug_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            print(f"[DEBUG] Saved ESPN raw response to {debug_file}")
         except Exception as e:
             print(f"ESPN API Error for {day.date()}: {e}")
             continue

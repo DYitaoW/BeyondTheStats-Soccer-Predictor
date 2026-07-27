@@ -8,6 +8,7 @@ Season completeness: once past June 1 of a season's end year, that season is
 marked complete and never re-downloaded.  The 2025-26 / 2026-27 seasons use
 unique filenames so they coexist in the same directory.
 """
+import json
 import os
 import sys
 import urllib.request
@@ -21,7 +22,14 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 import season_calendar
 
+sys.path.insert(0, os.path.dirname(__file__))
+import Process_Data as process_data
+import Sort_Data as sort_data
+
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
+PROCESSED_DATA_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
+TEAM_DATA_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
+SORT_TRACKER_FILE = os.path.join(TEAM_DATA_DIR, ".sort_tracker")
 
 
 # Data source format expected:
@@ -281,6 +289,41 @@ def main():
         kept_count += download_new_format_competition(source, current_year)
 
     print(f"\nDone. Updated {kept_count} CSV files across all configured competitions.")
+
+    print("\nProcessing raw data files...")
+    process_data.main()
+    print("Processing complete.")
+
+    if _sort_data_needed():
+        print("Sorting team data...")
+        sort_data.sort_all_seasons()
+        sort_data.build_current_form_file()
+        _touch_sort_tracker()
+        print("Sort complete.")
+    else:
+        print("No processed data changes — skipping Sort_Data (team stats unchanged).")
+
+
+def _sort_data_needed():
+    """Return True if any processed CSV has been modified since last sort."""
+    if not os.path.exists(SORT_TRACKER_FILE):
+        return True
+    last_mtime = os.path.getmtime(SORT_TRACKER_FILE)
+    for root, _, files in os.walk(PROCESSED_DATA_DIR):
+        for fname in files:
+            if not fname.endswith(".csv"):
+                continue
+            fpath = os.path.join(root, fname)
+            if os.path.getmtime(fpath) > last_mtime + 1:
+                return True
+    return False
+
+
+def _touch_sort_tracker():
+    """Write (or touch) the tracker file after a successful Sort_Data run."""
+    os.makedirs(TEAM_DATA_DIR, exist_ok=True)
+    with open(SORT_TRACKER_FILE, "w") as f:
+        f.write(datetime.now().isoformat())
 
 
 if __name__ == "__main__":

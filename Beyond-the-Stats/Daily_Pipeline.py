@@ -91,6 +91,13 @@ _CUP_COMPETITIONS = frozenset({
     "FIFA/World Cup",
 })
 
+_CUP_SIM_RUNS = {
+    "UEFA/Champions League": 500,
+    "United States/MLS": 500,
+    "UEFA/Conference League": 150,
+    "United States/US Open Cup": 150,
+}
+
 _ROUND_STAGE_MAP = {
     "final": "final", "finale": "final",
     "quarterfinals": "quarterfinals", "quarter-finals": "quarterfinals",
@@ -154,7 +161,7 @@ def _discover_cup_teams(comp_name, upcoming_rows, completed_rows):
     return sorted(teams)
 
 
-def _run_randomized_cup_simulation(teams, num_simulations=1000):
+def _run_randomized_cup_simulation(teams, num_simulations=250):
     """Monte Carlo knockout simulation — random pairings each round, 50/50 winners.
 
     Returns {team_name: win_pct} for teams that won at least once.
@@ -1390,14 +1397,15 @@ def _publish_enriched_competition_data(output_dir, cup_brackets_path, mls_bracke
                 if len(teams) < 2:
                     teams = _discover_cup_teams(comp, cup_upcoming, cup_completed)
                 if len(teams) >= 2:
-                    rnd_odds = _run_randomized_cup_simulation(teams)
+                    cup_sims = _CUP_SIM_RUNS.get(comp, 250)
+                    rnd_odds = _run_randomized_cup_simulation(teams, cup_sims)
                     if rnd_odds:
                         payload["has_winner_odds"] = True
                         payload["winner_probabilities"] = dict(
                             sorted(rnd_odds.items(), key=lambda x: -x[1])
                         )
                         payload["champion"] = max(rnd_odds, key=rnd_odds.get)
-                        payload["simulations_run"] = 10000
+                        payload["simulations_run"] = cup_sims
             # Real knockout bracket from live score history
             real_ko = _build_real_knockout_for_comp(live_history, comp)
             if real_ko:
@@ -1429,19 +1437,6 @@ def publish_to_output(output_dir=None):
     """
     output_dir = Path(output_dir) if output_dir else OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Clear stale league-data cache so next API call recomputes fresh
-    league_data_cache_dir = SP_DIR / "Output" / "LeagueData"
-    if league_data_cache_dir.exists():
-        import shutil
-        try:
-            shutil.rmtree(str(league_data_cache_dir))
-        except Exception:
-            for f in league_data_cache_dir.glob("*.json"):
-                try:
-                    f.unlink()
-                except Exception:
-                    pass
 
     written = {"europe": {}, "other": {}, "national": {}, "combined": {}}
 
