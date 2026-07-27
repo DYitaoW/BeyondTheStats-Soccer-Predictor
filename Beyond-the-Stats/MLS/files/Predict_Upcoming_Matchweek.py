@@ -279,9 +279,52 @@ def load_team_mapping(path):
 
 
 def save_team_mapping(path, mapping):
+    """Merge *mapping* entries into *path*, preserving existing entries.
+
+    New entries (competition or api_name not previously seen) are appended to
+    ``team_name_mapping_master_new.json`` in the same directory so they can be
+    reviewed and merged into the git-main master file manually.
+    """
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    existing = load_team_mapping(path)
+    if not isinstance(existing, dict):
+        existing = {}
+    new_additions = {}
+    for competition, entries in mapping.items():
+        if not isinstance(entries, dict):
+            continue
+        if competition not in existing:
+            existing[competition] = {}
+            new_additions[competition] = {}
+        for api_name, mapped_name in entries.items():
+            key = str(api_name).strip()
+            if not key:
+                continue
+            if key not in existing[competition]:
+                existing[competition][key] = str(mapped_name).strip()
+                new_additions.setdefault(competition, {})[key] = str(mapped_name).strip()
     with open(path, "w", encoding="utf-8") as file:
-        json.dump(mapping, file, indent=2, ensure_ascii=False)
+        json.dump(existing, file, indent=2, ensure_ascii=False)
+    if new_additions:
+        log_path = os.path.join(os.path.dirname(path), "team_name_mapping_master_new.json")
+        log_data = {}
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    log_data = json.load(f)
+            except Exception:
+                pass
+        if not isinstance(log_data, dict):
+            log_data = {}
+        for comp, entries in new_additions.items():
+            if comp not in log_data:
+                log_data[comp] = {}
+            for k, v in entries.items():
+                if k not in log_data[comp]:
+                    log_data[comp][k] = v
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump(log_data, f, indent=2, ensure_ascii=False)
+        print(f"  Mapping: {sum(len(e) for e in new_additions.values())} new entries logged to {log_path}")
 
 
 def load_shared_mapping():

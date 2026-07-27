@@ -27,6 +27,8 @@ import json
 import os
 import signal
 import subprocess
+import json
+import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -178,6 +180,31 @@ def _should_build_model_cache(args, label: str, predict_script: Path) -> tuple[b
     return False, detail
 
 
+def _should_run_league_tables(args, output_csv_path: str, processed_dirs: list[str]) -> bool:
+    """Skip league table projection on light days when no processed data changed.
+
+    On Tue/Fri retrain days (``skip_model_train == False``) the tables always
+    run.  On light days the output file's mtime is compared against every
+    processed CSV — if it is newer than all of them, no data changed since the
+    last projection, so the step is skipped.
+    """
+    if not args.skip_model_train:
+        return True
+    if not output_csv_path or not os.path.exists(output_csv_path):
+        return True
+    out_mtime = os.path.getmtime(output_csv_path)
+    for proc_dir in processed_dirs:
+        if not proc_dir or not os.path.isdir(proc_dir):
+            continue
+        for root, _, files in os.walk(proc_dir):
+            for fname in files:
+                if not fname.endswith(".csv"):
+                    continue
+                if os.path.getmtime(os.path.join(root, fname)) > out_mtime + 1:
+                    return True
+    return False
+
+
 # Projected league tables can be CPU/network heavy (Monte Carlo + ESPN crawls).
 # Bound them so a hung/slow projection cannot pin the daily pipeline for hours.
 PROJECTED_TABLE_TIMEOUT_S = {
@@ -281,23 +308,11 @@ def _run_global_subpipeline(args, api_token):
     sub = {}
     comp_workers = _resolve_competition_workers(args)
 
-    sub["global_download_latest_data"] = run_step(
-        "[global] Download latest data",
+    sub["global_download_process_sort"] = run_step(
+        "[global] Download, process and sort latest data",
         [py, str(FILES_DIR / "Download_Latest_Data.py")],
         continue_on_error=args.continue_on_error,
-        timeout=1200,
-    )
-    sub["global_process_data"] = run_step(
-        "[global] Process data",
-        [py, str(FILES_DIR / "Process_Data.py")],
-        continue_on_error=args.continue_on_error,
-        timeout=1800,
-    )
-    sub["global_sort_data"] = run_step(
-        "[global] Sort data",
-        [py, str(FILES_DIR / "Sort_Data.py")],
-        continue_on_error=args.continue_on_error,
-        timeout=600,
+        timeout=3600,
     )
     if _should_build_model_cache(args, "global", FILES_DIR / "Predict_Match.py")[0]:
         sub["global_build_model_cache"] = run_step(
@@ -322,11 +337,16 @@ def _run_global_subpipeline(args, api_token):
         [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.cup_window_days)],
         continue_on_error=args.continue_on_error,
     )
-    sub["global_projected_league_tables"] = run_step(
-        "[global] Projected league tables",
-        _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
-        continue_on_error=args.continue_on_error,
-    )
+    global_out_csv = str(SP_DIR / "Data" / "Predictions" / "projected_league_tables.csv")
+    global_proc_dirs = [str(SP_DIR / "Data" / "Processed_Data")]
+    if _should_run_league_tables(args, global_out_csv, global_proc_dirs):
+        sub["global_projected_league_tables"] = run_step(
+            "[global] Projected league tables",
+            _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
+            continue_on_error=args.continue_on_error,
+        )
+    else:
+        print("[skip] No processed data changes — skipping global league table projection")
     if _world_cup_is_active():
         national_process_cmd = [py, str(FILES_DIR / "Process_National_Team_Data.py"), "--world-cup-only"]
         if args.skip_model_train:
@@ -392,12 +412,17 @@ def _run_mls_subpipeline(args, api_token):
         mls_upcoming_cmd,
         continue_on_error=args.continue_on_error,
     )
-    sub["mls_projected_league_tables"] = run_step(
-        "[mls] Projected league tables",
-        _project_table_cmd(MLS_FILES_DIR, comp_workers, "Project_League_Table.py"),
-        continue_on_error=args.continue_on_error,
-        timeout=PROJECTED_TABLE_TIMEOUT_S["mls"],
-    )
+    mls_out_csv = str(SP_DIR / "MLS" / "Data" / "Predictions" / "projected_league_tables.csv")
+    mls_proc_dirs = [str(SP_DIR / "MLS" / "Data" / "Processed_Data")]
+    if _should_run_league_tables(args, mls_out_csv, mls_proc_dirs):
+        sub["mls_projected_league_tables"] = run_step(
+            "[mls] Projected league tables",
+            _project_table_cmd(MLS_FILES_DIR, comp_workers, "Project_League_Table.py"),
+            continue_on_error=args.continue_on_error,
+            timeout=PROJECTED_TABLE_TIMEOUT_S["mls"],
+        )
+    else:
+        print("[skip] No processed data changes — skipping MLS league table projection")
     return sub
 
 
@@ -426,12 +451,20 @@ def _run_extra_subpipeline(args, api_token):
         [py, str(EXTRA_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)],
         continue_on_error=args.continue_on_error,
     )
-    sub["extra_projected_league_tables"] = run_step(
-        "[extra] Projected league tables",
-        _project_table_cmd(EXTRA_FILES_DIR, comp_workers, "Project_League_Table.py"),
-        continue_on_error=args.continue_on_error,
-        timeout=PROJECTED_TABLE_TIMEOUT_S["extra"],
-    )
+    extra_out_csv = str(SP_DIR / "Extra-leagues" / "Data" / "Predictions" / "projected_league_tables.csv")
+    extra_proc_dirs = [
+        str(SP_DIR / "Extra-leagues" / "Data" / "Processed_Data"),
+        str(SP_DIR / "Data" / "Processed_Data"),  # extra uses shared Processed_Data too
+    ]
+    if _should_run_league_tables(args, extra_out_csv, extra_proc_dirs):
+        sub["extra_projected_league_tables"] = run_step(
+            "[extra] Projected league tables",
+            _project_table_cmd(EXTRA_FILES_DIR, comp_workers, "Project_League_Table.py"),
+            continue_on_error=args.continue_on_error,
+            timeout=PROJECTED_TABLE_TIMEOUT_S["extra"],
+        )
+    else:
+        print("[skip] No processed data changes — skipping extra league table projection")
     return sub
 
 

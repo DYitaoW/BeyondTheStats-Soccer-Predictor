@@ -143,11 +143,43 @@ def main():
     print("\nProcessing MLS + Liga MX files...")
     process_data.main()
     print("\nSorting MLS + Liga MX team data...")
-    sort_data.sort_all_seasons()
-    sort_data.build_current_form_file()
-    if not args.skip_squad_values:
-        sort_data.build_squad_values_file()
+    if _sort_data_needed():
+        sort_data.sort_all_seasons()
+        sort_data.build_current_form_file()
+        if not args.skip_squad_values:
+            sort_data.build_squad_values_file()
+        _touch_sort_tracker()
+        print("Sort complete.")
+    else:
+        print("No processed data changes — skipping Sort_Data (team stats unchanged).")
     print("\nMLS + Liga MX pipeline complete (download + process + sort).")
+
+
+PROCESSED_DATA_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
+TEAM_DATA_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
+SORT_TRACKER_FILE = os.path.join(TEAM_DATA_DIR, ".sort_tracker")
+
+
+def _sort_data_needed():
+    """Return True if any processed CSV has been modified since last sort."""
+    if not os.path.exists(SORT_TRACKER_FILE):
+        return True
+    last_mtime = os.path.getmtime(SORT_TRACKER_FILE)
+    for root, _, files in os.walk(PROCESSED_DATA_DIR):
+        for fname in files:
+            if not fname.endswith(".csv"):
+                continue
+            fpath = os.path.join(root, fname)
+            if os.path.getmtime(fpath) > last_mtime + 1:
+                return True
+    return False
+
+
+def _touch_sort_tracker():
+    """Write (or touch) the tracker file after a successful Sort_Data run."""
+    os.makedirs(TEAM_DATA_DIR, exist_ok=True)
+    with open(SORT_TRACKER_FILE, "w") as f:
+        f.write(datetime.now().isoformat())
 
 
 if __name__ == "__main__":

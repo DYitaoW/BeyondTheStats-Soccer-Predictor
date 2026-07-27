@@ -48,16 +48,29 @@ OUT_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
 OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
 RNG = random.Random()
-SIMULATION_RUNS = 1000
+SIMULATION_RUNS = 250
 # Preseason PATH B synthesizes a full home/away slate; fewer sims keep Extra
 # projections inside the pipeline timeout while still producing stable odds.
 PATH_B_SIMULATION_RUNS = 80
-COMPETITION_SIM_RUNS = {}
+COMPETITION_SIM_RUNS = {
+    "Japan/J1 League": 150,
+}
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 SHARED_MAPPING_FILE = os.path.join(BASE_DIR, "..", "..", "Data", "team_name_mapping_master.json")
 LEAGUE_TEAMS_FILE = os.path.join(BASE_DIR, "..", "Data", "Predictions", "league_teams.json")
 CURRENT_SEASON_TEAMS_FILE = os.path.join(BASE_DIR, "..", "Data", "Predictions", "current_season_teams.json")
+FALLBACK_TEAMS_FILE = os.path.join(BASE_DIR, "..", "files", "preseason", "2026_27_league_team_fallback.json")
+
+# Only the top-5 European leagues get preseason fallback projections.
+# Other leagues wait until their CSV appears and passes the month/team-count gates.
+TOP_FALLBACK_LEAGUES = frozenset({
+    "England/Premier League",
+    "Spain/La Liga",
+    "Italy/Serie A",
+    "Germany/Bundesliga",
+    "France/Ligue 1",
+})
 
 
 def _sibling_competitions(competition, mapping):
@@ -90,6 +103,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
     comp_section = mapping.setdefault(competition, {})
     siblings = _sibling_competitions(competition, mapping)
     added = 0
+    new_entries = []
     for raw_name in sorted(set(unresolved_names)):
         existing = comp_section.get(raw_name)
         # Blank stubs used to permanently block retries — overwrite them.
@@ -110,6 +124,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
             ).strip()
             candidate = pm.resolve_team_name(stripped, valid_names) or pm.resolve_team_name(raw_name, valid_names)
         if candidate and candidate in valid_names:
+            target_comp = competition
             if roster_teams is not None and candidate not in roster_teams:
                 added_to_sibling = False
                 for sibling_comp in siblings:
@@ -117,12 +132,14 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
                     if raw_name not in sibling_section or not str(sibling_section.get(raw_name) or "").strip():
                         sibling_section[raw_name] = candidate
                         added_to_sibling = True
+                        target_comp = sibling_comp
                         break
                 if not added_to_sibling:
                     comp_section[raw_name] = candidate
             else:
                 comp_section[raw_name] = candidate
             added += 1
+            new_entries.append((target_comp, raw_name, candidate))
         # Do not write blank stubs — they block future auto-mapping.
     if added:
         with open(SHARED_MAPPING_FILE, "w", encoding="utf-8") as fh:
@@ -130,10 +147,41 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
         if hasattr(pm, "clear_name_mapping_cache"):
             pm.clear_name_mapping_cache()
         print(f"  Mapping: auto-added {added} entry/ies to {SHARED_MAPPING_FILE}")
+        _log_new_mappings(new_entries)
+
+
+def _log_new_mappings(entries):
+    """Append a list of (competition, raw_name, mapped_name) triples to the
+    team_name_mapping_master_new.json log file for manual review."""
+    if not entries:
+        return
+    log_dir = os.path.dirname(SHARED_MAPPING_FILE)
+    log_path = os.path.join(log_dir, "team_name_mapping_master_new.json")
+    log_data = {}
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                log_data = json.load(f)
+        except Exception:
+            pass
+    if not isinstance(log_data, dict):
+        log_data = {}
+    for comp, raw_name, mapped_name in entries:
+        section = log_data.setdefault(comp, {})
+        if raw_name not in section:
+            section[raw_name] = mapped_name
+    with open(log_path, "w", encoding="utf-8") as f:
+        json.dump(log_data, f, indent=2, ensure_ascii=False)
 
 
 def _load_roster_from_json(path, competition):
-    """Return sorted team names for *competition* from a roster JSON, or None."""
+    """Return sorted team names for *competition* from a roster JSON, or None.
+
+    Supports three formats:
+      - Flat:  ``{"competition": ["Team A", ...]}``
+      - Nested: ``{"competition": {"teams": ["Team A", ...], ...}}``
+      - Fallback: ``{"leagues": {"competition": {"teams": ["Team A", ...], ...}}}``
+    """
     if not path or not os.path.exists(path):
         return None
     try:
@@ -141,9 +189,27 @@ def _load_roster_from_json(path, competition):
             data = json.load(f)
         if not isinstance(data, dict):
             return None
-        roster = data.get(competition)
-        if isinstance(roster, list) and len(roster) > 1:
-            return sorted({str(r).strip() for r in roster if str(r).strip()})
+
+        def _extract_teams(entry):
+            if isinstance(entry, dict):
+                entry = entry.get("teams", [])
+            if isinstance(entry, list) and len(entry) > 1:
+                return sorted({str(r).strip() for r in entry if str(r).strip()})
+            return None
+
+        # Try flat lookup first
+        entry = data.get(competition)
+        result = _extract_teams(entry)
+        if result is not None:
+            return result
+
+        # Try under "leagues" key (2026-27 fallback file format)
+        leagues = data.get("leagues")
+        if isinstance(leagues, dict):
+            entry = leagues.get(competition)
+            result = _extract_teams(entry)
+            if result is not None:
+                return result
     except Exception:
         pass
     return None
@@ -711,8 +777,42 @@ def _peek_csv_team_and_played_counts(raw_file):
 
 
 def _prefer_csv_path_a(competition, raw_file, csv_start_year, expected_year):
-    """True only when the CSV is the expected current season (PATH A)."""
-    return proj_sched.prefer_current_season_csv(csv_start_year, expected_year)
+    """True only when the CSV is the expected current season (PATH A).
+
+    Prior-season files always use PATH B so finished results cannot block a
+    full synthetic remaining schedule.
+
+    For European fall-spring current-season files, additional gates delay
+    switching to PATH A until well into the new season:
+    - Liga MX: month >= August
+    - Other European: month >= September
+    - Team count: CSV must contain all expected teams for the league.
+    """
+    if not proj_sched.prefer_current_season_csv(csv_start_year, expected_year):
+        return False
+
+    comp = str(competition or "").strip()
+    if not season_calendar.competition_uses_calendar_year(comp):
+        now = datetime.now()
+        # Only gate during the Jul–Sep transition window.
+        # Oct–Jun: season is well underway, use PATH A freely.
+        if now.month >= 7 and now.month <= 9:
+            if comp == "Mexico/Liga MX":
+                if now.month < 8:
+                    return False
+            elif now.month < 9:
+                return False
+
+    csv_teams, _ = _peek_csv_team_and_played_counts(raw_file)
+    if csv_teams <= 0:
+        return False
+
+    for roster_path in (CURRENT_SEASON_TEAMS_FILE, FALLBACK_TEAMS_FILE, LEAGUE_TEAMS_FILE):
+        roster = _load_roster_from_json(roster_path, competition)
+        if roster:
+            return csv_teams >= len(roster)
+
+    return True
 
 
 def _fetch_espn_teams(competition):
@@ -800,10 +900,12 @@ def project_competition(ctx, competition, raw_file):
             if teams:
                 print(f"  PATH B roster from current_season_teams.json ({len(teams)} teams)")
 
-        if not teams:
-            espn_teams = _fetch_espn_teams(competition) or []
-            if espn_teams:
-                teams = _resolve_roster(espn_teams, "ESPN")
+        if not teams and competition in TOP_FALLBACK_LEAGUES:
+            fallback_roster = _load_roster_from_json(FALLBACK_TEAMS_FILE, competition)
+            if fallback_roster:
+                teams = _resolve_roster(fallback_roster, "2026-27 fallback")
+                if teams:
+                    print(f"  PATH B roster from 2026_27_league_team_fallback.json ({len(teams)} teams)")
 
         if not teams:
             static_roster = _load_roster_from_json(LEAGUE_TEAMS_FILE, competition) or []
@@ -811,7 +913,7 @@ def project_competition(ctx, competition, raw_file):
             if not teams:
                 teams = sorted({r for t in static_roster if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
             if not teams:
-                print(f"  No current-season file and no resolved ESPN/roster for {competition}")
+                print(f"  No current-season file and no resolved fallback/roster for {competition}")
                 return [], []
 
         print(
@@ -953,10 +1055,14 @@ def project_competition(ctx, competition, raw_file):
 
 
 def _merge_roster_only_competitions(latest: dict) -> dict:
-    """Ensure current_season_teams and league_teams leagues are projected even without a raw CSV."""
+    """Ensure 2026-27 fallback / current_season_teams / league_teams leagues are projected even without a raw CSV."""
     out = dict(latest or {})
     seen = set(out.keys())
-    for filepath, label in [(CURRENT_SEASON_TEAMS_FILE, "current_season_teams"), (LEAGUE_TEAMS_FILE, "league_teams")]:
+    for filepath, label in [
+        (FALLBACK_TEAMS_FILE, "2026_27_league_team_fallback"),
+        (CURRENT_SEASON_TEAMS_FILE, "current_season_teams"),
+        (LEAGUE_TEAMS_FILE, "league_teams"),
+    ]:
         try:
             if not os.path.exists(filepath):
                 continue
@@ -964,12 +1070,19 @@ def _merge_roster_only_competitions(latest: dict) -> dict:
                 data = json.load(fh)
             if not isinstance(data, dict):
                 continue
-            for comp, roster in data.items():
+            # Support both flat {comp: [teams]} and nested {leagues: {comp: {teams: [...]}}}
+            source = data.get("leagues") if isinstance(data.get("leagues"), dict) else data
+            for comp, roster in source.items():
+                if isinstance(roster, dict):
+                    roster = roster.get("teams", [])
                 if not isinstance(roster, list) or len(roster) < 2:
                     continue
                 if comp in seen:
                     continue
                 if "/MLS -" in comp or comp.endswith(" Cup") or "UEFA/" in comp:
+                    continue
+                # Only the top-5 European leagues get preseason fallback projections.
+                if label == "2026_27_league_team_fallback" and comp not in TOP_FALLBACK_LEAGUES:
                     continue
                 seen.add(comp)
                 out[comp] = None
@@ -977,6 +1090,46 @@ def _merge_roster_only_competitions(latest: dict) -> dict:
         except Exception:
             continue
     return out
+
+
+def _load_any_roster(competition):
+    """Load team roster from any available source, returning a sorted list or None."""
+    for loader, label in [
+        (_load_current_season_roster, "current_season_teams"),
+        (lambda c: _load_roster_from_json(FALLBACK_TEAMS_FILE, c), "fallback"),
+        (lambda c: _load_roster_from_json(LEAGUE_TEAMS_FILE, c), "league_teams"),
+    ]:
+        try:
+            teams = loader(competition)
+            if teams and len(teams) >= 2:
+                return sorted(teams)
+        except Exception:
+            continue
+    return None
+
+
+def _zeroed_placeholder_rows(competition):
+    """Build zeroed table rows for a competition so stale data is overwritten."""
+    teams = _load_any_roster(competition)
+    if not teams:
+        teams = [""]
+    rows = []
+    for pos, team in enumerate(teams, start=1):
+        rows.append({
+            "competition": competition,
+            "position": pos,
+            "team": team,
+            "P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
+            "PlayedReal": 0, "PlayedPred": 0,
+            "win_league_pct": 0.0,
+            "top4_pct": 0.0,
+            "bottom3_pct": 0.0,
+            "most_likely_position": 0,
+            "most_likely_position_pct": 0.0,
+            "position_odds_json": "{}",
+            "sim_runs": 0,
+        })
+    return rows
 
 
 def main():
@@ -997,6 +1150,10 @@ def main():
     latest = _merge_roster_only_competitions(latest)
     if not latest:
         raise ValueError(f"No raw season files or current-season rosters found for Extra leagues")
+
+    # Track all competitions before any skip so we can fill zeroed placeholders
+    # for skipped ones and prevent stale data from persisting in output CSVs.
+    all_comps_before_skip = set(latest.keys())
 
     # June through mid-July: skip European-style Extra leagues until Jul 15+.
     # Calendar-year Extra leagues (if any) keep projecting.
@@ -1024,37 +1181,42 @@ def main():
     comps = sorted(latest.items(), key=lambda kv: kv[0])
     if not comps:
         print("No competitions left to project.")
-        os.makedirs(OUT_DIR, exist_ok=True)
-        pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)
-        pd.DataFrame(all_future).to_csv(OUT_MATCHES, index=False)
-        return
-
-    if comp_workers <= 1 or len(comps) <= 1:
-        for competition, path in comps:
-            try:
-                table_rows, future_rows = project_competition(ctx, competition, path)
-                all_tables.extend(table_rows)
-                all_future.extend(future_rows)
-                print(f"  [{competition}] done ({len(table_rows)} rows)")
-            except Exception as e:
-                print(f"  [{competition}] ERROR: {e}")
     else:
-        max_workers = min(comp_workers, len(comps))
-        print(f"  Processing {len(comps)} competitions with {max_workers} workers")
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(project_competition, ctx, comp, path): comp
-                for comp, path in comps
-            }
-            for fut in as_completed(futures):
-                comp = futures[fut]
+        if comp_workers <= 1 or len(comps) <= 1:
+            for competition, path in comps:
                 try:
-                    table_rows, future_rows = fut.result()
+                    table_rows, future_rows = project_competition(ctx, competition, path)
                     all_tables.extend(table_rows)
                     all_future.extend(future_rows)
-                    print(f"  [{comp}] done ({len(table_rows)} rows)")
+                    print(f"  [{competition}] done ({len(table_rows)} rows)")
                 except Exception as e:
-                    print(f"  [{comp}] ERROR: {e}")
+                    print(f"  [{competition}] ERROR: {e}")
+        else:
+            max_workers = min(comp_workers, len(comps))
+            print(f"  Processing {len(comps)} competitions with {max_workers} workers")
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(project_competition, ctx, comp, path): comp
+                    for comp, path in comps
+                }
+                for fut in as_completed(futures):
+                    comp = futures[fut]
+                    try:
+                        table_rows, future_rows = fut.result()
+                        all_tables.extend(table_rows)
+                        all_future.extend(future_rows)
+                        print(f"  [{comp}] done ({len(table_rows)} rows)")
+                    except Exception as e:
+                        print(f"  [{comp}] ERROR: {e}")
+
+    # Fill zeroed placeholder rows for competitions that were skipped or errored
+    # so stale projected data from the previous run does not persist.
+    projected_comps = {r["competition"] for r in all_tables}
+    for comp in sorted(all_comps_before_skip):
+        if comp not in projected_comps:
+            placeholder = _zeroed_placeholder_rows(comp)
+            all_tables.extend(placeholder)
+            print(f"  [{comp}] zeroed placeholder ({len(placeholder)} rows)")
 
     os.makedirs(OUT_DIR, exist_ok=True)
     pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)

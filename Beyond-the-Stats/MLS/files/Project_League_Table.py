@@ -48,12 +48,13 @@ OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
 OUT_BRACKET = os.path.join(OUT_DIR, "projected_mls_playoff_bracket.json")
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 LIGA_MX_COMPETITION = "Mexico/Liga MX"
+MLS_COMPETITION = "United States/MLS"
 LIGA_MX_ESPN_ID = "mex.1"
 RNG = random.Random()
 # Regular-season Monte Carlo iterations. Cup win % uses the same run count but
 # samples from a precomputed matchup-prob cache (not a fresh model call per
 # playoff game), so raising this no longer multiplies sklearn cost by ~30x.
-SIMULATION_RUNS = 1000
+SIMULATION_RUNS = 500
 MAPPING_FILE = os.path.join(os.path.dirname(BASE_DIR), "..", "Data", "team_name_mapping_master.json")
 
 
@@ -79,6 +80,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
     comp_section = mapping.setdefault(competition, {})
     siblings = _sibling_competitions(competition, mapping)
     added = 0
+    new_entries = []
     for raw_name in sorted(set(unresolved_names)):
         if raw_name in comp_section:
             continue
@@ -96,6 +98,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
                 "", raw_name, flags=re.IGNORECASE
             ).strip()
             candidate = pm.resolve_team_name(stripped, valid_names) or pm.resolve_team_name(raw_name, valid_names)
+        target_comp = competition
         if candidate and candidate in valid_names:
             if roster_teams is not None and candidate not in roster_teams:
                 # Team is valid but not in current competition roster — add to sibling section instead
@@ -105,6 +108,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
                     if raw_name not in sibling_section:
                         sibling_section[raw_name] = candidate
                         added_to_sibling = True
+                        target_comp = sibling_comp
                         break
                 if not added_to_sibling:
                     comp_section[raw_name] = candidate
@@ -113,10 +117,38 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
         else:
             comp_section[raw_name] = ""
         added += 1
+        if candidate:
+            new_entries.append((target_comp, raw_name, candidate))
     if added:
         with open(MAPPING_FILE, "w", encoding="utf-8") as fh:
             json.dump(mapping, fh, indent=2, ensure_ascii=False)
         print(f"  Mapping: auto-added {added} entry/ies to {MAPPING_FILE}")
+        _log_new_mappings(new_entries)
+
+
+def _log_new_mappings(entries):
+    """Append a list of (competition, raw_name, mapped_name) triples to the
+    team_name_mapping_master_new.json log file for manual review."""
+    if not entries:
+        return
+    log_dir = os.path.dirname(MAPPING_FILE)
+    log_path = os.path.join(log_dir, "team_name_mapping_master_new.json")
+    log_data = {}
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                log_data = json.load(f)
+        except Exception:
+            pass
+    if not isinstance(log_data, dict):
+        log_data = {}
+    for comp, raw_name, mapped_name in entries:
+        section = log_data.setdefault(comp, {})
+        if raw_name not in section:
+            section[raw_name] = mapped_name
+    with open(log_path, "w", encoding="utf-8") as f:
+        json.dump(log_data, f, indent=2, ensure_ascii=False)
+
 
 EASTERN_CONFERENCE_TEAMS = {
     "Atlanta Utd",

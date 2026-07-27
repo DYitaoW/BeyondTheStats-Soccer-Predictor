@@ -4,7 +4,8 @@
   "notes": [
     "Real Data/Processed_Data and Team_Data stats always take precedence.",
     "This file supplies league-strength and team-to-league hints so cup fixtures can exercise the existing unknown-team fallback path.",
-    "Rosters are intentionally provisional and should be refreshed once final 2026-27 domestic league participants are confirmed."
+    "Rosters are intentionally provisional and should be refreshed once final 2026-27 domestic league participants are confirmed.",
+    "viseu, maritimio not known in database yet"
   ],
   "leagues": {
     "England/Premier League": {
@@ -46,16 +47,17 @@
         "Elche",
         "Espanyol",
         "Getafe",
-        "Girona",
         "Levante",
-        "Mallorca",
         "Osasuna",
         "Real Madrid",
         "Sevilla",
         "Sociedad",
         "Valencia",
         "Vallecano",
-        "Villarreal"
+        "Villarreal",
+        "Malaga",
+        "Santander",
+        "La Coruna"
       ]
     },
     "Italy/Serie A": {
@@ -78,7 +80,10 @@
         "Roma",
         "Torino",
         "Udinese",
-        "Verona"
+        "Venezia",
+        "Monza",
+        "Frosinone",
+        "Sassuolo"
       ]
     },
     "Germany/Bundesliga": {
@@ -90,17 +95,19 @@
         "Dortmund",
         "Ein Frankfurt",
         "Freiburg",
-        "Heidenheim",
         "Hoffenheim",
         "Leverkusen",
         "M'gladbach",
         "Mainz",
         "RB Leipzig",
-        "St Pauli",
         "Stuttgart",
         "Union Berlin",
         "Werder Bremen",
-        "Wolfsburg"
+        "Wolfsburg",
+        "FC Koln",
+        "Elversberg",
+        "Paderborn",
+        "Schalke 04"
       ]
     },
     "France/Ligue 1": {
@@ -115,13 +122,16 @@
         "Lyon",
         "Marseille",
         "Monaco",
-        "Montpellier",
-        "Nantes",
         "Nice",
         "Paris SG",
         "Rennes",
         "Strasbourg",
-        "Toulouse"
+        "Toulouse",
+        "Paris FC",
+        "Le Mans",
+        "Le Havre",
+        "Lorient",
+        "Troyes"
       ]
     },
     "Portugal/Liga Portugal": {
@@ -129,7 +139,6 @@
       "league_strength": 0.85,
       "teams": [
         "Benfica",
-        "Boavista",
         "Braga",
         "Casa Pia",
         "Estoril",
@@ -140,7 +149,13 @@
         "Porto",
         "Rio Ave",
         "Santa Clara",
-        "Sporting CP"
+        "Sp Lisbon",
+        "Viseu", 
+        "Estrela",
+        "Alverca",
+        "Arouca",
+        "Maritamo",
+        "Nacional"
       ]
     },
     "Netherlands/Eredivisie": {
