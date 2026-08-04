@@ -1,4 +1,4 @@
-"""Generate current_season_teams.json — a manually-verifiable roster of
+﻿"""Generate current_season_teams.json — a manually-verifiable roster of
 every team in every league for the 2026-27 season.
 
 Pre-fills teams from the ESPN snapshot (league_teams.json) where available.
@@ -29,7 +29,7 @@ LEAGUES = [
     "Poland/Ekstraklasa",
     "Mexico/Liga MX", "Argentina/Primera Division",
     "Brazil/Brasileirão", "Japan/J1 League",
-    "CONCACAF/Leagues Cup",
+    "North America/Leagues Cup",
     # ── MLS sub-competitions (for bracket display) ──────────────
     "United States/MLS - Supporters Shield Table",
     "United States/MLS - Eastern Conference",

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Daily pipeline runner + mobile-app feed generator.
 
 Repeats the full data-gathering / processing / sorting / prediction pipeline
@@ -87,14 +87,14 @@ _CUP_COMPETITIONS = frozenset({
     "England/FA Cup", "England/League Cup",
     "Italy/Coppa Italia", "Spain/Copa del Rey",
     "Germany/DFB-Pokal", "France/Coupe de France",
-    "United States/US Open Cup", "CONCACAF/Leagues Cup",
-    "FIFA/World Cup",
+    "United States/US Open Cup", "North America/Leagues Cup",
+    "International/World Cup",
 })
 
 _CUP_SIM_RUNS = {
-    "UEFA/Champions League": 500,
+    "Europe/Champions League": 500,
     "United States/MLS": 500,
-    "UEFA/Conference League": 150,
+    "Europe/Conference League": 150,
     "United States/US Open Cup": 150,
 }
 
@@ -646,11 +646,11 @@ def _classify_competition(competition):
         return "other"
 
     lower = comp.lower()
-    if "world cup" in lower or lower.startswith("fifa/") or "/world cup" in lower:
+    if "world cup" in lower or lower.startswith("fifa/") or lower.startswith("international/") or "/world cup" in lower:
         return "national"
     if "nations league" in lower or "euro " in lower or lower.startswith("euro/") or "copa america" in lower:
         return "national"
-    if "friendly" in lower and "/" not in comp:
+    if "friendly" in lower and ("/" not in comp or comp.startswith("International/Friendly")):
         return "national"
 
     if "/" in comp:
@@ -890,8 +890,6 @@ def _publish_windowed_upcoming(output_dir, source_paths):
     if isinstance(past_games, list):
         for r in past_games:
             k = _row_key(r)
-            if k in seen:
-                continue
             try:
                 d = _row_date(r)
             except (ValueError, TypeError):
@@ -901,7 +899,20 @@ def _publish_windowed_upcoming(output_dir, source_paths):
             out = {f: (r.get(f) or "") for f in _UPCOMING_CSV_FIELDS}
             if not out.get("match_date") and r.get("match_date_iso"):
                 out["match_date"] = str(r["match_date_iso"]).strip()[:10]
-            seen[k] = out
+            if k in seen:
+                # A settled past game should upgrade the placeholder upcoming
+                # row (which was written before the result was known): carry
+                # over any missing prediction fields and fill in the result.
+                existing = seen[k]
+                for f in _UPCOMING_CSV_FIELDS:
+                    if not existing.get(f) and out.get(f):
+                        existing[f] = out[f]
+                for f in ("actual_result", "actual_home_goals", "actual_away_goals",
+                          "is_correct", "settled_at_utc"):
+                    if out.get(f):
+                        existing[f] = out[f]
+            else:
+                seen[k] = out
 
     # ── Prune rows outside window ───────────────────────────────────────
     rows = list(seen.values())
@@ -958,7 +969,7 @@ _MLS_WEST_TEAMS = {
 
 def _load_json(path):
     try:
-        with path.open("r", encoding="utf-8") as fh:
+        with path.open("r", encoding="utf-8-sig") as fh:
             return json.load(fh)
     except Exception:
         return None
@@ -1074,9 +1085,9 @@ _ESPN_STATS_IDS = {
     "Belgium/First Division A": "bel.1",
     "Scotland/Premiership": "sco.1",
     "Turkey/Super Lig": "tur.1",
-    "UEFA/Champions League": "uefa.champions",
-    "UEFA/Europa League": "uefa.europa",
-    "UEFA/Conference League": "uefa.europa.conf",
+    "Europe/Champions League": "uefa.champions",
+    "Europe/Europa League": "uefa.europa",
+    "Europe/Conference League": "uefa.europa.conf",
     "Europe/Champions League": "uefa.champions",
     "Europe/Europa League": "uefa.europa",
     "Europe/Conference League": "uefa.europa.conf",

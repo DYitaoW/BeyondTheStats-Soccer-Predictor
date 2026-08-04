@@ -1,4 +1,4 @@
-"""
+﻿"""
 Full pipeline orchestrator — runs all data, model, and prediction steps.
 
 Invoked by ``Daily_Pipeline.py`` (scheduled) or directly from the command
@@ -580,12 +580,12 @@ _REAL_TABLE_COMPETITIONS = {
 
 _CUP_COMPETITIONS = {
     "England/FA Cup", "England/League Cup",
-    "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+    "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
     "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
     "Italy/Coppa Italia", "Spain/Copa del Rey",
     "Germany/DFB-Pokal", "France/Coupe de France",
     "United States/US Open Cup",
-    "CONCACAF/Leagues Cup",
+    "North America/Leagues Cup",
 }
 
 
@@ -606,7 +606,7 @@ def _build_real_standings():
         print(f"  [real-standings] Could not import Website standings: {exc}")
         return False
 
-    known_comps = sorted(_REAL_TABLE_COMPETITIONS | _CUP_COMPETITIONS | {"FIFA/World Cup"})
+    known_comps = sorted(_REAL_TABLE_COMPETITIONS | _CUP_COMPETITIONS | {"International/World Cup"})
     standings: dict[str, dict] = {}
     for comp_name in known_comps:
         # Daily refresh: CSV-backed history compute + always sanitize so ESPN

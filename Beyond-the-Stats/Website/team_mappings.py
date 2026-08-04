@@ -1,4 +1,4 @@
-"""Team mapping diagnostics for manual ESPN / API → predictor name alignment."""
+﻿"""Team mapping diagnostics for manual ESPN / API → predictor name alignment."""
 from __future__ import annotations
 
 import csv
@@ -105,7 +105,7 @@ def _extract_upcoming_teams_from_scoreboard(data: dict) -> tuple[set[str], int]:
 def _fetch_upcoming_espn_teams(competition: str, espn_id: str, lookahead_days: int) -> tuple[set[str], int]:
     """Scan ESPN scoreboards for upcoming (pre) fixtures and collect team display names."""
     today = date.today()
-    is_cup = "cup" in competition.lower() or competition.startswith("UEFA/") or competition.startswith("Europe/")
+    is_cup = "cup" in competition.lower() or competition.startswith("Europe/") or competition.startswith("Europe/")
     if is_cup:
         _, end = season_calendar.cup_lookahead_bounds(today, lookahead_days=lookahead_days)
     elif season_calendar.competition_uses_calendar_year(competition):
@@ -220,7 +220,7 @@ def build_unmapped_espn_payload(
 
         comp_map = master.get(competition, {})
         comp_lookahead = lookahead_days
-        if "cup" in competition.lower() or competition.startswith("UEFA/") or competition.startswith("Europe/"):
+        if "cup" in competition.lower() or competition.startswith("Europe/") or competition.startswith("Europe/"):
             comp_lookahead = min(lookahead_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS)
         espn_teams, fixture_count = _fetch_upcoming_espn_teams(competition, espn_id, comp_lookahead)
         unmapped_rows = []

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Flask API server — the main web serving layer for Beyond the Stats.
 
 Architecture
@@ -73,6 +73,8 @@ from notifications import (
     send_live_activity_update,
     send_live_activity_end,
     start_apns_worker,
+    subscribe_match,
+    unsubscribe_match,
 )
 import notifications as live_activities
 from predictions import (
@@ -696,6 +698,33 @@ def subscriptions_page():
     )
 
 
+def _render_draftit_page(doc_id: str):
+    """Render a Draft It! legal/info page using the Draft It! template."""
+    from legal_docs import get_legal_document, plain_text_to_html_paragraphs
+
+    doc = get_legal_document(doc_id)
+    if not doc:
+        return "Document unavailable", 404
+    return render_template(
+        "draftit.html",
+        active_page="draftit",
+        doc=doc,
+        body_html=plain_text_to_html_paragraphs(doc["body"]),
+    )
+
+
+@app.get("/draftit/about")
+def draftit_about():
+    """Render the Draft It! app Privacy Policy / about page."""
+    return _render_draftit_page("draftit_privacy")
+
+
+@app.get("/draftit/privacy")
+def draftit_privacy():
+    """Render the Draft It! Privacy Policy page."""
+    return _render_draftit_page("draftit_privacy")
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  REST API ENDPOINTS — 32+ ``/api/*`` routes
 # ═══════════════════════════════════════════════════════════════════
@@ -956,6 +985,9 @@ def api_help():
         ("/api/notifications", "POST", "Queue a push notification"),
         ("/api/notifications", "GET", "List recent notifications"),
         ("/api/notifications/register", "POST", "Register a device push token"),
+        ("/api/notifications/unregister", "POST", "Remove a device push token"),
+        ("/api/notifications/subscribe", "POST", "Subscribe a device to a match's live-event alerts"),
+        ("/api/notifications/unsubscribe", "POST", "Unsubscribe a device from a match's live-event alerts"),
         ("/api/live-activities/register", "POST", "Register a Live Activity push token for a match"),
         ("/api/live-activities/unregister", "POST", "Remove a Live Activity registration"),
         ("/api/live-activities/update", "POST", "Push a content-state update to Live Activities for a match"),
@@ -1327,7 +1359,7 @@ def api_tournament(key):
     comp_name = config.TOURNAMENT_KEY_MAP.get(str(key or "").strip().lower())
     if not comp_name:
         return jsonify({"ok": False, "error": f"Unknown tournament: {key}"}), 404
-    if comp_name == "FIFA/World Cup":
+    if comp_name == "International/World Cup":
         return api_world_cup()
 
     with app.test_request_context(query_string={"competition": comp_name}):
@@ -2134,6 +2166,48 @@ def api_unregister_device():
     return jsonify({"ok": True, "removed": True})
 
 
+@app.post("/api/notifications/subscribe")
+def api_subscribe_match_notifications():
+    """Subscribe a device to live-event alerts for a specific match.
+
+    Body params:
+        token       (str, required) — device push token
+        match_id    (str, required) — match identifier
+        competition (str, required) — competition name
+    """
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get("token", "")).strip()
+    match_id = str(payload.get("match_id", "")).strip()
+    competition = str(payload.get("competition", "")).strip()
+    if not token or not match_id or not competition:
+        return jsonify({"ok": False, "error": "token, match_id, and competition required"}), 400
+    if len(token) > 512 or len(match_id) > 256 or len(competition) > 256:
+        return jsonify({"ok": False, "error": "input too long"}), 400
+    ok = subscribe_match(token, match_id, competition)
+    return jsonify({"ok": True, "subscribed": ok})
+
+
+@app.post("/api/notifications/unsubscribe")
+def api_unsubscribe_match_notifications():
+    """Remove a device from a match's live-event alert list.
+
+    Body params:
+        token       (str, required) — device push token
+        match_id    (str, required) — match identifier
+        competition (str, required) — competition name
+    """
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get("token", "")).strip()
+    match_id = str(payload.get("match_id", "")).strip()
+    competition = str(payload.get("competition", "")).strip()
+    if not token or not match_id or not competition:
+        return jsonify({"ok": False, "error": "token, match_id, and competition required"}), 400
+    if len(token) > 512 or len(match_id) > 256 or len(competition) > 256:
+        return jsonify({"ok": False, "error": "input too long"}), 400
+    ok = unsubscribe_match(token, match_id, competition)
+    return jsonify({"ok": True, "unsubscribed": ok})
+
+
 # ── Live Activity endpoints (iOS 16.1+) ────────────────────────────
 
 
@@ -2159,6 +2233,8 @@ def api_register_live_activity():
     if len(device_token) > 512:
         return jsonify({"ok": False, "error": "device_token too long"}), 400
     ok = live_activities.register(activity_token, device_token, match_id, competition)
+    if ok and device_token:
+        subscribe_match(device_token, match_id, competition)
     return jsonify({"ok": True, "registered": ok, "total": len(live_activities.all_activities())})
 
 
@@ -2172,6 +2248,12 @@ def api_unregister_live_activity():
     if len(activity_token) > 1024:
         return jsonify({"ok": False, "error": "activity_token too long"}), 400
     ok = live_activities.unregister(activity_token)
+    if ok:
+        match_id = str(payload.get("match_id", "")).strip()
+        competition = str(payload.get("competition", "")).strip()
+        device_token = str(payload.get("device_token", "")).strip()
+        if match_id and competition and device_token:
+            unsubscribe_match(device_token, match_id, competition)
     return jsonify({"ok": True, "removed": ok})
 
 
@@ -2258,8 +2340,8 @@ def api_cup_bracket():
     ``cup_format`` (format descriptor).
 
     Query params:
-        competition  -- required, e.g. "England/FA Cup", "FIFA/World Cup",
-                        "UEFA/Champions League"
+        competition  -- required, e.g. "England/FA Cup", "International/World Cup",
+                        "Europe/Champions League"
     """
     comp = request.args.get("competition", "").strip()
     if not comp:
@@ -2376,7 +2458,7 @@ def api_real_cup_data():
     Additional fields: ``cup_format``, ``table``, ``knockout_rounds``.
 
     Query params:
-        competition  -- required, e.g. "UEFA/Champions League", "England/FA Cup"
+        competition  -- required, e.g. "Europe/Champions League", "England/FA Cup"
     """
     comp = request.args.get("competition", "").strip()
     if not comp:
@@ -2431,7 +2513,7 @@ def api_real_tables():
 
     Query params:
         competition  -- optional, fetch a specific competition only
-                        (e.g. "England/Premier League", "FIFA/World Cup")
+                        (e.g. "England/Premier League", "International/World Cup")
                         If omitted, returns tables for all known competitions.
     """
     comp_filter = request.args.get("competition", "").strip()
@@ -2548,8 +2630,8 @@ def api_competition_data():
     real fields are omitted and only ``table`` is returned.
 
     Query params:
-        competition  -- required, e.g. "UEFA/Champions League",
-                        "England/Premier League", "FIFA/World Cup"
+        competition  -- required, e.g. "Europe/Champions League",
+                        "England/Premier League", "International/World Cup"
     """
     comp = request.args.get("competition", "").strip()
     if not comp:
@@ -2558,7 +2640,7 @@ def api_competition_data():
         return jsonify({"ok": False, "error": f"Unknown competition: {comp}"}), 400
 
     # ── Special case: World Cup uses its dedicated projection file ──
-    if comp == "FIFA/World Cup":
+    if comp == "International/World Cup":
         return api_world_cup()
 
     # ── Gather basic building blocks ──────────────────────────────
@@ -2746,10 +2828,10 @@ def api_league_tables():
             if comp_name not in known_cups:
                 known_cups.add(comp_name)
         # World Cup is temporarily excluded from the cups competitions API.
-        known_cups.discard("FIFA/World Cup")
+        known_cups.discard("International/World Cup")
         data["leagues"] = sorted(known_cups)
         if isinstance(data.get("tables"), dict):
-            data["tables"].pop("FIFA/World Cup", None)
+            data["tables"].pop("International/World Cup", None)
         cup_formats = {}
         if isinstance(brackets, dict):
             comps = brackets.get("competitions", brackets)
@@ -2927,7 +3009,7 @@ def api_league_leaders():
                     break
             if not predicted:
                 if source_mode == "cups":
-                    if comp_name not in config._CUP_FORMATS and comp_name != "FIFA/World Cup":
+                    if comp_name not in config._CUP_FORMATS and comp_name != "International/World Cup":
                         continue
                 else:
                     continue
@@ -2995,9 +3077,9 @@ def api_league_leaders():
     #         wc_champion = wc.get("champion")
     #         wc_probs = wc.get("winner_probabilities") or {}
     #         wc_prob = wc_probs.get(wc_champion, None) if wc_champion else None
-    #         if not any(c["competition"] == "FIFA/World Cup" for c in cups):
+    #         if not any(c["competition"] == "International/World Cup" for c in cups):
     #             cups.append({
-    #                 "competition": "FIFA/World Cup",
+    #                 "competition": "International/World Cup",
     #                 "predicted_winner": wc_champion or "—",
     #                 "predicted_winner_odds": round(wc_prob * 100, 1) if wc_prob is not None else None,
     #             })

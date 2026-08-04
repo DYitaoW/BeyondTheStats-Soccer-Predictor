@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import re
 import random
@@ -62,7 +62,7 @@ def _sibling_competitions(competition, mapping):
     country = competition.split("/")[0] if "/" in competition else competition
     if country.upper().startswith("UEFA"):
         return [k for k in mapping if isinstance(mapping.get(k), dict)]
-    if competition == "CONCACAF/Leagues Cup":
+    if competition == "North America/Leagues Cup":
         return [k for k in mapping if k in ("United States/MLS", "Mexico/Liga MX") and isinstance(mapping.get(k), dict)]
     return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
 
@@ -1586,6 +1586,7 @@ def project_competition(ctx, competition, raw_file):
 
 
 def main():
+    _t0 = time.monotonic()
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR)
     if not latest:
@@ -1614,10 +1615,12 @@ def main():
     if playoff_bracket is not None:
         with open(OUT_BRACKET, "w", encoding="utf-8") as fh:
             json.dump(playoff_bracket, fh, indent=2)
+    _elapsed = time.monotonic() - _t0
     print(f"Projected league tables saved: {OUT_TABLE}")
     print(f"Predicted remaining matches saved: {OUT_MATCHES}")
     if playoff_bracket is not None:
         print(f"Predicted MLS playoff bracket saved: {OUT_BRACKET}")
+    print(f"Elapsed: {_elapsed:.1f}s")
 
 
 if __name__ == "__main__":

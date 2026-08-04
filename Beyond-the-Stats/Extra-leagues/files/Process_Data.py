@@ -274,7 +274,8 @@ def process_one_file(rel_path):
     if write_needed:
         with open(output_path, "w", encoding="utf-8", newline="") as out:
             out.write(new_csv)
-    return True, rel_path, "processed"
+        return True, rel_path, "processed"
+    return True, rel_path, "kept_content_unchanged"
 
 
 def main():
@@ -293,6 +294,8 @@ def main():
             _, rel_path, status = future.result()
             if status == "processed":
                 print(f"Processed {rel_path}...")
+            elif status == "kept_content_unchanged":
+                pass
             elif status == "skipped_insufficient_data":
                 print(f"Skipped {rel_path} (insufficient data)...")
             elif status == "skipped_empty_processed":

@@ -7,6 +7,7 @@
 import json
 import os
 import sys
+import time
 import unicodedata
 import urllib.request
 from datetime import UTC, datetime
@@ -333,6 +334,7 @@ def load_existing():
 
 
 def sync_friendlies():
+    _t0 = time.monotonic()
     fixtures = load_fixtures_from_espn()
     if fixtures.empty:
         print("No club friendlies returned by ESPN.")
@@ -420,6 +422,7 @@ def sync_friendlies():
     out.to_csv(PREDICTIONS_FILE, index=False)
     print(f"Saved club friendlies: {PREDICTIONS_FILE}")
     print(f"Fixtures: {len(out)} | Chelsea predictions: {chelsea_predictions}")
+    print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
 
 
 def update_recent_friendlies_results(days_back=1, days_forward=1):

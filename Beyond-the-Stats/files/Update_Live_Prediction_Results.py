@@ -1,4 +1,4 @@
-"""
+﻿"""
 Settle predictions by matching CSV predictions against real ESPN results.
 
 Called as a post-pipeline step by ``Run_All_Pipeline._run_shared_post_steps``.
@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import urllib.request
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -63,18 +64,18 @@ ESPN_COMPETITION_KEYS = {
     # Cup competitions
     "England/FA Cup": "eng.fa",
     "England/League Cup": "eng.efl",
-    "UEFA/Champions League": "uefa.champions",
-    "UEFA/Europa League": "uefa.europa",
-    "UEFA/Conference League": "uefa.europa.conf",
     "Europe/Champions League": "uefa.champions",
     "Europe/Europa League": "uefa.europa",
     "Europe/Conference League": "uefa.europa.conf",
-    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
+    "Europe/Champions League": "uefa.champions",
+    "Europe/Europa League": "uefa.europa",
+    "Europe/Conference League": "uefa.europa.conf",
+    "North America/Leagues Cup": "concacaf.leagues.cup",
     "United States/US Open Cup": "usa.open_cup",
     # National team competitions
-    "FIFA/World Cup": "fifa.world",
-    "FIFA/Friendly": "fifa.friendly",
-    "UEFA/European Championship": "uefa.euro",
+    "International/World Cup": "fifa.world",
+    "International/Friendly": "fifa.friendly",
+    "International/European Championship": "uefa.euro",
 }
 DEFAULT_ESPN_FETCH_WORKERS = 8
 MLS_COMPETITION = "United States/MLS"
@@ -521,7 +522,7 @@ def save_completed_rows_to_past_games(frame, today=None):
     existing = []
     if os.path.exists(PAST_GAMES_FILE):
         try:
-            with open(PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
+            with open(PAST_GAMES_FILE, "r", encoding="utf-8-sig") as fh:
                 existing = json.load(fh)
             if not isinstance(existing, list):
                 raise ValueError("past_games.json must contain a JSON list")
@@ -866,6 +867,7 @@ def apply_mapping_updates(base_mapping, updates):
 
 
 def main():
+    _t0 = time.monotonic()
     args = parse_cli_args()
 
     global_df = load_predictions(GLOBAL_PREDICTIONS_FILE)
@@ -1030,6 +1032,7 @@ def main():
         print(f"Friendlies completed rows removed: {friendlies_removed_completed}")
     print(f"ESPN names seen file: {ESPN_NAMES_FILE}")
     print(f"Accuracy totals file: {ACCURACY_TOTALS_FILE}")
+    print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
     print("Done.")
 
 

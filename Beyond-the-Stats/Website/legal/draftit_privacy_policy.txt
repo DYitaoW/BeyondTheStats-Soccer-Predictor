@@ -1,0 +1,29 @@
+Privacy Policy for Draft It!
+
+Last updated: August 1, 2026
+
+This Privacy Policy describes how the Draft It! app ("the App") handles information. The App is a single-player football draft game.
+
+1. Information We Collect
+Draft It! does not collect any personal data. The App does not collect, transmit, store, or share any information that identifies you.
+
+- No account, registration, or sign-in is required.
+- No analytics, advertising, or tracking software is used.
+- No cookies or similar tracking technologies are used.
+- The App does not access your location, contacts, photos, microphone, or camera.
+- The App makes no network requests and does not connect to the internet.
+
+2. Local Storage Only
+Your game progress — such as career history, drafts, settings, and unlocked achievements — is stored only on your device using Apple's standard local storage (UserDefaults). This information never leaves your device and is not accessible to us or any third party. Deleting the App removes this data.
+
+3. No Third Parties
+The App contains no third-party services, SDKs, frameworks, or APIs that collect or process your data.
+
+4. Children's Privacy
+The App does not collect any information from anyone, including children under the age of 13. Because no data is collected, no special protections beyond this are required.
+
+5. Changes to This Policy
+If this policy changes, the updated version will be posted on this page with a new "Last updated" date.
+
+6. Contact
+If you have questions about this Privacy Policy, please contact us at: beyondthestatsapp@gmail.com

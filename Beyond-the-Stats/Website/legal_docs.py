@@ -31,6 +31,14 @@ LEGAL_DOCUMENTS = {
         "path": "/subscriptions",
         "api_path": "/api/legal/subscriptions",
     },
+    "draftit_privacy": {
+        "id": "draftit_privacy",
+        "title": "Privacy Policy for Draft It!",
+        "effective_date": "2026-08-01",
+        "filename": "draftit_privacy_policy.txt",
+        "path": "/draftit/privacy",
+        "api_path": "/api/legal/draftit_privacy",
+    },
 }
 
 

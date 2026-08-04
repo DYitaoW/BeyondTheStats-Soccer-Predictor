@@ -1766,6 +1766,7 @@ def enforce_single_match_per_team_day(predictions_df):
 
 
 def main():
+    _t0 = time.monotonic()
     args = parse_cli_args()
 
     if args.refresh_download:
@@ -1844,6 +1845,7 @@ def main():
         except Exception as exc:
             print(f"  Warning: Could not fetch/save scorers: {exc}")
 
+    _elapsed = time.monotonic() - _t0
     print(f"\nUpcoming fixtures found: {len(fixtures)}")
     print(f"Team mappings file: {TEAM_MAPPING_FILE}")
     print(f"Canonical raw-data names added: {canonical_added}")
@@ -1855,6 +1857,7 @@ def main():
     print(f"Removed completed fixtures from upcoming list: {removed_completed}")
     print(f"Newly settled with real results: {settled_count}")
     print(f"Saved tracking file: {PREDICTIONS_FILE}")
+    print(f"Elapsed: {_elapsed:.1f}s")
 
 
 if __name__ == "__main__":

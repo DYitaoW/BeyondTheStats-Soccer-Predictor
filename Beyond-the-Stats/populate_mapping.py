@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Add missing competition sections to team_name_mapping_master.json.
 
 Scans all raw CSV data directories, finds competitions not yet in the
@@ -73,12 +73,12 @@ NO_CSV_COMPS = [
     "France/Coupe de France",
     "Italy/Coppa Italia",
     "United States/US Open Cup",
-    "CONCACAF/Leagues Cup",
-    "UEFA/Champions League",
-    "UEFA/Europa League",
-    "UEFA/Conference League",
-    "FIFA/World Cup",
-    "FIFA/Friendly",
+    "North America/Leagues Cup",
+    "Europe/Champions League",
+    "Europe/Europa League",
+    "Europe/Conference League",
+    "International/World Cup",
+    "International/Friendly",
     "Club Friendlies",
 ]
 

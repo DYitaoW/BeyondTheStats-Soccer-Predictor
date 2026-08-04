@@ -28,6 +28,8 @@ env/
 **/api_keys.json
 **/.env
 **/secrets.json
+# Redeem codes (runtime data with hashed codes; the .example.json template stays tracked)
+**/redeem_codes.json
 
 # =============================================================================
 # Debug / profiling / scratch files

@@ -1,7 +1,8 @@
-import argparse
+﻿import argparse
 import os
 import random
 import sys
+import time
 import urllib.error
 import urllib.parse
 from datetime import UTC, datetime, timedelta
@@ -88,7 +89,7 @@ def load_prediction_store(path):
 
 def competition_configs(world_cup_only=False):
     if world_cup_only:
-        return {"FIFA/World Cup": national.UPCOMING_ESPN_COMPETITIONS["FIFA/World Cup"]}
+        return {"International/World Cup": national.UPCOMING_ESPN_COMPETITIONS["International/World Cup"]}
     return dict(national.UPCOMING_ESPN_COMPETITIONS)
 
 
@@ -460,6 +461,7 @@ def merge_prediction_frames(existing_df, new_df):
 
 
 def main():
+    _t0 = time.monotonic()
     args = parse_cli_args()
     bundle = national.load_model_bundle()
     fixtures = load_upcoming_fixtures(
@@ -526,6 +528,7 @@ def main():
     print(f"World Cup predictions currently in file: {world_cup_count}")
     print(f"Skipped fixtures: {skipped}")
     print(f"Saved tracking file: {PREDICTIONS_FILE}")
+    print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
 
 
 if __name__ == "__main__":

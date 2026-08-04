@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Audit team names across all data sources and find unmapped display names.
 
 Usage:
@@ -85,12 +85,12 @@ ESPN_IDS = {
     "France/Coupe de France": "fra.coupe_de_france",
     "Italy/Coppa Italia": "ita.coppa",
     "United States/US Open Cup": "usa.open_cup",
-    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
-    "UEFA/Champions League": "uefa.champions",
-    "UEFA/Europa League": "uefa.europa",
-    "UEFA/Conference League": "uefa.europa.conf",
-    "FIFA/World Cup": "fifa.world",
-    "FIFA/Friendly": "fifa.friendly",
+    "North America/Leagues Cup": "concacaf.leagues.cup",
+    "Europe/Champions League": "uefa.champions",
+    "Europe/Europa League": "uefa.europa",
+    "Europe/Conference League": "uefa.europa.conf",
+    "International/World Cup": "fifa.world",
+    "International/Friendly": "fifa.friendly",
     "Club Friendlies": "club.friendly",
 }
 

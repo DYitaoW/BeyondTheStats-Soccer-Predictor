@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Draft It! — {{ doc.title }}</title>
+  <meta name="description" content="{{ doc.title }} for Draft It!, a single-player football draft game.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026072003') }}">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="site-header">
+      <div class="brand-row">
+        <a class="brand" href="/draftit/about">Draft It!</a>
+        <nav class="header-links">
+          <a class="theme-toggle header-link" href="/draftit/privacy">Privacy</a>
+          <a class="header-link" href="/">Beyond The Stats</a>
+        </nav>
+      </div>
+    </header>
+
+    <article class="card legal-doc">
+      <p class="legal-nav">
+        <a href="/draftit/privacy">Privacy Policy</a>
+      </p>
+      <div class="legal-body">
+        {{ body_html | safe }}
+      </div>
+      <p class="legal-meta muted-placeholder">
+        Also available via API:
+        <a href="{{ doc.api_url }}">{{ doc.api_url }}</a>
+      </p>
+    </article>
+
+    <footer class="site-footer">
+      <p>Draft It! is a single-player football draft game. App data stays on your device.</p>
+      <p>
+        <a href="/draftit/privacy">Privacy</a> ·
+        <a href="/draftit/about">About</a>
+      </p>
+      <p>&copy; 2026 Beyond The Stats</p>
+    </footer>
+  </main>
+</body>
+</html>

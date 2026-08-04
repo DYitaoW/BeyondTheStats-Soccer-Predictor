@@ -8,6 +8,7 @@ and sorts them (imports sibling ``Process_Data`` and ``Sort_Data``).
 import argparse
 import os
 import sys
+import time
 from datetime import datetime
 from io import StringIO
 import urllib.request
@@ -75,6 +76,7 @@ def normalize_season(value):
 
 
 def main():
+    _t0 = time.monotonic()
     args = parse_args()
     os.makedirs(TARGET_DIR, exist_ok=True)
     current_year = datetime.now().year
@@ -134,14 +136,20 @@ def main():
 
     print(
         f"\nDownload stage done. Updated {updated_count} season files, "
-        f"skipped {skipped_existing_count} existing historical files."
+        f"skipped {skipped_existing_count} existing historical files. ({time.monotonic() - _t0:.1f}s)"
     )
 
+    _t1 = time.monotonic()
     print("\nDownloading Liga MX source data...")
     download_mexico.main()
+    print(f"Liga MX download done. ({time.monotonic() - _t1:.1f}s)")
 
+    _t2 = time.monotonic()
     print("\nProcessing MLS + Liga MX files...")
     process_data.main()
+    print(f"Processing done. ({time.monotonic() - _t2:.1f}s)")
+
+    _t3 = time.monotonic()
     print("\nSorting MLS + Liga MX team data...")
     if _sort_data_needed():
         sort_data.sort_all_seasons()
@@ -149,10 +157,10 @@ def main():
         if not args.skip_squad_values:
             sort_data.build_squad_values_file()
         _touch_sort_tracker()
-        print("Sort complete.")
+        print(f"Sort complete. ({time.monotonic() - _t3:.1f}s)")
     else:
-        print("No processed data changes — skipping Sort_Data (team stats unchanged).")
-    print("\nMLS + Liga MX pipeline complete (download + process + sort).")
+        print(f"No processed data changes — skipping Sort_Data (team stats unchanged). ({time.monotonic() - _t3:.1f}s)")
+    print(f"\nMLS + Liga MX pipeline complete (download + process + sort). ({time.monotonic() - _t0:.1f}s)")
 
 
 PROCESSED_DATA_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
@@ -161,13 +169,15 @@ SORT_TRACKER_FILE = os.path.join(TEAM_DATA_DIR, ".sort_tracker")
 
 
 def _sort_data_needed():
-    """Return True if any processed CSV has been modified since last sort."""
+    """Return True if any processed CSV (matching MLS pattern *statYYYY.csv) has been modified since last sort."""
     if not os.path.exists(SORT_TRACKER_FILE):
         return True
     last_mtime = os.path.getmtime(SORT_TRACKER_FILE)
     for root, _, files in os.walk(PROCESSED_DATA_DIR):
         for fname in files:
             if not fname.endswith(".csv"):
+                continue
+            if not re.search(r"[a-z0-9]+stat\d{4}\.csv$", fname, re.I):
                 continue
             fpath = os.path.join(root, fname)
             if os.path.getmtime(fpath) > last_mtime + 1:
