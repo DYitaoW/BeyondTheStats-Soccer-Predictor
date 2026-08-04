@@ -119,7 +119,7 @@ def _teams_to_dict(teams):
 
 
 def main():
-    with open(MAPPING_FILE, "r", encoding="utf-8") as f:
+    with open(MAPPING_FILE, "r", encoding="utf-8-sig") as f:
         mapping = json.load(f, object_pairs_hook=OrderedDict)
 
     existing = set(mapping.keys())

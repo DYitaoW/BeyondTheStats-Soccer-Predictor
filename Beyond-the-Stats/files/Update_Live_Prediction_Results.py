@@ -173,7 +173,7 @@ def load_mapping(path):
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8-sig") as fh:
             payload = json.load(fh)
     except Exception:
         return {}

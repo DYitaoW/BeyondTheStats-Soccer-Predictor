@@ -71,7 +71,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
     if not unresolved_names or not os.path.exists(MAPPING_FILE):
         return
     try:
-        with open(MAPPING_FILE, "r", encoding="utf-8") as fh:
+        with open(MAPPING_FILE, "r", encoding="utf-8-sig") as fh:
             mapping = json.load(fh)
     except Exception:
         return
@@ -82,7 +82,9 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
     added = 0
     new_entries = []
     for raw_name in sorted(set(unresolved_names)):
-        if raw_name in comp_section:
+        existing = comp_section.get(raw_name)
+        # Blank stubs used to permanently block retries — overwrite them.
+        if isinstance(existing, str) and existing.strip():
             continue
         candidate = None
         for sibling_comp in siblings:
@@ -105,7 +107,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
                 added_to_sibling = False
                 for sibling_comp in siblings:
                     sibling_section = mapping.setdefault(sibling_comp, {})
-                    if raw_name not in sibling_section:
+                    if raw_name not in sibling_section or not str(sibling_section.get(raw_name) or "").strip():
                         sibling_section[raw_name] = candidate
                         added_to_sibling = True
                         target_comp = sibling_comp
@@ -115,7 +117,8 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
             else:
                 comp_section[raw_name] = candidate
         else:
-            comp_section[raw_name] = ""
+            # Do not write blank stubs — they block future auto-mapping.
+            continue
         added += 1
         if candidate:
             new_entries.append((target_comp, raw_name, candidate))
@@ -193,7 +196,7 @@ def _load_name_mapping_flat():
     if _name_mapping_flat is not None:
         return _name_mapping_flat
     try:
-        with open(MAPPING_FILE, "r", encoding="utf-8") as f:
+        with open(MAPPING_FILE, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         flat = {}
         for comp, entries in data.items():

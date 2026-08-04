@@ -563,9 +563,8 @@ def _render_site_page(template_name, active_page):
     page_routes = {
         "home": "/",
         "global": "/upcoming-matches",
-        "cups": "/cups",
+        "leagues": "/leagues",
         "h2h": "/head-to-head",
-        "league-table": "/league-tables",
         "world-cup": "/world-cup",
         "players": "/players",
         "tactics": "/tactics",
@@ -622,8 +621,14 @@ def upcoming_matches():
 
 @app.get("/cups")
 def cups_page():
-    """Render the cups tab page."""
-    return _render_site_page("cups.html", active_page="cups")
+    """Redirect the legacy cups tab to the merged Leagues page."""
+    return redirect(url_for("leagues"))
+
+
+@app.get("/leagues")
+def leagues():
+    """Render the merged Leagues page (projected tables + cups)."""
+    return _render_site_page("leagues.html", active_page="leagues")
 
 
 @app.get("/head-to-head")
@@ -634,8 +639,8 @@ def head_to_head():
 
 @app.get("/league-tables")
 def league_tables():
-    """Render the projected league tables tab page."""
-    return _render_site_page("league_tables.html", active_page="league-table")
+    """Redirect the legacy projected league tables page to the merged Leagues page."""
+    return redirect(url_for("leagues"))
 
 
 @app.get("/world-cup")

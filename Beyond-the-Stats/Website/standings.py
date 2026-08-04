@@ -63,7 +63,7 @@ def _load_team_display_mapping() -> dict[str, dict[str, str]]:
         path = config.TEAM_NAME_DISPLAY_MAPPING_FILE
         if os.path.exists(path):
             try:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, "r", encoding="utf-8-sig") as f:
                     _team_display_mapping = json.load(f)
             except Exception:
                 _team_display_mapping = {}

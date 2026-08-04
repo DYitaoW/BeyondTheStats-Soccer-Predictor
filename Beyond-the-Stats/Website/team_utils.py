@@ -9,7 +9,7 @@ def _load_team_display_mappings():
     if not os.path.exists(config.TEAM_NAME_DISPLAY_MAPPING_FILE):
         return {}, {}
     try:
-        with open(config.TEAM_NAME_DISPLAY_MAPPING_FILE, "r", encoding="utf-8") as fh:
+        with open(config.TEAM_NAME_DISPLAY_MAPPING_FILE, "r", encoding="utf-8-sig") as fh:
             payload = json.load(fh)
     except Exception:
         return {}, {}

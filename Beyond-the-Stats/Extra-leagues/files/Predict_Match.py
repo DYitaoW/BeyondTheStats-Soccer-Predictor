@@ -866,7 +866,7 @@ def _load_name_mapping():
         _name_mapping_cache = {}
         return _name_mapping_cache
     try:
-        with open(MAPPING_FILE, "r", encoding="utf-8") as fh:
+        with open(MAPPING_FILE, "r", encoding="utf-8-sig") as fh:
             raw = json.load(fh)
     except Exception:
         _name_mapping_cache = {}

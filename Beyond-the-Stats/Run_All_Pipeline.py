@@ -180,19 +180,26 @@ def _should_build_model_cache(args, label: str, predict_script: Path) -> tuple[b
     return False, detail
 
 
-def _should_run_league_tables(args, output_csv_path: str, processed_dirs: list[str]) -> bool:
+def _should_run_league_tables(args, output_csv_path: str, processed_dirs: list[str], extra_inputs: list[str] | None = None) -> bool:
     """Skip league table projection on light days when no processed data changed.
 
     On Tue/Fri retrain days (``skip_model_train == False``) the tables always
     run.  On light days the output file's mtime is compared against every
     processed CSV — if it is newer than all of them, no data changed since the
     last projection, so the step is skipped.
+
+    ``extra_inputs`` are additional files that, if newer than the output, force a
+    re-run (e.g. the roster/PATH B files that change projected tables even when
+    raw match data is unchanged).
     """
     if not args.skip_model_train:
         return True
     if not output_csv_path or not os.path.exists(output_csv_path):
         return True
     out_mtime = os.path.getmtime(output_csv_path)
+    for input_file in (extra_inputs or []):
+        if input_file and os.path.exists(input_file) and os.path.getmtime(input_file) > out_mtime + 1:
+            return True
     for proc_dir in processed_dirs:
         if not proc_dir or not os.path.isdir(proc_dir):
             continue
@@ -339,7 +346,12 @@ def _run_global_subpipeline(args, api_token):
     )
     global_out_csv = str(SP_DIR / "Data" / "Predictions" / "projected_league_tables.csv")
     global_proc_dirs = [str(SP_DIR / "Data" / "Processed_Data")]
-    if _should_run_league_tables(args, global_out_csv, global_proc_dirs):
+    global_roster_inputs = [
+        str(SP_DIR / "Data" / "Predictions" / "current_season_teams.json"),
+        str(SP_DIR / "Data" / "Predictions" / "league_teams.json"),
+        str(SP_DIR / "files" / "preseason" / "2026_27_league_team_fallback.json"),
+    ]
+    if _should_run_league_tables(args, global_out_csv, global_proc_dirs, global_roster_inputs):
         sub["global_projected_league_tables"] = run_step(
             "[global] Projected league tables",
             _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
@@ -414,7 +426,11 @@ def _run_mls_subpipeline(args, api_token):
     )
     mls_out_csv = str(SP_DIR / "MLS" / "Data" / "Predictions" / "projected_league_tables.csv")
     mls_proc_dirs = [str(SP_DIR / "MLS" / "Data" / "Processed_Data")]
-    if _should_run_league_tables(args, mls_out_csv, mls_proc_dirs):
+    mls_roster_inputs = [
+        str(SP_DIR / "MLS" / "Data" / "Predictions" / "current_season_teams.json"),
+        str(SP_DIR / "MLS" / "Data" / "Predictions" / "league_teams.json"),
+    ]
+    if _should_run_league_tables(args, mls_out_csv, mls_proc_dirs, mls_roster_inputs):
         sub["mls_projected_league_tables"] = run_step(
             "[mls] Projected league tables",
             _project_table_cmd(MLS_FILES_DIR, comp_workers, "Project_League_Table.py"),
@@ -456,7 +472,12 @@ def _run_extra_subpipeline(args, api_token):
         str(SP_DIR / "Extra-leagues" / "Data" / "Processed_Data"),
         str(SP_DIR / "Data" / "Processed_Data"),  # extra uses shared Processed_Data too
     ]
-    if _should_run_league_tables(args, extra_out_csv, extra_proc_dirs):
+    extra_roster_inputs = [
+        str(SP_DIR / "Data" / "Predictions" / "current_season_teams.json"),
+        str(SP_DIR / "Data" / "Predictions" / "league_teams.json"),
+        str(SP_DIR / "files" / "preseason" / "2026_27_league_team_fallback.json"),
+    ]
+    if _should_run_league_tables(args, extra_out_csv, extra_proc_dirs, extra_roster_inputs):
         sub["extra_projected_league_tables"] = run_step(
             "[extra] Projected league tables",
             _project_table_cmd(EXTRA_FILES_DIR, comp_workers, "Project_League_Table.py"),

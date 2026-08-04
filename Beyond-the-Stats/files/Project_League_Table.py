@@ -78,6 +78,25 @@ TOP_FALLBACK_LEAGUES = frozenset({
     "France/Ligue 1",
 })
 
+# Competitions never projected via roster-only PATH B. MLS is in-season and
+# covered by the separate MLS/Mexico sub-pipeline; the global pipeline must not
+# synthesize a placeholder table for it.
+PATH_B_SKIP_COMPETITIONS = frozenset({
+    "United States/MLS",
+})
+
+# Only these leagues get a synthetic PATH B fallback table during the offseason
+# (before their 2026-27 CSV appears). Every other league shows zeroed/previous
+# rows until its new-season data starts, per product requirements.
+PRESEASON_FALLBACK_LEAGUES = frozenset({
+    "England/Premier League",
+    "England/Championship",
+    "Spain/La Liga",
+    "Italy/Serie A",
+    "Germany/Bundesliga",
+    "France/Ligue 1",
+})
+
 
 def _sibling_competitions(competition, mapping):
     """Return competition keys to search when ``competition`` has no mapping.
@@ -100,7 +119,7 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
     if not unresolved_names or not os.path.exists(MAPPING_FILE):
         return
     try:
-        with open(MAPPING_FILE, "r", encoding="utf-8") as fh:
+        with open(MAPPING_FILE, "r", encoding="utf-8-sig") as fh:
             mapping = json.load(fh)
     except Exception:
         return
@@ -895,6 +914,16 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
 
     else:
         # ── PATH B: No current-season CSV or CSV is from a past season ──
+        # Only the leagues in PRESEASON_FALLBACK_LEAGUES get a synthetic
+        # fallback table in the offseason. All other leagues return nothing so
+        # main() emits zeroed placeholders until their new-season CSV appears.
+        if competition not in PRESEASON_FALLBACK_LEAGUES:
+            print(
+                f"  No current-season CSV and {competition} not in preseason fallback scope — "
+                f"showing zeroed/previous rows"
+            )
+            return [], []
+
         # Roster priority: 2026-27 preseason fallback (top-5 leagues) →
         #                   current_season_teams.json → league_teams.json
         # The fallback JSON is manually kept current for promotion/relegation;
@@ -922,22 +951,15 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
                         resolved.add(r)
             return sorted(resolved) if resolved else None
 
-        # Top-5 leagues prefer the manually-updated 2026-27 fallback roster
-        # (reflects confirmed promotion/relegation) over possibly-stale
-        # current_season_teams.json. Other leagues keep the older priority.
-        if competition in TOP_FALLBACK_LEAGUES:
-            fallback_roster = _load_roster_from_json(FALLBACK_TEAMS_FILE, competition)
-            if fallback_roster:
-                teams = _resolve_roster(fallback_roster, "2026-27 fallback")
-                if teams:
-                    print(f"  PATH B roster from 2026_27_league_team_fallback.json ({len(teams)} teams)")
-
-        if not teams:
-            current_roster = _load_current_season_roster(competition)
-            if current_roster:
-                teams = _resolve_roster(current_roster, "current_season")
-                if teams:
-                    print(f"  PATH B roster from current_season_teams.json ({len(teams)} teams)")
+        any_roster = _load_any_roster(competition)
+        if any_roster:
+            # Prefer the manually-updated 2026-27 fallback roster for the
+            # top-5 leagues (reflects confirmed promotion/relegation). For all
+            # other leagues _load_any_roster already applied the priority.
+            label = "2026-27 fallback" if competition in TOP_FALLBACK_LEAGUES else "any_roster"
+            teams = _resolve_roster(any_roster, label)
+            if teams:
+                print(f"  PATH B roster from {label} ({len(teams)} teams)")
 
         if not teams:
             static_roster = _load_roster_from_json(LEAGUE_TEAMS_FILE, competition)
@@ -1106,7 +1128,22 @@ def _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx,
         print(f"  Generated {added} fixture(s) (format target ~{games} games/team)")
 
 
-def _merge_roster_only_competitions(latest: dict) -> dict:
+def _path_b_roster_resolves(competition, available_teams, min_teams=2):
+    """Return True if a roster can resolve at least *min_teams* against available_teams.
+
+    PATH B relies entirely on roster team names mapping onto trained team names.
+    Leagues whose roster cannot resolve (e.g. is not in the training data) would
+    otherwise be queued and then emitted as zeroed placeholder rows, so skip them
+    unless the roster actually resolves.
+    """
+    if not available_teams:
+        return False
+    roster = _load_any_roster(competition) or []
+    resolved = {r for t in roster if (r := pm.resolve_team_name(t, available_teams))}
+    return len(resolved) >= min_teams
+
+
+def _merge_roster_only_competitions(latest: dict, available_teams=None) -> dict:
     """Ensure 2026-27 fallback / current_season_teams / league_teams leagues are projected even without a raw CSV."""
     out = dict(latest or {})
     seen = set(out.keys())
@@ -1135,6 +1172,12 @@ def _merge_roster_only_competitions(latest: dict) -> dict:
                     continue
                 # Only the top-5 European leagues get preseason fallback projections.
                 if label == "2026_27_league_team_fallback" and comp not in TOP_FALLBACK_LEAGUES:
+                    continue
+                if comp in PATH_B_SKIP_COMPETITIONS:
+                    print(f"  PATH B skipped (explicit): {comp}")
+                    continue
+                if available_teams is not None and not _path_b_roster_resolves(comp, available_teams):
+                    print(f"  PATH B skipped (roster cannot resolve): {comp}")
                     continue
                 seen.add(comp)
                 out[comp] = None
@@ -1220,7 +1263,7 @@ def main():
     comp_workers = max(1, int(args.competition_workers))
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR) or {}
-    latest = _merge_roster_only_competitions(latest)
+    latest = _merge_roster_only_competitions(latest, ctx["available_teams"])
     if not latest:
         raise ValueError(f"No raw season files or current-season rosters found in {RAW_DIR}")
 

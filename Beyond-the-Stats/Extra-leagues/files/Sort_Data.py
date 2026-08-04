@@ -42,7 +42,7 @@ def _load_name_mapping():
     if _name_mapping_cache is not None:
         return _name_mapping_cache
     try:
-        with open(MAPPING_FILE, "r", encoding="utf-8") as f:
+        with open(MAPPING_FILE, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         flat = {}
         for comp, entries in data.items():

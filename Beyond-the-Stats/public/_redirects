@@ -7,5 +7,9 @@
 /subscriptions /subscriptions/index.html 200
 /subscriptions/ /subscriptions/index.html 200
 /subscriptions.html /subscriptions/index.html 200
+/draftit/about /draftit/about/index.html 200
+/draftit/about/ /draftit/about/index.html 200
+/draftit/privacy /draftit/privacy/index.html 200
+/draftit/privacy/ /draftit/privacy/index.html 200
 /world-cup /index.html 302
 /world-cup.html /index.html 302
