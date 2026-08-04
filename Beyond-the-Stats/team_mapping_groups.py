@@ -1,14 +1,13 @@
-"""Cross-competition team mapping helpers (country leagues, cups, UEFA)."""
+﻿"""Cross-competition team mapping helpers (country leagues, cups, UEFA)."""
 from __future__ import annotations
 
 import difflib
 import unicodedata
 
 INTERNATIONAL_PREFIXES = (
-    "UEFA/",
     "Europe/",
-    "FIFA/",
-    "CONCACAF/",
+    "International/",
+    "North America/",
 )
 
 CONCACAF_REGION_PREFIXES = (
@@ -124,7 +123,7 @@ def mapping_lookup_competitions(competition: str, mapping: dict) -> list[str]:
         for key in same_country:
             add(key)
 
-    if comp.startswith("CONCACAF/"):
+    if comp.startswith("North America/"):
         for prefix in CONCACAF_REGION_PREFIXES:
             for key in sorted(mapping.keys(), key=str.lower):
                 if str(key).startswith(prefix):
@@ -262,7 +261,7 @@ def store_team_mapping(
             if competition_country(comp_key) == country:
                 mapping.setdefault(comp_key, {})[api_name] = canonical
 
-    if propagate_international and country and not competition.startswith("CONCACAF/"):
+    if propagate_international and country and not competition.startswith("North America/"):
         for comp_key in list(mapping.keys()):
             if is_international_competition(comp_key):
                 mapping.setdefault(comp_key, {})[api_name] = canonical

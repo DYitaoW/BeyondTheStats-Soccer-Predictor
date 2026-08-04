@@ -1,10 +1,10 @@
-// Tournament projection pages: World Cup and other cups share the same renderer.
+﻿// Tournament projection pages: World Cup and other cups share the same renderer.
 async function loadWorldCupProjection() {
   const viewEl = document.getElementById("world-cup-view");
   if (!viewEl) return;
   await loadTournamentProjection({
     viewEl,
-    competition: "FIFA/World Cup",
+    competition: "International/World Cup",
     endpoint: "/api/world-cup",
     loadingMessage: "Loading World Cup projection...",
     errorMessage: "Failed to load World Cup projection data.",
@@ -146,7 +146,7 @@ function renderProjectionSummary(data, champion, championProbability) {
       </div>
       <div class="world-cup-summary-item">
         <span class="summary-label">Competition</span>
-        <strong>${escapeHtml(data.competition || "FIFA/World Cup")}</strong>
+        <strong>${escapeHtml(data.competition || "International/World Cup")}</strong>
       </div>
       <div class="world-cup-summary-item">
         <span class="summary-label">Generated</span>

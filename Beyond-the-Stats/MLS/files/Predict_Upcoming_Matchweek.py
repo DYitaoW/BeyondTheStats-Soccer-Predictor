@@ -1462,6 +1462,7 @@ def keep_only_current_fixtures(predictions_df, fixtures_df):
 
 
 def main():
+    _t0 = time.monotonic()
     args = parse_cli_args()
 
     if args.refresh_download:
@@ -1530,6 +1531,7 @@ def main():
     print(f"Removed completed fixtures from upcoming list: {removed_completed}")
     print(f"Newly settled with real results: {settled_count}")
     print(f"Saved tracking file: {PREDICTIONS_FILE}")
+    print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
 
 
 if __name__ == "__main__":

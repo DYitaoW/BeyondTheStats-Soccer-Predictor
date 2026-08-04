@@ -1,4 +1,4 @@
-"""Knockout bracket structures (World Cup, playoff formats)."""
+﻿"""Knockout bracket structures (World Cup, playoff formats)."""
 import json
 import re
 
@@ -40,7 +40,7 @@ def _build_knockout_framework(comp_name):
     For unknown competitions returns an empty list.
     """
     uefa_rounds = {
-        "UEFA/Champions League": [
+        "Europe/Champions League": [
             {"name": "Knockout Round Play-offs", "order": 1, "matches_count": 8},
             {"name": "Round of 16", "order": 2, "matches_count": 8},
             {"name": "Quarter-finals", "order": 3, "matches_count": 4,
@@ -53,7 +53,7 @@ def _build_knockout_framework(comp_name):
             {"name": "Semi-finals", "order": 4, "matches_count": 2},
             {"name": "Final", "order": 5, "matches_count": 1},
         ],
-        "UEFA/Europa League": [
+        "Europe/Europa League": [
             {"name": "Knockout Round Play-offs", "order": 1, "matches_count": 8},
             {"name": "Round of 16", "order": 2, "matches_count": 8},
             {"name": "Quarter-finals", "order": 3, "matches_count": 4,
@@ -66,7 +66,7 @@ def _build_knockout_framework(comp_name):
             {"name": "Semi-finals", "order": 4, "matches_count": 2},
             {"name": "Final", "order": 5, "matches_count": 1},
         ],
-        "UEFA/Conference League": [
+        "Europe/Conference League": [
             {"name": "Knockout Round Play-offs", "order": 1, "matches_count": 8},
             {"name": "Round of 16", "order": 2, "matches_count": 8},
             {"name": "Quarter-finals", "order": 3, "matches_count": 4,
@@ -79,7 +79,7 @@ def _build_knockout_framework(comp_name):
             {"name": "Semi-finals", "order": 4, "matches_count": 2},
             {"name": "Final", "order": 5, "matches_count": 1},
         ],
-        "FIFA/World Cup": [
+        "International/World Cup": [
             {"name": "Round of 32", "order": 1, "matches_count": 16},
             {"name": "Round of 16", "order": 2, "matches_count": 8},
             {"name": "Quarter-finals", "order": 3, "matches_count": 4,
@@ -119,7 +119,7 @@ def _build_knockout_framework(comp_name):
              ]},
             {"name": "MLS Cup", "order": 4, "matches_count": 1},
         ],
-        "CONCACAF/Leagues Cup": [
+        "North America/Leagues Cup": [
             {"name": "Quarter-finals", "order": 1, "matches_count": 4,
              "matchups": [
                  {"slot": 1, "label": "MLS 1 vs Liga MX 4",
@@ -157,13 +157,13 @@ def _build_knockout_framework(comp_name):
         return result
 
     frameworks = {}
-    for c in ("UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+    for c in ("Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
               "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
-              "FIFA/World Cup", "CONCACAF/Leagues Cup"):
+              "International/World Cup", "North America/Leagues Cup"):
         if c in uefa_rounds:
             frameworks[c] = uefa_rounds[c]
         elif c.startswith("Europe/"):
-            uefa_key = "UEFA/" + c.split("/", 1)[1]
+            uefa_key = "Europe/" + c.split("/", 1)[1]
             if uefa_key in uefa_rounds:
                 frameworks[c] = uefa_rounds[uefa_key]
     for c, fmt in config._CUP_FORMATS.items():
@@ -436,7 +436,7 @@ def _build_cup_knockout_payload(matches, comp):
     from competition_rules import classify_match_stage, cup_format, load_wc_team_groups
 
     cup_format_meta = cup_format(comp)
-    team_to_group = load_wc_team_groups() if comp == "FIFA/World Cup" else {}
+    team_to_group = load_wc_team_groups() if comp == "International/World Cup" else {}
     bracket_matches = matches
     if cup_format_meta and cup_format_meta.get("format") in {"group_stage_then_knockout", "league_phase_then_knockout"}:
         bracket_matches = [

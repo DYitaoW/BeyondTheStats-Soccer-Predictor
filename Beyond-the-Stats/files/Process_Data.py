@@ -15,6 +15,7 @@ import pandas as pd
 import os
 import re
 import sys
+import time
 from collections import defaultdict
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -338,9 +339,11 @@ def process_one_file(rel_path, *, force_min_rows=None):
     if write_needed:
         with open(output_path, "w", encoding="utf-8", newline="") as out:
             out.write(new_csv)
-    return True, rel_path, "processed"
+        return True, rel_path, "processed"
+    return True, rel_path, "kept_content_unchanged"
 
 def main():
+    _t0 = time.monotonic()
     if not os.path.isdir(RAW_FOLDER):
         raise FileNotFoundError(f"Raw data folder not found: {RAW_FOLDER}")
 
@@ -358,6 +361,8 @@ def main():
             ok, rel_path, status = future.result()
             if status == "processed":
                 print(f"Processed {rel_path}...")
+                processed_comps.add(os.path.dirname(rel_path).replace("\\", "/"))
+            elif status == "kept_content_unchanged":
                 processed_comps.add(os.path.dirname(rel_path).replace("\\", "/"))
             elif status == "skipped_insufficient_data":
                 print(f"Skipped {rel_path} (insufficient data)...")
@@ -383,7 +388,7 @@ def main():
         else:
             print(f"Skipped {rel_path} (fallback still insufficient for {comp})...")
 
-    print("All files processed.")
+    print(f"All files processed. ({time.monotonic() - _t0:.1f}s)")
 
 
 if __name__ == "__main__":

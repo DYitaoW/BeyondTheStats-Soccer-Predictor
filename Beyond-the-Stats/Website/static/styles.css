@@ -565,6 +565,44 @@ h1 {
   margin-bottom: 14px;
 }
 
+.app-promo-card {
+  background: linear-gradient(135deg, var(--card) 0%, var(--hero-accent) 100%);
+}
+
+.app-promo-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-promo-tile {
+  margin: 0;
+  flex: 0 0 auto;
+  width: 180px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--sidebar-bg);
+  scroll-snap-align: start;
+}
+
+.app-promo-tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (max-width: 480px) {
+  .app-promo-tile {
+    width: 150px;
+  }
+}
+
+
 h3 {
   margin: 0 0 8px;
   font-size: 1.24rem;

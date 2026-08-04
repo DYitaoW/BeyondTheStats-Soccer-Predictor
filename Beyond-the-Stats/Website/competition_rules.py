@@ -1,4 +1,4 @@
-"""Competition-specific rules for real standings and cup tables."""
+﻿"""Competition-specific rules for real standings and cup tables."""
 from __future__ import annotations
 
 import json
@@ -45,7 +45,7 @@ MLS_SEASON_FILE_RE = re.compile(r"^mlsstat(\d{4})\.csv$", re.IGNORECASE)
 LIGA_MX_SEASON_FILE_RE = re.compile(r"^mexstat(\d{4})\.csv$", re.IGNORECASE)
 
 _UEFA_COMPETITIONS = frozenset({
-    "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+    "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
     "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
 })
 
@@ -58,6 +58,10 @@ WORLD_CUP_PROJECTION_FILE = os.path.join(
 
 _mls_name_cache: dict[str, str] | None = None
 _wc_group_cache: dict[str, str] | None = None
+
+_display_mapping_cache: dict | None = None
+_display_mapping_mtime: float = -1.0
+_display_mapping_check: float = 0.0
 
 # Batch games cache: single-pass load avoids N× file I/O
 _ALL_GAMES_BY_COMPETITION: dict[str, list[dict]] | None = None
@@ -107,7 +111,7 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
     # ── 3. past_games.json ───────────────────────────────────────
     if os.path.exists(config.PAST_GAMES_FILE):
         try:
-            with open(config.PAST_GAMES_FILE, "r", encoding="utf-8") as handle:
+            with open(config.PAST_GAMES_FILE, "r", encoding="utf-8-sig") as handle:
                 past = json.load(handle)
         except Exception:
             past = []
@@ -222,7 +226,7 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
                     })
 
     # ── 6. World Cup projection JSON ─────────────────────────────
-    wc_comp = "FIFA/World Cup"
+    wc_comp = "International/World Cup"
     if os.path.exists(WORLD_CUP_PROJECTION_FILE):
         try:
             with open(WORLD_CUP_PROJECTION_FILE, "r", encoding="utf-8") as handle:
@@ -278,6 +282,27 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
     return dict(by_comp)
 
 
+def _parse_season_csv_date(raw: str, dayfirst: bool = False) -> str:
+    """Parse a season-CSV date to YYYY-MM-DD without pandas/pytz overhead."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return text
+    m = re.fullmatch(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", text)
+    if m:
+        a, b, year = m.group(1), m.group(2), m.group(3)
+        month, day = (b, a) if dayfirst else (a, b)
+        if 1 <= int(month) <= 12 and 1 <= int(day) <= 31:
+            return f"{year}-{int(month):02d}-{int(day):02d}"
+    try:
+        from datetime import datetime
+
+        return datetime.strptime(text, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return ""
+
+
 def _batch_mls_or_liga_mx(
     by_comp: dict,
     seen_by_comp: dict,
@@ -330,9 +355,7 @@ def _batch_mls_or_liga_mx(
         date_raw = str(row.get("Date", "")).strip()
         match_date = ""
         if date_raw:
-            parsed = pd.to_datetime(date_raw, errors="coerce", dayfirst=(not processed))
-            if pd.notna(parsed):
-                match_date = parsed.strftime("%Y-%m-%d")
+            match_date = _parse_season_csv_date(date_raw, dayfirst=(not processed))
 
         _append_game(by_comp[comp_name], seen_by_comp[comp_name], {
             "competition": comp_name,
@@ -407,13 +430,58 @@ def _load_mls_canonical_names() -> dict[str, str]:
     return mapping
 
 
+def _load_display_mapping() -> dict:
+    """Parse TEAM_NAME_DISPLAY_MAPPING_FILE once, re-reading only on mtime change.
+
+    ``canonical_team_name`` is called ~10k times per standings build; without this
+    memo each call re-opens + re-parses the JSON file. The mtime syscall itself is
+    guarded so it runs at most once per second.
+    """
+    import time as _time
+
+    global _display_mapping_cache, _display_mapping_mtime, _display_mapping_check
+    if _display_mapping_cache is not None:
+        now = _time.monotonic()
+        if now - _display_mapping_check < 1.0:
+            return _display_mapping_cache
+        try:
+            mtime = os.path.getmtime(config.TEAM_NAME_DISPLAY_MAPPING_FILE)
+        except OSError:
+            _display_mapping_check = now
+            return _display_mapping_cache
+        _display_mapping_check = now
+        if mtime == _display_mapping_mtime:
+            return _display_mapping_cache
+        _display_mapping_mtime = mtime
+        _display_mapping_cache = _load_display_mapping_file()
+        return _display_mapping_cache
+    _display_mapping_mtime = -1.0
+    try:
+        _display_mapping_mtime = os.path.getmtime(config.TEAM_NAME_DISPLAY_MAPPING_FILE)
+    except OSError:
+        pass
+    _display_mapping_cache = _load_display_mapping_file()
+    return _display_mapping_cache
+
+
+def _load_display_mapping_file() -> dict:
+    try:
+        with open(config.TEAM_NAME_DISPLAY_MAPPING_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return payload
+
+
 def canonical_team_name(name: str, competition: str = "") -> str:
     text = str(name or "").strip()
     if not text:
         return ""
     base_comp, _view = resolve_competition_query(competition)
     # Leagues Cup / MLS: never let Serie A "Inter" win over Inter Miami.
-    if base_comp in {"CONCACAF/Leagues Cup", "United States/MLS"} or str(base_comp).startswith("United States/MLS"):
+    if base_comp in {"North America/Leagues Cup", "United States/MLS"} or str(base_comp).startswith("United States/MLS"):
         lower = text.lower()
         if lower in {"inter", "miami", "inter miami", "inter miami cf", "intermiamicf", "intermiami"}:
             return "Inter Miami"
@@ -426,47 +494,42 @@ def canonical_team_name(name: str, competition: str = "") -> str:
             return mapped
     # Competition mapping: exact alias match first; key match only when unique
     # (aggressive token stripping can collide, e.g. Man United vs Man City).
-    path = config.TEAM_NAME_DISPLAY_MAPPING_FILE
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-            # Prefer the competition map, then sibling MLS/Liga MX maps for Leagues Cup.
-            maps_to_try: list[dict] = []
-            for key in (base_comp, competition):
-                comp_map = payload.get(key) if key else None
-                if isinstance(comp_map, dict) and comp_map not in maps_to_try:
-                    maps_to_try.append(comp_map)
-            if base_comp == "CONCACAF/Leagues Cup":
-                for sibling in ("United States/MLS", config.LIGA_MX_COMPETITION):
-                    sibling_map = payload.get(sibling)
-                    if isinstance(sibling_map, dict) and sibling_map not in maps_to_try:
-                        maps_to_try.append(sibling_map)
-            lower = text.lower()
-            lower_and = lower.replace(" & ", " and ").replace("&", " and ")
-            key = normalize_team_key(text)
-            for comp_map in maps_to_try:
-                key_to_canons: dict[str, set[str]] = {}
-                for raw_name, canonical in comp_map.items():
-                    raw = str(raw_name or "").strip()
-                    canon = str(canonical or "").strip()
-                    if not canon:
-                        continue
-                    raw_l = raw.lower()
-                    canon_l = canon.lower()
-                    raw_and = raw_l.replace(" & ", " and ").replace("&", " and ")
-                    canon_and = canon_l.replace(" & ", " and ").replace("&", " and ")
-                    if lower in {raw_l, canon_l} or lower_and in {raw_and, canon_and}:
-                        return canon
-                    for candidate in (raw, canon):
-                        ck = normalize_team_key(candidate)
-                        if ck:
-                            key_to_canons.setdefault(ck, set()).add(canon)
-                hits = key_to_canons.get(key) or set()
-                if len(hits) == 1:
-                    return next(iter(hits))
-        except Exception:
-            pass
+    payload = _load_display_mapping()
+    if payload:
+        # Prefer the competition map, then sibling MLS/Liga MX maps for Leagues Cup.
+        maps_to_try: list[dict] = []
+        for key in (base_comp, competition):
+            comp_map = payload.get(key) if key else None
+            if isinstance(comp_map, dict) and comp_map not in maps_to_try:
+                maps_to_try.append(comp_map)
+        if base_comp == "North America/Leagues Cup":
+            for sibling in ("United States/MLS", config.LIGA_MX_COMPETITION):
+                sibling_map = payload.get(sibling)
+                if isinstance(sibling_map, dict) and sibling_map not in maps_to_try:
+                    maps_to_try.append(sibling_map)
+        lower = text.lower()
+        lower_and = lower.replace(" & ", " and ").replace("&", " and ")
+        key = normalize_team_key(text)
+        for comp_map in maps_to_try:
+            key_to_canons: dict[str, set[str]] = {}
+            for raw_name, canonical in comp_map.items():
+                raw = str(raw_name or "").strip()
+                canon = str(canonical or "").strip()
+                if not canon:
+                    continue
+                raw_l = raw.lower()
+                canon_l = canon.lower()
+                raw_and = raw_l.replace(" & ", " and ").replace("&", " and ")
+                canon_and = canon_l.replace(" & ", " and ").replace("&", " and ")
+                if lower in {raw_l, canon_l} or lower_and in {raw_and, canon_and}:
+                    return canon
+                for candidate in (raw, canon):
+                    ck = normalize_team_key(candidate)
+                    if ck:
+                        key_to_canons.setdefault(ck, set()).add(canon)
+            hits = key_to_canons.get(key) or set()
+            if len(hits) == 1:
+                return next(iter(hits))
     return text
 
 
@@ -487,7 +550,7 @@ def cup_format(comp_name: str) -> dict | None:
     if fmt:
         return fmt
     if comp_name.startswith("Europe/"):
-        uefa_key = "UEFA/" + comp_name.split("/", 1)[1]
+        uefa_key = "Europe/" + comp_name.split("/", 1)[1]
         return config._CUP_FORMATS.get(uefa_key)
     return None
 
@@ -577,7 +640,14 @@ def resolve_liga_mx_team_name(raw_name: str) -> str:
     return raw
 
 
+_find_latest_mls_season_cache: str | None = None
+_find_latest_liga_mx_cache: str | None = None
+
+
 def _find_latest_mls_season_file() -> str | None:
+    global _find_latest_mls_season_cache
+    if _find_latest_mls_season_cache is not None and os.path.exists(_find_latest_mls_season_cache):
+        return _find_latest_mls_season_cache
     candidates: list[tuple[int, str]] = []
     for base in (
         os.path.join(config.PROJECT_DIR, "MLS", "Data", "Processed_Data"),
@@ -593,13 +663,18 @@ def _find_latest_mls_season_file() -> str | None:
                 candidates.append((int(match.group(1)), os.path.join(root, name)))
     if not candidates:
         return None
-    return max(candidates, key=lambda item: item[0])[1]
+    result = max(candidates, key=lambda item: item[0])[1]
+    _find_latest_mls_season_cache = result
+    return result
 
 
 def _find_latest_liga_mx_season_file() -> str | None:
+    global _find_latest_liga_mx_cache
     base = os.path.join(config.PROJECT_DIR, "MLS", "Data", "Raw_Data", "Mexico", "Liga MX")
     if not os.path.isdir(base):
         return None
+    if _find_latest_liga_mx_cache is not None and os.path.exists(_find_latest_liga_mx_cache):
+        return _find_latest_liga_mx_cache
     candidates: list[tuple[int, str]] = []
     for name in os.listdir(base):
         match = LIGA_MX_SEASON_FILE_RE.match(name)
@@ -607,7 +682,9 @@ def _find_latest_liga_mx_season_file() -> str | None:
             candidates.append((int(match.group(1)), os.path.join(base, name)))
     if not candidates:
         return None
-    return max(candidates, key=lambda item: item[0])[1]
+    result = max(candidates, key=lambda item: item[0])[1]
+    _find_latest_liga_mx_cache = result
+    return result
 
 
 def _mls_season_csv_games(comp_name: str) -> list[dict]:
@@ -790,7 +867,7 @@ def _past_games(comp_name: str) -> list[dict]:
     if not os.path.exists(config.PAST_GAMES_FILE):
         return rows
     try:
-        with open(config.PAST_GAMES_FILE, "r", encoding="utf-8") as handle:
+        with open(config.PAST_GAMES_FILE, "r", encoding="utf-8-sig") as handle:
             payload = json.load(handle)
     except Exception:
         return rows
@@ -860,7 +937,7 @@ def _national_csv_games(comp_name: str) -> list[dict]:
 
 
 def _world_cup_projection_games(comp_name: str) -> list[dict]:
-    if comp_name != "FIFA/World Cup" or not os.path.exists(WORLD_CUP_PROJECTION_FILE):
+    if comp_name != "International/World Cup" or not os.path.exists(WORLD_CUP_PROJECTION_FILE):
         return []
     rows = []
     try:
@@ -1037,7 +1114,7 @@ def classify_match_stage(game: dict, comp_name: str, team_to_group: dict[str, st
         return "knockout"
 
     fmt = cup_format(comp_name)
-    if comp_name == "FIFA/World Cup":
+    if comp_name == "International/World Cup":
         lookup = team_to_group if team_to_group is not None else {}
         home = canonical_team_name(game.get("home_team", ""), comp_name)
         away = canonical_team_name(game.get("away_team", ""), comp_name)
@@ -1150,13 +1227,13 @@ def warm_competition_games_cache(force: bool = False) -> None:
 
 def filter_games_by_stage(games: list[dict], comp_name: str, stage: str) -> list[dict]:
     base_comp, _view = resolve_competition_query(comp_name)
-    team_to_group = load_wc_team_groups() if base_comp == "FIFA/World Cup" else {}
+    team_to_group = load_wc_team_groups() if base_comp == "International/World Cup" else {}
     return [g for g in games if classify_match_stage(g, base_comp, team_to_group) == stage]
 
 
 def current_competition_phase(games: list[dict], comp_name: str) -> str:
     base_comp, _view = resolve_competition_query(comp_name)
-    team_to_group = load_wc_team_groups() if base_comp == "FIFA/World Cup" else {}
+    team_to_group = load_wc_team_groups() if base_comp == "International/World Cup" else {}
     stages = {classify_match_stage(g, base_comp, team_to_group) for g in games}
     if "knockout" in stages:
         return "knockout"
@@ -1170,7 +1247,7 @@ def infer_knockout_round_label(game: dict, knockout_games: list[dict], comp_name
     if existing and existing.lower() not in {"match", ""}:
         return existing
     count = len(knockout_games)
-    if comp_name == "FIFA/World Cup":
+    if comp_name == "International/World Cup":
         if count == 1:
             return "Final"
         if count == 2:
@@ -1192,7 +1269,7 @@ def infer_knockout_round_label(game: dict, knockout_games: list[dict], comp_name
 
 
 def annotate_knockout_rounds(matches: list[dict], comp_name: str) -> list[dict]:
-    team_to_group = load_wc_team_groups(matches) if comp_name == "FIFA/World Cup" else {}
+    team_to_group = load_wc_team_groups(matches) if comp_name == "International/World Cup" else {}
     knockout_games = [
         g for g in matches
         if classify_match_stage(g, comp_name, team_to_group) == "knockout"
@@ -1218,7 +1295,7 @@ STANDINGS_LAYOUT_CUP_GROUPS = "cup_groups"
 STANDINGS_LAYOUT_LIGA_MX = "liga_mx_tournament"
 STANDINGS_LAYOUT_LEAGUES_CUP = "leagues_cup_dual"
 
-LEAGUES_CUP_COMPETITION = "CONCACAF/Leagues Cup"
+LEAGUES_CUP_COMPETITION = "North America/Leagues Cup"
 LEAGUES_CUP_TABLE_MLS = "MLS"
 LEAGUES_CUP_TABLE_LIGA_MX = "Liga MX"
 
@@ -1633,7 +1710,7 @@ def build_structured_standings_groups(comp_name: str, teams: list[str]) -> list[
             {"name": LEAGUES_CUP_TABLE_LIGA_MX, "entries": _entries_from_teams(liga_teams)},
         ]
 
-    if base_comp == "FIFA/World Cup":
+    if base_comp == "International/World Cup":
         fmt = cup_format(base_comp)
         team_to_group = load_wc_team_groups()
         groups_map: dict[str, list[str]] = defaultdict(list)

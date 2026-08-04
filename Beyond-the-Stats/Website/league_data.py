@@ -6,6 +6,7 @@ rules (MLS conferences, Liga MX tournaments, cup knockouts) are described in
 """
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import threading
@@ -63,6 +64,8 @@ _MLS_WEST_TEAMS = {
 # Process-local league-data cache (avoids disk JSON parse on hot path).
 _LEAGUE_DATA_MEM: dict[str, tuple[float, dict]] = {}
 _LEAGUE_DATA_MEM_LOCK = threading.Lock()
+_LEAGUE_DATA_CSV_CACHE: dict[str, tuple[float, list[dict], object]] = {}
+_LEAGUE_DATA_CSV_CACHE_LOCK = threading.Lock()
 _LEAGUE_DATA_BUILD_LOCKS: dict[str, threading.Lock] = {}
 _LEAGUE_DATA_BUILD_LOCKS_GUARD = threading.Lock()
 
@@ -521,6 +524,27 @@ def _infer_groups_from_fixtures(comp_name: str, comp_table: list[dict]) -> list[
     return result if result else None
 
 
+def _load_cached_upcoming_rows(csv_path):
+    cache_key = str(csv_path)
+    try:
+        mtime = os.path.getmtime(csv_path)
+    except Exception:
+        mtime = 0
+    with _LEAGUE_DATA_CSV_CACHE_LOCK:
+        entry = _LEAGUE_DATA_CSV_CACHE.get(cache_key)
+        if entry:
+            ts, rows, cached_mtime = entry
+            if cached_mtime == mtime and time.time() - ts < 120:
+                return rows
+    try:
+        rows, _, _ = _load_upcoming_rows(csv_path, date_range="all")
+    except Exception:
+        rows = []
+    with _LEAGUE_DATA_CSV_CACHE_LOCK:
+        _LEAGUE_DATA_CSV_CACHE[cache_key] = (time.time(), rows, mtime)
+    return rows
+
+
 def _load_fixtures(comp_name: str) -> list[dict]:
     base_comp, _view = resolve_competition_query(comp_name)
     fixture_comps = {comp_name, base_comp}
@@ -528,16 +552,18 @@ def _load_fixtures(comp_name: str) -> list[dict]:
         fixture_comps.add("United States/MLS")
     if base_comp == config.LIGA_MX_COMPETITION:
         fixture_comps.add(config.LIGA_MX_COMPETITION)
-    for csv_path in (
+
+    csv_paths = (
         config.GLOBAL_UPCOMING_FILE,
         config.MLS_UPCOMING_FILE,
         config.EXTRA_UPCOMING_FILE,
         config.CUP_UPCOMING_FILE,
-    ):
-        try:
-            rows, _, _ = _load_upcoming_rows(csv_path, date_range="all")
-        except Exception:
-            continue
+    )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(csv_paths)) as pool:
+        all_rows = list(pool.map(_load_cached_upcoming_rows, csv_paths))
+
+    for rows in all_rows:
         matches = [r for r in rows if r.get("competition") in fixture_comps]
         if matches:
             return matches
@@ -1026,7 +1052,18 @@ def build_league_data_payload(comp_name: str) -> dict:
 def _build_league_data_payload_uncached(comp: str) -> dict:
     fmt = competition_format_spec(comp)
 
-    comp_table = _load_usable_projected_table(comp)
+    # Load independent data sources in parallel.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        f_table = pool.submit(_load_usable_projected_table, comp)
+        f_standings = pool.submit(_load_real_standings, comp)
+        f_bracket = pool.submit(_build_bracket_section, comp)
+        f_fixtures = pool.submit(_load_fixtures, comp)
+
+        comp_table = f_table.result()
+        real_standings = f_standings.result()
+        bracket = f_bracket.result()
+        fixtures = f_fixtures.result()
+
     predicted_table = list(comp_table or [])
     winner_fields = _build_winner_probability_payload(comp_table) if comp_table else {}
 
@@ -1047,7 +1084,6 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
         }
         deduped = _dedupe_standings_groups(fake, comp)
         entries = (deduped.get("groups") or [{}])[0].get("entries") or []
-        # Preserve original projected fields keyed by team
         by_team = {str(r.get("team", "")).strip(): r for r in predicted_table}
         predicted_table = []
         for entry in entries:
@@ -1057,12 +1093,8 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
             predicted_table.append(base)
         winner_fields = _build_winner_probability_payload(predicted_table) if predicted_table else winner_fields
 
-    # Load real standings once — predicted groups reuse the same object.
-    real_standings = _load_real_standings(comp)
     position_odds = _build_position_odds(predicted_table)
     predicted_groups = _load_predicted_groups(comp, predicted_table, real_standings=real_standings)
-    bracket = _build_bracket_section(comp)
-    fixtures = _load_fixtures(comp)
 
     winners_odds = winner_fields.get("winners_odds", [])
     predicted = {

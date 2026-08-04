@@ -12,6 +12,7 @@ import pandas as pd
 import os
 import json
 import re
+import time
 from collections import defaultdict
 from datetime import datetime
 
@@ -517,6 +518,7 @@ def build_current_form_file():
 # function used to sort the data and store for each season and team
 # thsi function is the main one called that completes the entiree task
 def sort_all_seasons():
+    _t0 = time.monotonic()
     overall_teams = defaultdict(blank_team_stats)
     weighted_overall = defaultdict(blank_team_stats)
     season_data = {}
@@ -612,7 +614,7 @@ def sort_all_seasons():
         with open(league_strength_path, "w") as f:
             json.dump(league_strength, f, indent=4)
 
-    print("\nDone!\n")
+    print(f"\nDone! ({time.monotonic() - _t0:.1f}s)\n")
 
 
 # testing

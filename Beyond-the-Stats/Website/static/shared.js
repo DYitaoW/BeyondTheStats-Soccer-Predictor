@@ -1,4 +1,4 @@
-// Default API host for the Cloudflare Pages static site. The static build may
+﻿// Default API host for the Cloudflare Pages static site. The static build may
 // also inject window.BTS_API_BASE + a fetch wrapper; keep this fallback so
 // /api/* calls never hit the static origin (which returns HTML 404 pages).
 if (typeof window !== "undefined") {
@@ -62,7 +62,7 @@ const cupBracketView = document.getElementById("cup-bracket-view");
 const leagueTablesCache = { global: null, mls: null, extra: null, cups: null };
 let tableViewMode = "standings";
 let tablePositionOddsMode = false;
-let activeCupProjectionCompetition = "UEFA/Champions League";
+let activeCupProjectionCompetition = "Europe/Champions League";
 let activeCupProjectionView = "table";
 let _liveRefreshIntervalId = null;
 const upcomingCache = { global: [], mls: [], extra: [], cups: [], friendlies: [] };
@@ -78,22 +78,22 @@ const cupPredictionTabs = [
 { key: "all", label: "All Cups", competitions: [] },
 { key: "fa-cup", label: "FA Cup", competitions: ["England/FA Cup"] },
 { key: "league-cup", label: "League Cup", competitions: ["England/League Cup"] },
-{ key: "leagues-cup", label: "Leagues Cup", competitions: ["CONCACAF/Leagues Cup"] },
-{ key: "champions-league", label: "Champions League", competitions: ["UEFA/Champions League", "Europe/Champions League"] },
-{ key: "europa-league", label: "Europa League", competitions: ["UEFA/Europa League", "Europe/Europa League"] },
-{ key: "conference-league", label: "Conference League", competitions: ["UEFA/Conference League", "Europe/Conference League"] },
+{ key: "leagues-cup", label: "Leagues Cup", competitions: ["North America/Leagues Cup"] },
+{ key: "champions-league", label: "Champions League", competitions: ["Europe/Champions League", "Europe/Champions League"] },
+{ key: "europa-league", label: "Europa League", competitions: ["Europe/Europa League", "Europe/Europa League"] },
+{ key: "conference-league", label: "Conference League", competitions: ["Europe/Conference League", "Europe/Conference League"] },
 { key: "dfb-pokal", label: "DFB-Pokal", competitions: ["Germany/DFB-Pokal"] },
 { key: "coppa-italia", label: "Coppa Italia", competitions: ["Italy/Coppa Italia"] },
 { key: "copa-del-rey", label: "Copa del Rey", competitions: ["Spain/Copa del Rey"] },
 { key: "coupe-de-france", label: "Coupe de France", competitions: ["France/Coupe de France"] },
 ];
 const cupProjectionConfigs = [
-{ key: "ucl", label: "Champions League", competition: "UEFA/Champions League", aliases: ["UEFA/Champions League", "Europe/Champions League"], hasTable: true, leaguePhaseMatches: 8 },
-{ key: "uel", label: "Europa League", competition: "UEFA/Europa League", aliases: ["UEFA/Europa League", "Europe/Europa League"], hasTable: true, leaguePhaseMatches: 8 },
-{ key: "uecl", label: "Conference League", competition: "UEFA/Conference League", aliases: ["UEFA/Conference League", "Europe/Conference League"], hasTable: true, leaguePhaseMatches: 6 },
+{ key: "ucl", label: "Champions League", competition: "Europe/Champions League", aliases: ["Europe/Champions League", "Europe/Champions League"], hasTable: true, leaguePhaseMatches: 8 },
+{ key: "uel", label: "Europa League", competition: "Europe/Europa League", aliases: ["Europe/Europa League", "Europe/Europa League"], hasTable: true, leaguePhaseMatches: 8 },
+{ key: "uecl", label: "Conference League", competition: "Europe/Conference League", aliases: ["Europe/Conference League", "Europe/Conference League"], hasTable: true, leaguePhaseMatches: 6 },
 { key: "fa-cup", label: "FA Cup", competition: "England/FA Cup", aliases: ["England/FA Cup"], hasTable: false, leaguePhaseMatches: null },
 { key: "league-cup", label: "League Cup", competition: "England/League Cup", aliases: ["England/League Cup"], hasTable: false, leaguePhaseMatches: null },
-{ key: "leagues-cup", label: "Leagues Cup", competition: "CONCACAF/Leagues Cup", aliases: ["CONCACAF/Leagues Cup"], hasTable: true, leaguePhaseMatches: 3, dualTables: true, advanceNote: "Top 4 MLS + Top 4 Liga MX → Quarter-finals" },
+{ key: "leagues-cup", label: "Leagues Cup", competition: "North America/Leagues Cup", aliases: ["North America/Leagues Cup"], hasTable: true, leaguePhaseMatches: 3, dualTables: true, advanceNote: "Top 4 MLS + Top 4 Liga MX → Quarter-finals" },
 { key: "dfb-pokal", label: "DFB-Pokal", competition: "Germany/DFB-Pokal", aliases: ["Germany/DFB-Pokal"], hasTable: false, leaguePhaseMatches: null },
 { key: "coppa-italia", label: "Coppa Italia", competition: "Italy/Coppa Italia", aliases: ["Italy/Coppa Italia"], hasTable: false, leaguePhaseMatches: null },
 { key: "copa-del-rey", label: "Copa del Rey", competition: "Spain/Copa del Rey", aliases: ["Spain/Copa del Rey"], hasTable: false, leaguePhaseMatches: null },
@@ -137,12 +137,12 @@ const EUROPEAN_LEAGUES = [
     "Sweden/Allsvenskan",
 ];
 const EUROPEAN_CUPS = [
-    "UEFA/Champions League",
-    "UEFA/Europa League",
-    "UEFA/Conference League",
+    "Europe/Champions League",
+    "Europe/Europa League",
+    "Europe/Conference League",
     "England/FA Cup",
     "England/League Cup",
-    "CONCACAF/Leagues Cup",
+    "North America/Leagues Cup",
     "Germany/DFB-Pokal",
     "Italy/Coppa Italia",
     "Spain/Copa del Rey",
@@ -161,7 +161,7 @@ const OTHER_LEAGUES = [
     "Japan/J1 League",
 ];
 const FRIENDLIES_LEAGUES = ["Club Friendlies"];
-const WORLD_CUP_OPTIONS = ["FIFA/World Cup"];
+const WORLD_CUP_OPTIONS = ["International/World Cup"];
 
 // Clearer labels when Country/League keys collide on the short league name.
 const COMPETITION_DISPLAY_NAMES = {

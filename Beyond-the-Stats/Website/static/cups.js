@@ -1,8 +1,8 @@
-// Cups page: reuses the World Cup renderer for every supported cup competition.
+﻿// Cups page: reuses the World Cup renderer for every supported cup competition.
 const CUP_PROJECTION_CONFIGS = [
-  { key: "ucl", label: "Champions League", competition: "UEFA/Champions League", aliases: ["UEFA/Champions League", "Europe/Champions League"] },
-  { key: "uel", label: "Europa League", competition: "UEFA/Europa League", aliases: ["UEFA/Europa League", "Europe/Europa League"] },
-  { key: "uecl", label: "Conference League", competition: "UEFA/Conference League", aliases: ["UEFA/Conference League", "Europe/Conference League"] },
+  { key: "ucl", label: "Champions League", competition: "Europe/Champions League", aliases: ["Europe/Champions League", "Europe/Champions League"] },
+  { key: "uel", label: "Europa League", competition: "Europe/Europa League", aliases: ["Europe/Europa League", "Europe/Europa League"] },
+  { key: "uecl", label: "Conference League", competition: "Europe/Conference League", aliases: ["Europe/Conference League", "Europe/Conference League"] },
   { key: "fa-cup", label: "FA Cup", competition: "England/FA Cup", aliases: ["England/FA Cup"] },
   { key: "league-cup", label: "League Cup", competition: "England/League Cup", aliases: ["England/League Cup"] },
 ];

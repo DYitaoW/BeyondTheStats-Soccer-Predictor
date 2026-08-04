@@ -1,4 +1,4 @@
-"""Prediction accuracy tracking and success metrics."""
+﻿"""Prediction accuracy tracking and success metrics."""
 import json
 import os
 
@@ -21,7 +21,7 @@ HISTORY_COLUMNS = [
 ]
 
 _UEFA_COMPETITIONS = {
-    "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+    "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
     "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
 }
 
@@ -40,9 +40,9 @@ _UPCOMING_CSV_MODE_MAP = {
     "Netherlands/Eredivisie": "extra",
     "England/FA Cup": "cups",
     "England/League Cup": "cups",
-    "UEFA/Champions League": "cups",
-    "UEFA/Europa League": "cups",
-    "UEFA/Conference League": "cups",
+    "Europe/Champions League": "cups",
+    "Europe/Europa League": "cups",
+    "Europe/Conference League": "cups",
     "Europe/Champions League": "cups",
     "Europe/Europa League": "cups",
     "Europe/Conference League": "cups",
@@ -51,12 +51,12 @@ _UPCOMING_CSV_MODE_MAP = {
     "Germany/DFB-Pokal": "cups",
     "France/Coupe de France": "cups",
     "United States/US Open Cup": "cups",
-    "FIFA/World Cup": "national",
-    "FIFA/Friendly": "national",
+    "International/World Cup": "national",
+    "International/Friendly": "national",
     "Club Friendlies": "friendlies",
-    "UEFA/European Championship": "national",
-    "UEFA/Nations League": "national",
-    "CONMEBOL/Copa America": "national",
+    "International/European Championship": "national",
+    "International/Nations League": "national",
+    "South America/Copa America": "national",
     "United States/MLS": "mls",
     "Belgium/First Division A": "extra",
     "Scotland/Premiership": "extra",
@@ -71,7 +71,7 @@ _UPCOMING_CSV_MODE_MAP = {
     "Argentina/Primera Division": "extra",
     "Brazil/Brasileirão": "extra",
     "Japan/J1 League": "extra",
-    "CONCACAF/Leagues Cup": "cups",
+    "North America/Leagues Cup": "cups",
     "Azerbaijan/Premier League": "extra",
     "Kazakhstan/Premier League": "extra",
     "Belarus/Premier League": "extra",

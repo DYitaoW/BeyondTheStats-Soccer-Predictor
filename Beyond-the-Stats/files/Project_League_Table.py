@@ -1,4 +1,4 @@
-"""
+﻿"""
 Monte Carlo league table projections using the trained match model.
 
 Sub-pipeline step after ``Predict_Upcoming_Matchweek``.  For each competition:
@@ -91,7 +91,7 @@ def _sibling_competitions(competition, mapping):
     country = competition.split("/")[0] if "/" in competition else competition
     if country.upper().startswith("UEFA"):
         return [k for k in mapping if isinstance(mapping.get(k), dict)]
-    if competition == "CONCACAF/Leagues Cup":
+    if competition == "North America/Leagues Cup":
         return [k for k in mapping if k in ("United States/MLS", "Mexico/Liga MX") and isinstance(mapping.get(k), dict)]
     return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
 
@@ -895,8 +895,10 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
 
     else:
         # ── PATH B: No current-season CSV or CSV is from a past season ──
-        # Roster priority: current_season_teams.json → ESPN → league_teams.json
-        # (ESPN can lag or mix Championship clubs during the transition window.)
+        # Roster priority: 2026-27 preseason fallback (top-5 leagues) →
+        #                   current_season_teams.json → league_teams.json
+        # The fallback JSON is manually kept current for promotion/relegation;
+        # current_season_teams.json can lag during the transition window.
         sim_runs = min(int(sim_runs), PATH_B_SIMULATION_RUNS)
         teams = None
 
@@ -920,18 +922,22 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
                         resolved.add(r)
             return sorted(resolved) if resolved else None
 
-        current_roster = _load_current_season_roster(competition)
-        if current_roster:
-            teams = _resolve_roster(current_roster, "current_season")
-            if teams:
-                print(f"  PATH B roster from current_season_teams.json ({len(teams)} teams)")
-
-        if not teams and competition in TOP_FALLBACK_LEAGUES:
+        # Top-5 leagues prefer the manually-updated 2026-27 fallback roster
+        # (reflects confirmed promotion/relegation) over possibly-stale
+        # current_season_teams.json. Other leagues keep the older priority.
+        if competition in TOP_FALLBACK_LEAGUES:
             fallback_roster = _load_roster_from_json(FALLBACK_TEAMS_FILE, competition)
             if fallback_roster:
                 teams = _resolve_roster(fallback_roster, "2026-27 fallback")
                 if teams:
                     print(f"  PATH B roster from 2026_27_league_team_fallback.json ({len(teams)} teams)")
+
+        if not teams:
+            current_roster = _load_current_season_roster(competition)
+            if current_roster:
+                teams = _resolve_roster(current_roster, "current_season")
+                if teams:
+                    print(f"  PATH B roster from current_season_teams.json ({len(teams)} teams)")
 
         if not teams:
             static_roster = _load_roster_from_json(LEAGUE_TEAMS_FILE, competition)
@@ -1125,7 +1131,7 @@ def _merge_roster_only_competitions(latest: dict) -> dict:
                     continue
                 if comp in seen:
                     continue
-                if "/MLS -" in comp or "UEFA/" in comp or comp.endswith(" Cup"):
+                if "/MLS -" in comp or "Europe/" in comp or comp.endswith(" Cup"):
                     continue
                 # Only the top-5 European leagues get preseason fallback projections.
                 if label == "2026_27_league_team_fallback" and comp not in TOP_FALLBACK_LEAGUES:
@@ -1156,12 +1162,24 @@ def parse_cli_args():
 
 
 def _load_any_roster(competition):
-    """Load team roster from any available source, returning a sorted list or None."""
-    for loader, label in [
-        (_load_current_season_roster, "current_season_teams"),
-        (lambda c: _load_roster_from_json(FALLBACK_TEAMS_FILE, c), "fallback"),
-        (lambda c: _load_roster_from_json(LEAGUE_TEAMS_FILE, c), "league_teams"),
-    ]:
+    """Load team roster from any available source, returning a sorted list or None.
+
+    Top-5 leagues prefer the manually-updated 2026-27 fallback roster over
+    current_season_teams.json (which can lag behind promotion/relegation).
+    """
+    if competition in TOP_FALLBACK_LEAGUES:
+        priority = [
+            (lambda c: _load_roster_from_json(FALLBACK_TEAMS_FILE, c), "fallback"),
+            (_load_current_season_roster, "current_season_teams"),
+            (lambda c: _load_roster_from_json(LEAGUE_TEAMS_FILE, c), "league_teams"),
+        ]
+    else:
+        priority = [
+            (_load_current_season_roster, "current_season_teams"),
+            (lambda c: _load_roster_from_json(FALLBACK_TEAMS_FILE, c), "fallback"),
+            (lambda c: _load_roster_from_json(LEAGUE_TEAMS_FILE, c), "league_teams"),
+        ]
+    for loader, label in priority:
         try:
             teams = loader(competition)
             if teams and len(teams) >= 2:
@@ -1196,6 +1214,7 @@ def _zeroed_placeholder_rows(competition):
 
 
 def main():
+    _t0 = time.monotonic()
     args = parse_cli_args()
     sim_runs = max(1, int(args.sim_runs))
     comp_workers = max(1, int(args.competition_workers))
@@ -1280,8 +1299,10 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)
     pd.DataFrame(all_future).to_csv(OUT_MATCHES, index=False)
+    _elapsed = time.monotonic() - _t0
     print(f"Projected league tables saved: {OUT_TABLE}")
     print(f"Predicted remaining matches saved: {OUT_MATCHES}")
+    print(f"Elapsed: {_elapsed:.1f}s")
 
 
 if __name__ == "__main__":

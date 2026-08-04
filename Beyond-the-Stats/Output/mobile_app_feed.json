@@ -1,4 +1,4 @@
-{
+﻿{
   "generated_at_utc": "2026-06-08T21:57:40+00:00",
   "schema_version": 1,
   "pipeline_status": "degraded",
@@ -58,7 +58,7 @@
       {
         "match_date": "2026-06-11",
         "match_datetime_utc": "2026-06-11T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Mexico",
         "away_team": "South Africa",
         "predicted_result": "D",
@@ -71,7 +71,7 @@
       {
         "match_date": "2026-06-12",
         "match_datetime_utc": "2026-06-12T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Canada",
         "away_team": "Bosnia-Herzegovina",
         "predicted_result": "H",
@@ -84,7 +84,7 @@
       {
         "match_date": "2026-06-12",
         "match_datetime_utc": "2026-06-12T02:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "South Korea",
         "away_team": "Czechia",
         "predicted_result": "A",
@@ -97,7 +97,7 @@
       {
         "match_date": "2026-06-13",
         "match_datetime_utc": "2026-06-13T22:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Brazil",
         "away_team": "Morocco",
         "predicted_result": "H",
@@ -110,7 +110,7 @@
       {
         "match_date": "2026-06-13",
         "match_datetime_utc": "2026-06-13T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Qatar",
         "away_team": "Switzerland",
         "predicted_result": "A",
@@ -123,7 +123,7 @@
       {
         "match_date": "2026-06-13",
         "match_datetime_utc": "2026-06-13T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "United States",
         "away_team": "Paraguay",
         "predicted_result": "H",
@@ -136,7 +136,7 @@
       {
         "match_date": "2026-06-14",
         "match_datetime_utc": "2026-06-14T04:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Australia",
         "away_team": "Turkey",
         "predicted_result": "D",
@@ -149,7 +149,7 @@
       {
         "match_date": "2026-06-14",
         "match_datetime_utc": "2026-06-14T17:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Germany",
         "away_team": "Curaçao",
         "predicted_result": "H",
@@ -162,7 +162,7 @@
       {
         "match_date": "2026-06-14",
         "match_datetime_utc": "2026-06-14T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Haiti",
         "away_team": "Scotland",
         "predicted_result": "A",
@@ -175,7 +175,7 @@
       {
         "match_date": "2026-06-14",
         "match_datetime_utc": "2026-06-14T23:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Ivory Coast",
         "away_team": "Ecuador",
         "predicted_result": "D",
@@ -188,7 +188,7 @@
       {
         "match_date": "2026-06-14",
         "match_datetime_utc": "2026-06-14T20:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Netherlands",
         "away_team": "Japan",
         "predicted_result": "D",
@@ -201,7 +201,7 @@
       {
         "match_date": "2026-06-15",
         "match_datetime_utc": "2026-06-15T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Belgium",
         "away_team": "Egypt",
         "predicted_result": "H",
@@ -214,7 +214,7 @@
       {
         "match_date": "2026-06-15",
         "match_datetime_utc": "2026-06-15T22:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Saudi Arabia",
         "away_team": "Uruguay",
         "predicted_result": "A",
@@ -227,7 +227,7 @@
       {
         "match_date": "2026-06-15",
         "match_datetime_utc": "2026-06-15T16:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Spain",
         "away_team": "Cape Verde",
         "predicted_result": "H",
@@ -240,7 +240,7 @@
       {
         "match_date": "2026-06-15",
         "match_datetime_utc": "2026-06-15T02:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Sweden",
         "away_team": "Tunisia",
         "predicted_result": "A",
@@ -253,7 +253,7 @@
       {
         "match_date": "2026-06-16",
         "match_datetime_utc": "2026-06-16T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "France",
         "away_team": "Senegal",
         "predicted_result": "D",
@@ -266,7 +266,7 @@
       {
         "match_date": "2026-06-16",
         "match_datetime_utc": "2026-06-16T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Iran",
         "away_team": "New Zealand",
         "predicted_result": "D",
@@ -279,7 +279,7 @@
       {
         "match_date": "2026-06-16",
         "match_datetime_utc": "2026-06-16T22:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Iraq",
         "away_team": "Norway",
         "predicted_result": "A",
@@ -292,7 +292,7 @@
       {
         "match_date": "2026-06-17",
         "match_datetime_utc": "2026-06-17T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Argentina",
         "away_team": "Algeria",
         "predicted_result": "A",
@@ -305,7 +305,7 @@
       {
         "match_date": "2026-06-17",
         "match_datetime_utc": "2026-06-17T04:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Austria",
         "away_team": "Jordan",
         "predicted_result": "H",
@@ -318,7 +318,7 @@
       {
         "match_date": "2026-06-17",
         "match_datetime_utc": "2026-06-17T20:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "England",
         "away_team": "Croatia",
         "predicted_result": "D",
@@ -331,7 +331,7 @@
       {
         "match_date": "2026-06-17",
         "match_datetime_utc": "2026-06-17T23:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Ghana",
         "away_team": "Panama",
         "predicted_result": "A",
@@ -344,7 +344,7 @@
       {
         "match_date": "2026-06-17",
         "match_datetime_utc": "2026-06-17T17:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Portugal",
         "away_team": "Congo DR",
         "predicted_result": "H",
@@ -357,7 +357,7 @@
       {
         "match_date": "2026-06-18",
         "match_datetime_utc": "2026-06-18T22:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Canada",
         "away_team": "Qatar",
         "predicted_result": "H",
@@ -370,7 +370,7 @@
       {
         "match_date": "2026-06-18",
         "match_datetime_utc": "2026-06-18T16:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Czechia",
         "away_team": "South Africa",
         "predicted_result": "D",
@@ -383,7 +383,7 @@
       {
         "match_date": "2026-06-18",
         "match_datetime_utc": "2026-06-18T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Switzerland",
         "away_team": "Bosnia-Herzegovina",
         "predicted_result": "H",
@@ -396,7 +396,7 @@
       {
         "match_date": "2026-06-18",
         "match_datetime_utc": "2026-06-18T02:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Uzbekistan",
         "away_team": "Colombia",
         "predicted_result": "A",
@@ -409,7 +409,7 @@
       {
         "match_date": "2026-06-19",
         "match_datetime_utc": "2026-06-19T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Mexico",
         "away_team": "South Korea",
         "predicted_result": "D",
@@ -422,7 +422,7 @@
       {
         "match_date": "2026-06-19",
         "match_datetime_utc": "2026-06-19T22:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Scotland",
         "away_team": "Morocco",
         "predicted_result": "A",
@@ -435,7 +435,7 @@
       {
         "match_date": "2026-06-19",
         "match_datetime_utc": "2026-06-19T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "United States",
         "away_team": "Australia",
         "predicted_result": "D",
@@ -448,7 +448,7 @@
       {
         "match_date": "2026-06-20",
         "match_datetime_utc": "2026-06-20T00:30:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Brazil",
         "away_team": "Haiti",
         "predicted_result": "H",
@@ -461,7 +461,7 @@
       {
         "match_date": "2026-06-20",
         "match_datetime_utc": "2026-06-20T20:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Germany",
         "away_team": "Ivory Coast",
         "predicted_result": "D",
@@ -474,7 +474,7 @@
       {
         "match_date": "2026-06-20",
         "match_datetime_utc": "2026-06-20T17:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Netherlands",
         "away_team": "Sweden",
         "predicted_result": "H",
@@ -487,7 +487,7 @@
       {
         "match_date": "2026-06-20",
         "match_datetime_utc": "2026-06-20T03:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Turkey",
         "away_team": "Paraguay",
         "predicted_result": "H",
@@ -500,7 +500,7 @@
       {
         "match_date": "2026-06-21",
         "match_datetime_utc": "2026-06-21T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Belgium",
         "away_team": "Iran",
         "predicted_result": "D",
@@ -513,7 +513,7 @@
       {
         "match_date": "2026-06-21",
         "match_datetime_utc": "2026-06-21T00:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Ecuador",
         "away_team": "Curaçao",
         "predicted_result": "H",
@@ -526,7 +526,7 @@
       {
         "match_date": "2026-06-21",
         "match_datetime_utc": "2026-06-21T16:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Spain",
         "away_team": "Saudi Arabia",
         "predicted_result": "H",
@@ -539,7 +539,7 @@
       {
         "match_date": "2026-06-21",
         "match_datetime_utc": "2026-06-21T04:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Tunisia",
         "away_team": "Japan",
         "predicted_result": "A",
@@ -552,7 +552,7 @@
       {
         "match_date": "2026-06-21",
         "match_datetime_utc": "2026-06-21T22:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Uruguay",
         "away_team": "Cape Verde",
         "predicted_result": "D",
@@ -565,7 +565,7 @@
       {
         "match_date": "2026-06-22",
         "match_datetime_utc": "2026-06-22T17:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Argentina",
         "away_team": "Austria",
         "predicted_result": "H",
@@ -578,7 +578,7 @@
       {
         "match_date": "2026-06-22",
         "match_datetime_utc": "2026-06-22T21:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "France",
         "away_team": "Iraq",
         "predicted_result": "A",
@@ -591,7 +591,7 @@
       {
         "match_date": "2026-06-22",
         "match_datetime_utc": "2026-06-22T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "New Zealand",
         "away_team": "Egypt",
         "predicted_result": "A",
@@ -604,7 +604,7 @@
       {
         "match_date": "2026-06-23",
         "match_datetime_utc": "2026-06-23T20:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "England",
         "away_team": "Ghana",
         "predicted_result": "H",
@@ -617,7 +617,7 @@
       {
         "match_date": "2026-06-23",
         "match_datetime_utc": "2026-06-23T03:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Jordan",
         "away_team": "Algeria",
         "predicted_result": "H",
@@ -630,7 +630,7 @@
       {
         "match_date": "2026-06-23",
         "match_datetime_utc": "2026-06-23T00:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Norway",
         "away_team": "Senegal",
         "predicted_result": "D",
@@ -643,7 +643,7 @@
       {
         "match_date": "2026-06-23",
         "match_datetime_utc": "2026-06-23T23:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Panama",
         "away_team": "Croatia",
         "predicted_result": "A",
@@ -656,7 +656,7 @@
       {
         "match_date": "2026-06-23",
         "match_datetime_utc": "2026-06-23T17:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Portugal",
         "away_team": "Uzbekistan",
         "predicted_result": "H",
@@ -669,7 +669,7 @@
       {
         "match_date": "2026-06-24",
         "match_datetime_utc": "2026-06-24T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Bosnia-Herzegovina",
         "away_team": "Qatar",
         "predicted_result": "A",
@@ -682,7 +682,7 @@
       {
         "match_date": "2026-06-24",
         "match_datetime_utc": "2026-06-24T02:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Colombia",
         "away_team": "Congo DR",
         "predicted_result": "D",
@@ -695,7 +695,7 @@
       {
         "match_date": "2026-06-24",
         "match_datetime_utc": "2026-06-24T22:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Morocco",
         "away_team": "Haiti",
         "predicted_result": "H",
@@ -708,7 +708,7 @@
       {
         "match_date": "2026-06-24",
         "match_datetime_utc": "2026-06-24T22:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Scotland",
         "away_team": "Brazil",
         "predicted_result": "D",
@@ -721,7 +721,7 @@
       {
         "match_date": "2026-06-24",
         "match_datetime_utc": "2026-06-24T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Switzerland",
         "away_team": "Canada",
         "predicted_result": "D",
@@ -734,7 +734,7 @@
       {
         "match_date": "2026-06-25",
         "match_datetime_utc": "2026-06-25T20:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Curaçao",
         "away_team": "Ivory Coast",
         "predicted_result": "D",
@@ -747,7 +747,7 @@
       {
         "match_date": "2026-06-25",
         "match_datetime_utc": "2026-06-25T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Czechia",
         "away_team": "Mexico",
         "predicted_result": "D",
@@ -760,7 +760,7 @@
       {
         "match_date": "2026-06-25",
         "match_datetime_utc": "2026-06-25T20:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Ecuador",
         "away_team": "Germany",
         "predicted_result": "A",
@@ -773,7 +773,7 @@
       {
         "match_date": "2026-06-25",
         "match_datetime_utc": "2026-06-25T23:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Japan",
         "away_team": "Sweden",
         "predicted_result": "H",
@@ -786,7 +786,7 @@
       {
         "match_date": "2026-06-25",
         "match_datetime_utc": "2026-06-25T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "South Africa",
         "away_team": "South Korea",
         "predicted_result": "A",
@@ -799,7 +799,7 @@
       {
         "match_date": "2026-06-25",
         "match_datetime_utc": "2026-06-25T23:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Tunisia",
         "away_team": "Netherlands",
         "predicted_result": "D",
@@ -812,7 +812,7 @@
       {
         "match_date": "2026-06-26",
         "match_datetime_utc": "2026-06-26T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Norway",
         "away_team": "France",
         "predicted_result": "D",
@@ -825,7 +825,7 @@
       {
         "match_date": "2026-06-26",
         "match_datetime_utc": "2026-06-26T02:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Paraguay",
         "away_team": "Australia",
         "predicted_result": "H",
@@ -838,7 +838,7 @@
       {
         "match_date": "2026-06-26",
         "match_datetime_utc": "2026-06-26T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Senegal",
         "away_team": "Iraq",
         "predicted_result": "H",
@@ -851,7 +851,7 @@
       {
         "match_date": "2026-06-26",
         "match_datetime_utc": "2026-06-26T02:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Turkey",
         "away_team": "United States",
         "predicted_result": "A",
@@ -864,7 +864,7 @@
       {
         "match_date": "2026-06-27",
         "match_datetime_utc": "2026-06-27T00:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Cape Verde",
         "away_team": "Saudi Arabia",
         "predicted_result": "H",
@@ -877,7 +877,7 @@
       {
         "match_date": "2026-06-27",
         "match_datetime_utc": "2026-06-27T23:30:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Colombia",
         "away_team": "Portugal",
         "predicted_result": "D",
@@ -890,7 +890,7 @@
       {
         "match_date": "2026-06-27",
         "match_datetime_utc": "2026-06-27T23:30:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Congo DR",
         "away_team": "Uzbekistan",
         "predicted_result": "A",
@@ -903,7 +903,7 @@
       {
         "match_date": "2026-06-27",
         "match_datetime_utc": "2026-06-27T21:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Croatia",
         "away_team": "Ghana",
         "predicted_result": "H",
@@ -916,7 +916,7 @@
       {
         "match_date": "2026-06-27",
         "match_datetime_utc": "2026-06-27T03:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Egypt",
         "away_team": "Iran",
         "predicted_result": "H",
@@ -929,7 +929,7 @@
       {
         "match_date": "2026-06-27",
         "match_datetime_utc": "2026-06-27T03:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "New Zealand",
         "away_team": "Belgium",
         "predicted_result": "A",
@@ -942,7 +942,7 @@
       {
         "match_date": "2026-06-27",
         "match_datetime_utc": "2026-06-27T21:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Panama",
         "away_team": "England",
         "predicted_result": "A",
@@ -955,7 +955,7 @@
       {
         "match_date": "2026-06-27",
         "match_datetime_utc": "2026-06-27T00:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Uruguay",
         "away_team": "Spain",
         "predicted_result": "A",
@@ -968,7 +968,7 @@
       {
         "match_date": "2026-06-28",
         "match_datetime_utc": "2026-06-28T02:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Algeria",
         "away_team": "Austria",
         "predicted_result": "A",
@@ -981,7 +981,7 @@
       {
         "match_date": "2026-06-28",
         "match_datetime_utc": "2026-06-28T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group A 2nd Place",
         "away_team": "Group B 2nd Place",
         "predicted_result": "A",
@@ -994,7 +994,7 @@
       {
         "match_date": "2026-06-28",
         "match_datetime_utc": "2026-06-28T02:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Jordan",
         "away_team": "Argentina",
         "predicted_result": "A",
@@ -1007,7 +1007,7 @@
       {
         "match_date": "2026-06-29",
         "match_datetime_utc": "2026-06-29T17:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group C Winner",
         "away_team": "Group F 2nd Place",
         "predicted_result": "H",
@@ -1020,7 +1020,7 @@
       {
         "match_date": "2026-06-29",
         "match_datetime_utc": "2026-06-29T20:30:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group E Winner",
         "away_team": "Third Place Group A/B/C/D/F",
         "predicted_result": "A",
@@ -1033,7 +1033,7 @@
       {
         "match_date": "2026-06-30",
         "match_datetime_utc": "2026-06-30T17:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group E 2nd Place",
         "away_team": "Group I 2nd Place",
         "predicted_result": "D",
@@ -1046,7 +1046,7 @@
       {
         "match_date": "2026-06-30",
         "match_datetime_utc": "2026-06-30T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group F Winner",
         "away_team": "Group C 2nd Place",
         "predicted_result": "H",
@@ -1059,7 +1059,7 @@
       {
         "match_date": "2026-06-30",
         "match_datetime_utc": "2026-06-30T21:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group I Winner",
         "away_team": "Third Place Group C/D/F/G/H",
         "predicted_result": "A",
@@ -1072,7 +1072,7 @@
       {
         "match_date": "2026-07-01",
         "match_datetime_utc": "2026-07-01T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group A Winner",
         "away_team": "Third Place Group C/E/F/H/I",
         "predicted_result": "H",
@@ -1085,7 +1085,7 @@
       {
         "match_date": "2026-07-01",
         "match_datetime_utc": "2026-07-01T20:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group G Winner",
         "away_team": "Third Place Group A/E/H/I/J",
         "predicted_result": "H",
@@ -1098,7 +1098,7 @@
       {
         "match_date": "2026-07-01",
         "match_datetime_utc": "2026-07-01T16:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group L Winner",
         "away_team": "Third Place Group E/H/I/J/K",
         "predicted_result": "H",
@@ -1111,7 +1111,7 @@
       {
         "match_date": "2026-07-02",
         "match_datetime_utc": "2026-07-02T00:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group D Winner",
         "away_team": "Third Place Group B/E/F/I/J",
         "predicted_result": "H",
@@ -1124,7 +1124,7 @@
       {
         "match_date": "2026-07-02",
         "match_datetime_utc": "2026-07-02T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group H Winner",
         "away_team": "Group J 2nd Place",
         "predicted_result": "H",
@@ -1137,7 +1137,7 @@
       {
         "match_date": "2026-07-02",
         "match_datetime_utc": "2026-07-02T23:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group K 2nd Place",
         "away_team": "Group L 2nd Place",
         "predicted_result": "A",
@@ -1150,7 +1150,7 @@
       {
         "match_date": "2026-07-03",
         "match_datetime_utc": "2026-07-03T03:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group B Winner",
         "away_team": "Third Place Group E/F/G/I/J",
         "predicted_result": "A",
@@ -1163,7 +1163,7 @@
       {
         "match_date": "2026-07-03",
         "match_datetime_utc": "2026-07-03T18:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group D 2nd Place",
         "away_team": "Group G 2nd Place",
         "predicted_result": "D",
@@ -1176,7 +1176,7 @@
       {
         "match_date": "2026-07-03",
         "match_datetime_utc": "2026-07-03T22:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group J Winner",
         "away_team": "Group H 2nd Place",
         "predicted_result": "A",
@@ -1189,7 +1189,7 @@
       {
         "match_date": "2026-07-04",
         "match_datetime_utc": "2026-07-04T01:30:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Group K Winner",
         "away_team": "Third Place Group D/E/I/J/L",
         "predicted_result": "D",
@@ -1202,7 +1202,7 @@
       {
         "match_date": "2026-07-04",
         "match_datetime_utc": "2026-07-04T17:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 32 1 Winner",
         "away_team": "Round of 32 3 Winner",
         "predicted_result": "H",
@@ -1215,7 +1215,7 @@
       {
         "match_date": "2026-07-04",
         "match_datetime_utc": "2026-07-04T21:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 32 2 Winner",
         "away_team": "Round of 32 5 Winner",
         "predicted_result": "A",
@@ -1228,7 +1228,7 @@
       {
         "match_date": "2026-07-05",
         "match_datetime_utc": "2026-07-05T20:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 32 4 Winner",
         "away_team": "Round of 32 6 Winner",
         "predicted_result": "D",
@@ -1241,7 +1241,7 @@
       {
         "match_date": "2026-07-06",
         "match_datetime_utc": "2026-07-06T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 32 11 Winner",
         "away_team": "Round of 32 12 Winner",
         "predicted_result": "H",
@@ -1254,7 +1254,7 @@
       {
         "match_date": "2026-07-06",
         "match_datetime_utc": "2026-07-06T00:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 32 7 Winner",
         "away_team": "Round of 32 8 Winner",
         "predicted_result": "A",
@@ -1267,7 +1267,7 @@
       {
         "match_date": "2026-07-07",
         "match_datetime_utc": "2026-07-07T20:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 32 13 Winner",
         "away_team": "Round of 32 15 Winner",
         "predicted_result": "H",
@@ -1280,7 +1280,7 @@
       {
         "match_date": "2026-07-07",
         "match_datetime_utc": "2026-07-07T16:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 32 14 Winner",
         "away_team": "Round of 32 16 Winner",
         "predicted_result": "A",
@@ -1293,7 +1293,7 @@
       {
         "match_date": "2026-07-07",
         "match_datetime_utc": "2026-07-07T00:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 32 9 Winner",
         "away_team": "Round of 32 10 Winner",
         "predicted_result": "A",
@@ -1306,7 +1306,7 @@
       {
         "match_date": "2026-07-09",
         "match_datetime_utc": "2026-07-09T20:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 16 1 Winner",
         "away_team": "Round of 16 2 Winner",
         "predicted_result": "H",
@@ -1319,7 +1319,7 @@
       {
         "match_date": "2026-07-10",
         "match_datetime_utc": "2026-07-10T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 16 5 Winner",
         "away_team": "Round of 16 6 Winner",
         "predicted_result": "A",
@@ -1332,7 +1332,7 @@
       {
         "match_date": "2026-07-11",
         "match_datetime_utc": "2026-07-11T21:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 16 3 Winner",
         "away_team": "Round of 16 4 Winner",
         "predicted_result": "A",
@@ -1345,7 +1345,7 @@
       {
         "match_date": "2026-07-12",
         "match_datetime_utc": "2026-07-12T01:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Round of 16 7 Winner",
         "away_team": "Round of 16 8 Winner",
         "predicted_result": "D",
@@ -1358,7 +1358,7 @@
       {
         "match_date": "2026-07-14",
         "match_datetime_utc": "2026-07-14T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Quarterfinal 1 Winner",
         "away_team": "Quarterfinal 2 Winner",
         "predicted_result": "H",
@@ -1371,7 +1371,7 @@
       {
         "match_date": "2026-07-15",
         "match_datetime_utc": "2026-07-15T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Quarterfinal 3 Winner",
         "away_team": "Quarterfinal 4 Winner",
         "predicted_result": "H",
@@ -1384,7 +1384,7 @@
       {
         "match_date": "2026-07-18",
         "match_datetime_utc": "2026-07-18T21:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Semifinal 1 Loser",
         "away_team": "Semifinal 2 Loser",
         "predicted_result": "H",
@@ -1397,7 +1397,7 @@
       {
         "match_date": "2026-07-19",
         "match_datetime_utc": "2026-07-19T19:00:00+00:00",
-        "competition": "FIFA/World Cup",
+        "competition": "International/World Cup",
         "home_team": "Semifinal 1 Winner",
         "away_team": "Semifinal 2 Winner",
         "predicted_result": "H",
@@ -5054,8 +5054,8 @@
     "projected_cup_brackets": {
       "generated_at_utc": "2026-06-08T21:57:39+00:00",
       "competitions": {
-        "UEFA/Champions League": {
-          "competition": "UEFA/Champions League",
+        "Europe/Champions League": {
+          "competition": "Europe/Champions League",
           "format": "uefa_league_phase_knockout",
           "league_phase_matches": 8,
           "qualification": {
@@ -5412,8 +5412,8 @@
             }
           ]
         },
-        "UEFA/Europa League": {
-          "competition": "UEFA/Europa League",
+        "Europe/Europa League": {
+          "competition": "Europe/Europa League",
           "format": "uefa_league_phase_knockout",
           "league_phase_matches": 8,
           "qualification": {
@@ -5770,8 +5770,8 @@
             }
           ]
         },
-        "UEFA/Conference League": {
-          "competition": "UEFA/Conference League",
+        "Europe/Conference League": {
+          "competition": "Europe/Conference League",
           "format": "uefa_league_phase_knockout",
           "league_phase_matches": 6,
           "qualification": {
@@ -6916,7 +6916,7 @@
     ],
     "world_cup": {
       "year": 2026,
-      "competition": "FIFA/World Cup",
+      "competition": "International/World Cup",
       "champion": "Spain",
       "groups": [
         {

@@ -1,4 +1,4 @@
-"""
+﻿"""
 National-team data pipeline — download, process, train, and predict.
 
 Independent sub-pipeline for all international football.  Sources:
@@ -126,28 +126,28 @@ def d(start, end):
 
 
 UPCOMING_ESPN_COMPETITIONS = {
-    "FIFA/World Cup": {"espn_id": "fifa.world", "priority": 1, "ranges": []},
-    "FIFA/World Cup Qualifying - UEFA": {"espn_id": "fifa.worldq.uefa", "priority": 2, "ranges": []},
-    "FIFA/World Cup Qualifying - CONMEBOL": {"espn_id": "fifa.worldq.conmebol", "priority": 3, "ranges": []},
-    "FIFA/World Cup Qualifying - CONCACAF": {"espn_id": "fifa.worldq.concacaf", "priority": 4, "ranges": []},
-    "FIFA/Friendly": {"espn_id": "fifa.friendly", "priority": 5, "ranges": []},
-    "UEFA/European Championship": {"espn_id": "uefa.euro", "priority": 6, "ranges": []},
-    "CONMEBOL/Copa America": {"espn_id": "conmebol.america", "priority": 7, "ranges": []},
-    "CONCACAF/Gold Cup": {"espn_id": "concacaf.gold", "priority": 8, "ranges": []},
-    "CAF/Africa Cup of Nations": {"espn_id": "caf.nations", "priority": 9, "ranges": []},
-    "UEFA/Nations League": {"espn_id": "uefa.nations", "priority": 10, "ranges": []},
+    "International/World Cup": {"espn_id": "fifa.world", "priority": 1, "ranges": []},
+    "International/World Cup Qualifying - UEFA": {"espn_id": "fifa.worldq.uefa", "priority": 2, "ranges": []},
+    "International/World Cup Qualifying - CONMEBOL": {"espn_id": "fifa.worldq.conmebol", "priority": 3, "ranges": []},
+    "International/World Cup Qualifying - CONCACAF": {"espn_id": "fifa.worldq.concacaf", "priority": 4, "ranges": []},
+    "International/Friendly": {"espn_id": "fifa.friendly", "priority": 5, "ranges": []},
+    "International/European Championship": {"espn_id": "uefa.euro", "priority": 6, "ranges": []},
+    "South America/Copa America": {"espn_id": "conmebol.america", "priority": 7, "ranges": []},
+    "North America/Gold Cup": {"espn_id": "concacaf.gold", "priority": 8, "ranges": []},
+    "Africa/Africa Cup of Nations": {"espn_id": "caf.nations", "priority": 9, "ranges": []},
+    "International/Nations League": {"espn_id": "uefa.nations", "priority": 10, "ranges": []},
 }
 
 RECENT_ESPN_COMPETITIONS = {
     **UPCOMING_ESPN_COMPETITIONS,
-    "FIFA/World Cup Qualifying - AFC": {"espn_id": "fifa.worldq.afc", "priority": 11, "ranges": []},
-    "FIFA/World Cup Qualifying - CAF": {"espn_id": "fifa.worldq.caf", "priority": 12, "ranges": []},
-    "AFC/Asian Cup": {"espn_id": "afc.cup", "priority": 13, "ranges": []},
+    "International/World Cup Qualifying - AFC": {"espn_id": "fifa.worldq.afc", "priority": 11, "ranges": []},
+    "International/World Cup Qualifying - CAF": {"espn_id": "fifa.worldq.caf", "priority": 12, "ranges": []},
+    "Asia/Asian Cup": {"espn_id": "afc.cup", "priority": 13, "ranges": []},
 }
 
 FOOTBALL_DATA_COMPETITIONS = {
-    "WC": "FIFA/World Cup",
-    "EC": "UEFA/European Championship",
+    "WC": "International/World Cup",
+    "EC": "International/European Championship",
 }
 
 
@@ -533,7 +533,7 @@ def fetch_world_cup_team_names(start_date="2026-06-11", end_date="2026-06-27"):
     # Pull group-stage days concurrently; parsing stays ordered and unchanged.
     for _, payload in fetch_espn_scoreboard_days("fifa.world", date_range(start, end), timeout=30):
         for event in payload.get("events") or []:
-            parsed = parse_espn_event(event, "FIFA/World Cup", require_completed=False)
+            parsed = parse_espn_event(event, "International/World Cup", require_completed=False)
             if parsed:
                 for side in ["home_team", "away_team"]:
                     name = parsed.get(side, "")
@@ -1796,7 +1796,7 @@ def _sample_train_columns(team_context, target_teams):
     """Build the one-hot encoded training column list used when no real training is run."""
     home = target_teams[0] if target_teams else "Home"
     away = target_teams[1] if len(target_teams) >= 2 else (target_teams[0] if target_teams else "Away")
-    sample_row = build_feature_row(home, away, "FIFA/World Cup", "group-stage", True, team_context)
+    sample_row = build_feature_row(home, away, "International/World Cup", "group-stage", True, team_context)
     sample_frame = pd.DataFrame([sample_row])
     sample_frame = pd.get_dummies(sample_frame, columns=CATEGORICAL_FEATURE_COLUMNS, dtype=float)
     return list(sample_frame.columns)

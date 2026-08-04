@@ -1,4 +1,4 @@
-{
+﻿{
   "England/Premier League": {
     "AFC Bournemouth": "Bournemouth",
     "Arsenal FC": "Arsenal",
@@ -1454,7 +1454,7 @@
   "France/Coupe de France": {},
   "Italy/Coppa Italia": {},
   "United States/US Open Cup": {},
-  "CONCACAF/Leagues Cup": {
+  "North America/Leagues Cup": {
     "Inter": "Inter Miami",
     "Inter Miami": "Inter Miami",
     "Inter Miami CF": "Inter Miami",
@@ -1469,11 +1469,11 @@
     "Atlanta United": "Atlanta Utd",
     "Atlanta United FC": "Atlanta Utd"
   },
-  "UEFA/Champions League": {},
-  "UEFA/Europa League": {},
-  "UEFA/Conference League": {},
-  "FIFA/World Cup": {},
-  "FIFA/Friendly": {},
+  "Europe/Champions League": {},
+  "Europe/Europa League": {},
+  "Europe/Conference League": {},
+  "International/World Cup": {},
+  "International/Friendly": {},
   "Club Friendlies": {},
   "Denmark/Danish Superliga": {
     "AC Horsens": "Horsens",

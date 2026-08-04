@@ -1,6 +1,7 @@
-import json
+﻿import json
 import os
 import random
+import time
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
@@ -39,35 +40,25 @@ ESPN_CUP_NAMES_FILE = os.path.join(PREDICTIONS_DIR, "espn_cup_names_seen.json")
 CUP_ESPN_COMPETITION_KEYS = {
     "England/FA Cup": "eng.fa",
     "England/League Cup": "eng.efl",
-    "UEFA/Champions League": "uefa.champions",
-    "UEFA/Europa League": "uefa.europa",
-    "UEFA/Conference League": "uefa.europa.conf",
     "Europe/Champions League": "uefa.champions",
     "Europe/Europa League": "uefa.europa",
     "Europe/Conference League": "uefa.europa.conf",
-    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
+    "North America/Leagues Cup": "concacaf.leagues.cup",
 }
 UEFA_TABLE_COMPETITIONS = {
-    "UEFA/Champions League",
-    "UEFA/Europa League",
-    "UEFA/Conference League",
     "Europe/Champions League",
     "Europe/Europa League",
     "Europe/Conference League",
-    # Leagues Cup 2026 uses dual MLS/Liga MX tables — not UEFA league-phase.
 }
 UEFA_LEAGUE_PHASE_MATCHES = {
-    "UEFA/Champions League": 8,
     "Europe/Champions League": 8,
-    "UEFA/Europa League": 8,
     "Europe/Europa League": 8,
-    "UEFA/Conference League": 6,
     "Europe/Conference League": 6,
 }
 UEFA_PRIMARY_COMPETITIONS = [
-    "UEFA/Champions League",
-    "UEFA/Europa League",
-    "UEFA/Conference League",
+    "Europe/Champions League",
+    "Europe/Europa League",
+    "Europe/Conference League",
 ]
 DOMESTIC_BRACKET_COMPETITIONS = {
     "England/FA Cup",
@@ -152,7 +143,7 @@ CUP_FORMAT_RULES = {
         "draw_type": "fully_randomized",
         "allows_lower_league": True,
     },
-    "CONCACAF/Leagues Cup": {
+    "North America/Leagues Cup": {
         "format": "dual_league_phase_then_knockout",
         "description": (
             "Phase One: 3 MLS↔Liga MX matches per club; separate MLS and Liga MX "
@@ -177,7 +168,7 @@ DOMESTIC_BRACKET_COMPETITIONS = {
     "France/Coupe de France",
     "Italy/Coppa Italia",
     "United States/US Open Cup",
-    "CONCACAF/Leagues Cup",
+    "North America/Leagues Cup",
 }
 
 CUP_HISTORY_COLUMNS = [
@@ -897,7 +888,7 @@ def _build_uefa_bracket_with_draws(competition_name, table_rows, predictions_ind
         bracket["sim_index"] = sim_info["sim_index"]
         
         # Add draw constraint info for playoff round
-        if competition_name in ("UEFA/Champions League", "Europe/Champions League"):
+        if competition_name in ("Europe/Champions League", "Europe/Champions League"):
             bracket["draw_constraints"] = {
                 "round": "First Round Playoff",
                 "description": "Seeds 9-16 paired with seeds 17-24. Lower seeds can face seeds 23-24.",
@@ -1074,7 +1065,7 @@ def _generate_possible_opponents_for_slot(competition_name, round_name, slot, br
     # Get draw rules for this competition
     rules = CUP_FORMAT_RULES.get(competition_name, {})
     
-    if competition_name in ("UEFA/Champions League", "Europe/Champions League"):
+    if competition_name in ("Europe/Champions League", "Europe/Champions League"):
         # Champions League playoff seeding constraints
         if round_name == "First Round Playoff":
             seed_map = {
@@ -1288,6 +1279,7 @@ def refresh_cup_projection_artifacts(completed_df, upcoming_df):
 
 
 def main():
+    _t0 = time.monotonic()
     cup_df = load_predictions(CUP_PREDICTIONS_FILE)
     completed_df = _load_completed_cups()
     if cup_df is None:
@@ -1337,6 +1329,7 @@ def main():
     print(f"Cup completed predictions file: {COMPLETED_CUP_PREDICTIONS_FILE}")
     print(f"Cup projected tables file: {PROJECTED_CUP_TABLES_FILE}")
     print(f"Cup projected brackets file: {PROJECTED_CUP_BRACKETS_FILE}")
+    print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
     print("Done.")
 
 

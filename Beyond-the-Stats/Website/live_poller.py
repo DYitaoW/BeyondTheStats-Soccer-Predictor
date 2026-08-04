@@ -1,4 +1,4 @@
-"""Background live score polling thread and ESPN scoreboard merging."""
+﻿"""Background live score polling thread and ESPN scoreboard merging."""
 import importlib.util
 import json
 import os
@@ -269,7 +269,7 @@ def _get_todays_competitions(today_date=None):
             todays[comp].append(kickoff_et)
 
     # ── Source 2: World Cup projection JSON ──────────────────────
-    if "FIFA/World Cup" not in todays and os.path.exists(config.WORLD_CUP_PROJECTION_FILE):
+    if "International/World Cup" not in todays and os.path.exists(config.WORLD_CUP_PROJECTION_FILE):
         try:
             with open(config.WORLD_CUP_PROJECTION_FILE, "r", encoding="utf-8") as fh:
                 wc_data = json.load(fh)
@@ -279,14 +279,14 @@ def _get_todays_competitions(today_date=None):
         # group_fixtures — list of dicts with match_date, match_datetime_utc etc.
         for fixture in wc_data.get("group_fixtures") or []:
             if isinstance(fixture, dict):
-                _add_if_today(fixture, "FIFA/World Cup", today_date, now_et, todays)
+                _add_if_today(fixture, "International/World Cup", today_date, now_et, todays)
 
         # knockout rounds
         for round_list in (wc_data.get("knockout") or {}).values():
             if isinstance(round_list, list):
                 for match in round_list:
                     if isinstance(match, dict):
-                        _add_if_today(match, "FIFA/World Cup", today_date, now_et, todays)
+                        _add_if_today(match, "International/World Cup", today_date, now_et, todays)
 
     # ── Source 3: cup bracket JSON ───────────────────────────────
     if os.path.exists(config.CUP_PROJECTED_BRACKET_FILE):
@@ -825,9 +825,11 @@ def _live_score_poller_loop():
                                 persistent.extend(new_items)
                                 g[f"_{arr_key}_len"] = len(batch)
 
-            # ── Event push notifications (goals, red cards, halftime) ──
+            # ── Event push notifications (goals, red cards, halftime, full time) ──
             try:
-                from notifications import _apns_notification_queue, ios_device_tokens
+                from notifications import _apns_notification_queue
+                from notifications import for_match as la_for_match
+                from notifications import for_match_tokens as la_for_match_tokens
 
                 with _live_scores_lock, _notified_events_lock:
                     for comp_name, comp_data in _live_scores.items():
@@ -840,6 +842,46 @@ def _live_score_poller_loop():
                                 continue
 
                             notified = _notified_events.setdefault(mid, set())
+                            subscribers = la_for_match_tokens(mid, comp_name)
+                            la_regs = la_for_match(mid, comp_name)
+
+                            def _queue_alert(title, body):
+                                """Queue a regular alert push to match subscribers only."""
+                                for token in subscribers:
+                                    _apns_notification_queue.append({
+                                        "token": token,
+                                        "title": title,
+                                        "body": body,
+                                        "badge": 0,
+                                        "match_id": mid,
+                                        "competition": comp_name,
+                                    })
+
+                            def _queue_la_update(event, content_state):
+                                """Queue a Live Activity update to every registration of this match."""
+                                for entry in la_regs:
+                                    _apns_notification_queue.append({
+                                        "type": "liveactivity",
+                                        "token": entry["activity_token"],
+                                        "content_state": content_state,
+                                        "event": event,
+                                    })
+
+                            ht = g.get("home_team", "")
+                            at = g.get("away_team", "")
+                            hs = g.get("home_score", "-")
+                            as_ = g.get("away_score", "-")
+                            minute = g.get("clock") or g.get("match_minute") or 0
+                            state_base = {
+                                "match_id": mid,
+                                "competition": comp_name,
+                                "home_team": ht,
+                                "away_team": at,
+                                "home_score": hs,
+                                "away_score": as_,
+                                "status": cur_status,
+                                "match_minute": minute,
+                            }
 
                             # Key events: goals, red cards
                             for ev in (g.get("key_events") or []):
@@ -853,24 +895,13 @@ def _live_score_poller_loop():
 
                                 clock = ev.get("clock", "")
                                 text = ev.get("text", "") or ev.get("short_text", "")
-                                ht = g.get("home_team", "")
-                                at = g.get("away_team", "")
-                                hs = g.get("home_score", "-")
-                                as_ = g.get("away_score", "-")
                                 title = "Goal" if ev_type == "goal" else "Red Card"
                                 body = f"{ht} {hs}-{as_} {at} ({clock}')"
                                 if text:
                                     body = f"{body} - {text}"
 
-                                for token in list(ios_device_tokens):
-                                    _apns_notification_queue.append({
-                                        "token": token,
-                                        "title": title,
-                                        "body": body,
-                                        "badge": 0,
-                                        "match_id": mid,
-                                        "competition": comp_name,
-                                    })
+                                _queue_alert(title, body)
+                                _queue_la_update("update", {**state_base, "event": ev_type, "clock": clock})
 
                             # Halftime: detected when period string first contains "halftime"
                             period_raw = str(g.get("period", "") or g.get("clock", "") or "").lower()
@@ -878,37 +909,29 @@ def _live_score_poller_loop():
                                 ht_id = f"halftime|{mid}"
                                 if ht_id not in notified:
                                     notified.add(ht_id)
-                                    ht = g.get("home_team", "")
-                                    at = g.get("away_team", "")
-                                    hs = g.get("home_score", "-")
-                                    as_ = g.get("away_score", "-")
-                                    for token in list(ios_device_tokens):
-                                        _apns_notification_queue.append({
-                                            "token": token,
-                                            "title": "Halftime",
-                                            "body": f"{ht} {hs}-{as_} {at} - Halftime",
-                                            "badge": 0,
-                                            "match_id": mid,
-                                            "competition": comp_name,
-                                        })
+                                    _queue_alert("Halftime", f"{ht} {hs}-{as_} {at} - Halftime")
+                                    _queue_la_update("update", {**state_base, "event": "halftime"})
+
+                            # Full time: status transitioned to "post" this cycle.
+                            # (Live Activity "end" event is handled by the block below.)
+                            p = prev_statuses.get(mid)
+                            if p and p[1] != "post" and cur_status == "post":
+                                ft_id = f"fulltime|{mid}"
+                                if ft_id not in notified:
+                                    notified.add(ft_id)
+                                    _queue_alert("Full Time", f"{ht} {hs}-{as_} {at} - Full Time")
+                                # Clean up per-match push subscriptions once the
+                                # match is over (no more events can fire).
+                                from notifications import clear_match_subscriptions
+                                clear_match_subscriptions(mid, comp_name)
 
                             # Match started (pre -> in)
-                            p = prev_statuses.get(mid)
                             if p and p[1] == "pre" and cur_status == "in":
                                 start_id = f"start|{mid}"
                                 if start_id not in notified:
                                     notified.add(start_id)
-                                    ht = g.get("home_team", "")
-                                    at = g.get("away_team", "")
-                                    for token in list(ios_device_tokens):
-                                        _apns_notification_queue.append({
-                                            "token": token,
-                                            "title": "Match Started",
-                                            "body": f"{ht} vs {at} - Kickoff!",
-                                            "badge": 0,
-                                            "match_id": mid,
-                                            "competition": comp_name,
-                                        })
+                                    _queue_alert("Match Started", f"{ht} vs {at} - Kickoff!")
+                                    _queue_la_update("update", {**state_base, "event": "kickoff"})
             except Exception:
                 import traceback
                 traceback.print_exc()

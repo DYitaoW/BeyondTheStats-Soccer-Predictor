@@ -1443,8 +1443,35 @@ def _load_current_season_tables():
     return {"leagues": sorted(leagues), "tables": tables}
 
 
+_projected_tables_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _copy_projected_result(data):
+    """Defensive shallow copy: new top dict + tables/leagues/position_odds copies.
+
+    Callers may mutate the returned containers (e.g. app.py pops World Cup from
+    ``tables``), but row dicts are only read, so they are shared.
+    """
+    return {
+        "leagues": list(data.get("leagues") or []),
+        "tables": dict(data.get("tables") or {}),
+        "position_odds": dict(data.get("position_odds") or {}),
+    }
+
+
 def _load_projected_tables(csv_path):
-    """Load projected table CSV into API-ready league/table structure."""
+    """Load projected table CSV into API-ready league/table structure.
+
+    Results are memoized per (path, mtime) since this is called once per
+    source per competition during league-data builds.
+    """
+    try:
+        mtime = os.path.getmtime(csv_path)
+    except OSError:
+        return {"leagues": [], "tables": {}}
+    cached = _projected_tables_cache.get(os.path.normpath(csv_path))
+    if cached is not None and cached[0] == mtime:
+        return _copy_projected_result(cached[1])
     if not os.path.exists(csv_path):
         return {"leagues": [], "tables": {}}
     try:
@@ -1572,6 +1599,7 @@ def _load_projected_tables(csv_path):
     result = {"leagues": leagues, "tables": tables, "position_odds": position_odds_tables}
     if os.path.normpath(csv_path) == os.path.normpath(config.MLS_PROJECTED_TABLE_FILE):
         _normalize_mls_conference_tables(result)
+    _projected_tables_cache[os.path.normpath(csv_path)] = (mtime, result)
     return result
 
 
@@ -1828,7 +1856,7 @@ def _load_json_payload(path):
     if not os.path.exists(path):
         return None
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8-sig") as fh:
             return json.load(fh)
     except Exception:
         return None
@@ -2060,6 +2088,29 @@ def _valid_date_iso(s):
     return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s))
 
 
+def _parse_utc_datetime_et(raw):
+    """Parse a UTC timestamp to ET using stdlib only (avoids pandas/pytz).
+
+    Returns (et_iso_str, et_time_label) or (None, None) when unparseable.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+    from zoneinfo import ZoneInfo as _ZoneInfo
+
+    text = str(raw or "").strip()
+    if not text:
+        return None, None
+    try:
+        dt = _dt.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None, None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_tz.utc)
+    et = dt.astimezone(_ZoneInfo("America/New_York"))
+    et_iso = et.strftime("%Y-%m-%dT%H:%M:%S%z")
+    time_label = et.strftime("%I:%M %p ET").lstrip("0")
+    return et_iso, time_label
+
+
 def _enrich_json_past_row(r):
     """Add display fields to a raw past_games.json row so it matches upcoming format."""
     pred = str(r.get("predicted_result", "")).strip().upper()
@@ -2102,14 +2153,19 @@ def _enrich_json_past_row(r):
 
     utc_dt = str(r.get("match_datetime_utc", "")).strip()
     if utc_dt:
-        try:
-            dt = pd.to_datetime(utc_dt, utc=True, errors="coerce")
-            if pd.notna(dt):
-                dt = dt.tz_convert("America/New_York")
-                r["match_datetime_et"] = dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-                r["time_label"] = dt.strftime("%I:%M %p ET").lstrip("0")
-        except Exception:
-            pass
+        et_iso, time_label = _parse_utc_datetime_et(utc_dt)
+        if et_iso:
+            r["match_datetime_et"] = et_iso
+            r["time_label"] = time_label
+        else:
+            try:
+                dt = pd.to_datetime(utc_dt, utc=True, errors="coerce")
+                if pd.notna(dt):
+                    dt = dt.tz_convert("America/New_York")
+                    r["match_datetime_et"] = dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    r["time_label"] = dt.strftime("%I:%M %p ET").lstrip("0")
+            except Exception:
+                pass
     if "time_label" not in r:
         r["time_label"] = ""
 
@@ -2139,6 +2195,15 @@ def _past_row_date_iso(row: dict) -> str:
             continue
         if len(raw) >= 10 and _valid_date_iso(raw[:10]):
             return raw[:10]
+        try:
+            from datetime import datetime as _dt, timezone as _tz
+
+            parsed = _dt.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=_tz.utc)
+            return parsed.astimezone(ZoneInfo("America/New_York")).date().isoformat()
+        except Exception:
+            pass
         try:
             parsed = pd.to_datetime(raw, errors="coerce", utc=True)
             if pd.notna(parsed):
@@ -2427,7 +2492,7 @@ def archive_todays_games_to_past_games_file() -> int:
     existing_by_key: dict[str, dict] = {}
     if os.path.exists(config.PAST_GAMES_FILE):
         try:
-            with open(config.PAST_GAMES_FILE, "r", encoding="utf-8") as fh:
+            with open(config.PAST_GAMES_FILE, "r", encoding="utf-8-sig") as fh:
                 existing = json.load(fh)
             if not isinstance(existing, list):
                 raise ValueError("past_games.json must contain a JSON list")

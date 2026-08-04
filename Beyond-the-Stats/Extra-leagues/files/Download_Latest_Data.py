@@ -10,6 +10,7 @@ Supports two source formats:
 - ``"mmz4281"`` — per-season CSV with ``{season_code}/{league_code}.csv``
 """
 import os
+import re
 import sys
 import urllib.request
 from datetime import datetime
@@ -134,6 +135,7 @@ def _download_mmz4281_season(source, start_year, current_year):
 
 
 def main():
+    _t0 = time.monotonic()
     os.makedirs(RAW_DATA_DIR, exist_ok=True)
     current_year = datetime.now().year
 
@@ -207,18 +209,23 @@ def main():
 
         print(f"  Done: updated {updated_count}, skipped {skipped_existing_count} historical.")
 
-    print("\nExtra leagues download complete.")
+    print(f"\nExtra leagues download complete. ({time.monotonic() - _t0:.1f}s)")
+
+    _t1 = time.monotonic()
     print("\nProcessing extra-league files...")
     process_data.main()
+    print(f"Processing done. ({time.monotonic() - _t1:.1f}s)")
+
+    _t2 = time.monotonic()
     print("\nSorting extra-league team data...")
     if _sort_data_needed():
         sort_data.sort_all_seasons()
         sort_data.build_current_form_file()
         _touch_sort_tracker()
-        print("Sort complete.")
+        print(f"Sort complete. ({time.monotonic() - _t2:.1f}s)")
     else:
-        print("No processed data changes — skipping Sort_Data (team stats unchanged).")
-    print("\nExtra leagues pipeline complete (download + process + sort).")
+        print(f"No processed data changes — skipping Sort_Data (team stats unchanged). ({time.monotonic() - _t2:.1f}s)")
+    print(f"\nExtra leagues pipeline complete (download + process + sort). ({time.monotonic() - _t0:.1f}s)")
 
 
 PROCESSED_DATA_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
@@ -227,13 +234,15 @@ SORT_TRACKER_FILE = os.path.join(TEAM_DATA_DIR, ".sort_tracker")
 
 
 def _sort_data_needed():
-    """Return True if any processed CSV has been modified since last sort."""
+    """Return True if any processed CSV (matching Extra-leagues pattern) has been modified since last sort."""
     if not os.path.exists(SORT_TRACKER_FILE):
         return True
     last_mtime = os.path.getmtime(SORT_TRACKER_FILE)
     for root, _, files in os.walk(PROCESSED_DATA_DIR):
         for fname in files:
             if not fname.endswith(".csv"):
+                continue
+            if not re.search(r"[a-z0-9]+stat\d{4}(?:-\d{2})?\.csv$", fname, re.I):
                 continue
             fpath = os.path.join(root, fname)
             if os.path.getmtime(fpath) > last_mtime + 1:

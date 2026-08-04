@@ -1,4 +1,4 @@
-"""Configuration constants for the Beyond the Stats Flask application.
+﻿"""Configuration constants for the Beyond the Stats Flask application.
 
 File paths, ESPN competition IDs, cache TTLs, and environment variables.
 """
@@ -121,7 +121,7 @@ CLUB_FRIENDLIES_ESPN_ID = "club.friendly"
 
 # Competitions polled for scores but excluded from league-table/help listings.
 UPCOMING_ONLY_COMPETITIONS = {
-    "FIFA/Friendly",
+    "International/Friendly",
 }
 
 # Domestic leagues used only for UEFA/cup roster fallback (or upcoming API with no
@@ -162,13 +162,13 @@ LIVE_SCORE_COMPETITIONS = {
     "Portugal/Liga Portugal": "por.1",
     "Netherlands/Eredivisie": "ned.1",
     "United States/MLS": "usa.1",
-    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
+    "North America/Leagues Cup": "concacaf.leagues.cup",
     # Domestic cups
     "England/FA Cup": "eng.fa",
     "England/League Cup": "eng.efl",
-    "UEFA/Champions League": "uefa.champions",
-    "UEFA/Europa League": "uefa.europa",
-    "UEFA/Conference League": "uefa.europa.conf",
+    "Europe/Champions League": "uefa.champions",
+    "Europe/Europa League": "uefa.europa",
+    "Europe/Conference League": "uefa.europa.conf",
     # Europe/ prefix aliases (used by Predict_Upcoming_Matchweek short codes)
     "Europe/Champions League": "uefa.champions",
     "Europe/Europa League": "uefa.europa",
@@ -179,11 +179,11 @@ LIVE_SCORE_COMPETITIONS = {
     "Germany/DFB-Pokal": "ger.dfb_pokal",
     "France/Coupe de France": "fra.coupe_de_france",
     "United States/US Open Cup": "usa.open_cup",
-    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
+    "North America/Leagues Cup": "concacaf.leagues.cup",
     CLUB_FRIENDLIES_COMPETITION: CLUB_FRIENDLIES_ESPN_ID,
     # National team & World Cup
-    "FIFA/World Cup": "fifa.world",
-    "FIFA/Friendly": "fifa.friendly",
+    "International/World Cup": "fifa.world",
+    "International/Friendly": "fifa.friendly",
     # Mexico/Liga MX, Belgium/First Division A, Scotland/Premiership, Turkey/Super Lig
     # are result-only (post-match fetch, no in-play polling).
     "Mexico/Liga MX": "mex.1",
@@ -216,9 +216,9 @@ LIVE_SCORE_COMPETITIONS = {
 # in-play live scoring until the main group/league phase (September).
 UEFA_MAIN_STAGE_LIVE_FROM = "2026-09-01"
 UEFA_LIVE_SCORE_COMPETITIONS = frozenset({
-    "UEFA/Champions League",
-    "UEFA/Europa League",
-    "UEFA/Conference League",
+    "Europe/Champions League",
+    "Europe/Europa League",
+    "Europe/Conference League",
     "Europe/Champions League",
     "Europe/Europa League",
     "Europe/Conference League",
@@ -284,9 +284,9 @@ def competition_live_aliases(competition: str) -> set[str]:
     comp = str(competition or "").strip()
     aliases = {comp} if comp else set()
     if comp.startswith("Europe/"):
-        aliases.add(comp.replace("Europe/", "UEFA/", 1))
-    elif comp.startswith("UEFA/"):
-        aliases.add(comp.replace("UEFA/", "Europe/", 1))
+        aliases.add(comp.replace("Europe/", "Europe/", 1))
+    elif comp.startswith("Europe/"):
+        aliases.add(comp.replace("Europe/", "Europe/", 1))
     return aliases
 
 # ── Competitions ──────────────────────────────────────────────────
@@ -313,12 +313,12 @@ GLOBAL_DATASET_COMPETITIONS = (
     "France/Ligue 1",
     "France/Ligue 2",
     "Portugal/Liga Portugal",
-    "UEFA/Champions League",
-    "UEFA/Europa League",
-    "UEFA/Conference League",
+    "Europe/Champions League",
+    "Europe/Europa League",
+    "Europe/Conference League",
     "England/FA Cup",
     "England/League Cup",
-    "CONCACAF/Leagues Cup",
+    "North America/Leagues Cup",
     "Germany/DFB-Pokal",
     "Italy/Coppa Italia",
     "Spain/Copa del Rey",
@@ -355,9 +355,9 @@ MLS_WINNER_VIEWS = {
 CUP_COMPETITIONS = {
     "England/FA Cup",
     "England/League Cup",
-    "UEFA/Champions League",
-    "UEFA/Europa League",
-    "UEFA/Conference League",
+    "Europe/Champions League",
+    "Europe/Europa League",
+    "Europe/Conference League",
     "Europe/Champions League",
     "Europe/Europa League",
     "Europe/Conference League",
@@ -366,7 +366,7 @@ CUP_COMPETITIONS = {
     "Germany/DFB-Pokal",
     "France/Coupe de France",
     "United States/US Open Cup",
-    "CONCACAF/Leagues Cup",
+    "North America/Leagues Cup",
 }
 
 _CUP_FORMATS = {
@@ -384,7 +384,7 @@ _CUP_FORMATS = {
         "two_leg_rounds": ["Semi-finals"],
         "final_neutral": True,
     },
-    "UEFA/Champions League": {
+    "Europe/Champions League": {
         "format": "league_phase_then_knockout",
         "description": "League phase (8 matches per team) followed by two-legged knockout play-offs, Round of 16, Quarter-finals, Semi-finals, and a single-match Final at a neutral venue.",
         "league_phase_matches": 8,
@@ -393,7 +393,7 @@ _CUP_FORMATS = {
         "two_leg_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals"],
         "final_neutral": True,
     },
-    "UEFA/Europa League": {
+    "Europe/Europa League": {
         "format": "league_phase_then_knockout",
         "description": "League phase (8 matches per team) followed by two-legged knockout play-offs, Round of 16, Quarter-finals, Semi-finals, and a single-match Final at a neutral venue.",
         "league_phase_matches": 8,
@@ -402,7 +402,7 @@ _CUP_FORMATS = {
         "two_leg_rounds": ["Knockout Round Play-offs", "Round of 16", "Quarter-finals", "Semi-finals"],
         "final_neutral": True,
     },
-    "UEFA/Conference League": {
+    "Europe/Conference League": {
         "format": "league_phase_then_knockout",
         "description": "League phase (6 matches per team) followed by two-legged knockout play-offs, Round of 16, Quarter-finals, Semi-finals, and a single-match Final at a neutral venue.",
         "league_phase_matches": 6,
@@ -473,7 +473,7 @@ _CUP_FORMATS = {
         "two_leg_rounds": [],
         "final_neutral": False,
     },
-    "CONCACAF/Leagues Cup": {
+    "North America/Leagues Cup": {
         # 2026 format: cross-league Phase One (MLS vs Liga MX only), then QF+.
         "format": "dual_league_phase_then_knockout",
         "description": (
@@ -506,7 +506,7 @@ _CUP_FORMATS = {
     },
     # World Cup temporarily hidden from cups competitions APIs (keep definition
     # for dedicated /api/world-cup and competition-data paths).
-    # "FIFA/World Cup": {
+    # "International/World Cup": {
     #     "format": "group_stage_then_knockout",
     #     "description": "12 groups of 4 teams (3 group matches each). Top two plus eight best third-place teams advance to a fixed Round of 32 knockout bracket.",
     #     "group_count": 12,
@@ -527,19 +527,19 @@ _CUP_FORMATS = {
 
 # Mobile app / website tournament keys → canonical competition names.
 TOURNAMENT_KEY_MAP = {
-    "world-cup": "FIFA/World Cup",
-    "champions-league": "UEFA/Champions League",
-    "europa-league": "UEFA/Europa League",
-    "conference-league": "UEFA/Conference League",
-    "euros": "UEFA/European Championship",
-    "copa-america": "CONMEBOL/Copa America",
+    "world-cup": "International/World Cup",
+    "champions-league": "Europe/Champions League",
+    "europa-league": "Europe/Europa League",
+    "conference-league": "Europe/Conference League",
+    "euros": "International/European Championship",
+    "copa-america": "South America/Copa America",
     "fa-cup": "England/FA Cup",
     "efl-cup": "England/League Cup",
     "dfb-pokal": "Germany/DFB-Pokal",
     "coupe-de-france": "France/Coupe de France",
     "coppa-italia": "Italy/Coppa Italia",
     "us-open-cup": "United States/US Open Cup",
-    "leagues-cup": "CONCACAF/Leagues Cup",
+    "leagues-cup": "North America/Leagues Cup",
 }
 
 # Leagues using head-to-head as the first tiebreaker (canonical: competition_rules.H2H_TIEBREAKER_COMPETITIONS).
@@ -570,7 +570,7 @@ APNS_KEY_ID = os.environ.get("APNS_KEY_ID", "").strip()
 APNS_TEAM_ID = os.environ.get("APNS_TEAM_ID", "").strip()
 APNS_AUTH_KEY_PATH = os.environ.get("APNS_AUTH_KEY_PATH", "").strip()
 APNS_TOPIC = os.environ.get("APNS_TOPIC", "com.beyondthestats.app").strip()
-APNS_LIVE_ACTIVITY_TOPIC = os.environ.get("APNS_LIVE_ACTIVITY_TOPIC", f"{APNS_TOPIC}.push-type.live-activity").strip()
+APNS_LIVE_ACTIVITY_TOPIC = os.environ.get("APNS_LIVE_ACTIVITY_TOPIC", f"{APNS_TOPIC}.push-type.liveactivity").strip()
 APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "0").strip().lower() in {"1", "true", "yes"}
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 

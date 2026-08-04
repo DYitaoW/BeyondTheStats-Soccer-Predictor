@@ -1,5 +1,5 @@
-{
-  "AFC/Asian Cup": [
+﻿{
+  "Asia/Asian Cup": [
     "Ahal",
     "Al Ahli SC",
     "Al Hussein",
@@ -67,7 +67,7 @@
     "Waasland-Beveren",
     "Zulte-Waregem"
   ],
-  "CAF/Africa Cup of Nations": [
+  "Africa/Africa Cup of Nations": [
     "Algeria",
     "Angola",
     "Benin",
@@ -93,7 +93,7 @@
     "Zambia",
     "Zimbabwe"
   ],
-  "CONCACAF/Gold Cup": [
+  "North America/Gold Cup": [
     "Canada",
     "Costa Rica",
     "Curaçao",
@@ -111,7 +111,7 @@
     "Trinidad and Tobago",
     "United States"
   ],
-  "CONMEBOL/Copa America": [
+  "South America/Copa America": [
     "Argentina",
     "Bolivia",
     "Brazil",
@@ -319,7 +319,7 @@
     "West Ham United",
     "Wolverhampton Wanderers"
   ],
-  "FIFA/Friendly": [
+  "International/Friendly": [
     "Afghanistan",
     "Albania",
     "Algeria",
@@ -503,7 +503,7 @@
     "Zambia",
     "Zimbabwe"
   ],
-  "FIFA/World Cup": [
+  "International/World Cup": [
     "Algeria",
     "Argentina",
     "Australia",
@@ -1307,7 +1307,7 @@
     "Samsunspor",
     "Trabzonspor"
   ],
-  "UEFA/Champions League": [
+  "Europe/Champions League": [
     "AS Monaco",
     "Ajax Amsterdam",
     "Arsenal",
@@ -1345,7 +1345,7 @@
     "Union St.-Gilloise",
     "Villarreal"
   ],
-  "UEFA/Conference League": [
+  "Europe/Conference League": [
     "AEK Athens",
     "AEK Larnaca",
     "AZ Alkmaar",
@@ -1383,7 +1383,7 @@
     "Strasbourg",
     "Zrinjski Mostar"
   ],
-  "UEFA/Europa League": [
+  "Europe/Europa League": [
     "AS Roma",
     "Aston Villa",
     "Bologna",

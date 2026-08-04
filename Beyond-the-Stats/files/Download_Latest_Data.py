@@ -10,7 +10,9 @@ unique filenames so they coexist in the same directory.
 """
 import json
 import os
+import re
 import sys
+import time
 import urllib.request
 from datetime import datetime
 from io import StringIO
@@ -241,6 +243,7 @@ def download_new_format_competition(source, current_year):
 
 
 def main():
+    _t0 = time.monotonic()
     os.makedirs(RAW_DATA_DIR, exist_ok=True)
     current_year = datetime.now().year
     kept_count = 0
@@ -288,30 +291,32 @@ def main():
     for source in NEW_FORMAT_COMPETITIONS:
         kept_count += download_new_format_competition(source, current_year)
 
-    print(f"\nDone. Updated {kept_count} CSV files across all configured competitions.")
+    print(f"\nDone. Updated {kept_count} CSV files across all configured competitions. ({time.monotonic() - _t0:.1f}s)")
 
+    _t1 = time.monotonic()
     print("\nProcessing raw data files...")
     process_data.main()
-    print("Processing complete.")
 
     if _sort_data_needed():
         print("Sorting team data...")
         sort_data.sort_all_seasons()
         sort_data.build_current_form_file()
         _touch_sort_tracker()
-        print("Sort complete.")
+        print(f"Sort complete. ({time.monotonic() - _t1:.1f}s)")
     else:
-        print("No processed data changes — skipping Sort_Data (team stats unchanged).")
+        print(f"No processed data changes — skipping Sort_Data (team stats unchanged). ({time.monotonic() - _t1:.1f}s)")
 
 
 def _sort_data_needed():
-    """Return True if any processed CSV has been modified since last sort."""
+    """Return True if any processed CSV (matching this pipeline's pattern) has been modified since last sort."""
     if not os.path.exists(SORT_TRACKER_FILE):
         return True
     last_mtime = os.path.getmtime(SORT_TRACKER_FILE)
     for root, _, files in os.walk(PROCESSED_DATA_DIR):
         for fname in files:
             if not fname.endswith(".csv"):
+                continue
+            if not re.search(r"[a-z0-9]+stat\d{4}-\d{2}\.csv$", fname, re.I):
                 continue
             fpath = os.path.join(root, fname)
             if os.path.getmtime(fpath) > last_mtime + 1:

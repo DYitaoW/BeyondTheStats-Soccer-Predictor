@@ -695,6 +695,7 @@ def _mapping_context(ctx):
 
 
 def main():
+    _t0 = time.monotonic()
     args = parse_args()
     all_latest = {}
     for root in [RAW_DATA_DIR, GLOBAL_RAW_DATA_DIR]:
@@ -832,6 +833,7 @@ def main():
     out.to_csv(PREDICTIONS_FILE, index=False)
     print(f"Saved upcoming extra-league predictions: {PREDICTIONS_FILE}")
     print(f"Rows: {len(out)}")
+    print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
 
 
 if __name__ == "__main__":

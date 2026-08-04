@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import re
 import urllib.request
@@ -85,7 +85,7 @@ def _sibling_competitions(competition, mapping):
     country = competition.split("/")[0] if "/" in competition else competition
     if country.upper().startswith("UEFA"):
         return [k for k in mapping if isinstance(mapping.get(k), dict)]
-    if competition == "CONCACAF/Leagues Cup":
+    if competition == "North America/Leagues Cup":
         return [k for k in mapping if k in ("United States/MLS", "Mexico/Liga MX") and isinstance(mapping.get(k), dict)]
     return [k for k in mapping if k != competition and isinstance(mapping.get(k), dict) and k.split("/")[0] == country]
 
@@ -1079,7 +1079,7 @@ def _merge_roster_only_competitions(latest: dict) -> dict:
                     continue
                 if comp in seen:
                     continue
-                if "/MLS -" in comp or comp.endswith(" Cup") or "UEFA/" in comp:
+                if "/MLS -" in comp or comp.endswith(" Cup") or "Europe/" in comp:
                     continue
                 # Only the top-5 European leagues get preseason fallback projections.
                 if label == "2026_27_league_team_fallback" and comp not in TOP_FALLBACK_LEAGUES:
@@ -1145,6 +1145,7 @@ def main():
     # common source of SIGKILL (-9) / SIGTERM (-15) in the daily pipeline.
     comp_workers = max(1, int(args.competition_workers))
 
+    _t0 = time.monotonic()
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR) or {}
     latest = _merge_roster_only_competitions(latest)
@@ -1221,8 +1222,10 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)
     pd.DataFrame(all_future).to_csv(OUT_MATCHES, index=False)
+    _elapsed = time.monotonic() - _t0
     print(f"Projected league tables saved: {OUT_TABLE}")
     print(f"Predicted remaining matches saved: {OUT_MATCHES}")
+    print(f"Elapsed: {_elapsed:.1f}s")
 
 
 if __name__ == "__main__":

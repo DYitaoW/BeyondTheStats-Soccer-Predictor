@@ -1,4 +1,4 @@
-"""League tables and standings computation from live scores."""
+﻿"""League tables and standings computation from live scores."""
 import json
 import os
 import re
@@ -99,7 +99,7 @@ def _normalize_team_name(name: str, competition: str) -> str:
         comp_map = mapping.get(key) if key else None
         if isinstance(comp_map, dict) and comp_map not in maps_to_try:
             maps_to_try.append(comp_map)
-    if base_comp == "CONCACAF/Leagues Cup":
+    if base_comp == "North America/Leagues Cup":
         for sibling in ("United States/MLS", "Mexico/Liga MX"):
             sibling_map = mapping.get(sibling)
             if isinstance(sibling_map, dict) and sibling_map not in maps_to_try:
@@ -111,7 +111,7 @@ def _normalize_team_name(name: str, competition: str) -> str:
     # Do NOT fall through to unrelated competitions for short / ambiguous
     # names like "Inter" (Serie A) vs "Inter Miami" (MLS / Leagues Cup).
     if lower in {"inter", "miami"} and base_comp in {
-        "CONCACAF/Leagues Cup", "United States/MLS",
+        "North America/Leagues Cup", "United States/MLS",
     }:
         return "Inter Miami"
     if len(lower) <= 5:
@@ -122,8 +122,8 @@ def _normalize_team_name(name: str, competition: str) -> str:
         if comp_key in {competition, base_comp}:
             continue
         # Skip cross-country collisions for CONCACAF/MLS contexts.
-        if base_comp.startswith(("CONCACAF/", "United States/", "Mexico/")) and not str(comp_key).startswith(
-            ("CONCACAF/", "United States/", "Mexico/")
+        if base_comp.startswith(("North America/", "United States/", "Mexico/")) and not str(comp_key).startswith(
+            ("North America/", "United States/", "Mexico/")
         ):
             continue
         for raw, canon in comp_entries.items():
@@ -633,6 +633,13 @@ def _live_history_game_date(game):
             except ValueError:
                 continue
         try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(ZoneInfo("America/New_York")).date()
+        except (ValueError, TypeError):
+            pass
+        try:
             parsed = pd.to_datetime(raw, utc=True, errors="coerce")
             if pd.notna(parsed):
                 return parsed.tz_convert("America/New_York").date()
@@ -782,7 +789,7 @@ def _save_live_score_history(games):
 BELGIAN_REGULAR_LIMIT = 30  # 16 teams × 2 rounds
 
 _UEFA_COMPETITIONS = {
-    "UEFA/Champions League", "UEFA/Europa League", "UEFA/Conference League",
+    "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
     "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
 }
 
@@ -880,7 +887,7 @@ def _compute_standings_from_history(comp_name):
         return response
 
     fmt = cup_format(base_comp)
-    team_to_group = load_wc_team_groups(comp_games) if base_comp == "FIFA/World Cup" else {}
+    team_to_group = load_wc_team_groups(comp_games) if base_comp == "International/World Cup" else {}
     group_stage_games = [
         g for g in comp_games
         if classify_match_stage(g, base_comp, team_to_group) == "group"
@@ -996,7 +1003,7 @@ def _compute_standings_from_history(comp_name):
         return result
 
     # ── Leagues Cup 2026: dual MLS / Liga MX Phase One tables ─────
-    if base_comp == "CONCACAF/Leagues Cup" or (
+    if base_comp == "North America/Leagues Cup" or (
         fmt and fmt.get("format") == "dual_league_phase_then_knockout"
     ):
         from competition_rules import (
@@ -1082,7 +1089,7 @@ def _compute_standings_from_history(comp_name):
         )
 
     # ── World Cup / group-stage cups ─────────────────────────────
-    if base_comp == "FIFA/World Cup" or (
+    if base_comp == "International/World Cup" or (
         fmt and fmt.get("format") == "group_stage_then_knockout" and group_stage_games
     ):
         groups_data = {}
@@ -1126,7 +1133,7 @@ def _compute_standings_from_history(comp_name):
                 current_phase=current_competition_phase(comp_games, base_comp),
             )
 
-        if base_comp == "FIFA/World Cup" or (
+        if base_comp == "International/World Cup" or (
             fmt and fmt.get("format") == "group_stage_then_knockout"
         ):
             return _finalize(

@@ -1,4 +1,4 @@
-"""
+﻿"""
 World Cup simulation engine — group stage + knockout tournament projections.
 
 Invoked as part of the national-team sub-pipeline when a World Cup event
@@ -19,6 +19,7 @@ import random
 import re
 import signal
 import sys
+import time
 from collections import Counter, defaultdict, deque
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
@@ -38,7 +39,7 @@ import Process_National_Team_Data as national
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 OUT_FILE = os.path.join(PREDICTIONS_DIR, "world_cup_projection.json")
-WORLD_CUP_COMPETITION = "FIFA/World Cup"
+WORLD_CUP_COMPETITION = "International/World Cup"
 WORLD_CUP_ESPN_ID = "fifa.world"
 GROUP_LABELS = list("ABCDEFGHIJKL")
 STAGE_ORDER = {
@@ -1659,6 +1660,7 @@ def build_projection(args):
 
 
 def main():
+    _t0 = time.monotonic()
     args = parse_cli_args()
     projection = build_projection(args)
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
@@ -1667,6 +1669,7 @@ def main():
     print(f"World Cup projection saved: {OUT_FILE}")
     print(f"Groups projected: {len(projection.get('group_tables', []))}")
     print(f"Champion projection: {projection.get('champion') or 'N/A'}")
+    print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
 
 
 if __name__ == "__main__":

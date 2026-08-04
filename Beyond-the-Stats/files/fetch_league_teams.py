@@ -1,4 +1,4 @@
-"""One-time fetch: persist team rosters per league from ESPN.
+﻿"""One-time fetch: persist team rosters per league from ESPN.
 
 Saves to Data/Predictions/league_teams.json so the predictor can know
 which teams belong to each league even during the offseason when no
@@ -34,7 +34,7 @@ LEAGUES = {
     "Turkey/Super Lig": "tur.1",
     "United States/MLS": "usa.1",
     "Mexico/Liga MX": "mex.1",
-    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
+    "North America/Leagues Cup": "concacaf.leagues.cup",
     # Extra leagues (have ESPN IDs but no live polling)
     "Austria/Bundesliga": "aut.1",
     "Switzerland/Super League": "sui.1",
@@ -62,24 +62,24 @@ LEAGUES = {
     "Germany/DFB-Pokal": "ger.dfb_pokal",
     "France/Coupe de France": "fra.coupe_de_france",
     "United States/US Open Cup": "usa.open_cup",
-    "CONCACAF/Leagues Cup": "concacaf.leagues.cup",
+    "North America/Leagues Cup": "concacaf.leagues.cup",
     # UEFA club competitions
-    "UEFA/Champions League": "uefa.champions",
-    "UEFA/Europa League": "uefa.europa",
-    "UEFA/Conference League": "uefa.europa.conf",
+    "Europe/Champions League": "uefa.champions",
+    "Europe/Europa League": "uefa.europa",
+    "Europe/Conference League": "uefa.europa.conf",
     # National team
-    "FIFA/World Cup": "fifa.world",
-    "FIFA/World Cup Qualifying - UEFA": "fifa.worldq.uefa",
-    "FIFA/World Cup Qualifying - CONMEBOL": "fifa.worldq.conmebol",
-    "FIFA/World Cup Qualifying - CONCACAF": "fifa.worldq.concacaf",
-    "FIFA/World Cup Qualifying - AFC": "fifa.worldq.afc",
-    "FIFA/Friendly": "fifa.friendly",
-    "UEFA/European Championship": "uefa.euro",
-    "UEFA/Nations League": "uefa.nations",
-    "CONMEBOL/Copa America": "conmebol.america",
-    "CONCACAF/Gold Cup": "concacaf.gold",
-    "CAF/Africa Cup of Nations": "caf.nations",
-    "AFC/Asian Cup": "afc.cup",
+    "International/World Cup": "fifa.world",
+    "International/World Cup Qualifying - UEFA": "fifa.worldq.uefa",
+    "International/World Cup Qualifying - CONMEBOL": "fifa.worldq.conmebol",
+    "International/World Cup Qualifying - CONCACAF": "fifa.worldq.concacaf",
+    "International/World Cup Qualifying - AFC": "fifa.worldq.afc",
+    "International/Friendly": "fifa.friendly",
+    "International/European Championship": "uefa.euro",
+    "International/Nations League": "uefa.nations",
+    "South America/Copa America": "conmebol.america",
+    "North America/Gold Cup": "concacaf.gold",
+    "Africa/Africa Cup of Nations": "caf.nations",
+    "Asia/Asian Cup": "afc.cup",
 }
 
 # Load team name mapping (ESPN display name → canonical name)
