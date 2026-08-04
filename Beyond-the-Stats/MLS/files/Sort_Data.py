@@ -1,6 +1,7 @@
 """Sort MLS team data — builds head-to-head + form files from processed CSVs."""
 import pandas as pd
 import os
+import sys
 import json
 import re
 import urllib.parse
@@ -12,6 +13,10 @@ from io import StringIO
 from bs4 import BeautifulSoup
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT_DIR = os.path.dirname(BASE_DIR)
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+import team_mapping_groups as tmg  # noqa: E402
 PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
 OUTPUT_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
 SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})\.csv$", re.IGNORECASE)
@@ -36,14 +41,7 @@ def _load_name_mapping():
     if _name_mapping_cache is not None:
         return _name_mapping_cache
     try:
-        with open(MAPPING_FILE, "r", encoding="utf-8-sig") as f:
-            data = json.load(f)
-        flat = {}
-        for comp, entries in data.items():
-            if isinstance(entries, dict):
-                for k, v in entries.items():
-                    flat[k.strip().lower()] = v
-        _name_mapping_cache = flat
+        _name_mapping_cache = tmg.load_name_mapping_flat(MAPPING_FILE)
     except Exception:
         _name_mapping_cache = {}
     return _name_mapping_cache
@@ -62,17 +60,25 @@ TRANSFERMARKT_HEADERS = {
 SQUAD_VALUES_FILE = "mls_squad_values.json"
 MLS_TRANSFERMARKT_QUERY_ALIASES = {
     "Charlotte": "Charlotte FC",
+    "Atlanta Utd": "Atlanta United",
     "CF Montreal": "Montreal Impact",
     "Montreal": "Montreal Impact",
     "Inter Miami": "Inter Miami CF",
     "LA Galaxy": "Los Angeles Galaxy",
     "LAFC": "Los Angeles FC",
     "NY Red Bulls": "New York Red Bulls",
+    "New York Red Bulls": "New York Red Bulls",
     "NYCFC": "New York City FC",
     "St. Louis City": "St. Louis City SC",
     "St Louis City": "St. Louis City SC",
     "DC United": "D.C. United",
     "D.C. United": "D.C. United",
+}
+
+# Manual club URLs for teams whose Transfermarkt search returns a youth/reserve
+# squad first (slug, club_id).
+TRANSFERMARKT_CLUB_ID_OVERRIDES = {
+    "New York Red Bulls": ("new-york-red-bulls", "623"),
 }
 
 def fetch_html(url, retries=2, pause_seconds=1.5):
@@ -406,6 +412,9 @@ def season_recency_coefficient(age):
 
 def find_transfermarkt_club_link(team_name):
     query = MLS_TRANSFERMARKT_QUERY_ALIASES.get(team_name, team_name)
+    direct = TRANSFERMARKT_CLUB_ID_OVERRIDES.get(team_name)
+    if direct:
+        return f"{TRANSFERMARKT_BASE_URL}/{direct[0]}/startseite/verein/{direct[1]}", direct[1]
     encoded = urllib.parse.quote(query)
     url = TRANSFERMARKT_SEARCH_URL.format(query=encoded)
     html = fetch_html(url)
@@ -428,16 +437,21 @@ def parse_squad_value_from_html(html):
     if wrapper is None:
         return 0.0
     raw_text = wrapper.get_text(" ", strip=True)
-    text = raw_text.replace(",", "").replace("€", "").replace("EUR", "").strip().lower()
-    multiplier = 1.0
-    if "bn" in text or "billion" in text:
-        multiplier = 1000.0
-    elif "k" in text or "thousand" in text or "thsd" in text:
-        multiplier = 0.001
-    match = re.search(r"\d+(?:\.\d+)?", text)
+    text = raw_text.replace("€", "").replace("EUR", "").strip()
+    match = re.search(r"(\d+(?:[.,]\d+)?)\s*(bn|billion|m|mill|million|k|thousand|thsd)?\b", text, re.IGNORECASE)
     if not match:
         return 0.0
-    return float(match.group(0)) * multiplier
+    number = float(match.group(1).replace(",", ""))
+    unit = (match.group(2) or "").lower()
+    if unit in {"bn", "billion"}:
+        multiplier = 1000.0
+    elif unit in {"m", "mill", "million"}:
+        multiplier = 1.0
+    elif unit in {"k", "thousand", "thsd"}:
+        multiplier = 0.001
+    else:
+        multiplier = 1.0
+    return number * multiplier
 
 
 def fetch_club_squad_value(team_name, club_url, club_id):

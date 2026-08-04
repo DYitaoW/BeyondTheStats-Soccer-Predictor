@@ -8,6 +8,7 @@ Same architecture, uses ExtraTreesClassifier fallback.
 import json
 import os
 import re
+import sys
 import hashlib
 import random
 import math
@@ -32,6 +33,10 @@ except ImportError:
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT_DIR = os.path.dirname(BASE_DIR)
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+import team_mapping_groups as tmg  # noqa: E402
 PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
 TEAM_DATA_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
 MODEL_CACHE = os.path.join(TEAM_DATA_DIR, "model_cache.pkl")
@@ -866,8 +871,7 @@ def _load_name_mapping():
         _name_mapping_cache = {}
         return _name_mapping_cache
     try:
-        with open(MAPPING_FILE, "r", encoding="utf-8-sig") as fh:
-            raw = json.load(fh)
+        raw = tmg.load_team_mapping(MAPPING_FILE)
     except Exception:
         _name_mapping_cache = {}
         return _name_mapping_cache

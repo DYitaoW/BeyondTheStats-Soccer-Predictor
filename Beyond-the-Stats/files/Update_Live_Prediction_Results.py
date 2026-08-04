@@ -170,30 +170,20 @@ def fetch_json(url, headers=None, timeout=30):
 
 
 def load_mapping(path):
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8-sig") as fh:
-            payload = json.load(fh)
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    """Load a mapping master plus any *_new.json overlays (master wins)."""
+    return tmg.load_team_mapping(path)
 
 
 def save_mapping(path, mapping):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    normalized = {}
-    for competition, values in (mapping or {}).items():
-        if not isinstance(values, dict):
-            continue
-        normalized[str(competition)] = dict(
-            sorted(
-                ((str(k).strip(), str(v).strip()) for k, v in values.items() if str(k).strip()),
-                key=lambda item: item[0].lower(),
-            )
-        )
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(normalized, fh, indent=2, ensure_ascii=False)
+    """Persist only NEW mapping entries to team_name_mapping_master_new.json.
+
+    The git-main master file (``team_name_mapping_master.json``) is never modified
+    by this backend; auto-learned entries are appended to the ``*_new.json`` log so
+    they can be reviewed and merged manually.
+    """
+    added = tmg.save_team_mapping(path, mapping)
+    if added:
+        print(f"Mapping: {added} new entries appended to {tmg.NEW_MAPPING_FILENAME}")
 
 
 def save_json(path, payload):

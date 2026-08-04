@@ -19,6 +19,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 import Predict_Match as pm
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+import team_mapping_groups as tmg  # noqa: E402
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_club_friendlies.csv")
 TEAM_MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "team_name_mapping_master.json")
@@ -88,11 +91,9 @@ def load_team_mapping():
     if not os.path.exists(TEAM_MAPPING_FILE):
         return {}
     try:
-        with open(TEAM_MAPPING_FILE, "r", encoding="utf-8-sig") as handle:
-            data = json.load(handle)
+        return tmg.load_team_mapping(TEAM_MAPPING_FILE)
     except Exception:
         return {}
-    return data if isinstance(data, dict) else {}
 
 
 def resolve_team_name(raw_name, mapping, available_teams):

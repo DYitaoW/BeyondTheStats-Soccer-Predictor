@@ -18,6 +18,9 @@ import tempfile
 import urllib.request
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+import team_mapping_groups as tmg  # noqa: E402
 
 RAW_DIRS = [
     os.path.join(PROJECT_DIR, "Data", "Raw_Data"),
@@ -190,8 +193,10 @@ def extract_espn_team_names_by_comp():
 def read_mappings():
     if not os.path.isfile(MAPPING_FILE):
         return {}
-    with open(MAPPING_FILE, "r", encoding="utf-8-sig") as f:
-        return json.load(f)
+    try:
+        return tmg.load_team_mapping(MAPPING_FILE)
+    except Exception:
+        return {}
 
 
 def main():

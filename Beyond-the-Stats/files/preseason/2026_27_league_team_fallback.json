@@ -34,9 +34,39 @@
         "Coventry"
       ]
     },
+    "England/Championship": {
+      "country": "England",
+      "league_strength": 0.87,
+      "teams": [
+        "Blackburn",
+        "QPR",
+        "Birmingham",
+        "Burnley",
+        "Cardiff",
+        "Sheffield United",
+        "Lincoln",
+        "Wrexham",
+        "Bolton",
+        "Preston",
+        "Portsmouth",
+        "Norwich",
+        "Watford",
+        "West Ham",
+        "Millwall",
+        "Middlesbrough",
+        "Stoke",
+        "Wolves",
+        "Charlton",
+        "Derby",
+        "Swansea",
+        "Bristol City",
+        "West Brom",
+        "Southampton"
+      ]
+    },
     "Spain/La Liga": {
       "country": "Spain",
-      "league_strength": 0.97,
+      "league_strength": 0.93,
       "teams": [
         "Alaves",
         "Ath Bilbao",
@@ -62,7 +92,7 @@
     },
     "Italy/Serie A": {
       "country": "Italy",
-      "league_strength": 0.95,
+      "league_strength": 0.91,
       "teams": [
         "Atalanta",
         "Bologna",
@@ -88,7 +118,7 @@
     },
     "Germany/Bundesliga": {
       "country": "Germany",
-      "league_strength": 0.92,
+      "league_strength": 0.90,
       "teams": [
         "Augsburg",
         "Bayern Munich",
@@ -112,7 +142,7 @@
     },
     "France/Ligue 1": {
       "country": "France",
-      "league_strength": 0.91,
+      "league_strength": 0.89,
       "teams": [
         "Angers",
         "Auxerre",

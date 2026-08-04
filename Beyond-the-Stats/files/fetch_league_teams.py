@@ -84,10 +84,13 @@ LEAGUES = {
 
 # Load team name mapping (ESPN display name → canonical name)
 MAPPING_FILE = os.path.join(PROJECT_DIR, "..", "Data", "team_name_mapping_master.json")
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+import team_mapping_groups as tmg  # noqa: E402
+
 mapping = {}
 if os.path.exists(MAPPING_FILE):
-    with open(MAPPING_FILE, "r", encoding="utf-8-sig") as f:
-        raw = json.load(f)
+    raw = tmg.load_team_mapping(MAPPING_FILE)
     for comp, comp_map in raw.items():
         if isinstance(comp_map, dict):
             # Reverse: ESPN display_name → canonical_name

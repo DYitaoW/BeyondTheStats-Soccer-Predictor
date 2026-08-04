@@ -39,11 +39,9 @@ def _load_team_mapping_master() -> dict:
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, "r", encoding="utf-8-sig") as handle:
-            payload = json.load(handle)
+        return tmg.load_team_mapping(path)
     except Exception:
         return {}
-    return payload if isinstance(payload, dict) else {}
 
 
 def _espn_competitions_for_scan() -> list[tuple[str, str]]:

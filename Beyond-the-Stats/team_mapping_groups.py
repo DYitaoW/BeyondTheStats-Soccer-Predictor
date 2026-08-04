@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import difflib
+import json
+import os
 import unicodedata
 
 INTERNATIONAL_PREFIXES = (
@@ -265,3 +267,104 @@ def store_team_mapping(
         for comp_key in list(mapping.keys()):
             if is_international_competition(comp_key):
                 mapping.setdefault(comp_key, {})[api_name] = canonical
+
+
+# --- Shared mapping file helpers ---------------------------------------------
+#
+# The git-main master file (team_name_mapping_master.json) is NEVER modified by
+# the pipeline.  Auto-learned mappings are appended to
+# team_name_mapping_master_new.json in the same directory so they can be
+# reviewed and merged into the master manually.  Reads always overlay the new
+# file on top of the master, with master entries taking priority.
+
+NEW_MAPPING_FILENAME = "team_name_mapping_master_new.json"
+
+
+def mapping_new_file_path(master_path):
+    """Path of the *_new.json log next to a master mapping file."""
+    return os.path.join(os.path.dirname(master_path), NEW_MAPPING_FILENAME)
+
+
+def _read_mapping_json(path, encoding="utf-8-sig"):
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding=encoding) as fh:
+            payload = json.load(fh)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def load_team_mapping(master_path):
+    """Load a mapping master, then overlay *_new.json on top.
+
+    Master entries always win over *_new.json entries for the same
+    (competition, api_name) key, so the reviewed master is never overridden by
+    pipeline-learned mappings.
+    """
+    merged = _read_mapping_json(master_path)
+    new_data = _read_mapping_json(mapping_new_file_path(master_path))
+    for competition, entries in new_data.items():
+        if not isinstance(entries, dict):
+            continue
+        section = merged.setdefault(str(competition), {})
+        if not isinstance(section, dict):
+            section = {}
+            merged[str(competition)] = section
+        for api_name, mapped_name in entries.items():
+            key = str(api_name).strip()
+            if not key or key in section:
+                continue
+            section[key] = str(mapped_name).strip()
+    return merged
+
+
+def save_team_mapping(master_path, mapping):
+    """Persist only NEW mapping entries to *_new.json; never touch the master.
+
+    Returns the number of entries newly appended to *_new.json.  Entries already
+    present in the master (or already in *_new.json) are skipped so the master
+    file is left untouched and no pipeline-learned entry overrides it.
+    """
+    if not isinstance(mapping, dict) or not mapping:
+        return 0
+    master = load_team_mapping(master_path)
+    new_path = mapping_new_file_path(master_path)
+    log_data = _read_mapping_json(new_path, encoding="utf-8")
+    new_additions = {}
+    for competition, entries in mapping.items():
+        if not isinstance(entries, dict):
+            continue
+        comp = str(competition)
+        master_section = master.get(comp, {})
+        if not isinstance(master_section, dict):
+            master_section = {}
+        log_section = log_data.setdefault(comp, {})
+        if not isinstance(log_section, dict):
+            log_section = {}
+            log_data[comp] = log_section
+        for api_name, mapped_name in entries.items():
+            key = str(api_name).strip()
+            if not key or key in master_section or key in log_section:
+                continue
+            log_section[key] = str(mapped_name).strip()
+            new_additions.setdefault(comp, {})[key] = str(mapped_name).strip()
+    if new_additions:
+        os.makedirs(os.path.dirname(new_path), exist_ok=True)
+        with open(new_path, "w", encoding="utf-8") as fh:
+            json.dump(log_data, fh, indent=2, ensure_ascii=False)
+        return sum(len(entries) for entries in new_additions.values())
+    return 0
+
+
+def load_name_mapping_flat(master_path):
+    """Flatten master + *_new.json into {lower_api_name: canonical}."""
+    flat = {}
+    merged = load_team_mapping(master_path)
+    for entries in merged.values():
+        if not isinstance(entries, dict):
+            continue
+        for api_name, mapped_name in entries.items():
+            flat[str(api_name).strip().lower()] = str(mapped_name).strip()
+    return flat

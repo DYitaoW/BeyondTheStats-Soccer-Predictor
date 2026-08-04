@@ -466,8 +466,13 @@ def _load_display_mapping() -> dict:
 
 def _load_display_mapping_file() -> dict:
     try:
-        with open(config.TEAM_NAME_DISPLAY_MAPPING_FILE, "r", encoding="utf-8-sig") as handle:
-            payload = json.load(handle)
+        import sys as _sys
+        import os as _os
+        _root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        import team_mapping_groups as _tmg
+        payload = _tmg.load_team_mapping(config.TEAM_NAME_DISPLAY_MAPPING_FILE)
     except Exception:
         payload = {}
     if not isinstance(payload, dict):
