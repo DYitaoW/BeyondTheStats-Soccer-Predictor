@@ -1,6 +1,7 @@
 """Sort Extra Leagues team data — builds head-to-head + form files from processed CSVs."""
 import pandas as pd
 import os
+import sys
 import json
 import re
 import urllib.parse
@@ -10,6 +11,10 @@ from datetime import datetime
 from io import StringIO
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT_DIR = os.path.dirname(BASE_DIR)
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+import team_mapping_groups as tmg  # noqa: E402
 PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
 OUTPUT_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
 SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})(?:-(\d{2}))?\.csv$", re.IGNORECASE)
@@ -42,14 +47,7 @@ def _load_name_mapping():
     if _name_mapping_cache is not None:
         return _name_mapping_cache
     try:
-        with open(MAPPING_FILE, "r", encoding="utf-8-sig") as f:
-            data = json.load(f)
-        flat = {}
-        for comp, entries in data.items():
-            if isinstance(entries, dict):
-                for k, v in entries.items():
-                    flat[k.strip().lower()] = v
-        _name_mapping_cache = flat
+        _name_mapping_cache = tmg.load_name_mapping_flat(MAPPING_FILE)
     except Exception:
         _name_mapping_cache = {}
     return _name_mapping_cache

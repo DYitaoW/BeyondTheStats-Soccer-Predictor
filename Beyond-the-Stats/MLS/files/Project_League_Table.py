@@ -19,6 +19,7 @@ import Predict_Match as pm
 _SP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _SP_DIR not in sys.path:
     sys.path.insert(0, _SP_DIR)
+import team_mapping_groups as tmg  # noqa: E402
 import projection_schedule as proj_sched  # noqa: E402
 
 
@@ -70,17 +71,12 @@ def _sibling_competitions(competition, mapping):
 def _append_mapping_if_missing(competition, unresolved_names, valid_names, roster_teams=None):
     if not unresolved_names or not os.path.exists(MAPPING_FILE):
         return
-    try:
-        with open(MAPPING_FILE, "r", encoding="utf-8-sig") as fh:
-            mapping = json.load(fh)
-    except Exception:
-        return
+    mapping = tmg.load_team_mapping(MAPPING_FILE)
     if not isinstance(mapping, dict):
         return
     comp_section = mapping.setdefault(competition, {})
     siblings = _sibling_competitions(competition, mapping)
     added = 0
-    new_entries = []
     for raw_name in sorted(set(unresolved_names)):
         existing = comp_section.get(raw_name)
         # Blank stubs used to permanently block retries — overwrite them.
@@ -120,37 +116,11 @@ def _append_mapping_if_missing(competition, unresolved_names, valid_names, roste
             # Do not write blank stubs — they block future auto-mapping.
             continue
         added += 1
-        if candidate:
-            new_entries.append((target_comp, raw_name, candidate))
     if added:
-        with open(MAPPING_FILE, "w", encoding="utf-8") as fh:
-            json.dump(mapping, fh, indent=2, ensure_ascii=False)
-        print(f"  Mapping: auto-added {added} entry/ies to {MAPPING_FILE}")
-        _log_new_mappings(new_entries)
-
-
-def _log_new_mappings(entries):
-    """Append a list of (competition, raw_name, mapped_name) triples to the
-    team_name_mapping_master_new.json log file for manual review."""
-    if not entries:
-        return
-    log_dir = os.path.dirname(MAPPING_FILE)
-    log_path = os.path.join(log_dir, "team_name_mapping_master_new.json")
-    log_data = {}
-    if os.path.exists(log_path):
-        try:
-            with open(log_path, "r", encoding="utf-8") as f:
-                log_data = json.load(f)
-        except Exception:
-            pass
-    if not isinstance(log_data, dict):
-        log_data = {}
-    for comp, raw_name, mapped_name in entries:
-        section = log_data.setdefault(comp, {})
-        if raw_name not in section:
-            section[raw_name] = mapped_name
-    with open(log_path, "w", encoding="utf-8") as f:
-        json.dump(log_data, f, indent=2, ensure_ascii=False)
+        if hasattr(pm, "clear_name_mapping_cache"):
+            pm.clear_name_mapping_cache()
+        written = tmg.save_team_mapping(MAPPING_FILE, mapping)
+        print(f"  Mapping: {written} new entry/ies logged to {tmg.NEW_MAPPING_FILENAME}")
 
 
 EASTERN_CONFERENCE_TEAMS = {
@@ -196,8 +166,7 @@ def _load_name_mapping_flat():
     if _name_mapping_flat is not None:
         return _name_mapping_flat
     try:
-        with open(MAPPING_FILE, "r", encoding="utf-8-sig") as f:
-            data = json.load(f)
+        data = tmg.load_team_mapping(MAPPING_FILE)
         flat = {}
         for comp, entries in data.items():
             if isinstance(entries, dict):

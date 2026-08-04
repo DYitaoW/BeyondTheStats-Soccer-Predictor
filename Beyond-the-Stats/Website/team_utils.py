@@ -1,7 +1,13 @@
 """Team name normalization and display mapping utilities."""
 import os
+import sys
 import json
 import config
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+import team_mapping_groups as tmg  # noqa: E402
 
 
 def _load_team_display_mappings():
@@ -9,8 +15,7 @@ def _load_team_display_mappings():
     if not os.path.exists(config.TEAM_NAME_DISPLAY_MAPPING_FILE):
         return {}, {}
     try:
-        with open(config.TEAM_NAME_DISPLAY_MAPPING_FILE, "r", encoding="utf-8-sig") as fh:
-            payload = json.load(fh)
+        payload = tmg.load_team_mapping(config.TEAM_NAME_DISPLAY_MAPPING_FILE)
     except Exception:
         return {}, {}
     if not isinstance(payload, dict):
