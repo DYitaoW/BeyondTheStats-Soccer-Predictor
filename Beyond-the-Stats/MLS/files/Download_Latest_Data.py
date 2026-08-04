@@ -113,7 +113,6 @@ def main():
         refresh_cutoff = current_year - REFRESH_RECENT_SEASONS
         should_refresh = start_year >= refresh_cutoff
         if os.path.exists(out_path) and not should_refresh:
-            print(f"Kept {out_name}")
             skipped_existing_count += 1
             continue
 

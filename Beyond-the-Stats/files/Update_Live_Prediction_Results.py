@@ -192,8 +192,16 @@ def save_mapping(path, mapping):
                 key=lambda item: item[0].lower(),
             )
         )
+    new_content = json.dumps(normalized, indent=2, ensure_ascii=False)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                if fh.read() == new_content:
+                    return
+        except Exception:
+            pass
     with open(path, "w", encoding="utf-8") as fh:
-        json.dump(normalized, fh, indent=2, ensure_ascii=False)
+        fh.write(new_content)
 
 
 def save_json(path, payload):

@@ -247,6 +247,7 @@ def main():
     os.makedirs(RAW_DATA_DIR, exist_ok=True)
     current_year = datetime.now().year
     kept_count = 0
+    skipped_existing_count = 0
 
     for comp in COMPETITIONS:
         country = comp["country"]
@@ -273,7 +274,7 @@ def main():
             refresh_cutoff = current_year - REFRESH_RECENT_SEASONS
             should_refresh = start_year >= refresh_cutoff and not season_complete
             if os.path.exists(out_path) and not should_refresh:
-                print(f"Kept {name}")
+                skipped_existing_count += 1
                 continue
 
             try:
@@ -291,7 +292,7 @@ def main():
     for source in NEW_FORMAT_COMPETITIONS:
         kept_count += download_new_format_competition(source, current_year)
 
-    print(f"\nDone. Updated {kept_count} CSV files across all configured competitions. ({time.monotonic() - _t0:.1f}s)")
+    print(f"\nDone. Updated {kept_count} CSV files, kept {skipped_existing_count} existing unchanged, across all configured competitions. ({time.monotonic() - _t0:.1f}s)")
 
     _t1 = time.monotonic()
     print("\nProcessing raw data files...")

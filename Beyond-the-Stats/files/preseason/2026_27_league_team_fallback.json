@@ -34,6 +34,36 @@
         "Coventry"
       ]
     },
+    "England/Championship": {
+      "country": "England",
+      "league_strength": 0.87,
+      "teams": [
+        "Blackburn",
+        "QPR",
+        "Birmingham",
+        "Burnley",
+        "Cardiff",
+        "Sheffield United",
+        "Lincoln",
+        "Wrexham",
+        "Bolton",
+        "Preston",
+        "Portsmouth",
+        "Norwich",
+        "Watford",
+        "West Ham",
+        "Millwall",
+        "Middlesbrough",
+        "Stoke",
+        "Wolves",
+        "Charlton",
+        "Derby",
+        "Swansea",
+        "Bristol City",
+        "West Brom",
+        "Southampton"
+      ]
+    },
     "Spain/La Liga": {
       "country": "Spain",
       "league_strength": 0.97,

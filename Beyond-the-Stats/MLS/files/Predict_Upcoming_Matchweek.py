@@ -303,6 +303,8 @@ def save_team_mapping(path, mapping):
             if key not in existing[competition]:
                 existing[competition][key] = str(mapped_name).strip()
                 new_additions.setdefault(competition, {})[key] = str(mapped_name).strip()
+    if not new_additions and os.path.exists(path):
+        return
     with open(path, "w", encoding="utf-8") as file:
         json.dump(existing, file, indent=2, ensure_ascii=False)
     if new_additions:
