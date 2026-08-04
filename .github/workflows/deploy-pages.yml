@@ -44,6 +44,8 @@ jobs:
           test -f public/privacy/index.html
           test -f public/terms/index.html
           test -f public/subscriptions/index.html
+          test -f public/draftit/about/index.html
+          test -f public/draftit/privacy/index.html
           test -f public/upcoming-matches.html
           test -f public/static/shared.js
           test -f public/_redirects
@@ -52,6 +54,7 @@ jobs:
           ! grep -Eq '["'"'"'`]\/api\/home\/' public/static/home.js public/static/shared.js
           grep -q '/api/upcoming/' public/static/home.js
           grep -q 'api.beyondthestatsapp.com' public/static/shared.js
+          grep -q 'Draft It!' public/draftit/about/index.html public/draftit/privacy/index.html
           node --check public/static/shared.js
           node --check public/static/home.js
 

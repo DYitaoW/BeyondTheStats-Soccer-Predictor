@@ -64,14 +64,22 @@ ROUTE_TO_FILE = {
     "/subscriptions": "subscriptions.html",
 }
 
-# legal.html is rendered separately with real document bodies (not Jinja-stripped).
+# legal.html and draftit.html are rendered separately with real document
+# bodies (not Jinja-stripped).
 # world_cup.html is archived — do not ship it on the static marketing site.
-SKIP_STATIC_TEMPLATES = {"legal.html", "world_cup.html"}
+SKIP_STATIC_TEMPLATES = {"legal.html", "draftit.html", "world_cup.html"}
 
 LEGAL_STATIC_PAGES = {
     "privacy": "privacy.html",
     "terms": "terms.html",
     "subscriptions": "subscriptions.html",
+}
+
+# Draft It! pages rendered from draftit.html with real document bodies.
+# Each entry maps a route to the legal document id it renders.
+DRAFTIT_STATIC_PAGES = {
+    "/draftit/about": "draftit_privacy",
+    "/draftit/privacy": "draftit_privacy",
 }
 
 # Each route appears as href="/foo" in the source HTML; rewrite to .html file.
@@ -201,6 +209,10 @@ def write_redirects(out_dir: Path) -> None:
         "/subscriptions /subscriptions/index.html 200",
         "/subscriptions/ /subscriptions/index.html 200",
         "/subscriptions.html /subscriptions/index.html 200",
+        "/draftit/about /draftit/about/index.html 200",
+        "/draftit/about/ /draftit/about/index.html 200",
+        "/draftit/privacy /draftit/privacy/index.html 200",
+        "/draftit/privacy/ /draftit/privacy/index.html 200",
         "/world-cup /index.html 302",
         "/world-cup.html /index.html 302",
         "",
@@ -232,6 +244,8 @@ def verify_static_build(out_dir: Path, api_base: str = "") -> None:
         "privacy/index.html",
         "terms/index.html",
         "subscriptions/index.html",
+        "draftit/about/index.html",
+        "draftit/privacy/index.html",
         "_redirects",
         "static/shared.js",
         "static/home.js",
@@ -267,6 +281,14 @@ def verify_static_build(out_dir: Path, api_base: str = "") -> None:
     privacy = (out_dir / "privacy" / "index.html").read_text(encoding="utf-8")
     if "Beyond the Stats Privacy Policy" not in privacy or len(privacy) < 1000:
         raise SystemExit("[build] FATAL: privacy/index.html is empty or incomplete")
+
+    draftit_privacy = (out_dir / "draftit" / "privacy" / "index.html").read_text(encoding="utf-8")
+    if "Draft It!" not in draftit_privacy or "Privacy Policy" not in draftit_privacy or len(draftit_privacy) < 1000:
+        raise SystemExit("[build] FATAL: draftit/privacy/index.html is empty or incomplete")
+
+    draftit_about = (out_dir / "draftit" / "about" / "index.html").read_text(encoding="utf-8")
+    if "Draft It!" not in draftit_about or len(draftit_about) < 1000:
+        raise SystemExit("[build] FATAL: draftit/about/index.html is empty or incomplete")
 
     if (out_dir / "world-cup.html").exists():
         raise SystemExit("[build] FATAL: world-cup.html should not ship on the static site")
@@ -310,6 +332,42 @@ def render_legal_pages(out_dir: Path, api_base: str = "") -> int:
         (out_dir / filename).write_text(html, encoding="utf-8")
         written += 1
         print(f"[build] legal {doc_id} -> {dir_name}/index.html (+ {filename})")
+    return written
+
+
+def render_draftit_pages(out_dir: Path, api_base: str = "") -> int:
+    """Render Draft It! pages (/draftit/about, /draftit/privacy) as directory indexes.
+
+    These pages use the standalone draftit.html template with real document
+    bodies pulled from Website/legal/ via legal_docs.get_legal_document().
+    """
+    website_dir = str(WEBSITE)
+    if website_dir not in sys.path:
+        sys.path.insert(0, website_dir)
+    from legal_docs import get_legal_document, plain_text_to_html_paragraphs
+
+    template = (TEMPLATES / "draftit.html").read_text(encoding="utf-8")
+    api_root = (api_base or "").rstrip("/")
+    written = 0
+    for route, doc_id in DRAFTIT_STATIC_PAGES.items():
+        doc = get_legal_document(doc_id)
+        if not doc:
+            print(f"[build] WARNING: draftit doc {doc_id!r} missing; skip", file=sys.stderr)
+            continue
+        body_html = plain_text_to_html_paragraphs(doc["body"])
+        api_url = f"{api_root}{doc['api_url']}" if api_root else doc["api_url"]
+        html = template
+        html = html.replace("{{ doc.title }}", doc["title"])
+        html = html.replace("{{ body_html | safe }}", body_html)
+        html = html.replace("{{ doc.api_url }}", api_url)
+        html = strip_jinja(html)
+        # Directory index: /draftit/about/ -> draftit/about/index.html
+        dir_name = route.lstrip("/")
+        target_dir = out_dir / dir_name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "index.html").write_text(html, encoding="utf-8")
+        written += 1
+        print(f"[build] draftit {doc_id} -> {dir_name}/index.html")
     return written
 
 
@@ -380,6 +438,10 @@ def main() -> int:
     # 1b. Legal pages (need real document bodies; not Jinja-stripped shells)
     n_legal = render_legal_pages(out_dir, api_base=args.api_base)
     print(f"[build] wrote {n_legal} legal HTML files")
+
+    # 1c. Draft It! pages (standalone legal/info pages)
+    n_draftit = render_draftit_pages(out_dir, api_base=args.api_base)
+    print(f"[build] wrote {n_draftit} Draft It! HTML files")
 
     # 2. Static
     if STATIC.is_dir():

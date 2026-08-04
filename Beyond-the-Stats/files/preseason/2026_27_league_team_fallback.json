@@ -404,6 +404,42 @@
         "Randers",
         "Silkeborg"
       ]
+    },
+    "United States/MLS": {
+      "country": "United States",
+      "league_strength": 0.55,
+      "teams": [
+        "Atlanta United FC",
+        "Austin FC",
+        "CF Montréal",
+        "Charlotte",
+        "Chicago Fire",
+        "Colorado Rapids",
+        "Columbus Crew",
+        "D.C. United",
+        "FC Cincinnati",
+        "FC Dallas",
+        "Houston Dynamo",
+        "Inter Miami CF",
+        "LA Galaxy",
+        "LAFC",
+        "Minnesota United",
+        "Nashville SC",
+        "New England Revolution",
+        "New York City",
+        "Orlando City SC",
+        "Philadelphia Union",
+        "Portland Timbers",
+        "Real Salt Lake",
+        "Red Bull New York",
+        "San Diego FC",
+        "San Jose Earthquakes",
+        "Seattle Sounders",
+        "Sporting Kansas City",
+        "St. Louis CITY SC",
+        "Toronto FC",
+        "Vancouver Whitecaps"
+      ]
     }
   }
 }

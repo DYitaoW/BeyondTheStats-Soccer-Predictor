@@ -86,7 +86,7 @@ LEAGUES = {
 MAPPING_FILE = os.path.join(PROJECT_DIR, "..", "Data", "team_name_mapping_master.json")
 mapping = {}
 if os.path.exists(MAPPING_FILE):
-    with open(MAPPING_FILE, "r", encoding="utf-8") as f:
+    with open(MAPPING_FILE, "r", encoding="utf-8-sig") as f:
         raw = json.load(f)
     for comp, comp_map in raw.items():
         if isinstance(comp_map, dict):

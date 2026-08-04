@@ -466,7 +466,7 @@ def _load_display_mapping() -> dict:
 
 def _load_display_mapping_file() -> dict:
     try:
-        with open(config.TEAM_NAME_DISPLAY_MAPPING_FILE, "r", encoding="utf-8") as handle:
+        with open(config.TEAM_NAME_DISPLAY_MAPPING_FILE, "r", encoding="utf-8-sig") as handle:
             payload = json.load(handle)
     except Exception:
         payload = {}

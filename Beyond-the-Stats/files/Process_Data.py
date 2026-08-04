@@ -43,7 +43,7 @@ MIN_START_YEAR = 2002
 # These file prefixes are exempt from the shot-column completeness check so
 # their matches aren't dropped outright; missing shot stats are instead left
 # blank and treated as -1 sentinels by Predict_Match.py.
-NO_SHOT_STATS_PREFIXES = {"norstat", "swestat"}
+NO_SHOT_STATS_PREFIXES = {"norstat", "swestat", "autstat", "polstat", "roustat"}
 
 # Smaller top-flight divisions play noticeably fewer matches per season than
 # the 250-row default MIN_ROWS (tuned for ~20+ team top-5-league divisions):
@@ -52,7 +52,7 @@ NO_SHOT_STATS_PREFIXES = {"norstat", "swestat"}
 # one of their *completed* seasons would be silently dropped as
 # "insufficient data" (only the current in-progress season, which uses the
 # separate CURRENT_SEASON_MIN_ROWS bar, would ever pass).
-MIN_ROWS_OVERRIDES = {"norstat": 220, "swestat": 220, "grecstat": 220}
+MIN_ROWS_OVERRIDES = {"norstat": 220, "swestat": 220, "grecstat": 220, "autstat": 170, "polstat": 220, "roustat": 220}
 PROCESS_WORKERS = int(os.getenv("SOCCER_PROCESS_WORKERS", str(max(1, (os.cpu_count() or 2) // 2))))
 USE_GPU_DF = os.getenv("SOCCER_USE_GPU_DF", "1").strip().lower() not in {"0", "false", "no"}
 

@@ -88,7 +88,7 @@ def load_team_mapping():
     if not os.path.exists(TEAM_MAPPING_FILE):
         return {}
     try:
-        with open(TEAM_MAPPING_FILE, "r", encoding="utf-8") as handle:
+        with open(TEAM_MAPPING_FILE, "r", encoding="utf-8-sig") as handle:
             data = json.load(handle)
     except Exception:
         return {}

@@ -39,7 +39,7 @@ def _load_team_mapping_master() -> dict:
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, "r", encoding="utf-8-sig") as handle:
             payload = json.load(handle)
     except Exception:
         return {}

@@ -190,7 +190,7 @@ def extract_espn_team_names_by_comp():
 def read_mappings():
     if not os.path.isfile(MAPPING_FILE):
         return {}
-    with open(MAPPING_FILE, "r", encoding="utf-8") as f:
+    with open(MAPPING_FILE, "r", encoding="utf-8-sig") as f:
         return json.load(f)
 
 

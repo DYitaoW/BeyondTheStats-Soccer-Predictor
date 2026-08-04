@@ -260,7 +260,7 @@ def load_team_mapping(path):
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as file:
+        with open(path, "r", encoding="utf-8-sig") as file:
             mapping = json.load(file)
     except Exception:
         return {}
@@ -365,7 +365,7 @@ def _load_name_mapping_flat():
     if _name_mapping_flat is not None:
         return _name_mapping_flat
     try:
-        with open(TEAM_MAPPING_FILE, "r", encoding="utf-8") as f:
+        with open(TEAM_MAPPING_FILE, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         flat = {}
         for comp, entries in data.items():
