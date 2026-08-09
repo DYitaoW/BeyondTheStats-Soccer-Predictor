@@ -967,12 +967,25 @@ def load_upcoming_matchweek_fixtures_from_raw(raw_dir, window_days):
             date_column="match_date",
         )
         for _, row in window.iterrows():
+            kickoff = ""
+            time_val = str(row.get("Time", "") or "").strip()
+            if time_val:
+                try:
+                    combined = pd.to_datetime(
+                        f"{pd.Timestamp(row['match_date']).strftime('%Y-%m-%d')} {time_val}",
+                        errors="coerce",
+                    )
+                except Exception:
+                    combined = None
+                if combined is not None and pd.notna(combined):
+                    kickoff = combined.isoformat()
             rows.append(
                 {
                     "match_date": pd.Timestamp(row["match_date"]).normalize(),
                     "competition": competition,
                     "home_team": str(row["HomeTeam"]).strip(),
                     "away_team": str(row["AwayTeam"]).strip(),
+                    "match_datetime_utc": kickoff,
                 }
             )
 
@@ -1769,10 +1782,19 @@ def main():
             combined.loc[row["prediction_key"]] = row
         combined = combined.reset_index(drop=True)
 
-    # Remove stale rows so old leagues and fixtures do not linger in the upcoming file.
-    combined = keep_only_current_fixtures(combined, fixtures)
+    # Settle from raw results first so recently-completed games get archived
+    # before they are pruned from the upcoming file.
     results_index = load_results_index(RAW_DATA_DIR, api_token=args.api_token)
     combined, settled_count = settle_predictions(combined, results_index)
+    try:
+        from Update_Live_Prediction_Results import save_completed_rows_to_past_games
+        saved = save_completed_rows_to_past_games(combined)
+        print(f"Archived {saved} completed global games to past_games.json")
+    except Exception as exc:
+        print(f"[past-games] Archive skipped: {exc}")
+
+    # Remove stale rows so old leagues and fixtures do not linger in the upcoming file.
+    combined = keep_only_current_fixtures(combined, fixtures)
     combined, removed_completed = drop_completed_predictions(combined, results_index)
     combined = dedupe_predictions(combined)
     combined, single_match_dropped = enforce_single_match_per_team_day(combined)

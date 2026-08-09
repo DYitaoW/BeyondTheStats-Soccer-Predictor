@@ -616,10 +616,9 @@ _live_history_write_lock = threading.Lock()
 
 
 def _live_history_cutoff(as_of=None):
-    """Start of the previous full week (Monday), in Eastern time."""
+    """Retention cutoff for live-score history: 30 days ago, in Eastern time."""
     today = as_of or datetime.now(ZoneInfo("America/New_York")).date()
-    current_week_start = today - timedelta(days=today.weekday())
-    return current_week_start - timedelta(days=7)
+    return today - timedelta(days=30)
 
 
 def _live_history_game_date(game):
@@ -696,7 +695,7 @@ def _upsert_live_score_history(games, as_of=None):
     """Append/update history without allowing an empty poll to erase the file.
 
     Writes are process- and cross-process locked, atomic, deduplicated, and
-    retain the current week plus the previous full week. Rows with no parseable
+    retain 30 days of history. Rows with no parseable
     date are kept rather than silently discarded.
     """
     incoming = [dict(game) for game in (games or []) if isinstance(game, dict)]

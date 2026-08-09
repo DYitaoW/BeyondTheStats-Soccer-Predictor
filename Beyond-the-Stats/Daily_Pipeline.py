@@ -836,7 +836,7 @@ def _publish_windowed_upcoming(output_dir, source_paths):
     """Incrementally update Output/Upcoming/four_week_window.csv.
 
     Merges in new rows from source CSVs and past_games.json, removes games
-    older than 14 days, and never clears the file — if the pipeline fails
+    older than 30 days, and never clears the file — if the pipeline fails
     partway through, previously written data survives.
     """
     from zoneinfo import ZoneInfo
@@ -860,7 +860,7 @@ def _publish_windowed_upcoming(output_dir, source_paths):
     out_path = out_dir / "four_week_window.csv"
 
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
-    window_start = today_et - timedelta(days=14)
+    window_start = today_et - timedelta(days=30)
     window_end = today_et + timedelta(days=21)
 
     # ── Load existing rows ──────────────────────────────────────────────
@@ -876,14 +876,21 @@ def _publish_windowed_upcoming(output_dir, source_paths):
             continue
         for r in _read_csv(src):
             k = _row_key(r)
-            if k not in seen:
-                try:
-                    d = _row_date(r)
-                except (ValueError, TypeError):
-                    continue
-                if d < window_start or d > window_end:
-                    continue
-                seen[k] = r
+            try:
+                d = _row_date(r)
+            except (ValueError, TypeError):
+                continue
+            if d < window_start or d > window_end:
+                continue
+            if k in seen:
+                # Keep any prediction/result fields we already have, but
+                # upgrade to a real kickoff time when a fresher source has one.
+                existing = seen[k]
+                src_time = str(r.get("match_datetime_utc", "") or "").strip()
+                if src_time and not str(existing.get("match_datetime_utc", "") or "").strip():
+                    existing["match_datetime_utc"] = src_time
+                continue
+            seen[k] = r
 
     # ── Merge past_games.json ───────────────────────────────────────────
     past_games = _load_json(PAST_GAMES_FILE)

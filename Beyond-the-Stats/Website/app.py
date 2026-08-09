@@ -1122,13 +1122,13 @@ def api_upcoming(mode):
             except (ValueError, TypeError):
                 return False
             if window_include_past:
-                # 4week mode: past 14 days + next 21 days
+                # 4week mode: past 30 days + next 21 days
                 try:
                     from zoneinfo import ZoneInfo
                     today_et = datetime.now(ZoneInfo("America/New_York")).date()
                 except Exception:
                     today_et = datetime.now(timezone.utc).date()
-                lower = today_et - timedelta(days=14)
+                lower = today_et - timedelta(days=30)
                 cutoff = today_et + timedelta(days=21)
             else:
                 today = datetime.now(timezone.utc).date()
@@ -1985,7 +1985,7 @@ def api_past_games():
     Data is sourced from ``past_games.json`` (updated each pipeline run with
     today's rows copied from the upcoming API shape), ``live_score_history.json``
     / in-memory live scores, and settled prediction CSV rows.
-    Rows older than the previous full week are excluded.
+    Rows older than 30 days are excluded.
 
     For full live-score details (lineups, stats, key events, game info),
     use ``/api/live-score-history``.
