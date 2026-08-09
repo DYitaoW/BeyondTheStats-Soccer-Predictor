@@ -172,6 +172,33 @@ def parse_date(value):
     return date_value.normalize()
 
 
+def parse_kickoff(date_value, time_value):
+    """Combine a Date and Time value into a kickoff timestamp (naive).
+
+    Returns None when either value is missing or unparseable.
+    """
+    date_value = pd.to_datetime(date_value, dayfirst=True, format="mixed", errors="coerce")
+    time_value = str(time_value or "").strip()
+    if pd.isna(date_value) or not time_value:
+        return None
+    combined = pd.to_datetime(
+        f"{date_value.strftime('%Y-%m-%d')} {time_value}", errors="coerce"
+    )
+    if pd.isna(combined):
+        return None
+    return combined
+
+
+def kickoff_to_iso(value):
+    """Serialize a kickoff timestamp to an ISO string ('' when missing)."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    ts = pd.to_datetime(value, errors="coerce")
+    if pd.isna(ts):
+        return ""
+    return ts.isoformat()
+
+
 def calculate_fixture_window_end(window_days, start_date=None):
     # Anchor the window to today so extra-league pulls reflect the current slate.
     today = pd.Timestamp(start_date or datetime.utcnow().date()).normalize()
@@ -563,6 +590,10 @@ def upcoming_fixtures_from_raw(raw_path, window_days, competition_name):
 
     work = df.copy()
     work["DateParsed"] = work["Date"].apply(parse_date)
+    work["Kickoff"] = [
+        parse_kickoff(date_value, time_value)
+        for date_value, time_value in zip(work["Date"], work.get("Time", pd.Series("", index=work.index)))
+    ]
     work = work[work["Home"].notna() & work["Away"].notna()]
     work = work[work["DateParsed"].notna()]
     if work.empty:
@@ -664,6 +695,7 @@ def upcoming_fixtures_from_espn(competition, window_days, lookahead_days=None):
             rows.append(
                 {
                     "DateParsed": match_date,
+                    "Kickoff": event_date,
                     "Home": home_team,
                     "Away": away_team,
                 }
@@ -681,8 +713,33 @@ def merge_fixture_frames(*frames):
         return pd.DataFrame()
     merged = pd.concat(valid, ignore_index=True)
     merged["DateParsed"] = pd.to_datetime(merged["DateParsed"], errors="coerce").dt.normalize()
+    if "Kickoff" not in merged.columns:
+        merged["Kickoff"] = pd.NaT
     merged = merged[merged["DateParsed"].notna() & merged["Home"].notna() & merged["Away"].notna()]
+
+    # Prefer the most reliable kickoff for a fixture: a real UTC timestamp
+    # (tz-aware, from ESPN) beats a raw-CSV local time, which beats none.
+    # Rank on the raw values BEFORE coercing, since pd.to_datetime would
+    # strip timezone info from a mixed naive/aware series.
+    def _kick_rank(k):
+        if k is None:
+            return 0
+        if isinstance(k, str):
+            k = k.strip()
+            if not k:
+                return 0
+            return 2 if ("+" in k or k.endswith("Z")) else 1
+        if pd.isna(k):
+            return 0
+        return 2 if getattr(k, "tzinfo", None) is not None else 1
+
+    merged["_kick_rank"] = merged["Kickoff"].apply(_kick_rank)
+    merged = merged.sort_values(["_kick_rank"], ascending=False)
     merged = merged.drop_duplicates(subset=["DateParsed", "Home", "Away"], keep="first")
+    merged = merged.drop(columns=["_kick_rank"])
+    # Serialize to ISO strings: a string column keeps naive (raw-CSV) and
+    # tz-aware (ESPN) kickoffs intact without pandas mixing them.
+    merged["Kickoff"] = merged["Kickoff"].apply(kickoff_to_iso)
     return merged.sort_values(["DateParsed", "Home", "Away"]).reset_index(drop=True)
 
 
@@ -718,7 +775,10 @@ def main():
         frame["home_team"] = frame["Home"].astype(str).str.strip()
         frame["away_team"] = frame["Away"].astype(str).str.strip()
         frame["match_date"] = frame["DateParsed"]
-        fixture_frames.append(frame[["match_date", "competition", "home_team", "away_team"]])
+        frame["match_datetime_utc"] = frame["Kickoff"].apply(kickoff_to_iso)
+        fixture_frames.append(
+            frame[["match_date", "competition", "home_team", "away_team", "match_datetime_utc"]]
+        )
 
     if not fixture_frames:
         print("No upcoming extra-league fixtures found.")
@@ -795,7 +855,7 @@ def main():
                 "prediction_key": make_prediction_key(match_date, competition, home, away),
                 "created_at_utc": created_at,
                 "match_date": match_date.strftime("%Y-%m-%d"),
-                "match_datetime_utc": "",
+                "match_datetime_utc": str(row.get("match_datetime_utc", "") or "").strip(),
                 "competition": competition,
                 "home_team": home,
                 "away_team": away,

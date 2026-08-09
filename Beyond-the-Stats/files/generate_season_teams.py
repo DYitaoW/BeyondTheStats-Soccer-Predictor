@@ -40,7 +40,7 @@ LEAGUES = [
 espn_file = os.path.join(PROJECT_DIR, "Data", "Predictions", "league_teams.json")
 espn_data = {}
 if os.path.exists(espn_file):
-    with open(espn_file, "r", encoding="utf-8") as f:
+    with open(espn_file, "r", encoding="utf-8-sig") as f:
         espn_data = json.load(f)
 
 output = {}

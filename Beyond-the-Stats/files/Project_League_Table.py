@@ -331,6 +331,7 @@ def load_future_fixtures_from_espn(competition, year=None, max_days=45):
                 "FTHG": None,
                 "FTAG": None,
                 "FTR": "",
+                "match_datetime_utc": event_date.tz_convert("UTC").isoformat(),
             })
 
         day += timedelta(days=1)
@@ -847,7 +848,25 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         real_matches = []
         future_pairs = []
         future_dates = []
+        future_kickoffs = []
         seen_pairs = set()
+
+        has_time_col = "Time" in df.columns
+
+        def _kickoff_for(row):
+            if not has_time_col:
+                return ""
+            time_val = str(row.get("Time", "") or "").strip()
+            if not time_val:
+                return ""
+            try:
+                combined = pd.to_datetime(
+                    f"{row['DateParsed'].strftime('%Y-%m-%d')} {time_val}",
+                    errors="coerce",
+                )
+            except Exception:
+                return ""
+            return combined.isoformat() if pd.notna(combined) else ""
 
         for _, row in df.iterrows():
             raw_home = str(row["HomeTeam"]).strip()
@@ -871,14 +890,15 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
 
             future_pairs.append((home, away))
             future_dates.append(row["DateParsed"].date().isoformat() if pd.notna(row["DateParsed"]) else "")
+            future_kickoffs.append(_kickoff_for(row))
 
         # ESPN upcoming fixtures supplement
         espn_fixtures = load_future_fixtures_from_espn(competition)
         if not espn_fixtures.empty:
-            _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates, seen_pairs, ctx)
+            _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates, seen_pairs, ctx, future_kickoffs=future_kickoffs)
 
         # Fill remaining gaps with format-aware home/away (or Scottish 3-round) pairs
-        _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx, competition=competition)
+        _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx, competition=competition, future_kickoffs=future_kickoffs)
 
     else:
         # ── PATH B: No current-season CSV or CSV is from a past season ──
@@ -952,11 +972,12 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         real_matches = []
         future_pairs = []
         future_dates = []
+        future_kickoffs = []
         seen_pairs = set()
 
         # Do not rely on ESPN upcoming scoreboards for PATH B — synthesize
         # the full remaining slate from the competition format.
-        _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx, competition=competition)
+        _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx, competition=competition, future_kickoffs=future_kickoffs)
 
     if not future_pairs:
         print(f"  No fixtures to project for {competition}")
@@ -970,6 +991,7 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
     for i, (pred_res, phg, pag, probs) in enumerate(batched):
         home, away = future_pairs[i]
         match_date = future_dates[i] if i < len(future_dates) else ""
+        match_datetime_utc = future_kickoffs[i] if i < len(future_kickoffs) else ""
         future_predictions.append(
             {
                 "home_team": home,
@@ -983,7 +1005,7 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
             {
                 "competition": competition,
                 "match_date": match_date,
-                "match_datetime_utc": "",
+                "match_datetime_utc": match_datetime_utc,
                 "home_team": home,
                 "away_team": away,
                 "predicted_result": pred_res,
@@ -1047,7 +1069,7 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
     return table_rows, future_rows
 
 
-def _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates, seen_pairs, ctx):
+def _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates, seen_pairs, ctx, future_kickoffs=None):
     """Resolve ESPN fixture names and add to future_pairs / future_dates."""
     espn_count = 0
     unresolved = []
@@ -1069,6 +1091,8 @@ def _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates,
         seen_pairs.add((home, away))
         future_pairs.append((home, away))
         future_dates.append(str(row.get("Date", "")))
+        if future_kickoffs is not None:
+            future_kickoffs.append(str(row.get("match_datetime_utc", "") or "").strip())
         espn_count += 1
     if unresolved:
         msg = f"  ESPN: {len(unresolved)} team name(s) in {competition} could not be resolved — add to team_name_mapping_master.json: {sorted(set(unresolved))}"
@@ -1078,7 +1102,7 @@ def _merge_espn_fixtures(competition, espn_fixtures, future_pairs, future_dates,
         print(f"  ESPN: loaded {espn_count} future fixtures for {competition}")
 
 
-def _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx, competition=None):
+def _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx, competition=None, future_kickoffs=None):
     """Generate remaining fixtures from the competition's schedule format.
 
     Default: double round-robin home/away = (n-1)*2 games per team.
@@ -1091,6 +1115,10 @@ def _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx,
         future_pairs,
         future_dates,
     )
+    if future_kickoffs is not None:
+        # Synthetic fill-ins have no scheduled kickoff time.
+        while len(future_kickoffs) < len(future_pairs):
+            future_kickoffs.append("")
     if added:
         games = proj_sched.expected_games_per_team(competition or "", len(teams))
         print(f"  Generated {added} fixture(s) (format target ~{games} games/team)")

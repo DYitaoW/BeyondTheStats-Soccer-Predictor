@@ -573,10 +573,10 @@ def save_completed_rows_to_past_games(frame, today=None):
             new_rows.append(row_dict)
 
     existing = list(existing_by_key.values()) + keyless_existing
-    # Prune rows older than 14 days (keep past_games for 4week window)
+    # Prune rows older than 30 days (keep past games for the 30-day window)
     try:
         today_local = datetime.now(ZoneInfo("America/New_York")).date()
-        cutoff = today_local - timedelta(days=14)
+        cutoff = today_local - timedelta(days=30)
         before = len(existing)
 
         def keep_row(row):
@@ -930,6 +930,32 @@ def main():
     mls_future_cleared = 0
     mls_removed_completed = 0
     mls_totals_added = 0
+    global_future_cleared = 0
+    mls_future_cleared = 0
+    if global_df is not None:
+        today_et = datetime.now(EASTERN_TZ).date()
+        global_df, global_future_cleared = clear_future_settled_rows(global_df, today_et)
+        if args.cleanup_all:
+            global_df, global_cleaned = cleanup_all_settled_rows(global_df)
+        if needs_resettle and global_results:
+            global_df, global_updates = update_frame_with_results(global_df, global_results)
+        global_totals_added = update_accuracy_totals_from_frame(totals, global_df)
+        save_completed_rows_to_past_games(global_df, today=today_et)
+        global_df, global_removed_completed = drop_completed_rows(global_df, today=today_et)
+        global_df.to_csv(GLOBAL_PREDICTIONS_FILE, index=False)
+
+    if mls_df is not None:
+        today_et = datetime.now(EASTERN_TZ).date()
+        mls_df, mls_future_cleared = clear_future_settled_rows(mls_df, today_et)
+        if args.cleanup_all or args.cleanup_mls:
+            mls_df, mls_cleaned = cleanup_all_settled_rows(mls_df)
+        if needs_resettle and mls_results:
+            mls_df, mls_updates = update_frame_with_results(mls_df, mls_results)
+        mls_totals_added = update_accuracy_totals_from_frame(totals, mls_df)
+        save_completed_rows_to_past_games(mls_df, today=today_et)
+        mls_df, mls_removed_completed = drop_completed_rows(mls_df, today=today_et)
+        mls_df.to_csv(MLS_PREDICTIONS_FILE, index=False)
+
     extra_updates = 0
     extra_cleaned = 0
     extra_future_cleared = 0

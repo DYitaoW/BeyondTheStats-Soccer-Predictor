@@ -305,6 +305,20 @@ def normalize_raw_df(df):
     return frame
 
 
+def _combine_date_time_iso(date_parsed, time_value):
+    """Combine a parsed date and a raw Time string into an ISO string."""
+    time_value = str(time_value or "").strip()
+    if pd.isna(date_parsed) or not time_value:
+        return ""
+    try:
+        combined = pd.to_datetime(
+            f"{date_parsed.strftime('%Y-%m-%d')} {time_value}", errors="coerce"
+        )
+    except Exception:
+        return ""
+    return combined.isoformat() if pd.notna(combined) else ""
+
+
 def _load_espn_fixtures(competition, ctx, max_days=21):
     """Fetch upcoming ESPN fixtures, resolve team names, return a DataFrame or None.
 
@@ -383,6 +397,7 @@ def _load_espn_fixtures(competition, ctx, max_days=21):
                 "FTHG": None,
                 "FTAG": None,
                 "FTR": "",
+                "match_datetime_utc": event_date.tz_convert("UTC").isoformat(),
             })
         day += pd.Timedelta(days=1)
     if unresolved:
@@ -856,6 +871,16 @@ def project_competition(ctx, competition, raw_file):
         df = df[df["HomeTeam"].notna() & df["AwayTeam"].notna()]
         df = df.sort_values(["DateParsed", "HomeTeam", "AwayTeam"], na_position="last").reset_index(drop=True)
 
+        # Carry real kickoff times: ESPN rows already provide UTC datetimes;
+        # raw CSV rows provide a local Time column that we serialize as-is.
+        if "match_datetime_utc" not in df.columns:
+            df["match_datetime_utc"] = ""
+        raw_time_rows = df["match_datetime_utc"].fillna("").astype(str).str.strip().eq("")
+        df.loc[raw_time_rows, "match_datetime_utc"] = df.loc[raw_time_rows].apply(
+            lambda row: _combine_date_time_iso(row["DateParsed"], row.get("Time", "")),
+            axis=1,
+        )
+
         raw_teams = set(df["HomeTeam"].astype(str).str.strip()) | set(df["AwayTeam"].astype(str).str.strip())
         teams = sorted({r for t in raw_teams if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
     else:
@@ -941,7 +966,7 @@ def project_competition(ctx, competition, raw_file):
     real_matches = []
     seen_pairs = set()
 
-    def add_future_prediction(home, away, match_date=""):
+    def add_future_prediction(home, away, match_date="", match_datetime_utc=""):
         pred_res, phg, pag, probs = predict_match(ctx, home, away, competition)
         future_predictions.append(
             {
@@ -956,7 +981,7 @@ def project_competition(ctx, competition, raw_file):
             {
                 "competition": competition,
                 "match_date": match_date,
-                "match_datetime_utc": "",
+                "match_datetime_utc": match_datetime_utc,
                 "home_team": home,
                 "away_team": away,
                 "predicted_result": pred_res,
@@ -991,6 +1016,7 @@ def project_competition(ctx, competition, raw_file):
             home,
             away,
             row["DateParsed"].date().isoformat() if pd.notna(row["DateParsed"]) else "",
+            str(row.get("match_datetime_utc", "") or "").strip(),
         )
 
     # Fill remaining synthetic pairs for any teams not yet connected

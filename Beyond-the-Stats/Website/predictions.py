@@ -1081,7 +1081,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
         csv_path: Path to the prediction CSV.
         mode: Source mode ("global", "mls", "extra", "cups", "national").
         date_range: ``"upcoming"`` — today onward, all future fixtures (default).
-                    ``"completed"`` — previous full prediction week to yesterday.
+                    ``"completed"`` — previous 30 days through today.
         window_days: If set, only load rows within ``window_days`` from today
                      (e.g. ``14`` for a 2-week window).  Applied after the
                      ``date_range`` lower bound to create a tight window,
@@ -1194,9 +1194,8 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
     
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
     if date_range == "completed":
-        # Previous full prediction week → today
-        prev_thursday = today_et - timedelta(days=(today_et.weekday() - 3) % 7 + 7)
-        lo = pd.Timestamp(prev_thursday)
+        # Previous 30 days → today
+        lo = pd.Timestamp(today_et - timedelta(days=30))
         hi = pd.Timestamp(today_et + timedelta(days=1))
         frame = frame[(frame["parsed_date"] >= lo) & (frame["parsed_date"] < hi)].reset_index(drop=True)
     elif date_range == "all":
@@ -2587,7 +2586,6 @@ def _is_placeholder_game(r):
 
 
 def _week_based_cutoff():
-    """Return ISO date string for the start of the previous full week (Mon)."""
+    """Return ISO date string for the retention cutoff (30 days ago)."""
     today_local = datetime.now(ZoneInfo("America/New_York")).date()
-    current_week_start = today_local - timedelta(days=today_local.weekday())
-    return (current_week_start - timedelta(days=7)).isoformat()
+    return (today_local - timedelta(days=30)).isoformat()
