@@ -1,4 +1,4 @@
-# Beyond the Stats- Soccer Predictor
+# Beyond the Stats - Soccer Predictor  **IOS MOBILE APP COMING SOON (IN REVIEW)**
 
 ### A data-driven approach to predicting soccer matches.
 
