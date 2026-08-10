@@ -1,5 +1,7 @@
 # Beyond the Stats - Soccer Predictor  **IOS MOBILE APP COMING SOON (IN REVIEW)**
 
+ **View the project in action!** https://beyondthestatsapp.com
+
 ### A data-driven approach to predicting soccer matches.
 
 Beyond the Stats Predictor uses historical soccer data and machine learning to predict the outcome of upcoming matches & full seasons.
