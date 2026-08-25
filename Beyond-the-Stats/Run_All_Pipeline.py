@@ -27,9 +27,8 @@ import json
 import os
 import signal
 import subprocess
-import json
-import os
 import sys
+import threading
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
@@ -223,11 +222,11 @@ PROJECTED_TABLE_TIMEOUT_S = {
 
 
 def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
-    print(f"\n=== {name} ===")
-    print(" ".join(str(c) for c in cmd))
+    print(f"\n=== {name} ===", flush=True)
+    print(" ".join(str(c) for c in cmd), flush=True)
     started = time.monotonic()
     print(f"[DEBUG] run_step starting '{name}' at T+{started - _pipeline_start_global:.0f}s "
-          f"timeout={timeout}s")
+          f"timeout={timeout}s", flush=True)
     # Own process group so timeouts can kill Project_League_Table worker pools
     # (grandchildren) instead of leaving them orphaned on the host.
     try:
@@ -235,22 +234,54 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
             cmd,
             cwd=str(ROOT_DIR),
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdin=subprocess.PIPE if input_text is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
         )
     except Exception as exc:
         elapsed = time.monotonic() - started
-        print(f"[ERROR] {name}: failed to start: {exc} (after {elapsed:.1f}s)")
-        print(f"  → Skipping (continue_on_error={continue_on_error})")
+        print(f"[ERROR] {name}: failed to start: {exc} (after {elapsed:.1f}s)", flush=True)
+        print(f"  -> Skipping (continue_on_error={continue_on_error})", flush=True)
         return False
 
+    def _drain(stream):
+        try:
+            for line in iter(stream.readline, ""):
+                print(line, end="" if line.endswith("\n") else "\n", flush=True)
+        except Exception:
+            pass
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+    if input_text is not None:
+        try:
+            proc.stdin.write(input_text)
+        except Exception:
+            pass
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+
+    readers = []
+    for stream in (proc.stdout, proc.stderr):
+        if stream is not None:
+            t = threading.Thread(target=_drain, args=(stream,), daemon=True)
+            t.start()
+            readers.append(t)
+
     try:
-        stdout, stderr = proc.communicate(input=input_text, timeout=timeout)
+        proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - started
-        print(f"[TIMEOUT] {name} exceeded {timeout}s timeout (after {elapsed:.1f}s)")
+        print(f"[TIMEOUT] {name} exceeded {timeout}s timeout (after {elapsed:.1f}s)", flush=True)
         try:
             os.killpg(proc.pid, signal.SIGKILL)
         except Exception:
@@ -262,27 +293,26 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
             proc.wait(timeout=5)
         except Exception:
             pass
-        print(f"  → Skipping (continue_on_error={continue_on_error})")
+        print(f"  -> Skipping (continue_on_error={continue_on_error})", flush=True)
         return False
     except Exception as exc:
         elapsed = time.monotonic() - started
-        print(f"[ERROR] {name}: {exc} (after {elapsed:.1f}s)")
-        print(f"  → Skipping (continue_on_error={continue_on_error})")
+        print(f"[ERROR] {name}: {exc} (after {elapsed:.1f}s)", flush=True)
+        print(f"  -> Skipping (continue_on_error={continue_on_error})", flush=True)
         return False
+
+    for t in readers:
+        t.join(timeout=10)
 
     elapsed = time.monotonic() - started
-    if stdout:
-        print(stdout, end="" if str(stdout).endswith("\n") else "\n")
-    if stderr:
-        print(stderr, end="" if str(stderr).endswith("\n") else "\n")
     print(f"[DEBUG] run_step finished '{name}' rc={proc.returncode} elapsed={elapsed:.1f}s "
-          f"at T+{time.monotonic() - _pipeline_start_global:.0f}s")
+          f"at T+{time.monotonic() - _pipeline_start_global:.0f}s", flush=True)
     if proc.returncode != 0:
-        print(f"[ERROR] {name} failed with exit code {proc.returncode} (after {elapsed:.1f}s)")
-        print(f"  → Skipping (continue_on_error={continue_on_error})")
+        print(f"[ERROR] {name} failed with exit code {proc.returncode} (after {elapsed:.1f}s)", flush=True)
+        print(f"  -> Skipping (continue_on_error={continue_on_error})", flush=True)
         return False
 
-    print(f"[OK] {name} ({elapsed:.1f}s)")
+    print(f"[OK] {name} ({elapsed:.1f}s)", flush=True)
     return True
 
 
@@ -335,6 +365,7 @@ def _run_global_subpipeline(args, api_token):
         "[global] Upcoming matchweek predictions",
         upcoming_cmd,
         continue_on_error=args.continue_on_error,
+        timeout=3600,
     )
     # Upcoming cups before projected tables so all upcoming-game CSVs are
     # produced first (and available to the website) before the heavier
@@ -343,6 +374,7 @@ def _run_global_subpipeline(args, api_token):
         "[global] Upcoming cup predictions",
         [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.cup_window_days)],
         continue_on_error=args.continue_on_error,
+        timeout=3600,
     )
     global_out_csv = str(SP_DIR / "Data" / "Predictions" / "projected_league_tables.csv")
     global_proc_dirs = [str(SP_DIR / "Data" / "Processed_Data")]
@@ -822,6 +854,15 @@ def main():
     try:
         run_full_pipeline(args, api_token)
         _write_pipeline_timestamp()
+        # Refresh Output/ Europe/LeagueResult (and other published trees) so the
+        # website backends and artifacts pick up fresh projections. Daily_Pipeline
+        # does this itself after each loop; the standalone CLI would otherwise
+        # leave Output/ stale relative to Data/Predictions/*.csv.
+        try:
+            from Daily_Pipeline import publish_to_output
+            publish_to_output()
+        except Exception as exc:
+            print(f"[WARN] publish_to_output failed: {exc}")
         print("\nPipeline complete.")
     finally:
         pipeline_log.deactivate_stdout_tee()

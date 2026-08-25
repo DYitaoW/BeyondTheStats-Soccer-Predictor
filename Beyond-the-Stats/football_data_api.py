@@ -15,6 +15,11 @@ _CACHE_FILE = os.path.join(
     "Data", "Predictions", ".football_data_api_cache.json",
 )
 
+# Timestamp of the last LIVE football-data.org HTTP request in this process.
+# Used to enforce the inter-request pause only when a real network call is
+# about to happen -- cached responses return immediately with no sleep.
+_last_request_ts = 0.0
+
 
 def _load_cache() -> dict[str, Any]:
     try:
@@ -41,16 +46,28 @@ def delay_seconds() -> int:
         return DEFAULT_DELAY_SECONDS
 
 
-def wait_between_competition_requests(competition_name: str, *, is_first: bool) -> None:
-    """Pause between per-competition API calls to avoid 429 rate limits."""
-    if is_first:
-        return
+def wait_between_requests(competition_name: str = "", *, force: bool = False) -> None:
+    """Pause long enough to respect the free-tier rate limit BEFORE a live request.
+
+    Called only from ``fetch_json`` right before an actual HTTP round-trip;
+    cache hits never reach this. A full pause happens on the first request of
+    the process only when ``force`` is set; otherwise the first request goes
+    out immediately and subsequent ones are spaced by ``delay_seconds()``.
+    """
+    global _last_request_ts
     seconds = delay_seconds()
     if seconds <= 0:
         return
-    label = str(competition_name or "").strip() or "next competition"
-    print(f"[football-data.org] waiting {seconds}s before {label}...")
-    time.sleep(seconds)
+    now = time.time()
+    if _last_request_ts <= 0.0 and not force:
+        _last_request_ts = now
+        return
+    remaining = seconds - (now - _last_request_ts)
+    if remaining > 0:
+        label = str(competition_name or "").strip() or "next request"
+        print(f"[football-data.org] waiting {remaining:.0f}s before {label}...")
+        time.sleep(remaining)
+    _last_request_ts = time.time()
 
 
 def fetch_json(
@@ -62,7 +79,8 @@ def fetch_json(
 ) -> dict[str, Any]:
     """Fetch JSON from football-data.org with caching (1-hour TTL).
 
-    Returns cached data when available and fresh; otherwise fetches live,
+    Returns cached data when available and fresh -- instantly, with no
+    rate-limit sleep. Otherwise enforces the free-tier pause, fetches live,
     caches the response, and returns it.
     """
     now = time.time()
@@ -73,6 +91,8 @@ def fetch_json(
         print(f"[football-data.org] cache hit for {label}")
         return entry["data"]
 
+    wait_between_requests(competition_name)
+    now = time.time()
     request = urllib.request.Request(url, headers=headers or {})
     attempts = 2
     for attempt in range(attempts):
@@ -93,6 +113,7 @@ def fetch_json(
                     f"waiting {seconds}s and retrying..."
                 )
                 time.sleep(seconds)
+                _last_request_ts = time.time()
                 continue
             raise
     return {}

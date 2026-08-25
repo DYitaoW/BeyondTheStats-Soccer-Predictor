@@ -19,6 +19,7 @@ if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 import Download_Latest_Data as download_latest
+import espn_api_cache
 import Predict_Match as pm
 import season_calendar
 import team_mapping_groups as tmg
@@ -1773,9 +1774,8 @@ def load_upcoming_matchweek_fixtures_from_espn(window_days, competition_name, es
 
     for offset in range(0, max(1, lookahead_days + 1)):
         day = today + pd.Timedelta(days=offset)
-        url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
         try:
-            data = fetch_json(url, timeout=30)
+            data = espn_api_cache.fetch_scoreboard(espn_id, day.strftime("%Y%m%d"))
         except Exception as e:
             print(f"ESPN API Error for {day.date()}: {e}")
             continue

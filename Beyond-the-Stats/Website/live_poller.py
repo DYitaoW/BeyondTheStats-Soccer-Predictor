@@ -51,6 +51,14 @@ _live_scores_lock = threading.RLock()
 
 _live_summary_cache: dict[str, dict] = {}
 _live_summary_cache_lock = threading.Lock()
+# Per-match metadata for summary fetch attempts (match_id -> {"ts": float}).
+# Kept OUT of _live_summary_cache because cache entries are g.update()d into
+# API payloads and must not leak bookkeeping keys to the frontend.
+_summary_fetch_meta: dict[str, dict] = {}
+# Pre-game summaries re-attempt at most this often. h2h/last-five/injuries are
+# static and lineups only appear near kickoff, so polling them every 60s cycle
+# wasted dozens of ESPN calls per minute on busy matchdays.
+_PRE_SUMMARY_RETRY_S = 600
 _notified_events: dict[str, set] = {}
 _notified_events_lock = threading.Lock()
 _last_friendlies_sync_ts = 0.0
@@ -562,6 +570,7 @@ def _live_score_poller_loop():
                         _live_scores.clear()
                         with _live_summary_cache_lock:
                             _live_summary_cache.clear()
+                            _summary_fetch_meta.clear()
                         _live_score_poller_loop._poller_date = _poller_day_str
                     except Exception:
                         # Keep yesterday's in-memory data and retry next cycle;
@@ -705,11 +714,14 @@ def _live_score_poller_loop():
                 traceback.print_exc()
 
             # ── Fetch summary data for active games ──────────────────
-            # - pre:   fetch every cycle so lineup/formation changes are picked up
+            # - pre:   fetch once, then re-attempt at most every
+            #          _PRE_SUMMARY_RETRY_S (lineups are the only thing that
+            #          changes pre-kickoff; h2h/last-five/injuries are static).
             # - in:    fetch every cycle (key_events & boxscore change in real time)
             # - post:  fetch once if cache empty (final data capture)
             try:
                 games_needing_summary = []
+                now_s = time.time()
                 for comp_name, comp_data in list(_live_scores.items()):
                     espn_id = config.LIVE_SCORE_COMPETITIONS.get(comp_name)
                     if not espn_id:
@@ -719,11 +731,18 @@ def _live_score_poller_loop():
                         if not mid:
                             continue
                         status = g.get("status", "")
-                        if status in ("pre", "in"):
+                        if status == "in":
                             games_needing_summary.append((comp_name, espn_id, mid))
                         elif status == "post" and mid not in _live_summary_cache:
                             games_needing_summary.append((comp_name, espn_id, mid))
+                        elif status == "pre":
+                            meta = _summary_fetch_meta.get(mid)
+                            if meta is None or (now_s - float(meta.get("ts", 0))) >= _PRE_SUMMARY_RETRY_S:
+                                games_needing_summary.append((comp_name, espn_id, mid))
                 if games_needing_summary:
+                    with _live_summary_cache_lock:
+                        for _c, _e, mid in games_needing_summary:
+                            _summary_fetch_meta[mid] = {"ts": now_s}
                     def _fetch_summary(args):
                         comp_name, espn_id, match_id = args
                         data = _fetch_event_summary(comp_name, espn_id, match_id)
