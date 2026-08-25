@@ -154,13 +154,17 @@ class BackendServer:
         self._scheduler_thread.start()
 
         if self.config.serve_website:
-            if self._use_gunicorn():
-                # Gunicorn runs here on the main thread (blocking).
-                self._run_gunicorn()
-                self._shutdown()
-            else:
-                # Flask dev server also runs on the main thread (blocking).
-                self._run_flask_dev()
+            try:
+                if self._use_gunicorn():
+                    # Gunicorn runs here on the main thread (blocking).
+                    self._run_gunicorn()
+                else:
+                    # Flask dev server also runs on the main thread (blocking).
+                    self._run_flask_dev()
+            finally:
+                # Guarantee background services (watcher, memory monitor, and
+                # the pipeline subprocess tree) are torn down even when the web
+                # server exits via KeyboardInterrupt or an exception.
                 self._shutdown()
         else:
             # No website — just wait for the shutdown signal.
@@ -363,7 +367,7 @@ class BackendServer:
         try:
             cmd = self._build_pipeline_cmd(full_retrain=full_retrain)
             LOG.info("[pipeline] starting (trigger=%s, full_retrain=%s) -> journald", trigger, full_retrain)
-            subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "BTS_BACKEND_MANAGED": "1"}
+            subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1", "BTS_BACKEND_MANAGED": "1"}
             pipeline_log.start_run(trigger=trigger, reset=True)
             proc = subprocess.Popen(
                 cmd,
@@ -372,6 +376,7 @@ class BackendServer:
                 stderr=subprocess.STDOUT,
                 text=True,
                 env=subprocess_env,
+                start_new_session=True,
             )
             proc._bts_trigger = trigger  # type: ignore[attr-defined]
             self._pipeline_proc = proc
@@ -423,20 +428,49 @@ class BackendServer:
         t.start()
 
     def _kill_pipeline_blocking(self) -> None:
+        """Terminate the pipeline and its entire process tree.
+
+        The pipeline is spawned with start_new_session=True (its own process
+        group / console), and it in turn spawns child steps (e.g. the extra
+        Project_League_Table) with their own new session. A plain terminate()
+        on the pipeline pid would leave those grandchildren orphaned. On
+        Windows use taskkill /T to walk the tree; on POSIX kill the group.
+        """
         proc = self._pipeline_proc
         if proc is None or proc.poll() is not None:
             return
-        LOG.warning("[pipeline] sending SIGTERM to pid %d", proc.pid)
+        pid = proc.pid
+        LOG.warning("[pipeline] terminating pid %d and its process tree", pid)
         try:
-            proc.terminate()
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    capture_output=True,
+                    timeout=15,
+                )
+            else:
+                try:
+                    os.killpg(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
         except Exception:
-            return
+            pass
         try:
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
-            LOG.error("[pipeline] SIGTERM ignored -- sending SIGKILL")
+            LOG.error("[pipeline] tree kill ignored -- force-killing pid %d", pid)
             try:
-                proc.kill()
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/PID", str(pid), "/T", "/F"],
+                        capture_output=True,
+                        timeout=15,
+                    )
+                else:
+                    try:
+                        os.killpg(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
             except Exception:
                 pass
 

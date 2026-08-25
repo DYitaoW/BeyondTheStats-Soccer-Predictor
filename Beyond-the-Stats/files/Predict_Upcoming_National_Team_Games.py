@@ -209,8 +209,8 @@ def fetch_football_data_upcoming_fixtures(api_token, window_days, world_cup_only
         for code, name in national.FOOTBALL_DATA_COMPETITIONS.items()
         if name in wanted_names
     ]
-    for index, (competition_code, competition_name) in enumerate(api_competitions):
-        fda.wait_between_competition_requests(competition_name, is_first=index == 0)
+    # Rate limiting is handled inside fda.fetch_json (skipped on cache hits).
+    for competition_code, competition_name in api_competitions:
         query = urllib.parse.urlencode(
             {
                 "dateFrom": today.strftime("%Y-%m-%d"),

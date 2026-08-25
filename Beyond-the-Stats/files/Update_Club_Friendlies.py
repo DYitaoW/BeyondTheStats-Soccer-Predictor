@@ -4,12 +4,10 @@
 - Non-Chelsea friendlies are schedule + final result only (no model predictions).
 - Chelsea FC friendlies also receive global-model predictions.
 """
-import json
 import os
 import sys
 import time
 import unicodedata
-import urllib.request
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -22,12 +20,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 import team_mapping_groups as tmg  # noqa: E402
+import espn_api_cache  # noqa: E402
 PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_club_friendlies.csv")
 TEAM_MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "team_name_mapping_master.json")
 
 CLUB_FRIENDLIES_COMPETITION = "Club Friendlies"
-ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/club.friendly/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 LOOKAHEAD_DAYS = 365
 CHELSEA_KEYS = {"chelsea", "chelseafc"}
@@ -110,12 +108,6 @@ def resolve_team_name(raw_name, mapping, available_teams):
     return resolved or raw_name
 
 
-def fetch_json(url, timeout=30):
-    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
 def parse_event(event):
     event_id = str(event.get("id", "")).strip()
     event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
@@ -180,9 +172,8 @@ def load_fixtures_from_espn(lookahead_days=LOOKAHEAD_DAYS):
     seen = set()
     for offset in range(0, max(1, int(lookahead_days) + 1)):
         day = today + pd.Timedelta(days=offset)
-        url = f"{ESPN_SCOREBOARD_API}?dates={day.strftime('%Y%m%d')}"
         try:
-            data = fetch_json(url, timeout=30)
+            data = espn_api_cache.fetch_scoreboard("club.friendly", day.strftime("%Y%m%d"))
         except Exception:
             continue
         for event in data.get("events", []) or []:
@@ -434,9 +425,12 @@ def update_recent_friendlies_results(days_back=1, days_forward=1):
     rows = []
     day = start
     while day <= end:
-        url = f"{ESPN_SCOREBOARD_API}?dates={day.strftime('%Y%m%d')}"
         try:
-            data = fetch_json(url, timeout=30)
+            # Poller-grade freshness: the website result-sync calls this every
+            # few minutes, so never serve a cached scoreboard older than 60s.
+            data = espn_api_cache.fetch_scoreboard(
+                "club.friendly", day.strftime("%Y%m%d"), max_age_seconds=60
+            )
         except Exception:
             day += pd.Timedelta(days=1)
             continue

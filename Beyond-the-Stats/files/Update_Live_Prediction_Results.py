@@ -863,7 +863,12 @@ def main():
     global_df = load_predictions(GLOBAL_PREDICTIONS_FILE)
     mls_df = load_predictions(MLS_PREDICTIONS_FILE)
     extra_df = load_predictions(EXTRA_PREDICTIONS_FILE)
-    cup_df = load_predictions(CUP_PREDICTIONS_FILE)
+    # Cups are owned exclusively by Track_Cup_Results.py -- it settles them into
+    # upcoming_cup_predictions.csv, archives settled rows into
+    # completed_cup_predictions.csv, and rebuilds projected cup tables/brackets.
+    # Handling cups here too double-scraped ESPN and dropped settled rows before
+    # Track_Cup_Results could archive them into the completed history file.
+    cup_df = None
     national_df = load_predictions(NATIONAL_PREDICTIONS_FILE)
     friendlies_df = load_predictions(FRIENDLIES_PREDICTIONS_FILE)
     totals = load_accuracy_totals(ACCURACY_TOTALS_FILE)
