@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026072003') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026090101') }}">
 </head>
 <body class="dark-mode" data-active-page="league-table">
   <main class="page">
@@ -22,7 +22,6 @@
           </div>
         </a>
         <div class="header-actions">
-          <span class="ios-app-indicator" role="status"><span class="ios-app-indicator-icon" aria-hidden="true">📱</span><span class="ios-app-indicator-text">iOS mobile app and new website UI coming soon...</span></span>
           <a id="header-about" class="theme-toggle header-link {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
         </div>
       </div>
@@ -65,8 +64,8 @@
       <p>&copy; 2026 Beyond The Stats</p>
     </footer>
   </main>
-  <script src="{{ url_for('static', filename='shared.js', v='2026072003') }}"></script>
-  <script src="{{ url_for('static', filename='league_tables.js', v='2026070901') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026090101') }}"></script>
+  <script src="{{ url_for('static', filename='league_tables.js', v='2026090101') }}"></script>
 </body>
 </html>
 
