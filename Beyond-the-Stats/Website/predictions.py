@@ -1074,7 +1074,7 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
     return rows
 
 
-def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=None):
+def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=None, fixtures_only=False, competition_filter=None):
     """Load prediction rows from CSV filtered by date range.
     
     Args:
@@ -1211,6 +1211,11 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
         hi = pd.Timestamp(today_et + timedelta(days=int(window_days)))
         frame = frame[frame["parsed_date"] <= hi].reset_index(drop=True)
     
+    if competition_filter:
+        comp_set = {str(c).strip() for c in (competition_filter if isinstance(competition_filter, (list, tuple, set)) else [competition_filter]) if str(c).strip()}
+        if comp_set:
+            frame = frame[frame["competition"].astype(str).str.strip().isin(comp_set)].reset_index(drop=True)
+
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
     
@@ -1223,6 +1228,26 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
     if os.path.normpath(csv_path) == os.path.normpath(config.FRIENDLIES_UPCOMING_FILE):
         target_mode = "friendlies"
     is_mls_file = target_mode == "mls"
+
+    if fixtures_only:
+        rows = []
+        for _, row in frame.iterrows():
+            comp = str(row.get("competition", "")).strip()
+            home = _team_name_for_display(str(row.get("display_home_team", row["home_team"])).strip())
+            away = _team_name_for_display(str(row.get("display_away_team", row["away_team"])).strip())
+            rows.append({
+                "match_date": str(row["match_date"]),
+                "match_date_iso": str(row["match_date"]),
+                "competition": comp,
+                "home_team": home,
+                "away_team": away,
+                "predicted_result": str(row.get("predicted_result", "")).strip(),
+                "prob_home": _to_float(row.get("prob_home")),
+                "prob_draw": _to_float(row.get("prob_draw")),
+                "prob_away": _to_float(row.get("prob_away")),
+            })
+        empty = pd.DataFrame()
+        return rows, _compute_accuracy_stats(empty), _compute_league_accuracy_stats(empty)
 
     # Pre-build form & strength indices (only for modes that have processed data)
     form_index = _build_last5_form_index(target_mode) if target_mode in ("global", "mls", "extra") else {}
@@ -1783,9 +1808,21 @@ def _load_projected_competition_table(comp_name: str) -> list[dict]:
     return _rows_from_leagueresult_json(comp_name)
 
 
-def _build_winner_probability_payload(comp_table: list[dict]) -> dict:
+def _build_winner_probability_payload(comp_table: list[dict], competition: str = "") -> dict:
     """Build World Cup-style winner odds fields from projected table rows."""
+    from competition_rules import canonical_team_name, leagues_cup_table_side
+    from competition_rules import LEAGUES_CUP_TABLE_LIGA_MX, LEAGUES_CUP_TABLE_MLS
     from competition_rules import normalize_team_key
+
+    comp = str(competition or "").strip()
+    filtered_table = list(comp_table or [])
+    if comp == "North America/Leagues Cup":
+        filtered_table = [
+            row for row in filtered_table
+            if leagues_cup_table_side(str(row.get("team", "")).strip()) in {
+                LEAGUES_CUP_TABLE_MLS, LEAGUES_CUP_TABLE_LIGA_MX,
+            }
+        ]
 
     winner_probabilities: dict[str, float] = {}
     winners_odds: list[dict] = []
@@ -1794,8 +1831,8 @@ def _build_winner_probability_payload(comp_table: list[dict]) -> dict:
     best_pct = -1.0
     seen_keys: set[str] = set()
 
-    for row in comp_table:
-        team = str(row.get("team", "")).strip()
+    for row in filtered_table:
+        team = canonical_team_name(str(row.get("team", "")).strip(), comp) if comp else str(row.get("team", "")).strip()
         if not team:
             continue
         key = normalize_team_key(team)
