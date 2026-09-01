@@ -1064,7 +1064,12 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
         if not live_game:
             row["live_updates"] = False
             row["live_status"] = None
+            row.pop("match_id", None)
             continue
+
+        match_id = str(live_game.get("match_id") or "").strip()
+        if match_id:
+            row["match_id"] = match_id
 
         status = str(live_game.get("status") or "").strip().lower()
         uefa_blocked = (
