@@ -991,6 +991,7 @@ def _live_updates_eligible(competition: str, schedule_only: bool = False) -> boo
 def _build_live_games_index() -> dict[tuple[str, str, str], dict]:
     """Index in-memory live games by normalized team pair and competition alias."""
     try:
+        from competition_rules import canonical_team_name
         from live_prediction import _normalize_team_for_live
         from live_poller import _live_scores, _live_scores_lock
     except Exception:
@@ -1000,8 +1001,12 @@ def _build_live_games_index() -> dict[tuple[str, str, str], dict]:
     with _live_scores_lock:
         for comp_name, comp_data in _live_scores.items():
             for game in comp_data.get("games", []) or []:
-                home = _normalize_team_for_live(game.get("home_team"))
-                away = _normalize_team_for_live(game.get("away_team"))
+                home = _normalize_team_for_live(
+                    canonical_team_name(game.get("home_team"), comp_name)
+                )
+                away = _normalize_team_for_live(
+                    canonical_team_name(game.get("away_team"), comp_name)
+                )
                 if not home or not away:
                     continue
                 for alias in config.competition_live_aliases(comp_name):
@@ -1011,22 +1016,32 @@ def _build_live_games_index() -> dict[tuple[str, str, str], dict]:
 
 def _find_live_game_for_row(row: dict, live_index: dict[tuple[str, str, str], dict]) -> dict | None:
     try:
+        from competition_rules import canonical_team_name
         from live_prediction import _normalize_team_for_live
     except Exception:
         return None
 
-    home = _normalize_team_for_live(row.get("home_team"))
-    away = _normalize_team_for_live(row.get("away_team"))
+    comp = str(row.get("competition", "")).strip()
+    home = _normalize_team_for_live(canonical_team_name(row.get("home_team"), comp))
+    away = _normalize_team_for_live(canonical_team_name(row.get("away_team"), comp))
     if not home or not away:
         return None
 
-    comp = str(row.get("competition", "")).strip()
     for alias in config.competition_live_aliases(comp):
         game = live_index.get((home, away, alias))
         if game:
             return game
         game = live_index.get((away, home, alias))
         if game:
+            return game
+
+    # Fuzzy fallback for ESPN vs CSV naming differences (e.g. Man United).
+    for (idx_home, idx_away, idx_alias), game in live_index.items():
+        if idx_alias not in config.competition_live_aliases(comp):
+            continue
+        if (home in idx_home or idx_home in home) and (away in idx_away or idx_away in away):
+            return game
+        if (home in idx_away or idx_away in home) and (away in idx_home or idx_home in away):
             return game
     return None
 
