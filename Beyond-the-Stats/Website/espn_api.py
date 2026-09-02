@@ -30,7 +30,7 @@ _STANDINGS_STAT_NAMES = {
     "streak": "streak",
 }
 
-def _fetch_competition_scores(comp_name, espn_id, today_str):
+def _fetch_competition_scores(comp_name, espn_id, today_str, *, log_failures=False):
     """Fetch ESPN scoreboard for one competition/date, return parsed games."""
     url = (
         f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard"
@@ -40,7 +40,9 @@ def _fetch_competition_scores(comp_name, espn_id, today_str):
     try:
         with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
             data = json.loads(resp.read().decode())
-    except Exception:
+    except Exception as exc:
+        if log_failures:
+            print(f"[espn] scoreboard fetch failed for {comp_name} ({espn_id}, {today_str}): {exc}")
         return []
     events = data.get("events") or []
     games = []
