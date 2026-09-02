@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ doc.title }} | Beyond The Stats</title>
   <meta name="description" content="{{ doc.title }} for Beyond the Stats.">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026090101') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026090202') }}">
 </head>
 <body>
   <main class="page-shell">
@@ -27,10 +27,6 @@
       <div class="legal-body">
         {{ body_html | safe }}
       </div>
-      <p class="legal-meta muted-placeholder">
-        Also available via API:
-        <a href="{{ doc.api_url }}">{{ doc.api_url }}</a>
-      </p>
     </article>
 
     <footer class="site-footer">
@@ -43,6 +39,6 @@
       <p>&copy; 2026 Beyond The Stats</p>
     </footer>
   </main>
-  <script src="{{ url_for('static', filename='shared.js', v='2026090101') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026090202') }}"></script>
 </body>
 </html>

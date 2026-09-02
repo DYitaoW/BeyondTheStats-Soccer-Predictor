@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026090101') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026090202') }}">
   <meta name="description" content="About Beyond The Stats: machine learning match predictions for top European leagues, MLS, and cup competitions.">
   <meta name="robots" content="index, follow">
   <meta property="og:title" content="About — Beyond The Stats">
@@ -57,7 +57,7 @@
   }
   </script>
 </head>
-<body class="dark-mode" data-active-page="about">
+<body data-active-page="about">
   <main class="page">
         <div id="notification-area" class="notification-area"></div>
     <header class="site-header">
@@ -244,9 +244,7 @@
       </div>
       <div class="card">
         <h3>Feedback</h3>
-        <p>Have an idea or found a bug? Let us know!</p>
-        <textarea id="feedback-text" placeholder="Type your feedback here..." style="width: 100%; padding: 10px; border: 1px solid var(--card-border); border-radius: 4px; background: var(--card-bg); color: var(--text-color); margin-bottom: 10px; min-height: 80px;"></textarea>
-        <button id="feedback-submit" class="tab-btn active" type="button" style="margin: 0;">Send Feedback</button>
+        <p>Have an idea or found a bug? Email us at <a href="mailto:beyondthestatsapp@gmail.com">beyondthestatsapp@gmail.com</a>.</p>
       </div>
     <section class="{{ '' if active_page == 'about' else 'hidden' }}">
     <div class = "card">
@@ -300,7 +298,6 @@
         <li><a href="https://beyondthestatsapp.com/terms/">Terms of Service</a></li>
         <li><a href="https://beyondthestatsapp.com/subscriptions/">Subscription Disclosure</a></li>
       </ul>
-      <p>API: <a href="https://api.beyondthestatsapp.com/api/legal"><code>https://api.beyondthestatsapp.com/api/legal</code></a></p>
     </div>
       <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
@@ -313,7 +310,7 @@
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='shared.js', v='2026090101') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026090202') }}"></script>
   <script src="{{ url_for('static', filename='about.js', v='2026060706') }}"></script>
 </body>
 </html>

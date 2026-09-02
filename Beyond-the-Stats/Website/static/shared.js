@@ -301,7 +301,7 @@ let html = `
         </div>
     </div>
 
-    <p class="match-meta"><strong>Predicted score:</strong> ${p.home_team} ${p.pred_home_goals} - ${p.pred_away_goals} ${p.away_team}</p>
+    <p class="match-meta"><strong>Predicted score:</strong> ${p.pred_home_goals} - ${p.pred_away_goals}</p>
 `;
 if (includeShots) {
     html += `
@@ -1368,7 +1368,7 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
                         <div class="match-meta">Prediction: <span class="winner-line">${escapeHtml(r.winner_label)}</span></div>
                         ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
-                        <div class="match-meta"><strong>Predicted score:</strong> ${escapeHtml(r.home_team)} ${homeGoals} - ${awayGoals} ${escapeHtml(r.away_team)}</div>
+                        <div class="match-meta"><strong>Predicted score:</strong> ${homeGoals} - ${awayGoals}</div>
                         ${hasFinalScore
                             ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
                             : ""}
@@ -1812,7 +1812,7 @@ h2hCompareButton.addEventListener("click", async () => {
                 <h3>Match Prediction</h3>
                 <p><strong>${escapeHtml(t1)} (H) vs ${escapeHtml(t2)} (A)</strong></p>
                 <p class="winner-line">${escapeHtml(prediction.winner_label || "Draw")}</p>
-                <p><strong>Predicted score:</strong> ${escapeHtml(prediction.home_team)} ${prediction.pred_home_goals} - ${prediction.pred_away_goals} ${escapeHtml(prediction.away_team)}</p>
+                <p><strong>Predicted score:</strong> ${prediction.pred_home_goals} - ${prediction.pred_away_goals}</p>
                 <p><strong>Confidence:</strong> ${pctLabel(confidence)}%</p>
                 <div class="probability-track">
                     <div style="width: ${prediction.prob_home}%;" title="${escapeHtml(prediction.home_team)}"></div>
