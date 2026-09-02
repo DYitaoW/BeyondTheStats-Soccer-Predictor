@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Beyond The Stats</title>
+  <title>Beyond The Stats — Leagues</title>
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
@@ -11,7 +11,7 @@
 </head>
 <body class="dark-mode" data-active-page="leagues">
   <main class="page">
-        <div id="notification-area" class="notification-area"></div>
+    <div id="notification-area" class="notification-area"></div>
     <header class="site-header">
       <div class="site-header-top">
         <a id="brand-home-btn" class="brand brand-home-btn" href="/" aria-label="Go to home">
@@ -28,49 +28,59 @@
 
       <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
         <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
-        <a id="tab-global" class="tab-btn {{ 'active' if active_page == 'global' else '' }}" href="/upcoming-matches">Upcoming Matches</a>
-        <a id="tab-cups" class="tab-btn {{ 'active' if active_page == 'leagues' else '' }}" href="/leagues">Cups</a>
+        <a id="tab-leagues" class="tab-btn {{ 'active' if active_page == 'leagues' else '' }}" href="/leagues">Leagues</a>
         <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
-        <a id="tab-league-table" class="tab-btn {{ 'active' if active_page == 'leagues' else '' }}" href="/leagues">Projected League Tables</a>
         <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
       </nav>
     </header>
 
-    <section id="panel-leagues" class="{{ '' if active_page == 'leagues' else 'hidden' }}">
-      <div class="card">
-        <h3>Projected League Table</h3>
-        <div class="table-controls">
-          <label for="table-dataset">Dataset</label>
-          <select id="table-dataset">
-            <option value="global">European Leagues</option>
-            <option value="mls">MLS</option>
-            <option value="extra">Extra Leagues</option>
-          </select>
-
-          <label for="table-league">League</label>
-          <select id="table-league"></select>
-        </div>
-        <button id="table-view-toggle" type="button">Show Probability View</button>
-        <button id="table-position-odds-toggle" type="button" style="margin-left: 8px;">Show Position Odds</button>
+    <!-- Tile hub: pick a league or cup -->
+    <section id="leagues-hub" class="leagues-hub">
+      <div class="card leagues-hub-intro">
+        <h2>Leagues &amp; Cups</h2>
+        <p class="section-subtitle">Choose a competition to view projected and real tables, position odds, upcoming fixtures, and cup brackets.</p>
       </div>
-      <div id="league-table-view" class="card">Select a dataset and league.</div>
-
-      <div class="card">
-        <h3>Cup Tables &amp; Brackets</h3>
-        <p class="section-subtitle">
-          Projected cup paths below use the same layout as the World Cup page. Knockout brackets reflect a single simulation path; fluky results may occur.
-        </p>
-        <div id="cup-projection-tabs" class="tabs" aria-label="Cup competition tabs"></div>
-        <div class="table-controls">
-          <button id="cup-view-table" class="tab-btn active" type="button">Table View</button>
-          <button id="cup-view-bracket" class="tab-btn" type="button">Bracket View</button>
-        </div>
-        <p id="cup-format-note" class="muted-placeholder"></p>
-        <div id="cup-table-view" class="card">Loading cup projections...</div>
-        <div id="cup-bracket-view" class="card hidden">Loading cup projections...</div>
+      <div id="leagues-hub-loading" class="card muted-placeholder">Loading competitions...</div>
+      <div id="leagues-hub-leagues" class="league-tile-section hidden">
+        <h3 class="league-tile-section-title">Leagues</h3>
+        <div id="leagues-tile-grid-leagues" class="league-tile-grid" role="list"></div>
+      </div>
+      <div id="leagues-hub-cups" class="league-tile-section hidden">
+        <h3 class="league-tile-section-title">Cups &amp; European</h3>
+        <div id="leagues-tile-grid-cups" class="league-tile-grid" role="list"></div>
       </div>
     </section>
-      <footer class="site-footer">
+
+    <!-- Competition detail (tables, odds, upcoming) -->
+    <section id="league-detail" class="league-detail hidden">
+      <div class="league-detail-header card">
+        <a id="league-detail-back" class="league-detail-back" href="/leagues">&larr; All leagues</a>
+        <div class="league-detail-title-row">
+          <div id="league-detail-art" class="league-detail-art" aria-hidden="true"></div>
+          <div>
+            <p id="league-detail-country" class="league-detail-country"></p>
+            <h2 id="league-detail-title"></h2>
+          </div>
+        </div>
+        <div id="league-detail-leaders" class="league-detail-leaders"></div>
+      </div>
+
+      <div class="league-detail-tabs card" role="tablist" aria-label="Competition views">
+        <button type="button" class="tab-btn league-detail-tab active" data-view="predicted">Projected Table</button>
+        <button type="button" class="tab-btn league-detail-tab" data-view="real">Real Table</button>
+        <button type="button" class="tab-btn league-detail-tab" data-view="position-odds">Position Odds</button>
+        <button type="button" class="tab-btn league-detail-tab" data-view="upcoming">Upcoming</button>
+        <button type="button" class="tab-btn league-detail-tab hidden" data-view="bracket" id="league-detail-bracket-tab">Bracket</button>
+      </div>
+
+      <div id="league-detail-predicted" class="card league-detail-panel"></div>
+      <div id="league-detail-real" class="card league-detail-panel hidden"></div>
+      <div id="league-detail-position-odds" class="card league-detail-panel hidden"></div>
+      <div id="league-detail-upcoming" class="card league-detail-panel hidden"></div>
+      <div id="league-detail-bracket" class="card league-detail-panel hidden"></div>
+    </section>
+
+    <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
       <p>
         <a href="/privacy">Privacy Policy</a> ·
