@@ -213,6 +213,23 @@ LIVE_SCORE_COMPETITIONS = {
 }
 
 
+# Always polled each cycle so live scores work even when upcoming CSV discovery is empty.
+CORE_LIVE_POLL_COMPETITIONS = (
+    "England/Premier League",
+    "England/Championship",
+    "Spain/La Liga",
+    "Italy/Serie A",
+    "Germany/Bundesliga",
+    "France/Ligue 1",
+    "Portugal/Liga Portugal",
+    "Netherlands/Eredivisie",
+    "United States/MLS",
+    "Europe/Champions League",
+    "Europe/Europa League",
+    "Europe/Conference League",
+)
+
+
 # UEFA club competitions: show qualifying fixtures in upcoming, but defer
 # in-play live scoring until the main group/league phase (September).
 UEFA_MAIN_STAGE_LIVE_FROM = "2026-09-01"

@@ -40,6 +40,19 @@ _STANDINGS_STAT_NAMES = {
     "streak": "streak",
 }
 
+def _scoreboard_cache_fallback(espn_id: str, today_str: str):
+    """Return cached ESPN scoreboard JSON when live fetch fails."""
+    try:
+        import espn_api_cache
+
+        cached = espn_api_cache._read_cache(espn_api_cache.cache_path(espn_id, today_str))
+        if cached and isinstance(cached.get("data"), dict):
+            return cached["data"]
+    except Exception:
+        pass
+    return None
+
+
 def _fetch_competition_scores(comp_name, espn_id, today_str, *, log_failures=False):
     """Fetch ESPN scoreboard for one competition/date, return parsed games."""
     url = (
@@ -47,13 +60,16 @@ def _fetch_competition_scores(comp_name, espn_id, today_str, *, log_failures=Fal
         f"?dates={today_str}&limit=1000"
     )
     req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
+    data = None
     try:
         with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
             data = json.loads(resp.read().decode())
     except Exception as exc:
         if log_failures:
             print(f"[espn] scoreboard fetch failed for {comp_name} ({espn_id}, {today_str}): {exc}")
-        return []
+        data = _scoreboard_cache_fallback(espn_id, today_str)
+        if data is None:
+            return []
     events = data.get("events") or []
     games = []
     for ev in events:
