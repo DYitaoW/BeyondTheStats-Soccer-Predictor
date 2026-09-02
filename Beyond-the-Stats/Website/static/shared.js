@@ -2063,7 +2063,8 @@ function getLeagueTableUrlParams() {
     const params = new URLSearchParams(window.location.search);
     return {
         dataset: params.get("dataset"),
-        league: params.get("league"),
+        league: params.get("league") || params.get("competition"),
+        competition: params.get("competition") || params.get("league"),
     };
 }
 

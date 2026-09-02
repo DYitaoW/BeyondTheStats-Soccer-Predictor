@@ -566,7 +566,7 @@ def _render_site_page(template_name, active_page):
     # Shared route map used by template JS navigation helpers.
     page_routes = {
         "home": "/",
-        "global": "/upcoming-matches",
+        "global": "/leagues",
         "leagues": "/leagues",
         "h2h": "/head-to-head",
         "world-cup": "/world-cup",
@@ -619,8 +619,8 @@ def _render_site_page(template_name, active_page):
 
 @app.get("/upcoming-matches")
 def upcoming_matches():
-    """Render the upcoming matches tab page."""
-    return _render_site_page("upcoming_matches.html", active_page="global")
+    """Redirect legacy upcoming tab to the Leagues hub."""
+    return redirect(url_for("leagues"))
 
 
 @app.get("/cups")
@@ -971,7 +971,9 @@ def api_help():
     """Return a listing of every /api/ route with a short description."""
     routes = [
         ("/api/teams", "GET", "List selectable teams for a given mode (?mode=global|mls|extra)"),
+        ("/leagues", "GET", "Leagues & cups hub (?competition= opens detail with tables, odds, upcoming)"),
         ("/api/teams/catalog", "GET", "All unique teams in app-available leagues (?competition=)"),
+        ("/leagues", "GET", "Leagues & cups hub with tile navigation; ?competition= opens detail view"),
         ("/api/team", "GET", "Single-team form, recent matches, upcoming, H2H (?team=&mode=)"),
         ("/api/team/<team>", "GET", "Path-style single-team lookup (same payload as /api/team)"),
         ("/api/teams/<team_id>/roster", "GET", "ESPN roster/stats for a team (?competition=)"),

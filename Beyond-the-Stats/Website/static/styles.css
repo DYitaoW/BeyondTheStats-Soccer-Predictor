@@ -569,6 +569,221 @@ h1 {
   background: linear-gradient(135deg, var(--card) 0%, var(--hero-accent) 100%);
 }
 
+.app-promo-card-primary {
+  margin-top: 0;
+}
+
+.app-promo-card-secondary {
+  margin-top: 8px;
+}
+
+.home-sidebar-link {
+  font-size: 0.9rem;
+  color: var(--green-pct);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.home-sidebar-link:hover,
+.home-sidebar-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* ── Leagues hub tiles ─────────────────────────────────────────── */
+.leagues-hub-intro h2 {
+  margin: 0 0 6px;
+  font-size: 1.5rem;
+}
+
+.league-tile-section {
+  margin-bottom: 18px;
+}
+
+.league-tile-section-title {
+  margin: 0 0 10px 4px;
+  font-size: 1rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.league-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.league-tile {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--card);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.league-tile:hover,
+.league-tile:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--green-pct);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.league-tile-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.6rem;
+  letter-spacing: 0.06em;
+}
+
+.league-tile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 14px;
+}
+
+.league-tile-badge {
+  align-self: flex-start;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(72, 176, 101, 0.18);
+  color: var(--green-pct);
+}
+
+.league-tile-country {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.league-tile-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.league-tile-meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── League detail page ──────────────────────────────────────── */
+.league-detail-header {
+  margin-bottom: 12px;
+}
+
+.league-detail-back {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+
+.league-detail-back:hover,
+.league-detail-back:focus-visible {
+  color: var(--green-pct);
+}
+
+.league-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.league-detail-art {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.4rem;
+}
+
+.league-detail-country {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.league-detail-title-row h2 {
+  margin: 2px 0 0;
+}
+
+.league-detail-leaders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.league-leader-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--sidebar-bg);
+  min-width: 160px;
+}
+
+.league-leader-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.league-leader-odds {
+  font-size: 0.85rem;
+  color: var(--green-pct);
+}
+
+.league-detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.league-detail-tab {
+  margin: 0;
+}
+
+.league-detail-panel h3 {
+  margin-top: 0;
+}
+
+@media (max-width: 600px) {
+  .league-tile-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .league-detail-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 .app-promo-scroll {
   display: flex;
   gap: 12px;
