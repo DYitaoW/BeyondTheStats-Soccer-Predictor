@@ -457,6 +457,31 @@ def _build_cup_knockout_payload(matches, comp):
     return knockout, odds_knockout, real_knockout
 
 
+def _canonicalize_cup_team(team: str, competition: str) -> str:
+    from competition_rules import canonical_team_name
+    return canonical_team_name(str(team or "").strip(), competition)
+
+
+def _normalize_cup_probability_map(probs: dict, competition: str) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for team, pct in (probs or {}).items():
+        name = _canonicalize_cup_team(team, competition)
+        if not name:
+            continue
+        try:
+            val = float(pct or 0)
+        except (TypeError, ValueError):
+            val = 0.0
+        if val <= 0:
+            continue
+        out[name] = round(out.get(name, 0.0) + (val * 100 if val <= 1 else val), 2)
+    total = sum(out.values())
+    if total > 0 and abs(total - 100.0) > 0.05:
+        scale = 100.0 / total
+        out = {team: round(pct * scale, 2) for team, pct in out.items()}
+    return out
+
+
 def _enrich_league_data_cup_fields(comp, payload):
     """Add tournament winner odds and knockout bracket data for cup competitions."""
     from standings import _UEFA_COMPETITIONS
@@ -477,22 +502,43 @@ def _enrich_league_data_cup_fields(comp, payload):
             if isinstance(entry, dict):
                 for key in ("champion", "simulations_run", "winner_probabilities"):
                     if key in entry:
-                        payload[key] = entry[key]
-                probs = entry.get("winner_probabilities") or {}
+                        if key == "champion" and entry[key]:
+                            payload[key] = _canonicalize_cup_team(entry[key], comp)
+                        elif key == "winner_probabilities":
+                            payload[key] = _normalize_cup_probability_map(entry[key], comp)
+                        else:
+                            payload[key] = entry[key]
+                probs = payload.get("winner_probabilities") or {}
                 if probs:
+                    champion = payload.get("champion")
+                    if not champion:
+                        champion = max(probs, key=lambda k: probs[k])
+                        payload["champion"] = champion
                     winners = []
                     for team, pct in sorted(probs.items(), key=lambda x: -(x[1] or 0)):
-                        pct_f = float(pct or 0)
-                        display_pct = round(pct_f * 100, 2) if pct_f <= 1 else round(pct_f, 2)
                         winners.append({
                             "team": team,
-                            "win_league_pct": display_pct,
+                            "win_league_pct": round(float(pct or 0), 2),
                             "top4_pct": None,
                             "bottom3_pct": None,
                             "most_likely_position": None,
                             "most_likely_position_pct": None,
                         })
                     payload["winners_odds"] = winners
+                elim = entry.get("elimination_round_probabilities") or entry.get("elimination_round_odds")
+                reach = entry.get("round_reach_probabilities")
+                if isinstance(elim, dict):
+                    payload["elimination_round_odds"] = {
+                        _canonicalize_cup_team(team, comp): rounds
+                        for team, rounds in elim.items()
+                        if _canonicalize_cup_team(team, comp)
+                    }
+                if isinstance(reach, dict):
+                    payload["round_reach_probabilities"] = {
+                        rnd: _normalize_cup_probability_map(team_map, comp)
+                        for rnd, team_map in reach.items()
+                        if isinstance(team_map, dict)
+                    }
 
     matches = _gather_competition_cup_matches(comp)
     if matches:
