@@ -107,6 +107,30 @@ def _mem_set_league_data(comp_name: str, payload: dict) -> None:
         _LEAGUE_DATA_MEM[comp_name] = (expires_at, payload)
 
 
+def invalidate_league_data_cache(comp_name: str) -> None:
+    """Drop in-memory and on-disk league-data cache for a competition."""
+    base, _view = resolve_competition_query(comp_name)
+    names = {comp_name, base}
+    if base == config.MLS_COMPETITION:
+        names.add(config.MLS_COMPETITION)
+        names.update(
+            alias for alias in config.MLS_TABLE_VIEW_ALIASES
+            if alias != config.MLS_CUP_COMPETITION
+        )
+
+    with _LEAGUE_DATA_MEM_LOCK:
+        for name in list(names):
+            _LEAGUE_DATA_MEM.pop(name, None)
+
+    for name in names:
+        path = _league_data_cache_path(name)
+        try:
+            if os.path.exists(path):
+                os.unlink(path)
+        except Exception:
+            pass
+
+
 def _build_lock_for(comp_name: str) -> threading.Lock:
     with _LEAGUE_DATA_BUILD_LOCKS_GUARD:
         lock = _LEAGUE_DATA_BUILD_LOCKS.get(comp_name)

@@ -38,12 +38,10 @@ from live_prediction import (
 from standings import (
     _clear_leaders_cache,
     _clear_standings_cache,
-    _compute_standings_from_history,
     _load_live_score_history,
     _live_history_cutoff,
-    _real_tables,
-    _real_tables_lock,
     _upsert_live_score_history,
+    refresh_real_standings_after_live_final,
 )
 
 _live_scores: dict[str, dict] = {}
@@ -116,6 +114,8 @@ def _merge_completed_to_history():
 
     Stores all game data including summary fields (lineups, h2h, key events,
     boxscore stats) that were merged onto game objects from ``_live_summary_cache``.
+
+    Returns the set of competition names that received newly completed games.
     """
     history = _load_live_score_history()
     historic_ids = {g["match_id"] for g in history if g.get("match_id")}
@@ -140,6 +140,7 @@ def _merge_completed_to_history():
     # Track predictions for newly completed games against our CSV predictions.
     if new_games:
         _track_prediction_results(new_games)
+    return cleared_standings
 
 def _effective_poller_date():
     """Return the effective date for live-score polling.
@@ -609,13 +610,13 @@ def _live_score_poller_loop():
                             if mid and mid in _live_summary_cache:
                                 g.update(_live_summary_cache[mid])
             # Persist any newly completed games to history file.
-            _merge_completed_to_history()
+            merged_comps = _merge_completed_to_history()
 
             # ── Standings refresh on game completion ────────────────
-            # Detect games that just finished this cycle and fetch fresh
-            # standings for their competition, updating the cache.
+            # Recompute real tables as soon as a match finishes so standings
+            # update before the nightly pipeline refresh.
             try:
-                comps_to_refresh = set()
+                comps_to_refresh = set(merged_comps)
                 with _live_scores_lock:
                     for comp_name, comp_data in _live_scores.items():
                         for g in comp_data.get("games", []):
@@ -626,21 +627,8 @@ def _live_score_poller_loop():
                             prev = prev_statuses.get(mid)
                             if prev and prev[1] != "post" and cur_status == "post":
                                 comps_to_refresh.add(comp_name)
-                for comp_name in comps_to_refresh:
-                    table = _compute_standings_from_history(comp_name)
-                    if table:
-                        try:
-                            from standings import _sanitize_real_standings
-                            table = _sanitize_real_standings(table, comp_name) or table
-                        except Exception:
-                            pass
-                        with _real_tables_lock:
-                            _real_tables[comp_name] = table
-                        try:
-                            from standings import _persist_real_tables
-                            _persist_real_tables()
-                        except Exception:
-                            pass
+                for comp_name in sorted(comps_to_refresh):
+                    refresh_real_standings_after_live_final(comp_name)
             except Exception:
                 import traceback
                 traceback.print_exc()

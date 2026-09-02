@@ -44,6 +44,7 @@ from competition_rules import (
     resolve_competition_query,
     resolve_mls_team_name,
     uses_h2h_tiebreaker,
+    warm_competition_games_cache,
 )
 from espn_api import _fetch_leaders, _fetch_standings, LIVE_SCORE_FETCH_TIMEOUT
 from team_utils import _to_int
@@ -805,7 +806,74 @@ def _competition_names_for_lookup(comp_name):
 def _mls_conference(team_name):
     return mls_conference(team_name)
 
-def _compute_standings_from_history(comp_name):
+
+_MLS_LIVE_TABLE_VIEWS = (
+    "United States/MLS - Eastern Conference",
+    "United States/MLS - Western Conference",
+    "United States/MLS - Supporters Shield Table",
+)
+
+
+def _live_standings_refresh_targets(comp_name: str) -> list[str]:
+    """Competition keys whose real tables should refresh after a live final."""
+    base, _view = resolve_competition_query(comp_name)
+    live_keys = set(config.LIVE_SCORE_COMPETITIONS.keys())
+    if base not in live_keys and comp_name not in _MLS_LIVE_TABLE_VIEWS:
+        return []
+
+    targets: list[str] = []
+    seen: set[str] = set()
+
+    def _add(name: str) -> None:
+        if name and name not in seen:
+            seen.add(name)
+            targets.append(name)
+
+    if base in live_keys:
+        _add(base)
+    if base == config.MLS_COMPETITION:
+        for view in _MLS_LIVE_TABLE_VIEWS:
+            _add(view)
+    elif comp_name in _MLS_LIVE_TABLE_VIEWS:
+        _add(comp_name)
+    return targets
+
+
+def refresh_real_standings_after_live_final(comp_name: str) -> list[str]:
+    """Recompute and persist real standings when a live match finishes.
+
+    Forces a fresh games index (so the just-written history row is included),
+    bypasses the in-memory standings TTL, writes ``standings_cache.json``, and
+    drops league-data caches so ``/api/league-data`` serves the updated table
+    before the nightly pipeline refresh.
+    """
+    targets = _live_standings_refresh_targets(comp_name)
+    if not targets:
+        return []
+
+    warm_competition_games_cache(force=True)
+
+    updated: list[str] = []
+    for name in targets:
+        _clear_standings_cache(name)
+        table = _compute_standings_from_history(name, force_recompute=True)
+        if table and table.get("groups"):
+            updated.append(name)
+
+    if updated:
+        try:
+            from league_data import invalidate_league_data_cache
+
+            for name in updated:
+                invalidate_league_data_cache(name)
+        except Exception:
+            pass
+        print(f"[live-standings] Updated real table(s) after final whistle: {', '.join(updated)}")
+
+    return updated
+
+
+def _compute_standings_from_history(comp_name, force_recompute=False):
     """Compute league / group standings purely from completed live-score results.
 
     Handles:
@@ -819,8 +887,11 @@ def _compute_standings_from_history(comp_name):
     Returns ``None`` if no completed games are available.
     """
     # Prefer a fresh in-memory / persisted table before re-scanning history files.
-    with _real_tables_lock:
-        cached = _real_tables.get(comp_name)
+    if not force_recompute:
+        with _real_tables_lock:
+            cached = _real_tables.get(comp_name)
+    else:
+        cached = None
     if isinstance(cached, dict) and cached.get("groups"):
         updated = cached.get("updated_at", "")
         if not updated:
