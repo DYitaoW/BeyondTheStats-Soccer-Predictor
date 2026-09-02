@@ -465,7 +465,7 @@ h1 {
   right: 0;
   top: calc(100% + 8px);
   z-index: 80;
-  width: min(280px, calc(100vw - 32px));
+  width: min(320px, calc(100vw - 32px));
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
@@ -473,8 +473,120 @@ h1 {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
 }
 
-.date-popover button {
-  width: 100%;
+.home-upcoming-date-heading {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.home-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.home-calendar-month {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.home-calendar-nav {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.home-calendar-weekdays,
+.home-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.home-calendar-weekdays {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.home-calendar-day {
+  aspect-ratio: 1;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.home-calendar-day:hover {
+  background: var(--hero-accent);
+}
+
+.home-calendar-day.outside-month {
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+.home-calendar-day.in-range {
+  background: var(--hero-accent);
+}
+
+.home-calendar-day.range-start,
+.home-calendar-day.range-end,
+.home-calendar-day.selected-single {
+  background: var(--primary);
+  color: var(--btn-text);
+  font-weight: 700;
+}
+
+.home-calendar-day.today:not(.range-start):not(.range-end):not(.selected-single) {
+  border-color: var(--primary);
+}
+
+.home-calendar-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.home-calendar-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.home-calendar-actions button {
+  flex: 1;
+  margin: 0;
+}
+
+.home-calendar-secondary {
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
+  border: 1px solid var(--btn-secondary-border);
+}
+
+.league-title {
+  font-size: 0.88rem;
+  color: var(--text);
+  margin: 14px 0 8px;
+  font-weight: 700;
+  opacity: 0.92;
 }
 
 .tabs {

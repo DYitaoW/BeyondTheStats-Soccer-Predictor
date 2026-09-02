@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026090202') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026090203') }}">
 </head>
 <body data-active-page="home">
   <main class="page">
@@ -63,15 +63,27 @@
           <div class="section-header-row">
             <div>
               <h3>Upcoming Matches</h3>
+              <p id="home-upcoming-date-heading" class="home-upcoming-date-heading"></p>
             </div>
             <div class="date-range-picker">
               <button id="home-date-toggle" class="date-toggle-btn" type="button" aria-expanded="false" aria-controls="home-date-popover">Today</button>
               <div id="home-date-popover" class="date-popover hidden">
-                <label for="home-start-date">Start date</label>
-                <input id="home-start-date" type="date">
-                <label for="home-end-date">End date</label>
-                <input id="home-end-date" type="date">
-                <button id="home-apply-dates" type="button">Apply</button>
+                <div class="home-calendar" id="home-calendar" aria-label="Choose dates">
+                  <div class="home-calendar-header">
+                    <button id="home-cal-prev" class="home-calendar-nav" type="button" aria-label="Previous month">&lsaquo;</button>
+                    <span id="home-cal-month-label" class="home-calendar-month"></span>
+                    <button id="home-cal-next" class="home-calendar-nav" type="button" aria-label="Next month">&rsaquo;</button>
+                  </div>
+                  <div class="home-calendar-weekdays" aria-hidden="true">
+                    <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+                  </div>
+                  <div id="home-cal-grid" class="home-calendar-grid" role="grid"></div>
+                </div>
+                <p id="home-cal-hint" class="home-calendar-hint">Select one date, or two dates for a range.</p>
+                <div class="home-calendar-actions">
+                  <button id="home-cal-today" class="home-calendar-secondary" type="button">Today</button>
+                  <button id="home-apply-dates" type="button">Apply</button>
+                </div>
               </div>
             </div>
           </div>
@@ -142,8 +154,8 @@
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='shared.js', v='2026090202') }}"></script>
-  <script src="{{ url_for('static', filename='home.js', v='2026090202') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026090203') }}"></script>
+  <script src="{{ url_for('static', filename='home.js', v='2026090203') }}"></script>
 
 </body>
 </html>

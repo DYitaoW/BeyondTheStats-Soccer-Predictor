@@ -84,9 +84,14 @@ async function loadHomeLeagueSidebar() {
 const homeUpcomingList = document.getElementById("home-upcoming-list");
 const homeDateToggle = document.getElementById("home-date-toggle");
 const homeDatePopover = document.getElementById("home-date-popover");
-const homeStartDate = document.getElementById("home-start-date");
-const homeEndDate = document.getElementById("home-end-date");
+const homeDateHeading = document.getElementById("home-upcoming-date-heading");
 const homeApplyDates = document.getElementById("home-apply-dates");
+const homeCalGrid = document.getElementById("home-cal-grid");
+const homeCalMonthLabel = document.getElementById("home-cal-month-label");
+const homeCalPrev = document.getElementById("home-cal-prev");
+const homeCalNext = document.getElementById("home-cal-next");
+const homeCalToday = document.getElementById("home-cal-today");
+const homeCalHint = document.getElementById("home-cal-hint");
 
 function isoToday() {
     try {
@@ -103,13 +108,149 @@ function isoToday() {
     }
 }
 
+function formatLongDate(isoDate) {
+    if (typeof formatMatchDayLabel === "function") {
+        return formatMatchDayLabel(isoDate);
+    }
+    try {
+        const dt = new Date(`${isoDate}T12:00:00`);
+        return new Intl.DateTimeFormat("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+        }).format(dt);
+    } catch (_err) {
+        return isoDate;
+    }
+}
+
+function normalizeDateRange(start, end) {
+    const a = String(start || "").trim();
+    const b = String(end || a).trim();
+    if (!a) return { start: b, end: b };
+    if (!b) return { start: a, end: a };
+    return a <= b ? { start: a, end: b } : { start: b, end: a };
+}
+
 function formatDateButton(start, end) {
+    const range = normalizeDateRange(start, end);
     const today = isoToday();
-    if (start === today && end === today) return "Today";
-    const dateOptions = { month: "short", day: "numeric" };
-    const startLabel = new Date(`${start}T12:00:00`).toLocaleDateString([], dateOptions);
-    const endLabel = new Date(`${end}T12:00:00`).toLocaleDateString([], dateOptions);
-    return start === end ? startLabel : `${startLabel} - ${endLabel}`;
+    if (range.start === today && range.end === today) return "Today";
+    if (range.start === range.end) {
+        return new Date(`${range.start}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
+    }
+    const startLabel = new Date(`${range.start}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
+    const endLabel = new Date(`${range.end}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
+    return `${startLabel} – ${endLabel}`;
+}
+
+function updateHomeDateHeading(start, end) {
+    if (!homeDateHeading) return;
+    const range = normalizeDateRange(start, end);
+    if (range.start === range.end) {
+        homeDateHeading.textContent = formatLongDate(range.start);
+        return;
+    }
+    homeDateHeading.textContent = `${formatLongDate(range.start)} – ${formatLongDate(range.end)}`;
+}
+
+let homeSelectedStart = isoToday();
+let homeSelectedEnd = isoToday();
+let homeCalView = new Date(`${homeSelectedStart}T12:00:00`);
+let homeCalAnchor = homeSelectedStart;
+let homeCalFocus = homeSelectedEnd;
+let homeCalClickCount = 0;
+
+function isoFromDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function isDateInRange(iso, start, end) {
+    return iso >= start && iso <= end;
+}
+
+function updateCalendarHint() {
+    if (!homeCalHint) return;
+    const range = normalizeDateRange(homeCalAnchor, homeCalFocus);
+    if (!homeCalAnchor) {
+        homeCalHint.textContent = "Select one date, or two dates for a range.";
+        return;
+    }
+    if (range.start === range.end) {
+        homeCalHint.textContent = `Selected: ${formatLongDate(range.start)}`;
+        return;
+    }
+    homeCalHint.textContent = `Selected: ${formatLongDate(range.start)} – ${formatLongDate(range.end)}`;
+}
+
+function renderHomeCalendar() {
+    if (!homeCalGrid || !homeCalMonthLabel) return;
+    const year = homeCalView.getFullYear();
+    const month = homeCalView.getMonth();
+    homeCalMonthLabel.textContent = new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        year: "numeric",
+    }).format(homeCalView);
+
+    const range = normalizeDateRange(homeCalAnchor, homeCalFocus);
+    const firstOfMonth = new Date(year, month, 1);
+    const startOffset = firstOfMonth.getDay();
+    const gridStart = new Date(year, month, 1 - startOffset);
+
+    homeCalGrid.innerHTML = "";
+    for (let i = 0; i < 42; i += 1) {
+        const cellDate = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
+        const iso = isoFromDate(cellDate);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "home-calendar-day";
+        button.textContent = String(cellDate.getDate());
+        button.dataset.date = iso;
+        button.setAttribute("aria-label", formatLongDate(iso));
+
+        if (cellDate.getMonth() !== month) {
+            button.classList.add("outside-month");
+        }
+        if (iso === isoToday()) {
+            button.classList.add("today");
+        }
+        if (homeCalAnchor && range.start === range.end && iso === range.start) {
+            button.classList.add("selected-single");
+        } else if (homeCalAnchor && isDateInRange(iso, range.start, range.end)) {
+            button.classList.add("in-range");
+            if (iso === range.start) button.classList.add("range-start");
+            if (iso === range.end) button.classList.add("range-end");
+        }
+
+        button.addEventListener("click", () => {
+            if (homeCalClickCount === 0 || homeCalClickCount >= 2) {
+                homeCalAnchor = iso;
+                homeCalFocus = iso;
+                homeCalClickCount = 1;
+            } else {
+                homeCalFocus = iso;
+                homeCalClickCount = 2;
+            }
+            renderHomeCalendar();
+            updateCalendarHint();
+        });
+
+        homeCalGrid.appendChild(button);
+    }
+    updateCalendarHint();
+}
+
+function syncCalendarSelection(start, end) {
+    const range = normalizeDateRange(start, end);
+    homeCalAnchor = range.start;
+    homeCalFocus = range.end;
+    homeCalView = new Date(`${range.start}T12:00:00`);
+    homeCalClickCount = range.start === range.end ? 1 : 2;
+    renderHomeCalendar();
 }
 
 function rowMatchDateIso(row) {
@@ -123,13 +264,21 @@ function rowMatchDateIso(row) {
     return "";
 }
 
-function renderHomeUpcoming(rows) {
+function renderHomeUpcoming(rows, start, end) {
     if (!homeUpcomingList) return;
     if (!rows.length) {
         homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">No matches found for this date range.</p>";
+        updateHomeDateHeading(start, end);
         return;
     }
-    renderUpcoming(homeUpcomingList, rows, "", { includePast: true, groupByLeague: true });
+    const range = normalizeDateRange(start, end);
+    const singleDay = range.start === range.end;
+    renderUpcoming(homeUpcomingList, rows, "", {
+        includePast: true,
+        groupByDateThenLeague: true,
+        hideDayHeaders: singleDay,
+    });
+    updateHomeDateHeading(range.start, range.end);
 }
 
 function filterRowsByDateRange(rows, start, end) {
@@ -159,51 +308,82 @@ async function fetchUpcomingRowsForHome() {
 async function loadHomeUpcoming(start = isoToday(), end = start) {
     if (!homeUpcomingList) return;
     homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">Loading matches...</p>";
+    const range = normalizeDateRange(start, end);
+    homeSelectedStart = range.start;
+    homeSelectedEnd = range.end;
     try {
         if (!_homeUpcomingCache) {
             _homeUpcomingCache = await fetchUpcomingRowsForHome();
         }
-        const rows = filterRowsByDateRange(_homeUpcomingCache, start, end);
-        if (homeStartDate && homeEndDate) {
-            homeStartDate.value = start;
-            homeEndDate.value = end;
-        }
+        const rows = filterRowsByDateRange(_homeUpcomingCache, range.start, range.end);
         if (homeDateToggle) {
-            homeDateToggle.textContent = formatDateButton(start, end);
+            homeDateToggle.textContent = formatDateButton(range.start, range.end);
         }
-        renderHomeUpcoming(rows);
+        renderHomeUpcoming(rows, range.start, range.end);
         if (_homeRefreshId) clearInterval(_homeRefreshId);
         _homeRefreshId = setInterval(async () => {
             if (document.hidden) return;
             try {
                 _homeUpcomingCache = await fetchUpcomingRowsForHome();
-                renderHomeUpcoming(filterRowsByDateRange(_homeUpcomingCache, start, end));
+                renderHomeUpcoming(
+                    filterRowsByDateRange(_homeUpcomingCache, homeSelectedStart, homeSelectedEnd),
+                    homeSelectedStart,
+                    homeSelectedEnd,
+                );
             } catch (_refreshErr) {
                 // Keep the last successful render on refresh failure.
             }
         }, 120000);
     } catch (_error) {
         homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">Failed to load upcoming matches.</p>";
+        updateHomeDateHeading(range.start, range.end);
     }
 }
 
 function setupHomeDatePicker() {
     if (!homeDateToggle || !homeDatePopover || !homeApplyDates) return;
     const today = isoToday();
-    if (homeStartDate) homeStartDate.value = today;
-    if (homeEndDate) homeEndDate.value = today;
+    syncCalendarSelection(today, today);
 
-    homeDateToggle.addEventListener("click", () => {
+    homeDateToggle.addEventListener("click", (event) => {
+        event.stopPropagation();
         const isHidden = homeDatePopover.classList.toggle("hidden");
         homeDateToggle.setAttribute("aria-expanded", String(!isHidden));
+        if (!isHidden) {
+            syncCalendarSelection(homeSelectedStart, homeSelectedEnd);
+        }
     });
 
-    homeApplyDates.addEventListener("click", () => {
-        const start = homeStartDate?.value || today;
-        const end = homeEndDate?.value || start;
+    homeCalPrev?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        homeCalView = new Date(homeCalView.getFullYear(), homeCalView.getMonth() - 1, 1);
+        renderHomeCalendar();
+    });
+
+    homeCalNext?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        homeCalView = new Date(homeCalView.getFullYear(), homeCalView.getMonth() + 1, 1);
+        renderHomeCalendar();
+    });
+
+    homeCalToday?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        syncCalendarSelection(today, today);
+    });
+
+    homeApplyDates.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const range = normalizeDateRange(homeCalAnchor, homeCalFocus);
         homeDatePopover.classList.add("hidden");
         homeDateToggle.setAttribute("aria-expanded", "false");
-        loadHomeUpcoming(start, end);
+        loadHomeUpcoming(range.start, range.end);
+    });
+
+    document.addEventListener("click", (event) => {
+        if (homeDatePopover.classList.contains("hidden")) return;
+        if (event.target.closest(".date-range-picker")) return;
+        homeDatePopover.classList.add("hidden");
+        homeDateToggle.setAttribute("aria-expanded", "false");
     });
 }
 
