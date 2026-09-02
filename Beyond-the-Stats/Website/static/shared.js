@@ -1323,8 +1323,6 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                 const scheduleOnly = Boolean(r.schedule_only);
                 const hasPrediction = Boolean(r.has_prediction) && !scheduleOnly;
                 const noPrediction = scheduleOnly || String(r.prediction_quality || "").toLowerCase() === "no_prediction" || !hasPrediction;
-                const qualityPill = `<div class="${predictionQualityPillClass(r)}">${escapeHtml(predictionQualityLabel(r))}</div>`;
-                const livePill = liveUpdatesBadgeHtml(r);
                 const hasFinalScore = r.actual_home_goals !== null && r.actual_home_goals !== undefined
                     && r.actual_away_goals !== null && r.actual_away_goals !== undefined;
                 const homeGoals = (r.pred_home_goals === null || r.pred_home_goals === undefined) ? "NA" : r.pred_home_goals;
@@ -1332,19 +1330,12 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                 const settled = String(r.actual_result || "").trim().match(/^[HDA]$/i);
                 const isCorrect = String(r.is_correct || "").trim().toLowerCase();
                 let rowClass = "";
-                let statusText = noPrediction
-                    ? (hasFinalScore ? "Final" : "Scheduled")
-                    : "Pending";
                 if (!noPrediction && settled) {
                     if (isCorrect === "1" || isCorrect === "true") {
                         rowClass = "match-correct";
-                        statusText = "Correct";
                     } else {
                         rowClass = "match-wrong";
-                        statusText = "Wrong";
                     }
-                } else if (!noPrediction && hasFinalScore) {
-                    statusText = "Final";
                 }
                 
                 article.className = `match-row kick-match-card ${rowClass}`;
@@ -1356,15 +1347,13 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
                         <div class="kick-head">
                             <div class="kick-league">${escapeHtml(r.competition)}</div>
-                            <div class="kick-head-pills">${qualityPill}${livePill}</div>
                         </div>
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
                         ${r.prediction_note ? `<div class="match-meta prediction-note">${escapeHtml(r.prediction_note)}</div>` : ""}
                         ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
                         ${hasFinalScore
                             ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
-                            : `<div class="match-meta"><strong>Status:</strong> Scheduled</div>`}
-                        <div class="match-meta"><strong>Click:</strong> Open head to head</div>
+                            : ""}
                     </button>
                 `;
                 } else {
@@ -1375,7 +1364,6 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
                         <div class="kick-head">
                             <div class="kick-league">${escapeHtml(r.competition)}</div>
-                            <div class="kick-head-pills">${qualityPill}${livePill}<div class="confidence-pill">${pctLabel(Math.max(Number(r.prob_home) || 0, Number(r.prob_draw) || 0, Number(r.prob_away) || 0))}% confidence</div></div>
                         </div>
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
                         <div class="match-meta">Prediction: <span class="winner-line">${escapeHtml(r.winner_label)}</span></div>
@@ -1392,8 +1380,6 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         <div class="probability-labels">
                             <span>H: ${pctLabel(r.prob_home)}%</span> <span>D: ${pctLabel(r.prob_draw)}%</span> <span>A: ${pctLabel(r.prob_away)}%</span>
                         </div>
-                        <div class="match-meta"><strong>Status:</strong> ${statusText}</div>
-                        <div class="match-meta"><strong>Click:</strong> Open head to head</div>
                     </button>
                 `;
                 }
@@ -1533,7 +1519,6 @@ function renderTopPicks(rows) {
         <span>D: ${pctLabel(r.prob_draw)}%</span>
         <span>A: ${pctLabel(r.prob_away)}%</span>
         </div>
-        <p class="pick-confidence">Confidence: ${pctLabel(toConfidence(r))}%</p>
     </button>
     `).join("");
 }
@@ -1958,7 +1943,9 @@ if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
 if (tableViewToggle) {
 tableViewToggle.addEventListener("click", () => {
 tableViewMode = tableViewMode === "standings" ? "probability" : "standings";
+tablePositionOddsMode = false;
 updateTableViewToggleLabel();
+updateTablePositionOddsToggleLabel();
 if (tableDataset.value === "mls" && tableLeague.value === "__mls_bracket__") {
     return;
 }
@@ -2057,6 +2044,7 @@ openMatchupInH2H(btn.getAttribute("data-home-team"), btn.getAttribute("data-away
 // Page bootstrap so direct page loads hydrate their own data without manual tab toggles.
 const ACTIVE_PAGE = (document.body?.dataset?.activePage || "home").trim();
 updateTableViewToggleLabel();
+updateTablePositionOddsToggleLabel();
 activateTab(ACTIVE_PAGE);
 
 function getLeagueTableUrlParams() {

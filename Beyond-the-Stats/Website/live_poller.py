@@ -38,12 +38,10 @@ from live_prediction import (
 from standings import (
     _clear_leaders_cache,
     _clear_standings_cache,
-    _compute_standings_from_history,
     _load_live_score_history,
     _live_history_cutoff,
-    _real_tables,
-    _real_tables_lock,
     _upsert_live_score_history,
+    refresh_real_standings_after_live_final,
 )
 
 _live_scores: dict[str, dict] = {}
@@ -116,6 +114,8 @@ def _merge_completed_to_history():
 
     Stores all game data including summary fields (lineups, h2h, key events,
     boxscore stats) that were merged onto game objects from ``_live_summary_cache``.
+
+    Returns the set of competition names that received newly completed games.
     """
     history = _load_live_score_history()
     historic_ids = {g["match_id"] for g in history if g.get("match_id")}
@@ -140,6 +140,7 @@ def _merge_completed_to_history():
     # Track predictions for newly completed games against our CSV predictions.
     if new_games:
         _track_prediction_results(new_games)
+    return cleared_standings
 
 def _effective_poller_date():
     """Return the effective date for live-score polling.
@@ -214,13 +215,135 @@ def _filter_live_games_for_competition(comp_name: str, games: list[dict]) -> lis
     return filtered
 
 
+def _upcoming_csv_scan_paths():
+    """All fixture CSV paths the poller should consult for today's competitions."""
+    seen = set()
+    paths = []
+    for csv_path in config.UPCOMING_CSV_FILES.values():
+        if csv_path and csv_path not in seen:
+            seen.add(csv_path)
+            paths.append(csv_path)
+    for csv_path in (
+        config.ALL_UPCOMING_FILE,
+        config.FOUR_WEEK_WINDOW_FILE,
+        os.path.join(config.PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv"),
+        os.path.join(config.PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv"),
+    ):
+        if csv_path and csv_path not in seen:
+            seen.add(csv_path)
+            paths.append(csv_path)
+    return paths
+
+
+def _scan_upcoming_csv_for_today(csv_path, today_date, todays):
+    """Add today's kickoffs from one upcoming CSV into *todays*."""
+    if not csv_path or not os.path.exists(csv_path):
+        return
+    try:
+        frame = pd.read_csv(csv_path, dtype=str)
+    except Exception:
+        return
+    for _, row in frame.iterrows():
+        comp = str(row.get("competition", "") or "").strip()
+        if comp not in config.LIVE_SCORE_COMPETITIONS:
+            continue
+        kickoff_utc_str = str(row.get("match_datetime_utc", "") or "").strip()
+        if kickoff_utc_str:
+            try:
+                dt_utc = pd.to_datetime(kickoff_utc_str, errors="coerce")
+                if pd.isna(dt_utc):
+                    continue
+                if dt_utc.tz is None:
+                    dt_utc = dt_utc.tz_localize("UTC")
+                kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
+                if kickoff_et.date() != today_date:
+                    continue
+            except Exception:
+                continue
+        else:
+            md = str(row.get("match_date", "") or "").strip()
+            if not md:
+                continue
+            try:
+                dt = pd.to_datetime(md, errors="coerce", dayfirst=False)
+                if pd.isna(dt):
+                    continue
+                if dt.tz is None:
+                    kickoff_et = dt.tz_localize(ZoneInfo("America/New_York"))
+                else:
+                    kickoff_et = dt.tz_convert(ZoneInfo("America/New_York"))
+                if kickoff_et.date() != today_date:
+                    continue
+            except Exception:
+                continue
+        todays[comp].append(kickoff_et)
+
+
+def _discover_todays_competitions_from_espn(today_date, date_str):
+    """Fallback: ask ESPN which competitions have fixtures on *today_date*."""
+    competitions = {}
+    for comp_name, espn_id in config.LIVE_SCORE_COMPETITIONS.items():
+        if espn_id and espn_id not in competitions:
+            competitions[espn_id] = comp_name
+    if not competitions:
+        return {}
+
+    discovered = defaultdict(list)
+    with ThreadPoolExecutor(max_workers=min(8, len(competitions))) as pool:
+        futures = {
+            pool.submit(_fetch_competition_scores, comp_name, espn_id, date_str): comp_name
+            for espn_id, comp_name in competitions.items()
+        }
+        for future in as_completed(futures):
+            comp_name = futures[future]
+            try:
+                games = future.result()
+            except Exception:
+                continue
+            if not games:
+                continue
+            for game in games:
+                kickoff_et = None
+                kickoff_raw = str(game.get("kickoff_utc") or game.get("match_datetime_utc") or "").strip()
+                if kickoff_raw:
+                    try:
+                        dt_utc = pd.to_datetime(kickoff_raw, errors="coerce")
+                        if not pd.isna(dt_utc):
+                            if dt_utc.tz is None:
+                                dt_utc = dt_utc.tz_localize("UTC")
+                            kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
+                    except Exception:
+                        kickoff_et = None
+                if kickoff_et is None:
+                    match_date = str(game.get("match_date") or "").strip()
+                    if match_date:
+                        try:
+                            dt = pd.to_datetime(match_date, errors="coerce", dayfirst=False)
+                            if not pd.isna(dt):
+                                if dt.tz is None:
+                                    kickoff_et = dt.tz_localize(ZoneInfo("America/New_York"))
+                                else:
+                                    kickoff_et = dt.tz_convert(ZoneInfo("America/New_York"))
+                        except Exception:
+                            kickoff_et = None
+                if kickoff_et is None or kickoff_et.date() == today_date:
+                    discovered[comp_name].append(kickoff_et or datetime.now(ZoneInfo("America/New_York")))
+    if discovered:
+        print(
+            "[live-poller] ESPN discovery fallback found "
+            f"{len(discovered)} competition(s) for {today_date.isoformat()}."
+        )
+    return {k: sorted(v) for k, v in discovered.items()}
+
+
 def _get_todays_competitions(today_date=None):
     """Return {competition: [kickoff_et, ...]} for competitions with games today.
 
     Checks all available data sources:
       1. Upcoming predictions CSVs (club, MLS, extra, cups, national team)
-      2. World Cup projection JSON (group_fixtures + knockout rounds)
-      3. Cup bracket JSON (knockout fixtures)
+      2. Merged Output/Upcoming CSVs (all_upcoming, four_week_window, regional)
+      3. World Cup projection JSON (group_fixtures + knockout rounds)
+      4. Cup bracket JSON (knockout fixtures)
 
     Args:
         today_date: date override (defaults to ``date.today()``).
@@ -230,51 +353,9 @@ def _get_todays_competitions(today_date=None):
     now_et = datetime.now(ZoneInfo("America/New_York"))
     todays = defaultdict(list)
 
-    # ── Source 1: upcoming predictions CSVs ──────────────────────
-    for csv_path in config.UPCOMING_CSV_FILES.values():
-        if not os.path.exists(csv_path):
-            continue
-        try:
-            frame = pd.read_csv(csv_path, dtype=str)
-        except Exception:
-            continue
-        for _, row in frame.iterrows():
-            comp = str(row.get("competition", "") or "").strip()
-            if comp not in config.LIVE_SCORE_COMPETITIONS:
-                continue
-            # Use match_datetime_utc converted to ET to determine if the
-            # game falls on today in the LOCAL timezone (not UTC date).
-            kickoff_utc_str = str(row.get("match_datetime_utc", "") or "").strip()
-            if kickoff_utc_str:
-                try:
-                    dt_utc = pd.to_datetime(kickoff_utc_str, errors="coerce")
-                    if pd.isna(dt_utc):
-                        continue
-                    if dt_utc.tz is None:
-                        dt_utc = dt_utc.tz_localize("UTC")
-                    kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
-                    if kickoff_et.date() != today_date:
-                        continue
-                except Exception:
-                    continue
-            else:
-                # Fallback to match_date column if no datetime available
-                md = str(row.get("match_date", "") or "").strip()
-                if not md:
-                    continue
-                try:
-                    dt = pd.to_datetime(md, errors="coerce", dayfirst=False)
-                    if pd.isna(dt):
-                        continue
-                    if dt.tz is None:
-                        kickoff_et = dt.tz_localize(ZoneInfo("America/New_York"))
-                    else:
-                        kickoff_et = dt.tz_convert(ZoneInfo("America/New_York"))
-                    if kickoff_et.date() != today_date:
-                        continue
-                except Exception:
-                    continue
-            todays[comp].append(kickoff_et)
+    # ── Source 1: upcoming predictions + merged fixture CSVs ─────
+    for csv_path in _upcoming_csv_scan_paths():
+        _scan_upcoming_csv_for_today(csv_path, today_date, todays)
 
     # ── Source 2: World Cup projection JSON ──────────────────────
     if "International/World Cup" not in todays and os.path.exists(config.WORLD_CUP_PROJECTION_FILE):
@@ -452,6 +533,8 @@ def _live_score_poller_loop():
             poll_date = _effective_poller_date()
             today_str = poll_date.strftime("%Y%m%d")
             todays_comps = _get_todays_competitions(today_date=poll_date)
+            if not todays_comps:
+                todays_comps = _discover_todays_competitions_from_espn(poll_date, today_str)
             available = {}
             for comp in todays_comps:
                 eid = config.LIVE_SCORE_COMPETITIONS.get(comp)
@@ -471,7 +554,9 @@ def _live_score_poller_loop():
             if live_comps:
                 with ThreadPoolExecutor(max_workers=min(8, len(live_comps))) as pool:
                     ft_to_name = {
-                        pool.submit(_fetch_competition_scores, name, eid, today_str): name
+                        pool.submit(
+                            _fetch_competition_scores, name, eid, today_str, log_failures=True
+                        ): name
                         for name, eid in live_comps.items()
                     }
                     for ft in as_completed(ft_to_name):
@@ -609,13 +694,13 @@ def _live_score_poller_loop():
                             if mid and mid in _live_summary_cache:
                                 g.update(_live_summary_cache[mid])
             # Persist any newly completed games to history file.
-            _merge_completed_to_history()
+            merged_comps = _merge_completed_to_history()
 
             # ── Standings refresh on game completion ────────────────
-            # Detect games that just finished this cycle and fetch fresh
-            # standings for their competition, updating the cache.
+            # Recompute real tables as soon as a match finishes so standings
+            # update before the nightly pipeline refresh.
             try:
-                comps_to_refresh = set()
+                comps_to_refresh = set(merged_comps)
                 with _live_scores_lock:
                     for comp_name, comp_data in _live_scores.items():
                         for g in comp_data.get("games", []):
@@ -626,21 +711,8 @@ def _live_score_poller_loop():
                             prev = prev_statuses.get(mid)
                             if prev and prev[1] != "post" and cur_status == "post":
                                 comps_to_refresh.add(comp_name)
-                for comp_name in comps_to_refresh:
-                    table = _compute_standings_from_history(comp_name)
-                    if table:
-                        try:
-                            from standings import _sanitize_real_standings
-                            table = _sanitize_real_standings(table, comp_name) or table
-                        except Exception:
-                            pass
-                        with _real_tables_lock:
-                            _real_tables[comp_name] = table
-                        try:
-                            from standings import _persist_real_tables
-                            _persist_real_tables()
-                        except Exception:
-                            pass
+                for comp_name in sorted(comps_to_refresh):
+                    refresh_real_standings_after_live_final(comp_name)
             except Exception:
                 import traceback
                 traceback.print_exc()

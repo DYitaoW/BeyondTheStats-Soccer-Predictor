@@ -9,9 +9,9 @@ function formatLeagueLabel(league) {
     return { country: parts[0], name: parts.slice(1).join("/") };
 }
 
-function leagueTableUrl(dataset, league) {
-    const params = new URLSearchParams({ dataset, league });
-    return `/league-tables?${params.toString()}`;
+function leagueTableUrl(league) {
+    const params = new URLSearchParams({ competition: league });
+    return `/leagues?${params.toString()}`;
 }
 
 function formatSidebarWinPct(value) {
@@ -44,7 +44,7 @@ function renderHomeLeagueSidebar(entries) {
 
     homeLeagueSidebar.innerHTML = entries.map((entry) => {
         const label = formatLeagueLabel(entry.league);
-        const href = leagueTableUrl(entry.dataset, entry.league);
+        const href = leagueTableUrl(entry.league);
         const winPct = formatSidebarWinPct(entry.win_pct);
         return `
             <a class="home-league-item" href="${escapeHtmlText(href)}">
@@ -144,8 +144,9 @@ let _homeRefreshId = null;
 let _homeUpcomingCache = null;
 
 async function fetchUpcomingRowsForHome() {
-    // Prefer the aggregated upcoming feed (all sources). Avoid deprecated /api/home/*.
-    const response = await fetch("/api/upcoming/global");
+    // Prefer the aggregated upcoming feed (all sources) limited to the fast
+    // 4-week window (past 14 days + next 21 days) so the home page loads less data.
+    const response = await fetch("/api/upcoming/global?window=4week");
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data?.ok) {
         const err = new Error(data?.error || `Upcoming API failed (${response.status})`);

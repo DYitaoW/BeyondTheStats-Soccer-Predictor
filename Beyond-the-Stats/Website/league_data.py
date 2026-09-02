@@ -107,6 +107,56 @@ def _mem_set_league_data(comp_name: str, payload: dict) -> None:
         _LEAGUE_DATA_MEM[comp_name] = (expires_at, payload)
 
 
+def _apply_real_table_patch(payload: dict, real_standings: dict) -> dict:
+    """Return a copy of *payload* with only real-standings fields updated."""
+    patched = dict(payload)
+    real = dict(patched.get("real") or {})
+    real["standings"] = real_standings
+    patched["real"] = real
+    if "real_table" in patched:
+        patched["real_table"] = real_standings
+    return patched
+
+
+def patch_league_data_real_table(comp_name: str, real_standings: dict | None) -> None:
+    """Update only the real standings inside an existing league-data cache entry.
+
+    Predicted tables, position odds, and other pipeline-driven fields are left
+    untouched so they continue to change only on scheduled refreshes.
+    """
+    if not isinstance(real_standings, dict) or not real_standings.get("groups"):
+        return
+
+    # In-memory cache
+    with _LEAGUE_DATA_MEM_LOCK:
+        entry = _LEAGUE_DATA_MEM.get(comp_name)
+        if entry:
+            expires_at, payload = entry
+            if isinstance(payload, dict):
+                _LEAGUE_DATA_MEM[comp_name] = (
+                    expires_at,
+                    _apply_real_table_patch(payload, real_standings),
+                )
+
+    # On-disk cache
+    path = _league_data_cache_path(comp_name)
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, dict):
+            return
+        patched = _apply_real_table_patch(payload, real_standings)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(patched, handle, ensure_ascii=False, separators=(",", ":"), default=str)
+        with _LEAGUE_DATA_MEM_LOCK:
+            expires_at = time.time() + _league_data_ttl_seconds()
+            _LEAGUE_DATA_MEM[comp_name] = (expires_at, patched)
+    except Exception:
+        pass
+
+
 def _build_lock_for(comp_name: str) -> threading.Lock:
     with _LEAGUE_DATA_BUILD_LOCKS_GUARD:
         lock = _LEAGUE_DATA_BUILD_LOCKS.get(comp_name)
@@ -119,11 +169,7 @@ def _build_lock_for(comp_name: str) -> threading.Lock:
 def _load_league_data_from_cache(comp_name):
     mem = _mem_get_league_data(comp_name)
     if mem is not None:
-        if _league_data_cache_is_stale_zeroed(comp_name, mem):
-            with _LEAGUE_DATA_MEM_LOCK:
-                _LEAGUE_DATA_MEM.pop(comp_name, None)
-        else:
-            return mem
+        return mem
 
     path = _league_data_cache_path(comp_name)
     if os.path.exists(path):
@@ -135,8 +181,6 @@ def _load_league_data_from_cache(comp_name):
             with open(path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
             if _mls_league_data_cache_missing_cup(comp_name, payload):
-                return None
-            if _league_data_cache_is_stale_zeroed(comp_name, payload):
                 return None
             if isinstance(payload, dict):
                 _mem_set_league_data(comp_name, payload)
@@ -524,8 +568,8 @@ def _infer_groups_from_fixtures(comp_name: str, comp_table: list[dict]) -> list[
     return result if result else None
 
 
-def _load_cached_upcoming_rows(csv_path):
-    cache_key = str(csv_path)
+def _load_cached_upcoming_rows(csv_path, competition_filter=None):
+    cache_key = f"{csv_path}|{','.join(sorted(competition_filter or []))}"
     try:
         mtime = os.path.getmtime(csv_path)
     except Exception:
@@ -537,7 +581,12 @@ def _load_cached_upcoming_rows(csv_path):
             if cached_mtime == mtime and time.time() - ts < 120:
                 return rows
     try:
-        rows, _, _ = _load_upcoming_rows(csv_path, date_range="all")
+        rows, _, _ = _load_upcoming_rows(
+            csv_path,
+            date_range="all",
+            fixtures_only=True,
+            competition_filter=competition_filter,
+        )
     except Exception:
         rows = []
     with _LEAGUE_DATA_CSV_CACHE_LOCK:
@@ -560,13 +609,16 @@ def _load_fixtures(comp_name: str) -> list[dict]:
         config.CUP_UPCOMING_FILE,
     )
 
+    comp_filter = list(fixture_comps)
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(csv_paths)) as pool:
-        all_rows = list(pool.map(_load_cached_upcoming_rows, csv_paths))
+        all_rows = list(pool.map(
+            lambda p: _load_cached_upcoming_rows(p, competition_filter=comp_filter),
+            csv_paths,
+        ))
 
     for rows in all_rows:
-        matches = [r for r in rows if r.get("competition") in fixture_comps]
-        if matches:
-            return matches
+        if rows:
+            return rows
     return []
 
 
@@ -1065,12 +1117,24 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
         fixtures = f_fixtures.result()
 
     predicted_table = list(comp_table or [])
-    winner_fields = _build_winner_probability_payload(comp_table) if comp_table else {}
+    fmt_spec = competition_format_spec(comp)
+    is_knockout_cup = fmt_spec.get("format") in {
+        "knockout",
+        "domestic_knockout",
+        "league_phase_then_knockout",
+        "dual_league_phase_then_knockout",
+        "group_stage_then_knockout",
+    }
+    winner_fields = (
+        {}
+        if is_knockout_cup
+        else (_build_winner_probability_payload(comp_table, competition=comp) if comp_table else {})
+    )
 
     if not predicted_table:
         predicted_table, roster_winners = _roster_predicted_table(comp)
         if predicted_table:
-            winner_fields = _build_winner_probability_payload(predicted_table)
+            winner_fields = _build_winner_probability_payload(predicted_table, competition=comp)
         else:
             roster_winners = []
 
@@ -1091,10 +1155,12 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
             base = dict(by_team.get(team) or entry)
             base["team"] = team
             predicted_table.append(base)
-        winner_fields = _build_winner_probability_payload(predicted_table) if predicted_table else winner_fields
+        winner_fields = _build_winner_probability_payload(predicted_table, competition=comp) if predicted_table else winner_fields
 
     position_odds = _build_position_odds(predicted_table)
     predicted_groups = _load_predicted_groups(comp, predicted_table, real_standings=real_standings)
+    if not predicted_table and real_standings and standings_layout_for(comp) == "league_phase":
+        predicted_groups = real_standings.get("groups") or predicted_groups
 
     winners_odds = winner_fields.get("winners_odds", [])
     predicted = {
@@ -1143,6 +1209,10 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
         predicted["winner"]["probabilities"] = payload["winner_probabilities"]
     if payload.get("champion"):
         predicted["winner"]["champion"] = payload["champion"]
+    if payload.get("elimination_round_odds"):
+        predicted["elimination_round_odds"] = payload["elimination_round_odds"]
+    if payload.get("round_reach_probabilities"):
+        predicted["round_reach_probabilities"] = payload["round_reach_probabilities"]
     if payload.get("winners_odds"):
         predicted["winners_odds"] = payload["winners_odds"]
         payload["winners_odds"] = payload["winners_odds"]

@@ -991,6 +991,7 @@ def _live_updates_eligible(competition: str, schedule_only: bool = False) -> boo
 def _build_live_games_index() -> dict[tuple[str, str, str], dict]:
     """Index in-memory live games by normalized team pair and competition alias."""
     try:
+        from competition_rules import canonical_team_name
         from live_prediction import _normalize_team_for_live
         from live_poller import _live_scores, _live_scores_lock
     except Exception:
@@ -1000,8 +1001,12 @@ def _build_live_games_index() -> dict[tuple[str, str, str], dict]:
     with _live_scores_lock:
         for comp_name, comp_data in _live_scores.items():
             for game in comp_data.get("games", []) or []:
-                home = _normalize_team_for_live(game.get("home_team"))
-                away = _normalize_team_for_live(game.get("away_team"))
+                home = _normalize_team_for_live(
+                    canonical_team_name(game.get("home_team"), comp_name)
+                )
+                away = _normalize_team_for_live(
+                    canonical_team_name(game.get("away_team"), comp_name)
+                )
                 if not home or not away:
                     continue
                 for alias in config.competition_live_aliases(comp_name):
@@ -1011,22 +1016,32 @@ def _build_live_games_index() -> dict[tuple[str, str, str], dict]:
 
 def _find_live_game_for_row(row: dict, live_index: dict[tuple[str, str, str], dict]) -> dict | None:
     try:
+        from competition_rules import canonical_team_name
         from live_prediction import _normalize_team_for_live
     except Exception:
         return None
 
-    home = _normalize_team_for_live(row.get("home_team"))
-    away = _normalize_team_for_live(row.get("away_team"))
+    comp = str(row.get("competition", "")).strip()
+    home = _normalize_team_for_live(canonical_team_name(row.get("home_team"), comp))
+    away = _normalize_team_for_live(canonical_team_name(row.get("away_team"), comp))
     if not home or not away:
         return None
 
-    comp = str(row.get("competition", "")).strip()
     for alias in config.competition_live_aliases(comp):
         game = live_index.get((home, away, alias))
         if game:
             return game
         game = live_index.get((away, home, alias))
         if game:
+            return game
+
+    # Fuzzy fallback for ESPN vs CSV naming differences (e.g. Man United).
+    for (idx_home, idx_away, idx_alias), game in live_index.items():
+        if idx_alias not in config.competition_live_aliases(comp):
+            continue
+        if (home in idx_home or idx_home in home) and (away in idx_away or idx_away in away):
+            return game
+        if (home in idx_away or idx_away in home) and (away in idx_home or idx_home in away):
             return game
     return None
 
@@ -1049,7 +1064,12 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
         if not live_game:
             row["live_updates"] = False
             row["live_status"] = None
+            row.pop("match_id", None)
             continue
+
+        match_id = str(live_game.get("match_id") or "").strip()
+        if match_id:
+            row["match_id"] = match_id
 
         status = str(live_game.get("status") or "").strip().lower()
         uefa_blocked = (
@@ -1074,7 +1094,7 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
     return rows
 
 
-def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=None):
+def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=None, fixtures_only=False, competition_filter=None):
     """Load prediction rows from CSV filtered by date range.
     
     Args:
@@ -1211,6 +1231,11 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
         hi = pd.Timestamp(today_et + timedelta(days=int(window_days)))
         frame = frame[frame["parsed_date"] <= hi].reset_index(drop=True)
     
+    if competition_filter:
+        comp_set = {str(c).strip() for c in (competition_filter if isinstance(competition_filter, (list, tuple, set)) else [competition_filter]) if str(c).strip()}
+        if comp_set:
+            frame = frame[frame["competition"].astype(str).str.strip().isin(comp_set)].reset_index(drop=True)
+
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
     
@@ -1223,6 +1248,26 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
     if os.path.normpath(csv_path) == os.path.normpath(config.FRIENDLIES_UPCOMING_FILE):
         target_mode = "friendlies"
     is_mls_file = target_mode == "mls"
+
+    if fixtures_only:
+        rows = []
+        for _, row in frame.iterrows():
+            comp = str(row.get("competition", "")).strip()
+            home = _team_name_for_display(str(row.get("display_home_team", row["home_team"])).strip())
+            away = _team_name_for_display(str(row.get("display_away_team", row["away_team"])).strip())
+            rows.append({
+                "match_date": str(row["match_date"]),
+                "match_date_iso": str(row["match_date"]),
+                "competition": comp,
+                "home_team": home,
+                "away_team": away,
+                "predicted_result": str(row.get("predicted_result", "")).strip(),
+                "prob_home": _to_float(row.get("prob_home")),
+                "prob_draw": _to_float(row.get("prob_draw")),
+                "prob_away": _to_float(row.get("prob_away")),
+            })
+        empty = pd.DataFrame()
+        return rows, _compute_accuracy_stats(empty), _compute_league_accuracy_stats(empty)
 
     # Pre-build form & strength indices (only for modes that have processed data)
     form_index = _build_last5_form_index(target_mode) if target_mode in ("global", "mls", "extra") else {}
@@ -1783,9 +1828,21 @@ def _load_projected_competition_table(comp_name: str) -> list[dict]:
     return _rows_from_leagueresult_json(comp_name)
 
 
-def _build_winner_probability_payload(comp_table: list[dict]) -> dict:
+def _build_winner_probability_payload(comp_table: list[dict], competition: str = "") -> dict:
     """Build World Cup-style winner odds fields from projected table rows."""
+    from competition_rules import canonical_team_name, leagues_cup_table_side
+    from competition_rules import LEAGUES_CUP_TABLE_LIGA_MX, LEAGUES_CUP_TABLE_MLS
     from competition_rules import normalize_team_key
+
+    comp = str(competition or "").strip()
+    filtered_table = list(comp_table or [])
+    if comp == "North America/Leagues Cup":
+        filtered_table = [
+            row for row in filtered_table
+            if leagues_cup_table_side(str(row.get("team", "")).strip()) in {
+                LEAGUES_CUP_TABLE_MLS, LEAGUES_CUP_TABLE_LIGA_MX,
+            }
+        ]
 
     winner_probabilities: dict[str, float] = {}
     winners_odds: list[dict] = []
@@ -1794,8 +1851,8 @@ def _build_winner_probability_payload(comp_table: list[dict]) -> dict:
     best_pct = -1.0
     seen_keys: set[str] = set()
 
-    for row in comp_table:
-        team = str(row.get("team", "")).strip()
+    for row in filtered_table:
+        team = canonical_team_name(str(row.get("team", "")).strip(), comp) if comp else str(row.get("team", "")).strip()
         if not team:
             continue
         key = normalize_team_key(team)

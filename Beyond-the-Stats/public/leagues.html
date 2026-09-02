@@ -9,7 +9,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/graphics/BeyondTheStatsLogo.png">
   <link rel="stylesheet" href="/static/styles.css?v=2026090101">
 </head>
-<body class="dark-mode" data-active-page="league-table">
+<body class="dark-mode" data-active-page="leagues">
   <main class="page">
         <div id="notification-area" class="notification-area"></div>
     <header class="site-header">
@@ -29,13 +29,14 @@
       <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
         <a id="tab-home" class="tab-btn " href="/index.html">Home</a>
         <a id="tab-global" class="tab-btn " href="/upcoming-matches.html">Upcoming Matches</a>
-        <a id="tab-cups" class="tab-btn " href="/cups.html">Cups</a>
+        <a id="tab-cups" class="tab-btn " href="/leagues">Cups</a>
         <a id="tab-h2h" class="tab-btn " href="/head-to-head.html">Compare Teams</a>
-        <a id="tab-league-table" class="tab-btn " href="/league-tables.html">Projected League Tables</a>
+        <a id="tab-league-table" class="tab-btn " href="/leagues">Projected League Tables</a>
         <a id="tab-tactics" class="tab-btn " href="/tactics.html">Tactics Board</a>
       </nav>
     </header>
-    <section id="panel-league-table" class="">
+
+    <section id="panel-leagues" class="">
       <div class="card">
         <h3>Projected League Table</h3>
         <div class="table-controls">
@@ -44,7 +45,7 @@
             <option value="global">European Leagues</option>
             <option value="mls">MLS</option>
             <option value="extra">Extra Leagues</option>
-            </select>
+          </select>
 
           <label for="table-league">League</label>
           <select id="table-league"></select>
@@ -53,6 +54,21 @@
         <button id="table-position-odds-toggle" type="button" style="margin-left: 8px;">Show Position Odds</button>
       </div>
       <div id="league-table-view" class="card">Select a dataset and league.</div>
+
+      <div class="card">
+        <h3>Cup Tables &amp; Brackets</h3>
+        <p class="section-subtitle">
+          Projected cup paths below use the same layout as the World Cup page. Knockout brackets reflect a single simulation path; fluky results may occur.
+        </p>
+        <div id="cup-projection-tabs" class="tabs" aria-label="Cup competition tabs"></div>
+        <div class="table-controls">
+          <button id="cup-view-table" class="tab-btn active" type="button">Table View</button>
+          <button id="cup-view-bracket" class="tab-btn" type="button">Bracket View</button>
+        </div>
+        <p id="cup-format-note" class="muted-placeholder"></p>
+        <div id="cup-table-view" class="card">Loading cup projections...</div>
+        <div id="cup-bracket-view" class="card hidden">Loading cup projections...</div>
+      </div>
     </section>
       <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
@@ -65,12 +81,5 @@
     </footer>
   </main>
   <script src="/static/shared.js?v=2026090101"></script>
-  <script src="/static/league_tables.js?v=2026090101"></script>
 </body>
 </html>
-
-
-
-
-
-

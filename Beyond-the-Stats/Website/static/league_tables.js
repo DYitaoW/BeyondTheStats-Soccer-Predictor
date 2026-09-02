@@ -1,5 +1,12 @@
-// League tables page hook: reserved for league-table page behavior.
-document.addEventListener('DOMContentLoaded', () => {
-  // Keep league-table tab visibly active on direct loads.
-  if (typeof activateTab === 'function') activateTab('league-table');
+// League tables page: direct loads hydrate data and wire view toggles.
+document.addEventListener("DOMContentLoaded", () => {
+  if (typeof activateTab === "function") {
+    activateTab("league-table");
+  }
+  if (typeof updateTableViewToggleLabel === "function") {
+    updateTableViewToggleLabel();
+  }
+  if (typeof updateTablePositionOddsToggleLabel === "function") {
+    updateTablePositionOddsToggleLabel();
+  }
 });
