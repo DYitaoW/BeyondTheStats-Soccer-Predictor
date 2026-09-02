@@ -24,14 +24,29 @@ const CUP_COMPETITIONS = new Set([
 ]);
 
 function formatLeagueLabel(competition) {
+    const displayName = typeof competitionDisplayName === "function"
+        ? competitionDisplayName(competition)
+        : String(competition || "").split("/").slice(1).join("/") || competition;
     const parts = String(competition || "").split("/");
     if (parts.length < 2) {
-        return { country: "", name: competitionDisplayName(competition) };
+        return { country: "", name: displayName };
     }
     return {
         country: parts[0],
-        name: competitionDisplayName(competition),
+        name: displayName,
     };
+}
+
+async function fetchLeagueLeadersJson() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+        const response = await fetch("/api/league-leaders", { signal: controller.signal });
+        const data = await response.json().catch(() => ({}));
+        return { response, data };
+    } finally {
+        clearTimeout(timeoutId);
+    }
 }
 
 function leagueDetailUrl(competition) {
@@ -112,30 +127,37 @@ function dedupeCompetitionEntries(entries) {
 async function loadLeaguesHub() {
     if (!hubLoading) return;
     try {
-        const response = await fetch("/api/league-leaders");
-        const data = await response.json().catch(() => ({}));
+        const { response, data } = await fetchLeagueLeadersJson();
         if (!response.ok || !data?.ok) {
-            hubLoading.textContent = "Failed to load leagues.";
+            hubLoading.textContent = data?.error || "Failed to load leagues.";
             return;
         }
         const leagues = dedupeCompetitionEntries(data.leagues || []);
         const cups = dedupeCompetitionEntries(data.cups || []);
-        hubLoading.classList.add("hidden");
 
-        if (gridLeagues && leagues.length) {
-            gridLeagues.innerHTML = leagues.map((entry) => renderLeagueTile(entry, false)).join("");
-            hubLeaguesSection?.classList.remove("hidden");
+        if (gridLeagues) {
+            gridLeagues.innerHTML = leagues.length
+                ? leagues.map((entry) => renderLeagueTile(entry, false)).join("")
+                : "";
+            hubLeaguesSection?.classList.toggle("hidden", !leagues.length);
         }
-        if (gridCups && cups.length) {
-            gridCups.innerHTML = cups.map((entry) => renderLeagueTile(entry, true)).join("");
-            hubCupsSection?.classList.remove("hidden");
+        if (gridCups) {
+            gridCups.innerHTML = cups.length
+                ? cups.map((entry) => renderLeagueTile(entry, true)).join("")
+                : "";
+            hubCupsSection?.classList.toggle("hidden", !cups.length);
         }
+
         if (!leagues.length && !cups.length) {
-            hubLoading.classList.remove("hidden");
             hubLoading.textContent = "No competitions available yet.";
+            return;
         }
-    } catch (_err) {
-        hubLoading.textContent = "Failed to load leagues.";
+        hubLoading.classList.add("hidden");
+    } catch (err) {
+        hubLoading.classList.remove("hidden");
+        hubLoading.textContent = err?.name === "AbortError"
+            ? "Loading timed out. Please refresh."
+            : "Failed to load leagues.";
     }
 }
 
@@ -290,10 +312,10 @@ async function loadLeagueDetail(competition) {
     try {
         const [dataResp, leadersResp] = await Promise.all([
             fetch(`/api/league-data/${encodeURIComponent(competition)}`),
-            fetch("/api/league-leaders"),
+            fetchLeagueLeadersJson(),
         ]);
         const payload = await dataResp.json().catch(() => ({}));
-        const leadersData = await leadersResp.json().catch(() => ({}));
+        const leadersData = leadersResp.data || {};
 
         if (!dataResp.ok || !payload?.ok) {
             const message = payload?.error || "Failed to load competition data.";

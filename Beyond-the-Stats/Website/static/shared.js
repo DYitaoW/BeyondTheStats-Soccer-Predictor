@@ -301,7 +301,7 @@ let html = `
         </div>
     </div>
 
-    <p class="match-meta"><strong>Predicted score:</strong> ${p.home_team} ${p.pred_home_goals} - ${p.pred_away_goals} ${p.away_team}</p>
+    <p class="match-meta"><strong>Predicted score:</strong> ${p.pred_home_goals} - ${p.pred_away_goals}</p>
 `;
 if (includeShots) {
     html += `
@@ -1172,6 +1172,23 @@ if (!Number.isNaN(parsed)) {
 return "";
 }
 
+function formatMatchDayLabel(isoDate) {
+    const text = String(isoDate || "").trim();
+    if (!text || text === "unknown") return "Unknown date";
+    try {
+        const dt = new Date(`${text}T12:00:00`);
+        if (Number.isNaN(dt.getTime())) return text;
+        return new Intl.DateTimeFormat("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+        }).format(dt);
+    } catch (_err) {
+        return text;
+    }
+}
+
 function predictionQualityLabel(row) {
     const quality = String(row?.prediction_quality || "").toLowerCase();
     if (quality === "provisional") return "Provisional";
@@ -1244,12 +1261,12 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
             return String(a.home_team || "").localeCompare(String(b.home_team || ""));
     };
 
-    const dayLabelForRow = (row) => `${row.weekday || ""} ${row.date_label || ""}`.trim();
+    const dayLabelForRow = (row) => formatMatchDayLabel(rowDateIso(row));
 
-    const appendDayGroups = (flatItems, groupedRows) => {
+    const appendDayGroups = (flatItems, groupedRows, skipDayHeaders = false) => {
         const byDay = {};
         for (const row of groupedRows) {
-            const key = dayLabelForRow(row);
+            const key = rowDateIso(row) || "unknown";
             byDay[key] = byDay[key] || [];
             byDay[key].push(row);
         }
@@ -1257,14 +1274,30 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
             byDay[key].sort(sortByKickoff);
         }
         const days = Object.keys(byDay).sort((a, b) => {
-            const da = byDay[a][0]?.match_datetime_et || byDay[a][0]?.match_date || "";
-            const db = byDay[b][0]?.match_datetime_et || byDay[b][0]?.match_date || "";
-            if (da && db) return da < db ? -1 : da > db ? 1 : 0;
-            return a.localeCompare(b);
+            if (a === "unknown") return 1;
+            if (b === "unknown") return -1;
+            return a < b ? -1 : a > b ? 1 : 0;
         });
-        for (const day of days) {
-            flatItems.push({ type: "day", label: day });
-            for (const row of byDay[day]) {
+        for (const dayKey of days) {
+            if (!skipDayHeaders) {
+                flatItems.push({ type: "day", label: formatMatchDayLabel(dayKey) });
+            }
+            for (const row of byDay[dayKey]) {
+                flatItems.push({ type: "match", data: row });
+            }
+        }
+    };
+
+    const appendLeagueGroups = (flatItems, groupedRows) => {
+        const byLeague = {};
+        for (const row of groupedRows) {
+            const league = row.competition || "Other";
+            byLeague[league] = byLeague[league] || [];
+            byLeague[league].push(row);
+        }
+        for (const league of Object.keys(byLeague).sort((a, b) => a.localeCompare(b))) {
+            flatItems.push({ type: "league", label: league });
+            for (const row of byLeague[league].sort(sortByKickoff)) {
                 flatItems.push({ type: "match", data: row });
             }
         }
@@ -1272,7 +1305,26 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
 
     // Flatten with group separators for pagination.
     const flatItems = [];
-    if (options.groupByLeague) {
+    if (options.groupByDateThenLeague) {
+        const byDay = {};
+        for (const row of futureRows) {
+            const key = rowDateIso(row) || "unknown";
+            byDay[key] = byDay[key] || [];
+            byDay[key].push(row);
+        }
+        const dayKeys = Object.keys(byDay).sort((a, b) => {
+            if (a === "unknown") return 1;
+            if (b === "unknown") return -1;
+            return a < b ? -1 : a > b ? 1 : 0;
+        });
+        const hideDayHeaders = Boolean(options.hideDayHeaders);
+        for (const dayKey of dayKeys) {
+            if (!hideDayHeaders) {
+                flatItems.push({ type: "day", label: formatMatchDayLabel(dayKey) });
+            }
+            appendLeagueGroups(flatItems, byDay[dayKey]);
+        }
+    } else if (options.groupByLeague) {
         const byLeague = {};
         for (const row of futureRows) {
             const league = row.competition || "Other";
@@ -1307,10 +1359,14 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                 div.className = 'day-title';
                 div.textContent = item.label;
                 fragment.appendChild(div);
-                const grid = document.createElement('div');
-                grid.className = 'kick-card-grid';
-                fragment.appendChild(grid);
-                currentGrid = grid;
+                if (!options.groupByDateThenLeague) {
+                    const grid = document.createElement('div');
+                    grid.className = 'kick-card-grid';
+                    fragment.appendChild(grid);
+                    currentGrid = grid;
+                } else {
+                    currentGrid = null;
+                }
             } else {
                 const r = item.data;
                 if (!currentGrid) {
@@ -1368,7 +1424,7 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
                         <div class="match-meta">Prediction: <span class="winner-line">${escapeHtml(r.winner_label)}</span></div>
                         ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
-                        <div class="match-meta"><strong>Predicted score:</strong> ${escapeHtml(r.home_team)} ${homeGoals} - ${awayGoals} ${escapeHtml(r.away_team)}</div>
+                        <div class="match-meta"><strong>Predicted score:</strong> ${homeGoals} - ${awayGoals}</div>
                         ${hasFinalScore
                             ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
                             : ""}
@@ -1812,7 +1868,7 @@ h2hCompareButton.addEventListener("click", async () => {
                 <h3>Match Prediction</h3>
                 <p><strong>${escapeHtml(t1)} (H) vs ${escapeHtml(t2)} (A)</strong></p>
                 <p class="winner-line">${escapeHtml(prediction.winner_label || "Draw")}</p>
-                <p><strong>Predicted score:</strong> ${escapeHtml(prediction.home_team)} ${prediction.pred_home_goals} - ${prediction.pred_away_goals} ${escapeHtml(prediction.away_team)}</p>
+                <p><strong>Predicted score:</strong> ${prediction.pred_home_goals} - ${prediction.pred_away_goals}</p>
                 <p><strong>Confidence:</strong> ${pctLabel(confidence)}%</p>
                 <div class="probability-track">
                     <div style="width: ${prediction.prob_home}%;" title="${escapeHtml(prediction.home_team)}"></div>
