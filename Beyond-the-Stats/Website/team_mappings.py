@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 import config
-from competition_rules import normalize_team_key
+from competition_rules import canonical_team_name, normalize_team_key, resolve_mls_team_name
 from espn_api import _fetch_espn_json
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -18,6 +18,7 @@ if PROJECT_DIR not in sys.path:
 
 import season_calendar
 import team_mapping_groups as tmg
+from team_utils import _team_name_for_db
 
 # Extra-league ESPN feeds not always present in LIVE_SCORE_COMPETITIONS.
 EXTRA_ESPN_COMPETITIONS = {
@@ -431,4 +432,180 @@ def build_predictor_teams_payload() -> dict:
         "predictor_not_in_mapping": predictor_not_in_mapping,
         "cross_mode_overlaps": cross_mode_overlaps,
         "all_unique_teams": sorted(all_teams, key=str.lower),
+    }
+
+
+def _load_json_roster_file(path: str) -> dict[str, list[str]]:
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    out: dict[str, list[str]] = {}
+    for comp, teams in payload.items():
+        comp_name = str(comp or "").strip()
+        if not comp_name or not isinstance(teams, list):
+            continue
+        cleaned = sorted(
+            {str(team).strip() for team in teams if str(team or "").strip()},
+            key=str.lower,
+        )
+        if cleaned:
+            out[comp_name] = cleaned
+    return out
+
+
+def _teams_from_predictor_mode(mode: str, predictions_mod) -> dict[str, str]:
+    """Return team → primary competition from a predictor backend."""
+    teams, comp_map, _source = _load_predictor_teams_for_mode(mode, predictions_mod)
+    out: dict[str, str] = {}
+    for team in teams:
+        name = str(team or "").strip()
+        if not name:
+            continue
+        comp = str(comp_map.get(name, "")).strip()
+        if comp:
+            out[name] = comp
+    return out
+
+
+def _catalog_canonical_team(raw: str, competition: str) -> str:
+    """Map roster aliases to one canonical predictor name for *competition*."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    canon = canonical_team_name(text, competition)
+    if canon:
+        text = canon
+    db_name = _team_name_for_db(text)
+    if db_name and db_name != text:
+        mapped = canonical_team_name(db_name, competition)
+        if mapped:
+            text = mapped
+        else:
+            text = db_name
+    if competition.startswith("United States/MLS") or competition == config.MLS_COMPETITION:
+        resolved = resolve_mls_team_name(text)
+        if resolved:
+            text = resolved
+    return text
+
+
+def _catalog_team_key(canon: str) -> str:
+    """Stable dedupe key for canonical team names (case-insensitive)."""
+    return str(canon or "").strip().lower()
+
+
+def _register_catalog_team(
+    raw: str,
+    competition: str,
+    *,
+    canonical_by_key: dict[str, str],
+    team_to_comps: dict[str, set[str]],
+    comp_keys: set[str],
+) -> None:
+    canon = _catalog_canonical_team(raw, competition)
+    if not canon:
+        return
+    key = _catalog_team_key(canon)
+    if not key:
+        return
+    existing = canonical_by_key.get(key)
+    if not existing:
+        canonical_by_key[key] = canon
+    elif existing != canon:
+        # Prefer the mapping canonical when two spellings collapse to one key.
+        remapped = canonical_team_name(canon, competition) or canon
+        if remapped and _catalog_team_key(remapped) == key:
+            canonical_by_key[key] = remapped
+    comp_keys.add(key)
+    team_to_comps[key].add(competition)
+
+
+def build_app_teams_catalog_payload(competition_filter: str | None = None) -> dict:
+    """Unique canonical teams for competitions available in the app."""
+    import predictions as predictions_mod
+
+    competitions = list(config.app_dataset_competitions())
+    if competition_filter:
+        wanted = str(competition_filter).strip()
+        competitions = [c for c in competitions if c == wanted]
+        if not competitions:
+            return {
+                "ok": False,
+                "error": f"Unknown or unavailable competition: {wanted}",
+                "available_competitions": list(config.app_dataset_competitions()),
+            }
+
+    league_teams = _load_json_roster_file(config.LEAGUE_TEAMS_FILE)
+    current_teams = _load_json_roster_file(config.CURRENT_SEASON_TEAMS_FILE)
+
+    predictor_by_comp: dict[str, set[str]] = defaultdict(set)
+    for mode in ("global", "mls", "extra"):
+        for team, comp in _teams_from_predictor_mode(mode, predictions_mod).items():
+            if comp in competitions:
+                predictor_by_comp[comp].add(team)
+
+    try:
+        from predictions import _load_projected_competition_table
+
+        projected_loader = _load_projected_competition_table
+    except Exception:
+        projected_loader = None
+
+    by_competition: dict[str, list[str]] = {}
+    canonical_by_key: dict[str, str] = {}
+    team_to_comps: dict[str, set[str]] = defaultdict(set)
+    comp_team_keys: dict[str, set[str]] = defaultdict(set)
+
+    for comp in competitions:
+        roster: set[str] = set()
+        roster.update(current_teams.get(comp, []))
+        roster.update(league_teams.get(comp, []))
+        roster.update(predictor_by_comp.get(comp, set()))
+        if projected_loader:
+            try:
+                for row in projected_loader(comp) or []:
+                    team = str(row.get("team", "")).strip()
+                    if team:
+                        roster.add(team)
+            except Exception:
+                pass
+        for raw in roster:
+            _register_catalog_team(
+                raw,
+                comp,
+                canonical_by_key=canonical_by_key,
+                team_to_comps=team_to_comps,
+                comp_keys=comp_team_keys[comp],
+            )
+
+    for comp, keys in comp_team_keys.items():
+        names = [canonical_by_key[key] for key in keys if key in canonical_by_key]
+        if names:
+            by_competition[comp] = sorted(set(names), key=str.lower)
+
+    all_teams = sorted(canonical_by_key.values(), key=str.lower)
+    teams_with_competitions = [
+        {
+            "team": canonical_by_key[key],
+            "competitions": sorted(team_to_comps[key], key=str.lower),
+        }
+        for key in sorted(canonical_by_key.keys(), key=lambda k: canonical_by_key[k].lower())
+    ]
+
+    return {
+        "ok": True,
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "competition_filter": competition_filter or None,
+        "competitions": competitions,
+        "competition_count": len(competitions),
+        "teams": all_teams,
+        "team_count": len(all_teams),
+        "by_competition": by_competition,
+        "teams_with_competitions": teams_with_competitions,
     }

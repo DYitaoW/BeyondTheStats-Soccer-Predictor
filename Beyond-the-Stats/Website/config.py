@@ -301,6 +301,28 @@ MLS_DATASET_COMPETITIONS = (
     "United States/MLS - Western Conference",
     LIGA_MX_COMPETITION,
 )
+
+
+def app_dataset_competitions() -> tuple[str, ...]:
+    """League/cup competitions exposed in app league tables and league-data APIs."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for comp in (
+        *GLOBAL_DATASET_COMPETITIONS,
+        *EXTRA_DATASET_COMPETITIONS,
+        MLS_COMPETITION,
+        LIGA_MX_COMPETITION,
+    ):
+        name = str(comp or "").strip()
+        if not name or name in seen:
+            continue
+        if name in UPCOMING_ONLY_COMPETITIONS or name in LEAGUE_API_EXCLUDED_COMPETITIONS:
+            continue
+        seen.add(name)
+        out.append(name)
+    return tuple(sorted(out, key=str.lower))
+
+
 GLOBAL_DATASET_COMPETITIONS = (
     "England/Premier League",
     "England/Championship",

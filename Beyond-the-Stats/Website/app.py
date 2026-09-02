@@ -64,7 +64,11 @@ from live_poller import (
     start_live_score_poller,
 )
 from league_data import build_league_data_payload
-from team_mappings import build_predictor_teams_payload, build_unmapped_espn_payload
+from team_mappings import (
+    build_app_teams_catalog_payload,
+    build_predictor_teams_payload,
+    build_unmapped_espn_payload,
+)
 from notifications import (
     _apns_notification_queue,
     _notifications,
@@ -759,6 +763,21 @@ def api_teams():
     return jsonify({"teams": display_teams})
 
 
+@app.get("/api/teams/catalog")
+@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
+def api_teams_catalog():
+    """Return all unique canonical teams for app-available leagues.
+
+    Query params:
+        competition — optional filter to one league/cup (e.g. ``England/Premier League``)
+    """
+    competition = str(request.args.get("competition", "")).strip() or None
+    payload = build_app_teams_catalog_payload(competition_filter=competition)
+    if not payload.get("ok"):
+        return jsonify(payload), 404
+    return jsonify(payload)
+
+
 def _resolve_team_api_payload(team_input: str, mode: str):
     """Build the single-team API payload used by ``/api/team``."""
     mode = (mode or "global").strip().lower()
@@ -952,6 +971,7 @@ def api_help():
     """Return a listing of every /api/ route with a short description."""
     routes = [
         ("/api/teams", "GET", "List selectable teams for a given mode (?mode=global|mls|extra)"),
+        ("/api/teams/catalog", "GET", "All unique teams in app-available leagues (?competition=)"),
         ("/api/team", "GET", "Single-team form, recent matches, upcoming, H2H (?team=&mode=)"),
         ("/api/team/<team>", "GET", "Path-style single-team lookup (same payload as /api/team)"),
         ("/api/teams/<team_id>/roster", "GET", "ESPN roster/stats for a team (?competition=)"),
