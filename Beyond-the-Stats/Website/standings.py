@@ -844,8 +844,8 @@ def refresh_real_standings_after_live_final(comp_name: str) -> list[str]:
 
     Forces a fresh games index (so the just-written history row is included),
     bypasses the in-memory standings TTL, writes ``standings_cache.json``, and
-    drops league-data caches so ``/api/league-data`` serves the updated table
-    before the nightly pipeline refresh.
+    patches only the real-table fields in any existing league-data cache.
+    Predicted tables are not touched — those update only on pipeline refresh.
     """
     targets = _live_standings_refresh_targets(comp_name)
     if not targets:
@@ -854,18 +854,20 @@ def refresh_real_standings_after_live_final(comp_name: str) -> list[str]:
     warm_competition_games_cache(force=True)
 
     updated: list[str] = []
+    tables_by_name: dict[str, dict] = {}
     for name in targets:
         _clear_standings_cache(name)
         table = _compute_standings_from_history(name, force_recompute=True)
         if table and table.get("groups"):
             updated.append(name)
+            tables_by_name[name] = table
 
     if updated:
         try:
-            from league_data import invalidate_league_data_cache
+            from league_data import patch_league_data_real_table
 
-            for name in updated:
-                invalidate_league_data_cache(name)
+            for name, table in tables_by_name.items():
+                patch_league_data_real_table(name, table)
         except Exception:
             pass
         print(f"[live-standings] Updated real table(s) after final whistle: {', '.join(updated)}")

@@ -107,28 +107,54 @@ def _mem_set_league_data(comp_name: str, payload: dict) -> None:
         _LEAGUE_DATA_MEM[comp_name] = (expires_at, payload)
 
 
-def invalidate_league_data_cache(comp_name: str) -> None:
-    """Drop in-memory and on-disk league-data cache for a competition."""
-    base, _view = resolve_competition_query(comp_name)
-    names = {comp_name, base}
-    if base == config.MLS_COMPETITION:
-        names.add(config.MLS_COMPETITION)
-        names.update(
-            alias for alias in config.MLS_TABLE_VIEW_ALIASES
-            if alias != config.MLS_CUP_COMPETITION
-        )
+def _apply_real_table_patch(payload: dict, real_standings: dict) -> dict:
+    """Return a copy of *payload* with only real-standings fields updated."""
+    patched = dict(payload)
+    real = dict(patched.get("real") or {})
+    real["standings"] = real_standings
+    patched["real"] = real
+    if "real_table" in patched:
+        patched["real_table"] = real_standings
+    return patched
 
+
+def patch_league_data_real_table(comp_name: str, real_standings: dict | None) -> None:
+    """Update only the real standings inside an existing league-data cache entry.
+
+    Predicted tables, position odds, and other pipeline-driven fields are left
+    untouched so they continue to change only on scheduled refreshes.
+    """
+    if not isinstance(real_standings, dict) or not real_standings.get("groups"):
+        return
+
+    # In-memory cache
     with _LEAGUE_DATA_MEM_LOCK:
-        for name in list(names):
-            _LEAGUE_DATA_MEM.pop(name, None)
+        entry = _LEAGUE_DATA_MEM.get(comp_name)
+        if entry:
+            expires_at, payload = entry
+            if isinstance(payload, dict):
+                _LEAGUE_DATA_MEM[comp_name] = (
+                    expires_at,
+                    _apply_real_table_patch(payload, real_standings),
+                )
 
-    for name in names:
-        path = _league_data_cache_path(name)
-        try:
-            if os.path.exists(path):
-                os.unlink(path)
-        except Exception:
-            pass
+    # On-disk cache
+    path = _league_data_cache_path(comp_name)
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, dict):
+            return
+        patched = _apply_real_table_patch(payload, real_standings)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(patched, handle, ensure_ascii=False, separators=(",", ":"), default=str)
+        with _LEAGUE_DATA_MEM_LOCK:
+            expires_at = time.time() + _league_data_ttl_seconds()
+            _LEAGUE_DATA_MEM[comp_name] = (expires_at, patched)
+    except Exception:
+        pass
 
 
 def _build_lock_for(comp_name: str) -> threading.Lock:
