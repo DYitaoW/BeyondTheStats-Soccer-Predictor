@@ -4,39 +4,39 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Beyond The Stats</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026090101') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="/graphics/BeyondTheStatsLogo.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/graphics/BeyondTheStatsLogo.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/graphics/BeyondTheStatsLogo.png">
+  <link rel="stylesheet" href="/static/styles.css?v=2026090101">
 </head>
 <body class="dark-mode" data-active-page="leagues">
   <main class="page">
         <div id="notification-area" class="notification-area"></div>
     <header class="site-header">
       <div class="site-header-top">
-        <a id="brand-home-btn" class="brand brand-home-btn" href="/" aria-label="Go to home">
-          <img class="brand-mark" src="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}" alt="Beyond The Stats logo">
+        <a id="brand-home-btn" class="brand brand-home-btn" href="/index.html" aria-label="Go to home">
+          <img class="brand-mark" src="/graphics/BeyondTheStatsLogo.png" alt="Beyond The Stats logo">
           <div>
             <div class="brand-name">Beyond The Stats BETA</div>
             <div class="brand-sub">Matchday Predictor</div>
           </div>
         </a>
         <div class="header-actions">
-          <a id="header-about" class="theme-toggle header-link {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
+          <a id="header-about" class="theme-toggle header-link " href="/about.html">About</a>
         </div>
       </div>
 
       <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
-        <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
-        <a id="tab-global" class="tab-btn {{ 'active' if active_page == 'global' else '' }}" href="/upcoming-matches">Upcoming Matches</a>
-        <a id="tab-cups" class="tab-btn {{ 'active' if active_page == 'leagues' else '' }}" href="/leagues">Cups</a>
-        <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
-        <a id="tab-league-table" class="tab-btn {{ 'active' if active_page == 'leagues' else '' }}" href="/leagues">Projected League Tables</a>
-        <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
+        <a id="tab-home" class="tab-btn " href="/index.html">Home</a>
+        <a id="tab-global" class="tab-btn " href="/upcoming-matches.html">Upcoming Matches</a>
+        <a id="tab-cups" class="tab-btn " href="/leagues">Cups</a>
+        <a id="tab-h2h" class="tab-btn " href="/head-to-head.html">Compare Teams</a>
+        <a id="tab-league-table" class="tab-btn " href="/leagues">Projected League Tables</a>
+        <a id="tab-tactics" class="tab-btn " href="/tactics.html">Tactics Board</a>
       </nav>
     </header>
 
-    <section id="panel-leagues" class="{{ '' if active_page == 'leagues' else 'hidden' }}">
+    <section id="panel-leagues" class="">
       <div class="card">
         <h3>Projected League Table</h3>
         <div class="table-controls">
@@ -73,13 +73,13 @@
       <footer class="site-footer">
       <p>Predictions are generated using statistical models and are for entertainment purposes only.</p>
       <p>
-        <a href="/privacy">Privacy Policy</a> ·
-        <a href="/terms">Terms of Service</a> ·
-        <a href="/subscriptions">Subscriptions</a>
+        <a href="/privacy/">Privacy Policy</a> ·
+        <a href="/terms/">Terms of Service</a> ·
+        <a href="/subscriptions/">Subscriptions</a>
       </p>
       <p>&copy; 2026 Beyond The Stats</p>
     </footer>
   </main>
-  <script src="{{ url_for('static', filename='shared.js', v='2026090101') }}"></script>
+  <script src="/static/shared.js?v=2026090101"></script>
 </body>
 </html>

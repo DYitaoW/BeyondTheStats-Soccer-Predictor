@@ -569,6 +569,39 @@ h1 {
   background: linear-gradient(135deg, var(--card) 0%, var(--hero-accent) 100%);
 }
 
+.app-promo-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-promo-title-link:hover {
+  color: var(--green-pct);
+  text-decoration: underline;
+}
+
+.app-store-cta {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #111922;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.app-store-cta:hover {
+  border-color: var(--green-pct);
+  color: var(--green-pct);
+}
+
+body:not(.dark-mode) .app-store-cta {
+  background: #ffffff;
+  color: #0a1118;
+}
+
 .app-promo-scroll {
   display: flex;
   gap: 12px;
@@ -980,7 +1013,7 @@ body:not(.dark-mode) .match-row.match-wrong {
 }
 
 .probability-track > div:nth-child(3) {
-  background: #8f9aa8;
+  background: #4a9eff;
 }
 
 .probability-labels {
