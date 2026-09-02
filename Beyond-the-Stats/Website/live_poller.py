@@ -245,7 +245,8 @@ def _scan_upcoming_csv_for_today(csv_path, today_date, todays):
         return
     for _, row in frame.iterrows():
         comp = str(row.get("competition", "") or "").strip()
-        if comp not in config.LIVE_SCORE_COMPETITIONS:
+        live_comp = config.resolve_live_competition(comp)
+        if not live_comp:
             continue
         kickoff_utc_str = str(row.get("match_datetime_utc", "") or "").strip()
         if kickoff_utc_str:
@@ -276,7 +277,7 @@ def _scan_upcoming_csv_for_today(csv_path, today_date, todays):
                     continue
             except Exception:
                 continue
-        todays[comp].append(kickoff_et)
+        todays[live_comp].append(kickoff_et)
 
 
 def _discover_todays_competitions_from_espn(today_date, date_str):

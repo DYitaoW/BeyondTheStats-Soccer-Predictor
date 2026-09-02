@@ -9,6 +9,16 @@ from espn_parser import _parse_espn_live_event
 
 LIVE_SCORE_FETCH_TIMEOUT = 15
 
+ESPN_REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.espn.com/",
+}
+
 _TEAMS_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _ROSTER_CACHE: dict[str, tuple[float, dict]] = {}
 _SCHEDULE_CACHE: dict[str, tuple[float, list[dict]]] = {}
@@ -36,7 +46,7 @@ def _fetch_competition_scores(comp_name, espn_id, today_str, *, log_failures=Fal
         f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard"
         f"?dates={today_str}&limit=1000"
     )
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
     try:
         with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
             data = json.loads(resp.read().decode())
@@ -55,7 +65,7 @@ def _fetch_competition_scores(comp_name, espn_id, today_str, *, log_failures=Fal
 
 def _fetch_espn_json(url):
     """Fetch and parse JSON from an ESPN API URL. Returns None on failure."""
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
     try:
         with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
             return json.loads(resp.read().decode())
@@ -217,7 +227,7 @@ def _fetch_standings(comp_name, espn_id):
 
     data = None
     for url in candidate_urls:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
         try:
             with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
                 data = json.loads(resp.read().decode())
@@ -283,7 +293,7 @@ def _fetch_leaders(comp_name, espn_id):
 
     data = None
     for url in candidate_urls:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
         try:
             with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
                 data = json.loads(resp.read().decode())
@@ -343,7 +353,7 @@ def _fetch_leaders(comp_name, espn_id):
 def _fetch_event_summary(comp_name, espn_id, event_id):
     """Fetch ESPN summary for a single event to get lineups."""
     url = "%s/%s/summary?event=%s" % (config.LIVE_SCORE_ESPN_BASE, espn_id, event_id)
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
     try:
         with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
             return json.loads(resp.read().decode())

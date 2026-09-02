@@ -91,6 +91,7 @@ UPCOMING_CSV_FILES = {
 REDIS_URL = os.environ.get("REDIS_URL", "")
 CACHE_TTL_DEFAULT = int(os.environ.get("CACHE_TTL_DEFAULT", "120"))  # seconds
 CACHE_TTL_LONG = int(os.environ.get("CACHE_TTL_LONG", "600"))  # 10 min
+CACHE_TTL_LIVE = int(os.environ.get("CACHE_TTL_LIVE", "30"))  # upcoming + live annotations
 REAL_TABLES_CACHE_TTL = 300  # 5 minutes
 REAL_LEADERS_CACHE_TTL = 300  # 5 minutes
 _API_CACHE_MAX_AGE = int(os.environ.get("API_CACHE_MAX_AGE", "300"))
@@ -283,11 +284,33 @@ def competition_live_aliases(competition: str) -> set[str]:
     """Return equivalent competition labels used across pipelines."""
     comp = str(competition or "").strip()
     aliases = {comp} if comp else set()
-    if comp.startswith("Europe/"):
-        aliases.add(comp.replace("Europe/", "Europe/", 1))
-    elif comp.startswith("Europe/"):
-        aliases.add(comp.replace("Europe/", "Europe/", 1))
+    # Map legacy / pipeline labels to canonical live-score keys.
+    _ALIASES = {
+        "FIFA/World Cup": "International/World Cup",
+        "World Cup": "International/World Cup",
+        "UEFA/Champions League": "Europe/Champions League",
+        "UEFA/Europa League": "Europe/Europa League",
+        "UEFA/Conference League": "Europe/Conference League",
+        "Europe/Champions League": "Europe/Champions League",
+        "Europe/Europa League": "Europe/Europa League",
+        "Europe/Conference League": "Europe/Conference League",
+    }
+    canonical = _ALIASES.get(comp, comp)
+    if canonical:
+        aliases.add(canonical)
+    for variant, target in _ALIASES.items():
+        if target == comp or target == canonical:
+            aliases.add(variant)
+            aliases.add(target)
     return aliases
+
+
+def resolve_live_competition(competition: str) -> str | None:
+    """Return the LIVE_SCORE_COMPETITIONS key for a pipeline competition label."""
+    for alias in competition_live_aliases(competition):
+        if alias in LIVE_SCORE_COMPETITIONS:
+            return alias
+    return None
 
 # ── Competitions ──────────────────────────────────────────────────
 

@@ -1103,7 +1103,7 @@ def api_help_all():
 
 
 @app.get("/api/upcoming/<mode>")
-@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
+@_cached_response(ttl=config.CACHE_TTL_LIVE)
 def api_upcoming(mode):
     """Return upcoming prediction rows for the given source mode.
 
