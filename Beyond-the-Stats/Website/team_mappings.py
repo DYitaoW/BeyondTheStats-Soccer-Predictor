@@ -432,3 +432,116 @@ def build_predictor_teams_payload() -> dict:
         "cross_mode_overlaps": cross_mode_overlaps,
         "all_unique_teams": sorted(all_teams, key=str.lower),
     }
+
+
+def _load_json_roster_file(path: str) -> dict[str, list[str]]:
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    out: dict[str, list[str]] = {}
+    for comp, teams in payload.items():
+        comp_name = str(comp or "").strip()
+        if not comp_name or not isinstance(teams, list):
+            continue
+        cleaned = sorted(
+            {str(team).strip() for team in teams if str(team or "").strip()},
+            key=str.lower,
+        )
+        if cleaned:
+            out[comp_name] = cleaned
+    return out
+
+
+def _teams_from_predictor_mode(mode: str, predictions_mod) -> dict[str, str]:
+    """Return team → primary competition from a predictor backend."""
+    teams, comp_map, _source = _load_predictor_teams_for_mode(mode, predictions_mod)
+    out: dict[str, str] = {}
+    for team in teams:
+        name = str(team or "").strip()
+        if not name:
+            continue
+        comp = str(comp_map.get(name, "")).strip()
+        if comp:
+            out[name] = comp
+    return out
+
+
+def build_app_teams_catalog_payload(competition_filter: str | None = None) -> dict:
+    """Unique canonical teams for competitions available in the app."""
+    import predictions as predictions_mod
+
+    competitions = list(config.app_dataset_competitions())
+    if competition_filter:
+        wanted = str(competition_filter).strip()
+        competitions = [c for c in competitions if c == wanted]
+        if not competitions:
+            return {
+                "ok": False,
+                "error": f"Unknown or unavailable competition: {wanted}",
+                "available_competitions": list(config.app_dataset_competitions()),
+            }
+
+    league_teams = _load_json_roster_file(config.LEAGUE_TEAMS_FILE)
+    current_teams = _load_json_roster_file(config.CURRENT_SEASON_TEAMS_FILE)
+
+    predictor_by_comp: dict[str, set[str]] = defaultdict(set)
+    for mode in ("global", "mls", "extra"):
+        for team, comp in _teams_from_predictor_mode(mode, predictions_mod).items():
+            if comp in competitions:
+                predictor_by_comp[comp].add(team)
+
+    try:
+        from predictions import _load_projected_competition_table
+
+        projected_loader = _load_projected_competition_table
+    except Exception:
+        projected_loader = None
+
+    by_competition: dict[str, list[str]] = {}
+    team_to_comps: dict[str, set[str]] = defaultdict(set)
+
+    for comp in competitions:
+        roster: set[str] = set()
+        roster.update(current_teams.get(comp, []))
+        roster.update(league_teams.get(comp, []))
+        roster.update(predictor_by_comp.get(comp, set()))
+        if projected_loader:
+            try:
+                for row in projected_loader(comp) or []:
+                    team = str(row.get("team", "")).strip()
+                    if team:
+                        roster.add(team)
+            except Exception:
+                pass
+        if roster:
+            teams_sorted = sorted(roster, key=str.lower)
+            by_competition[comp] = teams_sorted
+            for team in teams_sorted:
+                team_to_comps[team].add(comp)
+
+    all_teams = sorted(team_to_comps.keys(), key=str.lower)
+    teams_with_competitions = [
+        {
+            "team": team,
+            "competitions": sorted(team_to_comps[team], key=str.lower),
+        }
+        for team in all_teams
+    ]
+
+    return {
+        "ok": True,
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "competition_filter": competition_filter or None,
+        "competitions": competitions,
+        "competition_count": len(competitions),
+        "teams": all_teams,
+        "team_count": len(all_teams),
+        "by_competition": by_competition,
+        "teams_with_competitions": teams_with_competitions,
+    }
