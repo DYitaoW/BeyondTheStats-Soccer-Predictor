@@ -245,7 +245,8 @@ def _scan_upcoming_csv_for_today(csv_path, today_date, todays):
         return
     for _, row in frame.iterrows():
         comp = str(row.get("competition", "") or "").strip()
-        if comp not in config.LIVE_SCORE_COMPETITIONS:
+        live_comp = config.resolve_live_competition(comp)
+        if not live_comp:
             continue
         kickoff_utc_str = str(row.get("match_datetime_utc", "") or "").strip()
         if kickoff_utc_str:
@@ -276,7 +277,7 @@ def _scan_upcoming_csv_for_today(csv_path, today_date, todays):
                     continue
             except Exception:
                 continue
-        todays[comp].append(kickoff_et)
+        todays[live_comp].append(kickoff_et)
 
 
 def _discover_todays_competitions_from_espn(today_date, date_str):
@@ -509,6 +510,219 @@ def _compute_poll_interval(now, results, live_comps, todays_comps):
 
     return 1800
 
+
+_last_on_demand_refresh_ts = 0.0
+_ON_DEMAND_REFRESH_MIN_INTERVAL_S = 45.0
+_on_demand_refresh_lock = threading.Lock()
+_poller_last_cycle_utc: str | None = None
+_poller_last_cycle_games = 0
+_poller_started = False
+
+
+def get_live_poller_status() -> dict:
+    """Lightweight poller health snapshot for API responses."""
+    with _live_scores_lock:
+        total_games = sum(len(v.get("games", [])) for v in _live_scores.values())
+        last_polled = max(
+            (v.get("last_polled_utc", "") for v in _live_scores.values()),
+            default=None,
+        )
+        competitions = list(_live_scores.keys())
+    return {
+        "started": _poller_started,
+        "last_cycle_utc": _poller_last_cycle_utc,
+        "last_cycle_games": _poller_last_cycle_games,
+        "competitions_in_memory": competitions,
+        "total_games_in_memory": total_games,
+        "last_polled_utc": last_polled,
+        "effective_poll_date": _effective_poller_date().isoformat(),
+    }
+
+
+def _discover_competitions_for_poll(poll_date, today_str):
+    todays_comps = _get_todays_competitions(today_date=poll_date)
+    if not todays_comps:
+        todays_comps = _discover_todays_competitions_from_espn(poll_date, today_str)
+    return todays_comps
+
+
+def _build_available_competitions(todays_comps):
+    """Merge today's discovered competitions with the always-on core set."""
+    available = {}
+    for comp in config.CORE_LIVE_POLL_COMPETITIONS:
+        eid = config.LIVE_SCORE_COMPETITIONS.get(comp)
+        if eid:
+            available[comp] = eid
+    for comp in todays_comps or {}:
+        eid = config.LIVE_SCORE_COMPETITIONS.get(comp)
+        if eid:
+            available[comp] = eid
+    return available
+
+
+def _split_live_and_deferred(available):
+    live_comps = {}
+    deferred_comps = {}
+    for comp, eid in available.items():
+        if comp in config.RESULT_ONLY_COMPETITIONS or comp in config.REDUCED_POLLING_COMPETITIONS:
+            deferred_comps[comp] = eid
+        else:
+            live_comps[comp] = eid
+    return live_comps, deferred_comps
+
+
+def _fetch_live_poll_results(live_comps, today_str):
+    results = {}
+    if not live_comps:
+        return results
+    with ThreadPoolExecutor(max_workers=min(8, len(live_comps))) as pool:
+        ft_to_name = {
+            pool.submit(
+                _fetch_competition_scores, name, eid, today_str, log_failures=True
+            ): name
+            for name, eid in live_comps.items()
+        }
+        for ft in as_completed(ft_to_name):
+            name = ft_to_name[ft]
+            try:
+                games = ft.result()
+                if name == config.CLUB_FRIENDLIES_COMPETITION:
+                    chelsea = [g for g in games if _is_chelsea_live_game(g)]
+                    non_chelsea = [g for g in games if not _is_chelsea_live_game(g) and g.get("status") == "post"]
+                    games = chelsea + non_chelsea
+                games = _filter_live_games_for_competition(name, games)
+                if not games:
+                    continue
+                results[name] = {
+                    "competition": name,
+                    "games": games,
+                    "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+                }
+            except Exception:
+                import traceback
+                traceback.print_exc()
+    return results
+
+
+def _fetch_deferred_poll_results(deferred_comps, today_str):
+    results = {}
+    for comp_name, espn_id in deferred_comps.items():
+        try:
+            games = _fetch_competition_scores(comp_name, espn_id, today_str, log_failures=True)
+            if comp_name in config.REDUCED_POLLING_COMPETITIONS:
+                filtered = []
+                for g in games:
+                    status = g.get("status", "")
+                    if status == "post":
+                        filtered.append(g)
+                    elif status == "in":
+                        minute = g.get("clock") or g.get("match_minute") or 0
+                        try:
+                            minute = int(minute)
+                        except (ValueError, TypeError):
+                            minute = 0
+                        if 40 <= minute <= 50 or minute >= 85:
+                            filtered.append(g)
+                games = filtered
+            else:
+                games = [g for g in games if g.get("status") == "post"]
+            if games:
+                results[comp_name] = {
+                    "competition": comp_name,
+                    "games": games,
+                    "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+                }
+        except Exception:
+            import traceback
+            traceback.print_exc()
+    return results
+
+
+def _merge_poll_results_into_live_scores(results, poll_date):
+    global _poller_last_cycle_utc, _poller_last_cycle_games
+    with _live_scores_lock:
+        _poller_day_str = poll_date.isoformat()
+        if getattr(_live_score_poller_loop, "_poller_date", None) != _poller_day_str:
+            _merge_completed_to_history()
+            now_utc = datetime.now(timezone.utc)
+            pending_history = []
+            for comp_name, comp_data in list(_live_scores.items()):
+                for g in comp_data.get("games", []):
+                    if g.get("status") not in ("post", "in"):
+                        continue
+                    entry = dict(g)
+                    entry.setdefault("competition", comp_name)
+                    entry.setdefault("completed_at", now_utc.isoformat())
+                    pending_history.append(entry)
+            try:
+                if pending_history:
+                    _upsert_live_score_history(pending_history)
+                _live_scores.clear()
+                with _live_summary_cache_lock:
+                    _live_summary_cache.clear()
+                    _summary_fetch_meta.clear()
+                _live_score_poller_loop._poller_date = _poller_day_str
+            except Exception:
+                import traceback
+                traceback.print_exc()
+
+        for comp_name, comp_data in results.items():
+            new_games = comp_data.get("games", [])
+            existing = _live_scores.get(comp_name, {"games": []})
+            if not new_games and existing.get("games"):
+                continue
+            games_by_id = {g["match_id"]: g for g in existing["games"] if g.get("match_id")}
+            for g in new_games:
+                if g.get("match_id"):
+                    g["competition"] = comp_name
+                    mid = g["match_id"]
+                    if mid in games_by_id:
+                        games_by_id[mid].update(g)
+                    else:
+                        games_by_id[mid] = g
+            _live_scores[comp_name] = {
+                "competition": comp_name,
+                "games": list(games_by_id.values()),
+                "last_polled_utc": comp_data["last_polled_utc"],
+                "cup_format": config._CUP_FORMATS.get(comp_name),
+            }
+        with _live_summary_cache_lock:
+            for comp_data in _live_scores.values():
+                for g in comp_data.get("games", []):
+                    mid = g.get("match_id")
+                    if mid and mid in _live_summary_cache:
+                        g.update(_live_summary_cache[mid])
+        _poller_last_cycle_utc = datetime.now(ZoneInfo("UTC")).isoformat()
+        _poller_last_cycle_games = sum(len(v.get("games", [])) for v in _live_scores.values())
+
+
+def refresh_live_scores_now(*, force: bool = False) -> dict:
+    """On-demand ESPN poll used when the in-memory store is empty."""
+    global _last_on_demand_refresh_ts
+    now_ts = time.time()
+    if not force and (now_ts - _last_on_demand_refresh_ts) < _ON_DEMAND_REFRESH_MIN_INTERVAL_S:
+        with _live_scores_lock:
+            return dict(_live_scores)
+
+    with _on_demand_refresh_lock:
+        if not force and (time.time() - _last_on_demand_refresh_ts) < _ON_DEMAND_REFRESH_MIN_INTERVAL_S:
+            with _live_scores_lock:
+                return dict(_live_scores)
+
+        poll_date = _effective_poller_date()
+        today_str = poll_date.strftime("%Y%m%d")
+        todays_comps = _discover_competitions_for_poll(poll_date, today_str)
+        available = _build_available_competitions(todays_comps)
+        live_comps, deferred_comps = _split_live_and_deferred(available)
+        results = _fetch_live_poll_results(live_comps, today_str)
+        results.update(_fetch_deferred_poll_results(deferred_comps, today_str))
+        _merge_poll_results_into_live_scores(results, poll_date)
+        _last_on_demand_refresh_ts = time.time()
+
+    with _live_scores_lock:
+        return dict(_live_scores)
+
+
 def _live_score_poller_loop():
     """Background thread: poll ESPN for live scores.
 
@@ -532,52 +746,11 @@ def _live_score_poller_loop():
         try:
             poll_date = _effective_poller_date()
             today_str = poll_date.strftime("%Y%m%d")
-            todays_comps = _get_todays_competitions(today_date=poll_date)
-            if not todays_comps:
-                todays_comps = _discover_todays_competitions_from_espn(poll_date, today_str)
-            available = {}
-            for comp in todays_comps:
-                eid = config.LIVE_SCORE_COMPETITIONS.get(comp)
-                if eid:
-                    available[comp] = eid
+            todays_comps = _discover_competitions_for_poll(poll_date, today_str)
+            available = _build_available_competitions(todays_comps)
+            live_comps, deferred_comps = _split_live_and_deferred(available)
 
-            # Split into live (full polling) and deferred (result-only/reduced).
-            live_comps = {}
-            deferred_comps = {}
-            for comp, eid in available.items():
-                if comp in config.RESULT_ONLY_COMPETITIONS or comp in config.REDUCED_POLLING_COMPETITIONS:
-                    deferred_comps[comp] = eid
-                else:
-                    live_comps[comp] = eid
-
-            results = {}
-            if live_comps:
-                with ThreadPoolExecutor(max_workers=min(8, len(live_comps))) as pool:
-                    ft_to_name = {
-                        pool.submit(
-                            _fetch_competition_scores, name, eid, today_str, log_failures=True
-                        ): name
-                        for name, eid in live_comps.items()
-                    }
-                    for ft in as_completed(ft_to_name):
-                        name = ft_to_name[ft]
-                        try:
-                            games = ft.result()
-                            if name == config.CLUB_FRIENDLIES_COMPETITION:
-                                chelsea = [g for g in games if _is_chelsea_live_game(g)]
-                                non_chelsea = [g for g in games if not _is_chelsea_live_game(g) and g.get("status") == "post"]
-                                games = chelsea + non_chelsea
-                            games = _filter_live_games_for_competition(name, games)
-                            if not games:
-                                continue
-                            results[name] = {
-                                "competition": name,
-                                "games": games,
-                                "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
-                            }
-                        except Exception:
-                            import traceback
-                            traceback.print_exc()
+            results = _fetch_live_poll_results(live_comps, today_str)
 
             # Snapshot previous game statuses before merging (for detecting new completions).
             prev_statuses = {}
@@ -598,101 +771,9 @@ def _live_score_poller_loop():
             now_ts = time.time()
             if deferred_comps and (now_ts - _last_deferred_poll_ts) >= _DEFERRED_POLL_INTERVAL_S:
                 _last_deferred_poll_ts = now_ts
-                for comp_name, espn_id in deferred_comps.items():
-                    try:
-                        games = _fetch_competition_scores(comp_name, espn_id, today_str)
-                        if comp_name in config.REDUCED_POLLING_COMPETITIONS:
-                            # Reduced-polling leagues: keep only HT (minute ~45) or FT (post).
-                            filtered = []
-                            for g in games:
-                                status = g.get("status", "")
-                                if status == "post":
-                                    filtered.append(g)
-                                elif status == "in":
-                                    minute = g.get("clock") or g.get("match_minute") or 0
-                                    try:
-                                        minute = int(minute)
-                                    except (ValueError, TypeError):
-                                        minute = 0
-                                    if 40 <= minute <= 50 or minute >= 85:
-                                        filtered.append(g)
-                            games = filtered
-                        else:
-                            # Result-only: keep only completed games.
-                            games = [g for g in games if g.get("status") == "post"]
-                        if games:
-                            results.setdefault(comp_name, {
-                                "competition": comp_name,
-                                "games": games,
-                                "last_polled_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
-                            })
-                    except Exception:
-                        import traceback
-                        traceback.print_exc()
+                results.update(_fetch_deferred_poll_results(deferred_comps, today_str))
 
-            with _live_scores_lock:
-                # Day boundary: save ALL games (not just completed) then clear.
-                _poller_day_str = poll_date.isoformat()
-                if getattr(_live_score_poller_loop, "_poller_date", None) != _poller_day_str:
-                    _merge_completed_to_history()
-                    # Save any in-progress games that started yesterday but
-                    # haven't finished yet so they persist in history.
-                    now_utc = datetime.now(timezone.utc)
-                    pending_history = []
-                    for comp_name, comp_data in list(_live_scores.items()):
-                        for g in comp_data.get("games", []):
-                            if g.get("status") not in ("post", "in"):
-                                continue
-                            entry = dict(g)
-                            entry.setdefault("competition", comp_name)
-                            entry.setdefault("completed_at", now_utc.isoformat())
-                            pending_history.append(entry)
-                    try:
-                        if pending_history:
-                            _upsert_live_score_history(pending_history)
-                        # An empty day performs no write. Only clear the
-                        # in-memory day after any pending rows were persisted.
-                        _live_scores.clear()
-                        with _live_summary_cache_lock:
-                            _live_summary_cache.clear()
-                            _summary_fetch_meta.clear()
-                        _live_score_poller_loop._poller_date = _poller_day_str
-                    except Exception:
-                        # Keep yesterday's in-memory data and retry next cycle;
-                        # never trade a persistence error for data loss.
-                        import traceback
-                        traceback.print_exc()
-                # Merge new results into existing so finished games persist.
-                for comp_name, comp_data in results.items():
-                    new_games = comp_data.get("games", [])
-                    existing = _live_scores.get(comp_name, {"games": []})
-                    # Guard: if ESPN transiently returns 0 games but we already
-                    # have data, keep the existing games to avoid "no live games"
-                    # flickering across poll cycles.
-                    if not new_games and existing.get("games"):
-                        continue
-                    games_by_id = {g["match_id"]: g for g in existing["games"] if g.get("match_id")}
-                    for g in new_games:
-                        if g.get("match_id"):
-                            g["competition"] = comp_name
-                            mid = g["match_id"]
-                            if mid in games_by_id:
-                                games_by_id[mid].update(g)
-                            else:
-                                games_by_id[mid] = g
-                    _live_scores[comp_name] = {
-                        "competition": comp_name,
-                        "games": list(games_by_id.values()),
-                        "last_polled_utc": comp_data["last_polled_utc"],
-                        "cup_format": config._CUP_FORMATS.get(comp_name),
-                    }
-                # Re-apply summary cache to all games so summary data always survives.
-                with _live_summary_cache_lock:
-                    for comp_data in _live_scores.values():
-                        for g in comp_data.get("games", []):
-                            mid = g.get("match_id")
-                            if mid and mid in _live_summary_cache:
-                                g.update(_live_summary_cache[mid])
+            _merge_poll_results_into_live_scores(results, poll_date)
             # Persist any newly completed games to history file.
             merged_comps = _merge_completed_to_history()
 
@@ -1069,5 +1150,7 @@ def start_live_score_poller() -> None:
     """
     if not getattr(start_live_score_poller, "_started", False):
         start_live_score_poller._started = True
+        global _poller_started
+        _poller_started = True
         threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
         print("[startup] Live score poller started (60s live / 60s 3min pre-kickoff / 15min pre-match / 30min idle).")

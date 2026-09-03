@@ -61,6 +61,8 @@ from live_poller import (
     _live_score_poller_loop,
     _live_scores,
     _live_scores_lock,
+    get_live_poller_status,
+    refresh_live_scores_now,
     start_live_score_poller,
 )
 from league_data import build_league_data_payload
@@ -1103,7 +1105,7 @@ def api_help_all():
 
 
 @app.get("/api/upcoming/<mode>")
-@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
+@_cached_response(ttl=config.CACHE_TTL_LIVE)
 def api_upcoming(mode):
     """Return upcoming prediction rows for the given source mode.
 
@@ -1798,20 +1800,38 @@ def _load_redeem_code_entries() -> list[dict]:
 
 @app.get("/api/live-scores")
 def api_live_scores():
-    """Return live scores for active competitions (polled every 5 min from ESPN).
+    """Return live scores for active competitions (polled from ESPN).
 
     Query params:
         competition  -- optional, filter to specific competition(s) (comma-separated)
+        refresh      -- pass ``1`` to force an on-demand ESPN poll when empty
     """
     comp_filter = request.args.get("competition", "").strip()
+    force_refresh = request.args.get("refresh", "").strip().lower() in {"1", "true", "yes"}
+
+    with _live_scores_lock:
+        empty = not _live_scores
+    if empty or force_refresh:
+        try:
+            refresh_live_scores_now(force=force_refresh)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    poller_status = get_live_poller_status()
     with _live_scores_lock:
         if not _live_scores:
-            return jsonify({"ok": True, "competitions": {}, "message": "No live games at this time."})
+            return jsonify({
+                "ok": True,
+                "competitions": {},
+                "message": "No live games at this time.",
+                "poller": poller_status,
+            })
         if comp_filter:
             wanted = {c.strip() for c in comp_filter.split(",") if c.strip()}
             filtered = {k: v for k, v in _live_scores.items() if k in wanted}
-            return jsonify({"ok": True, "competitions": filtered})
-        return jsonify({"ok": True, "competitions": dict(_live_scores)})
+            return jsonify({"ok": True, "competitions": filtered, "poller": poller_status})
+        return jsonify({"ok": True, "competitions": dict(_live_scores), "poller": poller_status})
 
 
 @app.get("/api/h2h")
@@ -1907,7 +1927,7 @@ def api_debug_manual_poll():
     """Manually run one ESPN poll cycle and return the results."""
     if not _mutation_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    today_str = date.today().strftime("%Y%m%d")
+    today_str = _effective_poller_date().strftime("%Y%m%d")
     all_results = {}
     for comp_name, espn_id in config.LIVE_SCORE_COMPETITIONS.items():
         try:

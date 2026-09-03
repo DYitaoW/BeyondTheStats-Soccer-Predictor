@@ -333,7 +333,7 @@ async function loadHomeUpcoming(start = isoToday(), end = start) {
             } catch (_refreshErr) {
                 // Keep the last successful render on refresh failure.
             }
-        }, 120000);
+        }, 60000);
     } catch (_error) {
         homeUpcomingList.innerHTML = "<p class=\"muted-placeholder\">Failed to load upcoming matches.</p>";
         updateHomeDateHeading(range.start, range.end);

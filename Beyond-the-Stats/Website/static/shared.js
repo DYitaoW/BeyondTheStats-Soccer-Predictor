@@ -1207,13 +1207,29 @@ function liveUpdatesBadgeHtml(row) {
     if (row?.live_updates) {
         return `<div class="confidence-pill live-pill">Live</div>`;
     }
-    if (row?.live_status === "qualifying") {
+    if (row?.live_status === "final") {
+        return `<div class="confidence-pill schedule-pill">Final</div>`;
+    }
+    if (row?.live_status === "qualifying" || row?.live_status === "final_only") {
         return `<div class="confidence-pill schedule-pill">Qualifying</div>`;
+    }
+    if (row?.live_updates_eligible && row?.live_status === "pre") {
+        return `<div class="confidence-pill schedule-pill">Upcoming</div>`;
     }
     if (row?.live_updates_eligible) {
         return `<div class="confidence-pill schedule-pill">No live</div>`;
     }
     return "";
+}
+
+function liveScoreMetaHtml(row) {
+    if (row?.live_status !== "in") return "";
+    if (row.actual_home_goals === null || row.actual_home_goals === undefined
+        || row.actual_away_goals === null || row.actual_away_goals === undefined) {
+        return "";
+    }
+    const clock = row.live_clock ? ` (${escapeHtml(row.live_clock)}')` : "";
+    return `<div class="match-meta"><strong>Live score:</strong> ${row.actual_home_goals} - ${row.actual_away_goals}${clock}</div>`;
 }
 
 function renderUpcoming(target, rows, selectedLeague, options = {}) {
@@ -1383,6 +1399,8 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                     && r.actual_away_goals !== null && r.actual_away_goals !== undefined;
                 const homeGoals = (r.pred_home_goals === null || r.pred_home_goals === undefined) ? "NA" : r.pred_home_goals;
                 const awayGoals = (r.pred_away_goals === null || r.pred_away_goals === undefined) ? "NA" : r.pred_away_goals;
+                const livePill = liveUpdatesBadgeHtml(r);
+                const liveScoreLine = liveScoreMetaHtml(r);
                 const settled = String(r.actual_result || "").trim().match(/^[HDA]$/i);
                 const isCorrect = String(r.is_correct || "").trim().toLowerCase();
                 let rowClass = "";
@@ -1403,12 +1421,14 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
                         <div class="kick-head">
                             <div class="kick-league">${escapeHtml(r.competition)}</div>
+                            <div class="kick-head-pills">${livePill}</div>
                         </div>
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
                         ${r.prediction_note ? `<div class="match-meta prediction-note">${escapeHtml(r.prediction_note)}</div>` : ""}
                         ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
-                        ${hasFinalScore
-                            ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
+                        ${liveScoreLine}
+                        ${hasFinalScore && r.live_status !== "in"
+                            ? `<div class="match-meta"><strong>Final score:</strong> ${r.actual_home_goals} - ${r.actual_away_goals}</div>`
                             : ""}
                     </button>
                 `;
@@ -1420,13 +1440,15 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
                         <div class="kick-head">
                             <div class="kick-league">${escapeHtml(r.competition)}</div>
+                            <div class="kick-head-pills">${livePill}</div>
                         </div>
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
                         <div class="match-meta">Prediction: <span class="winner-line">${escapeHtml(r.winner_label)}</span></div>
                         ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
                         <div class="match-meta"><strong>Predicted score:</strong> ${homeGoals} - ${awayGoals}</div>
-                        ${hasFinalScore
-                            ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
+                        ${liveScoreLine}
+                        ${hasFinalScore && r.live_status !== "in"
+                            ? `<div class="match-meta"><strong>Final score:</strong> ${r.actual_home_goals} - ${r.actual_away_goals}</div>`
                             : ""}
                         <div class="probability-track">
                             <div style="width: ${r.prob_home}%;" title="${escapeHtml(r.home_team)}"></div>
@@ -1729,7 +1751,7 @@ if (!isCupMode && !isFriendliesMode) {
         if (typeof renderStats === "function" && statsTarget) {
             renderStats(statsTarget, payload.stats, payload.league_stats, filterVal);
         }
-    }, 120000);
+    }, 60000);
 }
 }
 
