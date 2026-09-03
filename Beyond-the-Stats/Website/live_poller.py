@@ -444,10 +444,10 @@ def _get_todays_competitions(today_date=None):
       4. Cup bracket JSON (knockout fixtures)
 
     Args:
-        today_date: date override (defaults to ``date.today()``).
+        today_date: date override (defaults to today's date in Eastern Time).
     """
     if today_date is None:
-        today_date = date.today()
+        today_date = datetime.now(ZoneInfo("America/New_York")).date()
     now_et = datetime.now(ZoneInfo("America/New_York"))
     todays = defaultdict(list)
 

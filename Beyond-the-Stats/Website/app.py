@@ -1882,7 +1882,8 @@ def api_debug_live_score_sources():
     if not _mutation_authorized():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     info = {}
-    info["today_date"] = date.today().isoformat()
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    info["today_date"] = today_et.isoformat()
     info["now_et"] = datetime.now(ZoneInfo("America/New_York")).isoformat()
     info["csv_files"] = {}
     for name, path in config.UPCOMING_CSV_FILES.items():
@@ -1901,12 +1902,12 @@ def api_debug_live_score_sources():
                         et_dates = utc_dates.dt.tz_localize("UTC", ambiguous="NaT").dt.tz_convert(ZoneInfo("America/New_York"))
                     entry["date_range"] = [et_dates.min().strftime("%Y-%m-%d") if pd.notna(et_dates.min()) else None,
                                            et_dates.max().strftime("%Y-%m-%d") if pd.notna(et_dates.max()) else None]
-                    entry["today_count"] = int((et_dates.dt.date == date.today()).sum())
+                    entry["today_count"] = int((et_dates.dt.date == today_et).sum())
                 elif "match_date" in df.columns:
                     parsed = pd.to_datetime(df["match_date"], errors="coerce", dayfirst=False)
                     entry["date_range"] = [parsed.min().strftime("%Y-%m-%d") if pd.notna(parsed.min()) else None,
                                            parsed.max().strftime("%Y-%m-%d") if pd.notna(parsed.max()) else None]
-                    entry["today_count"] = int((parsed.dt.date == date.today()).sum())
+                    entry["today_count"] = int((parsed.dt.date == today_et).sum())
                 entry["competitions"] = sorted(df["competition"].dropna().unique().tolist()) if "competition" in df.columns else []
             except Exception as e:
                 entry["read_error"] = str(e)
