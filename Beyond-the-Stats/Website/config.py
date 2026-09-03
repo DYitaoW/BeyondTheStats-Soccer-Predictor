@@ -166,7 +166,7 @@ LIVE_SCORE_COMPETITIONS = {
     "North America/Leagues Cup": "concacaf.leagues.cup",
     # Domestic cups
     "England/FA Cup": "eng.fa",
-    "England/League Cup": "eng.efl",
+    "England/League Cup": "eng.league_cup",
     "Europe/Champions League": "uefa.champions",
     "Europe/Europa League": "uefa.europa",
     "Europe/Conference League": "uefa.europa.conf",
@@ -227,6 +227,9 @@ CORE_LIVE_POLL_COMPETITIONS = (
     "Europe/Champions League",
     "Europe/Europa League",
     "Europe/Conference League",
+    "England/FA Cup",
+    "England/League Cup",
+    "North America/Leagues Cup",
 )
 
 

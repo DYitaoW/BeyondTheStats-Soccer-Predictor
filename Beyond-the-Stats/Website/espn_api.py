@@ -9,14 +9,11 @@ from espn_parser import _parse_espn_live_event
 
 LIVE_SCORE_FETCH_TIMEOUT = 15
 
+# ESPN's site API currently 403s browser-like User-Agent strings from many
+# datacenter IPs. Use urllib's default UA (or a non-Mozilla token) so live
+# scoreboard / standings / teams fetches succeed.
 ESPN_REQUEST_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.espn.com/",
+    "Accept": "application/json",
 }
 
 _TEAMS_CACHE: dict[str, tuple[float, list[dict]]] = {}

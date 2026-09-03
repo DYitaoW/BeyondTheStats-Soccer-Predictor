@@ -1,4 +1,4 @@
-﻿"""Background live score polling thread and ESPN scoreboard merging."""
+"""Background live score polling thread and ESPN scoreboard merging."""
 import importlib.util
 import json
 import os
@@ -143,7 +143,7 @@ def _merge_completed_to_history():
     return cleared_standings
 
 def _effective_poller_date():
-    """Return the effective date for live-score polling.
+    """Return the primary date for live-score polling (ET calendar).
 
     Before 2am ET the previous day's games are still active, so we return
     yesterday's date.  After 2am ET we switch to today's date.
@@ -153,6 +153,24 @@ def _effective_poller_date():
         return (now_et - timedelta(days=1)).date()
     return now_et.date()
 
+
+def _poll_dates_for_cycle():
+    """Dates to query ESPN for this poll cycle.
+
+    Always include the ET calendar day. Before 2am ET also keep yesterday so
+    late-finishing / still-in-progress games are not dropped while today's
+    early fixtures are still invisible to a yesterday-only poll.
+    After 2am ET still include yesterday for spillover finals until noon ET.
+    """
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    today = now_et.date()
+    yesterday = today - timedelta(days=1)
+    if now_et.hour < 12:
+        # Preserve order: primary effective date first for day-boundary logic.
+        primary = _effective_poller_date()
+        secondary = yesterday if primary == today else today
+        return [primary, secondary]
+    return [today]
 
 def _backfill_recent_live_score_history():
     """Recover the retained history window from ESPN at poller startup."""
@@ -536,14 +554,141 @@ def get_live_poller_status() -> dict:
         "total_games_in_memory": total_games,
         "last_polled_utc": last_polled,
         "effective_poll_date": _effective_poller_date().isoformat(),
+        "poll_dates": [d.isoformat() for d in _poll_dates_for_cycle()],
     }
 
 
 def _discover_competitions_for_poll(poll_date, today_str):
+    """Return competitions expected to have games today.
+
+    Prefer pipeline upcoming CSVs (written by Predict_Upcoming_*), and only
+    fall back to an ESPN discovery sweep when those files have nothing for the
+    date. Callers that collect live scores should invoke this **after** the
+    primary ESPN fetch so an empty/stale CSV cannot gate core collection.
+    """
     todays_comps = _get_todays_competitions(today_date=poll_date)
     if not todays_comps:
         todays_comps = _discover_todays_competitions_from_espn(poll_date, today_str)
     return todays_comps
+
+
+def _todays_comps_from_results(results, poll_date):
+    """Build a todays_comps map from games already collected this cycle."""
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    todays = defaultdict(list)
+    for comp_name, comp_data in (results or {}).items():
+        games = comp_data.get("games") or []
+        if not games:
+            continue
+        for game in games:
+            kickoff_et = None
+            kickoff_raw = str(game.get("kickoff_utc") or game.get("match_datetime_utc") or "").strip()
+            if kickoff_raw:
+                try:
+                    dt_utc = pd.to_datetime(kickoff_raw, errors="coerce")
+                    if not pd.isna(dt_utc):
+                        if getattr(dt_utc, "tz", None) is None:
+                            dt_utc = dt_utc.tz_localize("UTC")
+                        kickoff_et = dt_utc.tz_convert(ZoneInfo("America/New_York"))
+                except Exception:
+                    kickoff_et = None
+            todays[comp_name].append(kickoff_et or now_et)
+    return {k: sorted(v) for k, v in todays.items()}
+
+
+def _merge_competition_result_dicts(*result_dicts):
+    """Merge per-competition poll results; concatenate unique match_ids."""
+    merged = {}
+    for results in result_dicts:
+        for comp_name, comp_data in (results or {}).items():
+            existing = merged.get(comp_name)
+            if existing is None:
+                merged[comp_name] = {
+                    "competition": comp_name,
+                    "games": list(comp_data.get("games") or []),
+                    "last_polled_utc": comp_data.get("last_polled_utc"),
+                }
+                continue
+            by_id = {
+                g.get("match_id"): g
+                for g in existing.get("games") or []
+                if g.get("match_id")
+            }
+            for g in comp_data.get("games") or []:
+                mid = g.get("match_id")
+                if not mid:
+                    continue
+                if mid in by_id:
+                    by_id[mid].update(g)
+                else:
+                    by_id[mid] = g
+            existing["games"] = list(by_id.values())
+            existing["last_polled_utc"] = comp_data.get("last_polled_utc") or existing.get(
+                "last_polled_utc"
+            )
+    return merged
+
+
+def _poll_espn_for_dates(poll_dates, *, include_deferred: bool):
+    """Fetch live (+ optional deferred) ESPN results across one or more dates.
+
+    Order matters:
+      1. Collect from the always-on CORE set first (never gated on CSV discovery).
+      2. Only after that collection, check pipeline CSVs / ESPN discovery for
+         additional competitions that have games today, then fetch those extras.
+    That way an unfinished upcoming-prediction pipeline cannot block live
+    score collection, and the "games for today?" check runs on top of
+    already-collected data.
+    """
+    all_live = {}
+    all_deferred = {}
+    todays_comps_merged = {}
+    for poll_date in poll_dates:
+        date_str = poll_date.strftime("%Y%m%d")
+
+        # ── 1. Collect CORE competitions first ─────────────────────
+        core_available = _build_available_competitions({})
+        live_comps, deferred_comps = _split_live_and_deferred(core_available)
+        all_live = _merge_competition_result_dicts(
+            all_live, _fetch_live_poll_results(live_comps, date_str)
+        )
+        if include_deferred and deferred_comps:
+            all_deferred = _merge_competition_result_dicts(
+                all_deferred, _fetch_deferred_poll_results(deferred_comps, date_str)
+            )
+
+        already = set(live_comps) | set(deferred_comps)
+
+        # ── 2. AFTER collection: check which other comps have games today ──
+        discovered = _discover_competitions_for_poll(poll_date, date_str)
+        todays_comps_merged.update(discovered or {})
+        # Also count competitions that already returned games this cycle.
+        for comp_name, comps_kickoffs in _todays_comps_from_results(
+            _merge_competition_result_dicts(all_live, all_deferred), poll_date
+        ).items():
+            todays_comps_merged.setdefault(comp_name, comps_kickoffs)
+
+        extra_available = {}
+        for comp in discovered or {}:
+            if comp in already:
+                continue
+            eid = config.LIVE_SCORE_COMPETITIONS.get(comp)
+            if eid:
+                extra_available[comp] = eid
+        if extra_available:
+            extra_live, extra_deferred = _split_live_and_deferred(extra_available)
+            all_live = _merge_competition_result_dicts(
+                all_live, _fetch_live_poll_results(extra_live, date_str)
+            )
+            if include_deferred and extra_deferred:
+                all_deferred = _merge_competition_result_dicts(
+                    all_deferred, _fetch_deferred_poll_results(extra_deferred, date_str)
+                )
+
+    return (
+        _merge_competition_result_dicts(all_live, all_deferred),
+        todays_comps_merged,
+    )
 
 
 def _build_available_competitions(todays_comps):
@@ -709,14 +854,10 @@ def refresh_live_scores_now(*, force: bool = False) -> dict:
             with _live_scores_lock:
                 return dict(_live_scores)
 
-        poll_date = _effective_poller_date()
-        today_str = poll_date.strftime("%Y%m%d")
-        todays_comps = _discover_competitions_for_poll(poll_date, today_str)
-        available = _build_available_competitions(todays_comps)
-        live_comps, deferred_comps = _split_live_and_deferred(available)
-        results = _fetch_live_poll_results(live_comps, today_str)
-        results.update(_fetch_deferred_poll_results(deferred_comps, today_str))
-        _merge_poll_results_into_live_scores(results, poll_date)
+        poll_dates = _poll_dates_for_cycle()
+        primary_date = poll_dates[0]
+        results, _todays = _poll_espn_for_dates(poll_dates, include_deferred=True)
+        _merge_poll_results_into_live_scores(results, primary_date)
         _last_on_demand_refresh_ts = time.time()
 
     with _live_scores_lock:
@@ -744,13 +885,8 @@ def _live_score_poller_loop():
         traceback.print_exc()
     while True:
         try:
-            poll_date = _effective_poller_date()
-            today_str = poll_date.strftime("%Y%m%d")
-            todays_comps = _discover_competitions_for_poll(poll_date, today_str)
-            available = _build_available_competitions(todays_comps)
-            live_comps, deferred_comps = _split_live_and_deferred(available)
-
-            results = _fetch_live_poll_results(live_comps, today_str)
+            poll_dates = _poll_dates_for_cycle()
+            poll_date = poll_dates[0]
 
             # Snapshot previous game statuses before merging (for detecting new completions).
             prev_statuses = {}
@@ -766,12 +902,18 @@ def _live_score_poller_loop():
                                 g.get("away_score"),
                             )
 
-            # ── Deferred polling: result-only + reduced frequency comps ──
+            # Deferred comps are expensive; only include on the deferred cadence.
             global _last_deferred_poll_ts
             now_ts = time.time()
-            if deferred_comps and (now_ts - _last_deferred_poll_ts) >= _DEFERRED_POLL_INTERVAL_S:
+            include_deferred = (now_ts - _last_deferred_poll_ts) >= _DEFERRED_POLL_INTERVAL_S
+            if include_deferred:
                 _last_deferred_poll_ts = now_ts
-                results.update(_fetch_deferred_poll_results(deferred_comps, today_str))
+
+            # Collect ESPN games first; CSV/discovery "games today?" runs inside
+            # _poll_espn_for_dates only after the CORE fetch completes.
+            results, todays_comps = _poll_espn_for_dates(
+                poll_dates, include_deferred=include_deferred
+            )
 
             _merge_poll_results_into_live_scores(results, poll_date)
             # Persist any newly completed games to history file.

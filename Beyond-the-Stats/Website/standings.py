@@ -574,7 +574,7 @@ def _fetch_espn_roster_for_competition(comp_name: str) -> list[str]:
         import urllib.request
 
         url = f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/teams"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=12) as resp:
             payload = json.load(resp)
         teams: list[str] = []
