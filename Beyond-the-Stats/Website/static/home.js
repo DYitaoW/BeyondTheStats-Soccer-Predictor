@@ -37,12 +37,22 @@ function datasetForCompetition(competition) {
 
 function renderHomeLeagueSidebar(entries) {
     if (!homeLeagueSidebar) return;
-    if (!entries.length) {
+    const predicted = (entries || []).filter((entry) => {
+        if (typeof competitionHasPredictions === "function") {
+            return competitionHasPredictions(entry);
+        }
+        const winner = String(entry.winner || "").trim();
+        return Boolean(winner) && winner !== "—" && winner.toUpperCase() !== "N/A";
+    });
+    const ordered = typeof sortCompetitionsByPreferredOrder === "function"
+        ? sortCompetitionsByPreferredOrder(predicted, (entry) => entry.league)
+        : predicted;
+    if (!ordered.length) {
         homeLeagueSidebar.innerHTML = "<p class=\"muted-placeholder\">No league data available.</p>";
         return;
     }
 
-    homeLeagueSidebar.innerHTML = entries.map((entry) => {
+    homeLeagueSidebar.innerHTML = ordered.map((entry) => {
         const label = formatLeagueLabel(entry.league);
         const href = leagueTableUrl(entry.league);
         const winPct = formatSidebarWinPct(entry.win_pct);
@@ -52,7 +62,6 @@ function renderHomeLeagueSidebar(entries) {
                     <span class="home-league-name">${escapeHtmlText(label.name)}</span>
                     <span class="home-league-pct">${escapeHtmlText(winPct)}</span>
                 </div>
-                ${label.country ? `<span class="home-league-country">${escapeHtmlText(label.country)}</span>` : ""}
                 <span class="home-league-winner">${escapeHtmlText(entry.winner || "N/A")}</span>
             </a>
         `;

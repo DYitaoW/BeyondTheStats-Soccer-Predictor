@@ -1,15 +1,17 @@
 :root {
-  --bg: #eaedef;
-  --bg-soft: #d5dadf;
-  --card: #f5f6f7;
+  --bg: #dfe3e8;
+  --bg-soft: #cfd5dc;
+  --card: #f0f2f4;
   --text: #11161c;
   --muted: #5c6873;
-  --border: #b8c0c8;
+  --border: #b0b8c0;
   --primary: #5c6873;
   --primary-strong: #4b5660;
   --accent-warm: #b8943b;
   --danger: #c94f4b;
   --green-pct: #287a49;
+  --today-btn: #2f8f4e;
+  --today-btn-hover: #267a42;
   --card-bg: var(--card);
   --card-border: var(--border);
   --text-color: var(--text);
@@ -19,7 +21,7 @@
   --btn-border: transparent;
   --btn-hover-bg: var(--primary-strong);
   --btn-hover-text: #ffffff;
-  --btn-secondary-bg: rgba(245, 246, 247, 0.9);
+  --btn-secondary-bg: rgba(240, 242, 244, 0.95);
   --btn-secondary-text: var(--muted);
   --btn-secondary-border: var(--border);
   --btn-secondary-hover-bg: var(--primary);
@@ -27,11 +29,11 @@
   --input-bg: #ffffff;
   --input-text: var(--text);
   --input-border: var(--border);
-  --topbar-bg: #f5f6f7;
+  --topbar-bg: #eceff2;
   --topbar-border: var(--border);
-  --table-header-bg: #dce0e5;
+  --table-header-bg: #d4d9df;
   --table-header-text: var(--text);
-  --sidebar-bg: #eef1f3;
+  --sidebar-bg: #e4e8ec;
   --hero-accent: rgba(92, 104, 115, 0.10);
 }
 
@@ -47,6 +49,8 @@ body.dark-mode {
   --accent-warm: #c9a345;
   --danger: #f07575;
   --green-pct: #48b065;
+  --today-btn: #3aa05c;
+  --today-btn-hover: #318a4e;
   --btn-bg: var(--primary);
   --btn-text: #0f1115;
   --btn-border: transparent;
@@ -121,7 +125,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: linear-gradient(90deg, rgba(240, 180, 41, 0.18), rgba(240, 180, 41, 0.08));
+  background: rgba(240, 180, 41, 0.12);
   color: #f0b429;
   border: 1px solid rgba(240, 180, 41, 0.4);
   border-radius: 10px;
@@ -288,7 +292,7 @@ body {
 .hero {
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: linear-gradient(135deg, var(--card) 0%, var(--hero-accent) 100%);
+  background: var(--card);
   padding: 24px 20px;
   margin-bottom: 18px;
 }
@@ -356,8 +360,6 @@ h1 {
 .home-sidebar {
   position: sticky;
   top: 120px;
-  max-height: calc(100vh - 140px);
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--sidebar-bg);
@@ -368,7 +370,6 @@ h1 {
 }
 
 .home-league-sidebar {
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -416,12 +417,7 @@ h1 {
 }
 
 .home-league-country {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  display: none;
 }
 
 .home-league-winner {
@@ -458,6 +454,19 @@ h1 {
 .date-toggle-btn {
   margin: 0;
   min-width: 104px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--today-btn);
+  color: #ffffff;
+  font-weight: 700;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.date-toggle-btn:hover,
+.date-toggle-btn:focus-visible {
+  background: var(--today-btn-hover);
+  color: #ffffff;
 }
 
 .date-popover {
@@ -701,7 +710,7 @@ h1 {
 }
 
 .app-promo-card {
-  background: linear-gradient(135deg, var(--card) 0%, var(--hero-accent) 100%);
+  background: var(--card);
 }
 
 .app-promo-title-link {
@@ -966,7 +975,7 @@ button:hover {
 
 /* Light mode polish for stats + predictions */
 body:not(.dark-mode) .hero-stat {
-  background: linear-gradient(180deg, #f6f8fc, #eef3f9);
+  background: #eef1f3;
   border-color: #b8c7d7;
 }
 
@@ -1999,4 +2008,170 @@ body:not(.dark-mode) .match-row.match-wrong {
 .legal-meta {
   margin-top: 1.5rem;
   font-size: 0.9rem;
+}
+
+/* Leagues hub tiles */
+.leagues-hub {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.leagues-hub-intro h2 {
+  margin: 0 0 6px;
+}
+
+.league-tile-section-title {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.league-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.league-tile {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--card);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.league-tile:hover,
+.league-tile:focus-visible {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+}
+
+.league-tile-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  color: #ffffff;
+  background: #4a5560;
+}
+
+.league-tile-initials {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.league-tile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 14px;
+}
+
+.league-tile-badge {
+  align-self: flex-start;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-bottom: 2px;
+}
+
+.league-tile-country {
+  display: none;
+}
+
+.league-tile-name {
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.league-tile-meta {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.league-detail-country {
+  display: none;
+}
+
+.league-detail-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  color: #ffffff;
+  font-weight: 800;
+  background: #4a5560;
+  flex-shrink: 0;
+}
+
+.league-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 10px 0;
+}
+
+.league-detail-back {
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.league-detail-back:hover {
+  color: var(--text);
+}
+
+.league-detail-leaders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.league-leader-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: var(--sidebar-bg);
+}
+
+.league-leader-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.league-leader-odds {
+  color: var(--green-pct);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.league-detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .league-tile-grid {
+    grid-template-columns: 1fr;
+  }
 }

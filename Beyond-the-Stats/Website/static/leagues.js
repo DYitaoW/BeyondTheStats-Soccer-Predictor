@@ -57,7 +57,8 @@ function leagueDetailUrl(competition) {
 function tileVisual(competition) {
     const label = formatLeagueLabel(competition);
     const seed = [...String(competition)].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-    const hue = seed % 360;
+    const tones = ["#3f4a55", "#465460", "#4d5c68", "#556371", "#5a6672", "#4a5560"];
+    const tone = tones[seed % tones.length];
     const initials = (label.name || competition)
         .split(/\s+/)
         .filter(Boolean)
@@ -69,7 +70,7 @@ function tileVisual(competition) {
         initials,
         country: label.country,
         name: label.name,
-        style: `background: linear-gradient(145deg, hsl(${hue} 52% 38%), hsl(${(hue + 36) % 360} 58% 24%));`,
+        style: `background: ${tone};`,
     };
 }
 
@@ -103,7 +104,6 @@ function renderLeagueTile(entry, isCup) {
             </div>
             <div class="league-tile-body">
                 ${badge}
-                <span class="league-tile-country">${escapeText(visual.country)}</span>
                 <span class="league-tile-name">${escapeText(visual.name)}</span>
                 <span class="league-tile-meta">${escapeText(winner)}${odds != null ? ` · ${escapeText(formatWinPct(odds))}` : ""}</span>
             </div>
@@ -121,7 +121,11 @@ function dedupeCompetitionEntries(entries) {
             byKey.set(key, { ...entry, competition: comp });
         }
     }
-    return [...byKey.values()].sort((a, b) => a.competition.localeCompare(b.competition));
+    const values = [...byKey.values()];
+    if (typeof sortCompetitionsByPreferredOrder === "function") {
+        return sortCompetitionsByPreferredOrder(values, (entry) => entry.competition);
+    }
+    return values.sort((a, b) => a.competition.localeCompare(b.competition));
 }
 
 async function loadLeaguesHub() {
@@ -132,8 +136,10 @@ async function loadLeaguesHub() {
             hubLoading.textContent = data?.error || "Failed to load leagues.";
             return;
         }
-        const leagues = dedupeCompetitionEntries(data.leagues || []);
-        const cups = dedupeCompetitionEntries(data.cups || []);
+        const leagues = dedupeCompetitionEntries(data.leagues || [])
+            .filter((entry) => typeof competitionHasPredictions !== "function" || competitionHasPredictions(entry));
+        const cups = dedupeCompetitionEntries(data.cups || [])
+            .filter((entry) => typeof competitionHasPredictions !== "function" || competitionHasPredictions(entry));
 
         if (gridLeagues) {
             gridLeagues.innerHTML = leagues.length
