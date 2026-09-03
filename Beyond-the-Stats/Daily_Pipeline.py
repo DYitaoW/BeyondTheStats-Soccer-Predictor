@@ -263,7 +263,16 @@ def _handle_shutdown(signum, frame):
     global _shutdown_requested
     _shutdown_requested = True
     try:
-        print("\n[INFO] Shutdown requested. Finishing current run, then exiting.")
+        try:
+            signame = signal.Signals(signum).name
+        except Exception:
+            signame = str(signum)
+        print(
+            f"\n[INFO] Shutdown requested ({signame}). Finishing current run, then exiting.\n"
+            "       Common causes: backend restart/stop, Ctrl+C, or Backend memory "
+            "monitor SIGTERM when RSS exceeds --memory-limit-gb (default 12GB) "
+            "during heavy steps such as league-table projections."
+        )
     except Exception:
         pass
 

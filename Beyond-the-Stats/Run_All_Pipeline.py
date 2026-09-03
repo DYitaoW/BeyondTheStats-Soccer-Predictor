@@ -372,7 +372,7 @@ def _run_global_subpipeline(args, api_token):
     # Monte Carlo projection step.
     sub["global_upcoming_cups"] = run_step(
         "[global] Upcoming cup predictions",
-        [py, str(FILES_DIR / "Predict_Upcoming_Cups"), "--window-days", str(args.cup_window_days)],
+        [py, str(FILES_DIR / "Predict_Upcoming_Cups.py"), "--window-days", str(args.cup_window_days)],
         continue_on_error=args.continue_on_error,
         timeout=3600,
     )

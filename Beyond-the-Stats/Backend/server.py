@@ -281,6 +281,15 @@ class BackendServer:
                 reading.limit_mb,
                 reading.utilization_pct,
             )
+            try:
+                pipeline_log.append_line(
+                    f"[memory] EXCEEDED limit: {reading.rss_mb:.1f} MB / "
+                    f"{reading.limit_mb:.1f} MB ({reading.utilization_pct:.1f}%); "
+                    "sending SIGTERM to pipeline process group "
+                    "(Daily_Pipeline will print 'Shutdown requested')"
+                )
+            except Exception:
+                pass
             self._kill_pipeline_blocking()
             # Ensure the reader/reaper path can finish; if the proc is already
             # gone, unlock so the next scheduled run is not blocked.
