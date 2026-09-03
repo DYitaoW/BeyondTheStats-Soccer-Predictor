@@ -887,7 +887,6 @@ def _live_score_poller_loop():
         try:
             poll_dates = _poll_dates_for_cycle()
             poll_date = poll_dates[0]
-            today_str = poll_date.strftime("%Y%m%d")
 
             # Snapshot previous game statuses before merging (for detecting new completions).
             prev_statuses = {}
