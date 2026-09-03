@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026090303') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='2026090304') }}">
 </head>
 <body data-active-page="home">
   <main class="page">
@@ -31,6 +31,7 @@
         <a id="tab-leagues" class="tab-btn {{ 'active' if active_page == 'leagues' else '' }}" href="/leagues">Leagues</a>
         <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
         <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
+        <a id="tab-draftit" class="tab-btn tab-draftit" href="https://apps.apple.com/pk/app/draft-it-38-0-soccer-game/id6797634589" target="_blank" rel="noopener noreferrer">Play Draft It</a>
       </nav>
     </header>
 
@@ -154,8 +155,8 @@
     </footer>
   </main>
 
-  <script src="{{ url_for('static', filename='shared.js', v='2026090303') }}"></script>
-  <script src="{{ url_for('static', filename='home.js', v='2026090303') }}"></script>
+  <script src="{{ url_for('static', filename='shared.js', v='2026090304') }}"></script>
+  <script src="{{ url_for('static', filename='home.js', v='2026090304') }}"></script>
 
 </body>
 </html>

@@ -356,16 +356,11 @@ let html = `
     <p class="match-meta"><strong>Competition:</strong> ${p.competition}</p>
     <p class="match-meta">Winner: <span class="winner-line">${p.winner_label}</span></p>
     <div class="probability-wrap">
-        <div class="probability-labels">
-            <span>${p.home_team} (${pctLabel(p.prob_home)}%)</span>
-            <span>Draw (${pctLabel(p.prob_draw)}%)</span>
-            <span>${p.away_team} (${pctLabel(p.prob_away)}%)</span>
-        </div>
-        <div class="probability-track">
-            <div style="width: ${p.prob_home}%;" title="${p.home_team}"></div>
-            <div style="width: ${p.prob_draw}%;" title="Draw"></div>
-            <div style="width: ${p.prob_away}%;" title="${p.away_team}"></div>
-        </div>
+        ${probabilityBarHtml(p.prob_home, p.prob_draw, p.prob_away, {
+            home: p.home_team,
+            draw: "Draw",
+            away: p.away_team,
+        })}
     </div>
 
     <p class="match-meta"><strong>Predicted score:</strong> ${p.pred_home_goals} - ${p.pred_away_goals}</p>
@@ -1516,14 +1511,11 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         ${hasFinalScore && r.live_status !== "in"
                             ? `<div class="match-meta"><strong>Final score:</strong> ${r.actual_home_goals} - ${r.actual_away_goals}</div>`
                             : ""}
-                        <div class="probability-track">
-                            <div style="width: ${r.prob_home}%;" title="${escapeHtml(r.home_team)}"></div>
-                            <div style="width: ${r.prob_draw}%;" title="Draw"></div>
-                            <div style="width: ${r.prob_away}%;" title="${escapeHtml(r.away_team)}"></div>
-                        </div>
-                        <div class="probability-labels">
-                            <span>H: ${pctLabel(r.prob_home)}%</span> <span>D: ${pctLabel(r.prob_draw)}%</span> <span>A: ${pctLabel(r.prob_away)}%</span>
-                        </div>
+                        ${probabilityBarHtml(r.prob_home, r.prob_draw, r.prob_away, {
+                            home: r.home_team,
+                            draw: "Draw",
+                            away: r.away_team,
+                        })}
                     </button>
                 `;
                 }
@@ -1630,16 +1622,11 @@ function renderTopPicks(rows) {
         <p class="pick-match">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</p>
         <p class="match-meta">${escapeHtml(`${r.weekday || ""} ${r.date_label || ""}`.trim())}${r.time_label ? ` - ${escapeHtml(r.time_label)}` : ""}</p>
         <p class="pick-prediction">Prediction: ${escapeHtml(r.winner_label)}</p>
-        <div class="probability-track">
-        <div style="width: ${Number(r.prob_home) || 0}%;" title="${escapeHtml(r.home_team)}"></div>
-        <div style="width: ${Number(r.prob_draw) || 0}%;" title="Draw"></div>
-        <div style="width: ${Number(r.prob_away) || 0}%;" title="${escapeHtml(r.away_team)}"></div>
-        </div>
-        <div class="probability-labels">
-        <span>H: ${pctLabel(r.prob_home)}%</span>
-        <span>D: ${pctLabel(r.prob_draw)}%</span>
-        <span>A: ${pctLabel(r.prob_away)}%</span>
-        </div>
+        ${probabilityBarHtml(r.prob_home, r.prob_draw, r.prob_away, {
+            home: r.home_team,
+            draw: "Draw",
+            away: r.away_team,
+        })}
     </button>
     `).join("");
 }
@@ -1935,16 +1922,11 @@ h2hCompareButton.addEventListener("click", async () => {
                 <p class="winner-line">${escapeHtml(prediction.winner_label || "Draw")}</p>
                 <p><strong>Predicted score:</strong> ${prediction.pred_home_goals} - ${prediction.pred_away_goals}</p>
                 <p><strong>Confidence:</strong> ${pctLabel(confidence)}%</p>
-                <div class="probability-track">
-                    <div style="width: ${prediction.prob_home}%;" title="${escapeHtml(prediction.home_team)}"></div>
-                    <div style="width: ${prediction.prob_draw}%;" title="Draw"></div>
-                    <div style="width: ${prediction.prob_away}%;" title="${escapeHtml(prediction.away_team)}"></div>
-                </div>
-                <div class="probability-labels">
-                    <span>H: ${pctLabel(prediction.prob_home)}%</span>
-                    <span>D: ${pctLabel(prediction.prob_draw)}%</span>
-                    <span>A: ${pctLabel(prediction.prob_away)}%</span>
-                </div>
+                ${probabilityBarHtml(prediction.prob_home, prediction.prob_draw, prediction.prob_away, {
+                    home: prediction.home_team || t1,
+                    draw: "Draw",
+                    away: prediction.away_team || t2,
+                })}
                 ${prediction.pred_home_shots !== undefined ? `<p><strong>Shots:</strong> ${prediction.pred_home_shots} - ${prediction.pred_away_shots}</p>` : ""}
             </div>
         `;

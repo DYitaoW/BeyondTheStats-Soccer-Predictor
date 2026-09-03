@@ -656,6 +656,15 @@ h1 {
   box-shadow: inset 0 -2px 0 var(--primary);
 }
 
+.main-tabs .tab-btn.tab-draftit {
+  color: var(--today-btn);
+}
+
+.main-tabs .tab-btn.tab-draftit:hover,
+.main-tabs .tab-btn.tab-draftit:focus-visible {
+  color: var(--today-btn-hover);
+}
+
 .tab-btn.active {
   color: var(--btn-text);
   border-color: var(--primary);
