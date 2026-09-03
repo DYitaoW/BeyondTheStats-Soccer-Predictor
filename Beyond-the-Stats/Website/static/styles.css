@@ -1138,35 +1138,52 @@ body:not(.dark-mode) .match-row.match-wrong {
 
 .probability-track {
   display: flex;
-  height: 8px;
+  align-items: stretch;
+  height: 30px;
   width: 100%;
-  border-radius: 999px;
+  border-radius: 10px;
   overflow: hidden;
   background: #2b3947;
-  margin: 7px 0;
+  margin: 8px 0 4px;
 }
 
-.probability-track > div {
+.probability-track > div,
+.probability-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 100%;
+  min-width: 0;
+  padding: 0 4px;
+  box-sizing: border-box;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
-.probability-track > div:nth-child(1) {
+.probability-track > div:nth-child(1),
+.probability-segment.probability-home {
   background: #55d37a;
+  color: #0c2a16;
 }
 
-.probability-track > div:nth-child(2) {
+.probability-track > div:nth-child(2),
+.probability-segment.probability-draw {
   background: #93a4b3;
+  color: #152029;
 }
 
-.probability-track > div:nth-child(3) {
+.probability-track > div:nth-child(3),
+.probability-segment.probability-away {
   background: #4a9eff;
+  color: #06233f;
 }
 
 .probability-labels {
-  display: flex;
-  justify-content: space-between;
-  color: var(--muted);
-  font-size: 0.76rem;
+  display: none;
 }
 
 .result-head {

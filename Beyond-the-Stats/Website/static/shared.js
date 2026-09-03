@@ -328,6 +328,22 @@ function pctLabel(value) {
 return formatPercent(value, false);
 }
 
+function probabilityBarHtml(home, draw, away, titles = {}) {
+    const homePct = Number(home) || 0;
+    const drawPct = Number(draw) || 0;
+    const awayPct = Number(away) || 0;
+    const homeTitle = titles.home || "Home";
+    const drawTitle = titles.draw || "Draw";
+    const awayTitle = titles.away || "Away";
+    const segment = (pct, title, tone) => {
+        const width = Math.max(0, Math.min(100, pct));
+        const showLabel = width >= 10;
+        const label = showLabel ? `${pctLabel(pct)}%` : "";
+        return `<div class="probability-segment probability-${tone}" style="width:${width}%;" title="${escapeHtml(title)}${width ? ` ${pctLabel(pct)}%` : ""}">${label ? `<span>${label}</span>` : ""}</div>`;
+    };
+    return `<div class="probability-track" role="img" aria-label="Home ${pctLabel(homePct)}%, Draw ${pctLabel(drawPct)}%, Away ${pctLabel(awayPct)}%">${segment(homePct, homeTitle, "home")}${segment(drawPct, drawTitle, "draw")}${segment(awayPct, awayTitle, "away")}</div>`;
+}
+
 function showResult(targetError, targetResult, p, includeShots = true) {
 targetError.classList.add("hidden");
 targetResult.classList.remove("hidden");
