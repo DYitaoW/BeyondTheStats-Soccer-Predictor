@@ -38,6 +38,9 @@ function datasetForCompetition(competition) {
 function renderHomeLeagueSidebar(entries) {
     if (!homeLeagueSidebar) return;
     const predicted = (entries || []).filter((entry) => {
+        if (typeof isHiddenWebsiteCompetition === "function" && isHiddenWebsiteCompetition(entry.league)) {
+            return false;
+        }
         if (typeof competitionHasPredictions === "function") {
             return competitionHasPredictions(entry);
         }

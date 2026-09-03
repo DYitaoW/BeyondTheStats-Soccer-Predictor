@@ -198,6 +198,21 @@ const PREFERRED_LEAGUE_ORDER = [
     "United States/MLS",
 ];
 
+const HIDDEN_WEBSITE_COMPETITIONS = new Set([
+    "Club Friendlies",
+    "International/World Cup",
+    "FIFA/World Cup",
+    "World Cup",
+]);
+
+function isHiddenWebsiteCompetition(competition) {
+    const key = String(competition || "").trim();
+    if (!key) return false;
+    if (HIDDEN_WEBSITE_COMPETITIONS.has(key)) return true;
+    const lower = key.toLowerCase();
+    return lower.includes("world cup") || lower.includes("club friendlies");
+}
+
 function competitionSortRank(competition) {
     const key = String(competition || "").trim();
     const idx = PREFERRED_LEAGUE_ORDER.indexOf(key);
@@ -217,6 +232,8 @@ function sortCompetitionsByPreferredOrder(items, getCompetition = (item) => item
 
 function competitionHasPredictions(entry) {
     if (!entry) return false;
+    const competition = entry.competition || entry.league || "";
+    if (isHiddenWebsiteCompetition(competition)) return false;
     const winner = String(entry.predicted_winner || entry.winner || "").trim();
     if (!winner || winner === "—" || winner.toUpperCase() === "N/A") return false;
     return true;
@@ -1344,6 +1361,9 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
         }
         const leagueKeys = sortCompetitionsByPreferredOrder(Object.keys(byLeague));
         for (const league of leagueKeys) {
+            if (typeof isHiddenWebsiteCompetition === "function" && isHiddenWebsiteCompetition(league)) {
+                continue;
+            }
             const rowsForLeague = byLeague[league] || [];
             const hasPrediction = rowsForLeague.some((row) => {
                 const scheduleOnly = Boolean(row.schedule_only);

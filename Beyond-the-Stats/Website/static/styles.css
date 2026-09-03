@@ -181,7 +181,7 @@ body {
     gap: 6px;
   }
   .brand-name {
-    font-size: 0.85rem;
+    font-size: 1.2rem;
   }
   .brand-sub {
     font-size: 0.7rem;
@@ -217,7 +217,9 @@ body {
 
 .brand-name {
   font-weight: 800;
-  font-size: 1.05rem;
+  font-size: 1.55rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
 .brand-sub {
@@ -1830,7 +1832,8 @@ body:not(.dark-mode) .match-row.match-wrong {
   }
 
   .home-league-sidebar {
-    max-height: 360px;
+    max-height: none;
+    overflow: visible;
   }
 
 

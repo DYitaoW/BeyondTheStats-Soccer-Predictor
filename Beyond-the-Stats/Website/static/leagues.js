@@ -137,8 +137,10 @@ async function loadLeaguesHub() {
             return;
         }
         const leagues = dedupeCompetitionEntries(data.leagues || [])
+            .filter((entry) => typeof isHiddenWebsiteCompetition !== "function" || !isHiddenWebsiteCompetition(entry.competition))
             .filter((entry) => typeof competitionHasPredictions !== "function" || competitionHasPredictions(entry));
         const cups = dedupeCompetitionEntries(data.cups || [])
+            .filter((entry) => typeof isHiddenWebsiteCompetition !== "function" || !isHiddenWebsiteCompetition(entry.competition))
             .filter((entry) => typeof competitionHasPredictions !== "function" || competitionHasPredictions(entry));
 
         if (gridLeagues) {
