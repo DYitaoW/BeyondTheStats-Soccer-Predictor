@@ -17,7 +17,7 @@
         <a id="brand-home-btn" class="brand brand-home-btn" href="/" aria-label="Go to home">
           <img class="brand-mark" src="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}" alt="Beyond The Stats logo">
           <div>
-            <div class="brand-name">Beyond The Stats BETA</div>
+            <div class="brand-name">Beyond The Stats</div>
             <div class="brand-sub">Matchday Predictor</div>
           </div>
         </a>
@@ -31,6 +31,7 @@
         <a id="tab-leagues" class="tab-btn {{ 'active' if active_page in ('leagues', 'global', 'cups', 'league-table') else '' }}" href="/leagues">Leagues</a>
         <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
         <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
+        <a id="tab-draftit" class="tab-btn tab-draftit" href="https://apps.apple.com/pk/app/draft-it-38-0-soccer-game/id6797634589" target="_blank" rel="noopener noreferrer">Play Draft It</a>
       </nav>
     </header>
     <section id="panel-cups" class="{{ '' if active_page == 'cups' else 'hidden' }}">

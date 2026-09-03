@@ -188,6 +188,57 @@ function competitionDisplayName(competition) {
     return key;
 }
 
+const PREFERRED_LEAGUE_ORDER = [
+    "England/Premier League",
+    "Spain/La Liga",
+    "Italy/Serie A",
+    "Germany/Bundesliga",
+    "France/Ligue 1",
+    "England/Championship",
+    "United States/MLS",
+];
+
+const HIDDEN_WEBSITE_COMPETITIONS = new Set([
+    "Club Friendlies",
+    "International/World Cup",
+    "FIFA/World Cup",
+    "World Cup",
+]);
+
+function isHiddenWebsiteCompetition(competition) {
+    const key = String(competition || "").trim();
+    if (!key) return false;
+    if (HIDDEN_WEBSITE_COMPETITIONS.has(key)) return true;
+    const lower = key.toLowerCase();
+    return lower.includes("world cup") || lower.includes("club friendlies");
+}
+
+function competitionSortRank(competition) {
+    const key = String(competition || "").trim();
+    const idx = PREFERRED_LEAGUE_ORDER.indexOf(key);
+    return idx === -1 ? PREFERRED_LEAGUE_ORDER.length : idx;
+}
+
+function sortCompetitionsByPreferredOrder(items, getCompetition = (item) => item) {
+    return [...(items || [])].sort((a, b) => {
+        const ca = String(getCompetition(a) || "").trim();
+        const cb = String(getCompetition(b) || "").trim();
+        const ra = competitionSortRank(ca);
+        const rb = competitionSortRank(cb);
+        if (ra !== rb) return ra - rb;
+        return competitionDisplayName(ca).localeCompare(competitionDisplayName(cb));
+    });
+}
+
+function competitionHasPredictions(entry) {
+    if (!entry) return false;
+    const competition = entry.competition || entry.league || "";
+    if (isHiddenWebsiteCompetition(competition)) return false;
+    const winner = String(entry.predicted_winner || entry.winner || "").trim();
+    if (!winner || winner === "—" || winner.toUpperCase() === "N/A") return false;
+    return true;
+}
+
 function getLeaguesForSource(source) {
     if (source === "mls") return [...MLS_LEAGUES];
     if (source === "extra") return [...OTHER_LEAGUES];
@@ -277,6 +328,22 @@ function pctLabel(value) {
 return formatPercent(value, false);
 }
 
+function probabilityBarHtml(home, draw, away, titles = {}) {
+    const homePct = Number(home) || 0;
+    const drawPct = Number(draw) || 0;
+    const awayPct = Number(away) || 0;
+    const homeTitle = titles.home || "Home";
+    const drawTitle = titles.draw || "Draw";
+    const awayTitle = titles.away || "Away";
+    const segment = (pct, title, tone) => {
+        const width = Math.max(0, Math.min(100, pct));
+        const showLabel = width >= 10;
+        const label = showLabel ? `${pctLabel(pct)}%` : "";
+        return `<div class="probability-segment probability-${tone}" style="width:${width}%;" title="${escapeHtml(title)}${width ? ` ${pctLabel(pct)}%` : ""}">${label ? `<span>${label}</span>` : ""}</div>`;
+    };
+    return `<div class="probability-track" role="img" aria-label="Home ${pctLabel(homePct)}%, Draw ${pctLabel(drawPct)}%, Away ${pctLabel(awayPct)}%">${segment(homePct, homeTitle, "home")}${segment(drawPct, drawTitle, "draw")}${segment(awayPct, awayTitle, "away")}</div>`;
+}
+
 function showResult(targetError, targetResult, p, includeShots = true) {
 targetError.classList.add("hidden");
 targetResult.classList.remove("hidden");
@@ -289,19 +356,14 @@ let html = `
     <p class="match-meta"><strong>Competition:</strong> ${p.competition}</p>
     <p class="match-meta">Winner: <span class="winner-line">${p.winner_label}</span></p>
     <div class="probability-wrap">
-        <div class="probability-labels">
-            <span>${p.home_team} (${pctLabel(p.prob_home)}%)</span>
-            <span>Draw (${pctLabel(p.prob_draw)}%)</span>
-            <span>${p.away_team} (${pctLabel(p.prob_away)}%)</span>
-        </div>
-        <div class="probability-track">
-            <div style="width: ${p.prob_home}%;" title="${p.home_team}"></div>
-            <div style="width: ${p.prob_draw}%;" title="Draw"></div>
-            <div style="width: ${p.prob_away}%;" title="${p.away_team}"></div>
-        </div>
+        ${probabilityBarHtml(p.prob_home, p.prob_draw, p.prob_away, {
+            home: p.home_team,
+            draw: "Draw",
+            away: p.away_team,
+        })}
     </div>
 
-    <p class="match-meta"><strong>Predicted score:</strong> ${p.home_team} ${p.pred_home_goals} - ${p.pred_away_goals} ${p.away_team}</p>
+    <p class="match-meta"><strong>Predicted score:</strong> ${p.pred_home_goals} - ${p.pred_away_goals}</p>
 `;
 if (includeShots) {
     html += `
@@ -1172,6 +1234,23 @@ if (!Number.isNaN(parsed)) {
 return "";
 }
 
+function formatMatchDayLabel(isoDate) {
+    const text = String(isoDate || "").trim();
+    if (!text || text === "unknown") return "Unknown date";
+    try {
+        const dt = new Date(`${text}T12:00:00`);
+        if (Number.isNaN(dt.getTime())) return text;
+        return new Intl.DateTimeFormat("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+        }).format(dt);
+    } catch (_err) {
+        return text;
+    }
+}
+
 function predictionQualityLabel(row) {
     const quality = String(row?.prediction_quality || "").toLowerCase();
     if (quality === "provisional") return "Provisional";
@@ -1190,13 +1269,29 @@ function liveUpdatesBadgeHtml(row) {
     if (row?.live_updates) {
         return `<div class="confidence-pill live-pill">Live</div>`;
     }
-    if (row?.live_status === "qualifying") {
+    if (row?.live_status === "final") {
+        return `<div class="confidence-pill schedule-pill">Final</div>`;
+    }
+    if (row?.live_status === "qualifying" || row?.live_status === "final_only") {
         return `<div class="confidence-pill schedule-pill">Qualifying</div>`;
+    }
+    if (row?.live_updates_eligible && row?.live_status === "pre") {
+        return `<div class="confidence-pill schedule-pill">Upcoming</div>`;
     }
     if (row?.live_updates_eligible) {
         return `<div class="confidence-pill schedule-pill">No live</div>`;
     }
     return "";
+}
+
+function liveScoreMetaHtml(row) {
+    if (row?.live_status !== "in") return "";
+    if (row.actual_home_goals === null || row.actual_home_goals === undefined
+        || row.actual_away_goals === null || row.actual_away_goals === undefined) {
+        return "";
+    }
+    const clock = row.live_clock ? ` (${escapeHtml(row.live_clock)}')` : "";
+    return `<div class="match-meta"><strong>Live score:</strong> ${row.actual_home_goals} - ${row.actual_away_goals}${clock}</div>`;
 }
 
 function renderUpcoming(target, rows, selectedLeague, options = {}) {
@@ -1209,8 +1304,6 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
         target.innerHTML = "<p>No upcoming matches for this selection.</p>";
         return;
     }
-    const PAGE_SIZE = 30;
-    let currentPage = 0;
 
     let todayStr;
     try {
@@ -1224,7 +1317,6 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
         todayStr = new Date().toISOString().slice(0, 10);
     }
 
-    // Upcoming tab hides stale fixtures; home can opt into historical date ranges.
     const futureRows = options.includePast ? visibleRows : visibleRows.filter(r => {
         const d = rowDateIso(r);
         return d && d >= todayStr;
@@ -1244,12 +1336,12 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
             return String(a.home_team || "").localeCompare(String(b.home_team || ""));
     };
 
-    const dayLabelForRow = (row) => `${row.weekday || ""} ${row.date_label || ""}`.trim();
+    const dayLabelForRow = (row) => formatMatchDayLabel(rowDateIso(row));
 
-    const appendDayGroups = (flatItems, groupedRows) => {
+    const appendDayGroups = (flatItems, groupedRows, skipDayHeaders = false) => {
         const byDay = {};
         for (const row of groupedRows) {
-            const key = dayLabelForRow(row);
+            const key = rowDateIso(row) || "unknown";
             byDay[key] = byDay[key] || [];
             byDay[key].push(row);
         }
@@ -1257,14 +1349,43 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
             byDay[key].sort(sortByKickoff);
         }
         const days = Object.keys(byDay).sort((a, b) => {
-            const da = byDay[a][0]?.match_datetime_et || byDay[a][0]?.match_date || "";
-            const db = byDay[b][0]?.match_datetime_et || byDay[b][0]?.match_date || "";
-            if (da && db) return da < db ? -1 : da > db ? 1 : 0;
-            return a.localeCompare(b);
+            if (a === "unknown") return 1;
+            if (b === "unknown") return -1;
+            return a < b ? -1 : a > b ? 1 : 0;
         });
-        for (const day of days) {
-            flatItems.push({ type: "day", label: day });
-            for (const row of byDay[day]) {
+        for (const dayKey of days) {
+            if (!skipDayHeaders) {
+                flatItems.push({ type: "day", label: formatMatchDayLabel(dayKey) });
+            }
+            for (const row of byDay[dayKey]) {
+                flatItems.push({ type: "match", data: row });
+            }
+        }
+    };
+
+    const appendLeagueGroups = (flatItems, groupedRows) => {
+        const byLeague = {};
+        for (const row of groupedRows) {
+            const league = row.competition || "Other";
+            byLeague[league] = byLeague[league] || [];
+            byLeague[league].push(row);
+        }
+        const leagueKeys = sortCompetitionsByPreferredOrder(Object.keys(byLeague));
+        for (const league of leagueKeys) {
+            if (typeof isHiddenWebsiteCompetition === "function" && isHiddenWebsiteCompetition(league)) {
+                continue;
+            }
+            const rowsForLeague = byLeague[league] || [];
+            const hasPrediction = rowsForLeague.some((row) => {
+                const scheduleOnly = Boolean(row.schedule_only);
+                const quality = String(row.prediction_quality || "").toLowerCase();
+                if (scheduleOnly || quality === "no_prediction") return false;
+                if (row.has_prediction === false) return false;
+                return true;
+            });
+            if (!hasPrediction) continue;
+            flatItems.push({ type: "league", label: competitionDisplayName(league) });
+            for (const row of rowsForLeague.sort(sortByKickoff)) {
                 flatItems.push({ type: "match", data: row });
             }
         }
@@ -1272,29 +1393,36 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
 
     // Flatten with group separators for pagination.
     const flatItems = [];
-    if (options.groupByLeague) {
-        const byLeague = {};
+    if (options.groupByDateThenLeague) {
+        const byDay = {};
         for (const row of futureRows) {
-            const league = row.competition || "Other";
-            byLeague[league] = byLeague[league] || [];
-            byLeague[league].push(row);
+            const key = rowDateIso(row) || "unknown";
+            byDay[key] = byDay[key] || [];
+            byDay[key].push(row);
         }
-        for (const league of Object.keys(byLeague).sort((a, b) => a.localeCompare(b))) {
-            flatItems.push({ type: "league", label: league });
-            appendDayGroups(flatItems, byLeague[league]);
+        const dayKeys = Object.keys(byDay).sort((a, b) => {
+            if (a === "unknown") return 1;
+            if (b === "unknown") return -1;
+            return a < b ? -1 : a > b ? 1 : 0;
+        });
+        const hideDayHeaders = Boolean(options.hideDayHeaders);
+        for (const dayKey of dayKeys) {
+            if (!hideDayHeaders) {
+                flatItems.push({ type: "day", label: formatMatchDayLabel(dayKey) });
+            }
+            appendLeagueGroups(flatItems, byDay[dayKey]);
         }
+    } else if (options.groupByLeague) {
+        appendLeagueGroups(flatItems, futureRows);
     } else {
         appendDayGroups(flatItems, futureRows);
     }
-    const totalPages = Math.ceil(flatItems.length / PAGE_SIZE);
 
-    function renderPage(page) {
-        const start = page * PAGE_SIZE;
-        const end = Math.min(start + PAGE_SIZE, flatItems.length);
+    function renderAll() {
         const fragment = document.createDocumentFragment();
         let currentGrid = null;
         
-        for (let i = start; i < end; i++) {
+        for (let i = 0; i < flatItems.length; i++) {
             const item = flatItems[i];
             if (item.type === 'league') {
                 const div = document.createElement('div');
@@ -1307,10 +1435,14 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                 div.className = 'day-title';
                 div.textContent = item.label;
                 fragment.appendChild(div);
-                const grid = document.createElement('div');
-                grid.className = 'kick-card-grid';
-                fragment.appendChild(grid);
-                currentGrid = grid;
+                if (!options.groupByDateThenLeague) {
+                    const grid = document.createElement('div');
+                    grid.className = 'kick-card-grid';
+                    fragment.appendChild(grid);
+                    currentGrid = grid;
+                } else {
+                    currentGrid = null;
+                }
             } else {
                 const r = item.data;
                 if (!currentGrid) {
@@ -1327,6 +1459,8 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                     && r.actual_away_goals !== null && r.actual_away_goals !== undefined;
                 const homeGoals = (r.pred_home_goals === null || r.pred_home_goals === undefined) ? "NA" : r.pred_home_goals;
                 const awayGoals = (r.pred_away_goals === null || r.pred_away_goals === undefined) ? "NA" : r.pred_away_goals;
+                const livePill = typeof liveUpdatesBadgeHtml === "function" ? liveUpdatesBadgeHtml(r) : "";
+                const liveScoreLine = typeof liveScoreMetaHtml === "function" ? liveScoreMetaHtml(r) : "";
                 const settled = String(r.actual_result || "").trim().match(/^[HDA]$/i);
                 const isCorrect = String(r.is_correct || "").trim().toLowerCase();
                 let rowClass = "";
@@ -1337,6 +1471,7 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         rowClass = "match-wrong";
                     }
                 }
+                const leagueLabel = competitionDisplayName(r.competition);
                 
                 article.className = `match-row kick-match-card ${rowClass}`;
                 if (noPrediction) {
@@ -1346,13 +1481,15 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         data-away-team="${escapeHtml(r.away_team)}"
                         aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
                         <div class="kick-head">
-                            <div class="kick-league">${escapeHtml(r.competition)}</div>
+                            <div class="kick-league">${escapeHtml(leagueLabel)}</div>
+                            <div class="kick-head-pills">${livePill}</div>
                         </div>
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
                         ${r.prediction_note ? `<div class="match-meta prediction-note">${escapeHtml(r.prediction_note)}</div>` : ""}
                         ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
-                        ${hasFinalScore
-                            ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
+                        ${liveScoreLine}
+                        ${hasFinalScore && r.live_status !== "in"
+                            ? `<div class="match-meta"><strong>Final score:</strong> ${r.actual_home_goals} - ${r.actual_away_goals}</div>`
                             : ""}
                     </button>
                 `;
@@ -1363,23 +1500,22 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         data-away-team="${escapeHtml(r.away_team)}"
                         aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
                         <div class="kick-head">
-                            <div class="kick-league">${escapeHtml(r.competition)}</div>
+                            <div class="kick-league">${escapeHtml(leagueLabel)}</div>
+                            <div class="kick-head-pills">${livePill}</div>
                         </div>
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
                         <div class="match-meta">Prediction: <span class="winner-line">${escapeHtml(r.winner_label)}</span></div>
                         ${r.time_label ? `<div class="match-meta"><strong>Kickoff:</strong> ${escapeHtml(r.time_label)}</div>` : ""}
-                        <div class="match-meta"><strong>Predicted score:</strong> ${escapeHtml(r.home_team)} ${homeGoals} - ${awayGoals} ${escapeHtml(r.away_team)}</div>
-                        ${hasFinalScore
-                            ? `<div class="match-meta"><strong>Final score:</strong> ${escapeHtml(r.home_team)} ${r.actual_home_goals} - ${r.actual_away_goals} ${escapeHtml(r.away_team)}</div>`
+                        <div class="match-meta"><strong>Predicted score:</strong> ${homeGoals} - ${awayGoals}</div>
+                        ${liveScoreLine}
+                        ${hasFinalScore && r.live_status !== "in"
+                            ? `<div class="match-meta"><strong>Final score:</strong> ${r.actual_home_goals} - ${r.actual_away_goals}</div>`
                             : ""}
-                        <div class="probability-track">
-                            <div style="width: ${r.prob_home}%;" title="${escapeHtml(r.home_team)}"></div>
-                            <div style="width: ${r.prob_draw}%;" title="Draw"></div>
-                            <div style="width: ${r.prob_away}%;" title="${escapeHtml(r.away_team)}"></div>
-                        </div>
-                        <div class="probability-labels">
-                            <span>H: ${pctLabel(r.prob_home)}%</span> <span>D: ${pctLabel(r.prob_draw)}%</span> <span>A: ${pctLabel(r.prob_away)}%</span>
-                        </div>
+                        ${probabilityBarHtml(r.prob_home, r.prob_draw, r.prob_away, {
+                            home: r.home_team,
+                            draw: "Draw",
+                            away: r.away_team,
+                        })}
                     </button>
                 `;
                 }
@@ -1389,32 +1525,9 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
         
         target.innerHTML = '';
         target.appendChild(fragment);
-        
-        // Add pagination controls
-        if (totalPages > 1) {
-            const pagination = document.createElement('div');
-            pagination.className = 'pagination-controls';
-            pagination.style.cssText = 'display:flex;justify-content:center;gap:8px;margin-top:16px;padding:8px;';
-            pagination.innerHTML = `
-                <button class="page-btn" data-page="${Math.max(0, currentPage - 1)}" ${currentPage === 0 ? 'disabled' : ''}>← Prev</button>
-                <span class="page-info">Page ${currentPage + 1} of ${totalPages}</span>
-                <button class="page-btn" data-page="${Math.min(totalPages - 1, currentPage + 1)}" ${currentPage === totalPages - 1 ? 'disabled' : ''}>Next →</button>
-            `;
-            target.appendChild(pagination);
-            
-            pagination.querySelectorAll('.page-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const page = parseInt(btn.dataset.page, 10);
-                    if (!isNaN(page) && page !== currentPage) {
-                        currentPage = page;
-                        renderPage(currentPage);
-                    }
-                });
-            });
-        }
     }
 
-    renderPage(currentPage);
+    renderAll();
 }
 
 function toConfidence(row) {
@@ -1509,16 +1622,11 @@ function renderTopPicks(rows) {
         <p class="pick-match">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</p>
         <p class="match-meta">${escapeHtml(`${r.weekday || ""} ${r.date_label || ""}`.trim())}${r.time_label ? ` - ${escapeHtml(r.time_label)}` : ""}</p>
         <p class="pick-prediction">Prediction: ${escapeHtml(r.winner_label)}</p>
-        <div class="probability-track">
-        <div style="width: ${Number(r.prob_home) || 0}%;" title="${escapeHtml(r.home_team)}"></div>
-        <div style="width: ${Number(r.prob_draw) || 0}%;" title="Draw"></div>
-        <div style="width: ${Number(r.prob_away) || 0}%;" title="${escapeHtml(r.away_team)}"></div>
-        </div>
-        <div class="probability-labels">
-        <span>H: ${pctLabel(r.prob_home)}%</span>
-        <span>D: ${pctLabel(r.prob_draw)}%</span>
-        <span>A: ${pctLabel(r.prob_away)}%</span>
-        </div>
+        ${probabilityBarHtml(r.prob_home, r.prob_draw, r.prob_away, {
+            home: r.home_team,
+            draw: "Draw",
+            away: r.away_team,
+        })}
     </button>
     `).join("");
 }
@@ -1812,18 +1920,13 @@ h2hCompareButton.addEventListener("click", async () => {
                 <h3>Match Prediction</h3>
                 <p><strong>${escapeHtml(t1)} (H) vs ${escapeHtml(t2)} (A)</strong></p>
                 <p class="winner-line">${escapeHtml(prediction.winner_label || "Draw")}</p>
-                <p><strong>Predicted score:</strong> ${escapeHtml(prediction.home_team)} ${prediction.pred_home_goals} - ${prediction.pred_away_goals} ${escapeHtml(prediction.away_team)}</p>
+                <p><strong>Predicted score:</strong> ${prediction.pred_home_goals} - ${prediction.pred_away_goals}</p>
                 <p><strong>Confidence:</strong> ${pctLabel(confidence)}%</p>
-                <div class="probability-track">
-                    <div style="width: ${prediction.prob_home}%;" title="${escapeHtml(prediction.home_team)}"></div>
-                    <div style="width: ${prediction.prob_draw}%;" title="Draw"></div>
-                    <div style="width: ${prediction.prob_away}%;" title="${escapeHtml(prediction.away_team)}"></div>
-                </div>
-                <div class="probability-labels">
-                    <span>H: ${pctLabel(prediction.prob_home)}%</span>
-                    <span>D: ${pctLabel(prediction.prob_draw)}%</span>
-                    <span>A: ${pctLabel(prediction.prob_away)}%</span>
-                </div>
+                ${probabilityBarHtml(prediction.prob_home, prediction.prob_draw, prediction.prob_away, {
+                    home: prediction.home_team || t1,
+                    draw: "Draw",
+                    away: prediction.away_team || t2,
+                })}
                 ${prediction.pred_home_shots !== undefined ? `<p><strong>Shots:</strong> ${prediction.pred_home_shots} - ${prediction.pred_away_shots}</p>` : ""}
             </div>
         `;
@@ -2051,7 +2154,8 @@ function getLeagueTableUrlParams() {
     const params = new URLSearchParams(window.location.search);
     return {
         dataset: params.get("dataset"),
-        league: params.get("league"),
+        league: params.get("league") || params.get("competition"),
+        competition: params.get("competition") || params.get("league"),
     };
 }
 
