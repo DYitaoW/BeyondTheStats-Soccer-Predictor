@@ -39,6 +39,26 @@ def _normalize_team_for_live(name):
     n = re.sub(r"[^a-z0-9 ]", "", n)
     return n.strip()
 
+def _upcoming_csv_paths_for_live():
+    """Fixture CSV paths used to seed live prematch lookups."""
+    seen = set()
+    paths = []
+    for csv_path in config.UPCOMING_CSV_FILES.values():
+        if csv_path and csv_path not in seen:
+            seen.add(csv_path)
+            paths.append(csv_path)
+    for csv_path in (
+        config.ALL_UPCOMING_FILE,
+        config.FOUR_WEEK_WINDOW_FILE,
+        os.path.join(config.PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv"),
+        os.path.join(config.PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv"),
+    ):
+        if csv_path and csv_path not in seen:
+            seen.add(csv_path)
+            paths.append(csv_path)
+    return paths
+
+
 def _build_live_prematch_index():
     """Build {(norm_home, norm_away, comp): record} from today's upcoming CSVs.
 
@@ -46,7 +66,7 @@ def _build_live_prematch_index():
     so ``_compute_live_prediction`` can blend them with live Poisson odds.
     """
     index = {}
-    for csv_path in config.UPCOMING_CSV_FILES.values():
+    for csv_path in _upcoming_csv_paths_for_live():
         if not os.path.exists(csv_path):
             continue
         try:

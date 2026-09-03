@@ -1459,8 +1459,8 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                     && r.actual_away_goals !== null && r.actual_away_goals !== undefined;
                 const homeGoals = (r.pred_home_goals === null || r.pred_home_goals === undefined) ? "NA" : r.pred_home_goals;
                 const awayGoals = (r.pred_away_goals === null || r.pred_away_goals === undefined) ? "NA" : r.pred_away_goals;
-                const livePill = typeof liveUpdatesBadgeHtml === "function" ? liveUpdatesBadgeHtml(r) : "";
-                const liveScoreLine = typeof liveScoreMetaHtml === "function" ? liveScoreMetaHtml(r) : "";
+                const livePill = liveUpdatesBadgeHtml(r);
+                const liveScoreLine = liveScoreMetaHtml(r);
                 const settled = String(r.actual_result || "").trim().match(/^[HDA]$/i);
                 const isCorrect = String(r.is_correct || "").trim().toLowerCase();
                 let rowClass = "";
@@ -1481,7 +1481,7 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         data-away-team="${escapeHtml(r.away_team)}"
                         aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
                         <div class="kick-head">
-                            <div class="kick-league">${escapeHtml(leagueLabel)}</div>
+                            <div class="kick-league">${escapeHtml(r.competition)}</div>
                             <div class="kick-head-pills">${livePill}</div>
                         </div>
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
@@ -1500,7 +1500,7 @@ function renderUpcoming(target, rows, selectedLeague, options = {}) {
                         data-away-team="${escapeHtml(r.away_team)}"
                         aria-label="Open ${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)} head to head">
                         <div class="kick-head">
-                            <div class="kick-league">${escapeHtml(leagueLabel)}</div>
+                            <div class="kick-league">${escapeHtml(r.competition)}</div>
                             <div class="kick-head-pills">${livePill}</div>
                         </div>
                         <div class="matchup">${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}</div>
@@ -1781,7 +1781,7 @@ if (!isCupMode && !isFriendliesMode) {
         if (typeof renderStats === "function" && statsTarget) {
             renderStats(statsTarget, payload.stats, payload.league_stats, filterVal);
         }
-    }, 120000);
+    }, 60000);
 }
 }
 

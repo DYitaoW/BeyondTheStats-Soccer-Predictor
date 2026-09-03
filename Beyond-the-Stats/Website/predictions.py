@@ -978,29 +978,26 @@ def _live_updates_eligible(competition: str, schedule_only: bool = False) -> boo
     comp = str(competition or "").strip()
     if not comp:
         return False
-    aliases = config.competition_live_aliases(comp)
-    for alias in aliases:
-        espn_id = config.LIVE_SCORE_COMPETITIONS.get(alias)
-        if espn_id:
-            if alias in config.UEFA_LIVE_SCORE_COMPETITIONS and not config.uefa_live_scoring_allowed():
-                return False
-            return True
-    return False
+    return config.resolve_live_competition(comp) is not None
 
 
-def _build_live_games_index() -> dict[tuple[str, str, str], dict]:
-    """Index in-memory live games by normalized team pair and competition alias."""
+def _build_live_games_index() -> tuple[dict[tuple[str, str, str], dict], dict[str, dict]]:
+    """Index in-memory live games by team pair and by ESPN match_id."""
     try:
         from competition_rules import canonical_team_name
         from live_prediction import _normalize_team_for_live
         from live_poller import _live_scores, _live_scores_lock
     except Exception:
-        return {}
+        return {}, {}
 
-    index: dict[tuple[str, str, str], dict] = {}
+    team_index: dict[tuple[str, str, str], dict] = {}
+    id_index: dict[str, dict] = {}
     with _live_scores_lock:
         for comp_name, comp_data in _live_scores.items():
             for game in comp_data.get("games", []) or []:
+                match_id = str(game.get("match_id") or "").strip()
+                if match_id:
+                    id_index[match_id] = game
                 home = _normalize_team_for_live(
                     canonical_team_name(game.get("home_team"), comp_name)
                 )
@@ -1010,16 +1007,24 @@ def _build_live_games_index() -> dict[tuple[str, str, str], dict]:
                 if not home or not away:
                     continue
                 for alias in config.competition_live_aliases(comp_name):
-                    index[(home, away, alias)] = game
-    return index
+                    team_index[(home, away, alias)] = game
+    return team_index, id_index
 
 
-def _find_live_game_for_row(row: dict, live_index: dict[tuple[str, str, str], dict]) -> dict | None:
+def _find_live_game_for_row(
+    row: dict,
+    live_index: dict[tuple[str, str, str], dict],
+    live_id_index: dict[str, dict] | None = None,
+) -> dict | None:
     try:
         from competition_rules import canonical_team_name
         from live_prediction import _normalize_team_for_live
     except Exception:
         return None
+
+    match_id = str(row.get("match_id") or "").strip()
+    if match_id and live_id_index and match_id in live_id_index:
+        return live_id_index[match_id]
 
     comp = str(row.get("competition", "")).strip()
     home = _normalize_team_for_live(canonical_team_name(row.get("home_team"), comp))
@@ -1039,15 +1044,58 @@ def _find_live_game_for_row(row: dict, live_index: dict[tuple[str, str, str], di
     for (idx_home, idx_away, idx_alias), game in live_index.items():
         if idx_alias not in config.competition_live_aliases(comp):
             continue
-        if (home in idx_home or idx_home in home) and (away in idx_away or idx_away in away):
-            return game
-        if (home in idx_away or idx_away in home) and (away in idx_home or idx_home in away):
-            return game
+        if len(home) >= 4 and len(away) >= 4 and len(idx_home) >= 4 and len(idx_away) >= 4:
+            if (home in idx_home or idx_home in home) and (away in idx_away or idx_away in away):
+                return game
+            if (home in idx_away or idx_away in home) and (away in idx_home or idx_home in away):
+                return game
     return None
 
 
+def _apply_live_scores_to_row(row: dict, live_game: dict, eligible: bool, comp: str) -> None:
+    """Merge ESPN live game fields onto an upcoming row."""
+    match_id = str(live_game.get("match_id") or "").strip()
+    if match_id:
+        row["match_id"] = match_id
+
+    status = str(live_game.get("status") or "").strip().lower()
+    uefa_blocked = (
+        any(alias in config.UEFA_LIVE_SCORE_COMPETITIONS for alias in config.competition_live_aliases(comp))
+        and not config.uefa_live_scoring_allowed()
+    )
+    if uefa_blocked:
+        row["live_updates"] = False
+        row["live_status"] = "final_only" if status == "post" else "qualifying"
+        if status == "post" and row.get("actual_home_goals") is None:
+            home_score = live_game.get("home_score")
+            away_score = live_game.get("away_score")
+            if home_score is not None and away_score is not None:
+                row["actual_home_goals"] = home_score
+                row["actual_away_goals"] = away_score
+        return
+
+    home_score = live_game.get("home_score")
+    away_score = live_game.get("away_score")
+    if status in {"in", "post"} and home_score is not None and away_score is not None:
+        row["actual_home_goals"] = home_score
+        row["actual_away_goals"] = away_score
+
+    if status == "in":
+        row["live_clock"] = str(live_game.get("clock") or live_game.get("match_minute") or "").strip()
+        row["live_period"] = str(live_game.get("period") or "").strip()
+
+    row["live_updates"] = eligible and status in {"pre", "in"}
+    if status == "post":
+        row["live_status"] = "final"
+    else:
+        row["live_status"] = status or None
+
+    if status == "in" and live_game.get("live_prediction"):
+        row["live_prediction"] = live_game.get("live_prediction")
+
+
 def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
-    live_index = _build_live_games_index()
+    team_index, id_index = _build_live_games_index()
     for row in rows:
         comp = str(row.get("competition", "")).strip()
         schedule_only = bool(row.get("schedule_only"))
@@ -1060,37 +1108,14 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
 
         eligible = _live_updates_eligible(comp, schedule_only=schedule_only)
         row["live_updates_eligible"] = eligible
-        live_game = _find_live_game_for_row(row, live_index)
+        live_game = _find_live_game_for_row(row, team_index, id_index)
         if not live_game:
             row["live_updates"] = False
             row["live_status"] = None
             row.pop("match_id", None)
             continue
 
-        match_id = str(live_game.get("match_id") or "").strip()
-        if match_id:
-            row["match_id"] = match_id
-
-        status = str(live_game.get("status") or "").strip().lower()
-        uefa_blocked = (
-            any(alias in config.UEFA_LIVE_SCORE_COMPETITIONS for alias in config.competition_live_aliases(comp))
-            and not config.uefa_live_scoring_allowed()
-        )
-        if uefa_blocked:
-            row["live_updates"] = False
-            row["live_status"] = "final_only" if status == "post" else "qualifying"
-            if status == "post" and row.get("actual_home_goals") is None:
-                home_score = live_game.get("home_score")
-                away_score = live_game.get("away_score")
-                if home_score is not None and away_score is not None:
-                    row["actual_home_goals"] = home_score
-                    row["actual_away_goals"] = away_score
-            continue
-
-        row["live_updates"] = eligible and status in {"pre", "in"}
-        row["live_status"] = status or None
-        if status == "in" and live_game.get("live_prediction"):
-            row["live_prediction"] = live_game.get("live_prediction")
+        _apply_live_scores_to_row(row, live_game, eligible, comp)
     return rows
 
 
