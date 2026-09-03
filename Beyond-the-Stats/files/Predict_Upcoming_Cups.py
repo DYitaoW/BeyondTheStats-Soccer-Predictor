@@ -1886,111 +1886,119 @@ def load_upcoming_matchweek_fixtures_from_espn(window_days, competition_name, es
     print(f"==================================================================")
     return final_fixtures """
 
+def _fixture_dedupe_key(row):
+    """Canonical key for merging cup fixtures across ESPN / TheSportsDB / fallbacks."""
+    parsed_date = parse_match_date(row.get("match_date"))
+    date_part = parsed_date.strftime("%Y-%m-%d") if parsed_date is not None else str(row.get("match_date", ""))
+    home_key = normalize_team_key(row.get("home_team", ""))
+    away_key = normalize_team_key(row.get("away_team", ""))
+    team_pair = sorted([home_key, away_key])
+    competition = str(row.get("competition", "")).strip()
+    return f"{date_part}|{competition}|{team_pair[0]}|{team_pair[1]}"
+
+
+def merge_cup_fixture_frames(frames, label=""):
+    """Union fixture frames and drop duplicates (prefer earlier frames = ESPN first)."""
+    nonempty = [f for f in frames if isinstance(f, pd.DataFrame) and not f.empty]
+    if not nonempty:
+        return pd.DataFrame()
+    combined = pd.concat(nonempty, ignore_index=True)
+    before = len(combined)
+    combined = combined.copy()
+    combined["_dedupe_key"] = combined.apply(_fixture_dedupe_key, axis=1)
+    # keep="first" prefers ESPN when callers pass ESPN before other sources.
+    combined = combined.drop_duplicates(subset=["_dedupe_key"], keep="first")
+    combined = combined.drop(columns=["_dedupe_key"])
+    combined = combined.sort_values(["match_date", "home_team", "away_team"]).reset_index(drop=True)
+    dropped = before - len(combined)
+    if label:
+        print(
+            f"{label}: merged {before} rows from {len(nonempty)} source(s) "
+            f"-> {len(combined)} unique fixtures ({dropped} duplicates removed)."
+        )
+    return combined
+
+
 def load_upcoming_matchweek_fixtures(api_token, window_days):
-    # --- PIPELINE ORCHESTRATION FOR ALL CUPS ---
+    """Load cup fixtures, always merging ESPN with other datasets when available.
+
+    Previously the loader stopped at the first non-empty source. Cups that used
+    TheSportsDB (or another dataset) often missed games ESPN already had. Now
+    every cup always pulls ESPN and also pulls TheSportsDB / fallbacks when
+    configured, then dedupes by date + competition + team pair.
+    """
     all_fixtures = []
-    
-    # 1. Prioritize Cups by defined order (FA Cup first)
-    sorted_cups = sorted(CUP_COMPETITIONS.items(), key=lambda item: item[1]['priority'])
-    
+    sorted_cups = sorted(CUP_COMPETITIONS.items(), key=lambda item: item[1]["priority"])
+
+    skip_synthetic = {
+        "Spain/Copa del Rey",
+        "France/Coupe de France",
+        "Italy/Coppa Italia",
+        "Germany/DFB-Pokal",
+        "Europe/Champions League",
+        "Europe/Europa League",
+        "Europe/Conference League",
+    }
+
     for cup_name, cup_data in sorted_cups:
         cup_window_days = cup_fixture_window_days(cup_data, window_days)
         comp_name = cup_data["name"]
-        print(f"\n--- Checking Source for: {cup_name} ({cup_window_days}-day fixture window) ---")
+        espn_id = cup_data.get("espn_id")
+        lookahead = max(cup_window_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS)
+        print(f"\n--- Checking Sources for: {cup_name} ({cup_window_days}-day fixture window) ---")
 
-        espn_first = comp_name in {
-            "Spain/Copa del Rey",
-            "France/Coupe de France",
-            "Italy/Coppa Italia",
-            "Germany/DFB-Pokal",
-        }
-        skip_synthetic = comp_name in {
-            "Spain/Copa del Rey",
-            "France/Coupe de France",
-            "Italy/Coppa Italia",
-            "Germany/DFB-Pokal",
-            "Europe/Champions League",
-            "Europe/Europa League",
-            "Europe/Conference League",
-        }
-        # UEFA cups: ESPN has more reliable future fixtures than TheSportsDB free tier
-        espn_uefa = comp_name in {
-            "Europe/Champions League",
-            "Europe/Europa League",
-            "Europe/Conference League",
-        }
+        source_frames = []
 
-        if espn_first:
-            fixtures = load_upcoming_matchweek_fixtures_from_espn(
+        # Always pull ESPN for every configured cup (dedupe later).
+        if espn_id:
+            espn_fixtures = load_upcoming_matchweek_fixtures_from_espn(
                 cup_window_days,
                 comp_name,
-                cup_data["espn_id"],
-                lookahead_days=max(cup_window_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS),
+                espn_id,
+                lookahead_days=lookahead,
             )
-            if not fixtures.empty:
-                all_fixtures.append(fixtures)
-                print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from ESPN.")
-                continue
-            print(f"No ESPN fixtures for {cup_name}; skipping synthetic fallbacks.")
+            if not espn_fixtures.empty:
+                source_frames.append(espn_fixtures)
+                print(f"  ESPN: {len(espn_fixtures)} fixtures for {cup_name}.")
+            else:
+                print(f"  ESPN: no fixtures for {cup_name}.")
+        else:
+            print(f"  ESPN: skipped (no espn_id) for {cup_name}.")
+
+        # Also pull TheSportsDB when a league id is configured — even if ESPN
+        # already returned games — so incomplete ESPN calendars get filled in.
+        if comp_name in THESPORTSDB_LEAGUE_IDS:
+            tsdb_fixtures = load_upcoming_matchweek_fixtures_from_thesportsdb(
+                cup_window_days, comp_name
+            )
+            if not tsdb_fixtures.empty:
+                source_frames.append(tsdb_fixtures)
+                print(f"  TheSportsDB: {len(tsdb_fixtures)} fixtures for {cup_name}.")
+            else:
+                print(f"  TheSportsDB: no fixtures for {cup_name}.")
+
+        fixtures = merge_cup_fixture_frames(source_frames, label=cup_name)
+
+        if fixtures.empty and comp_name not in skip_synthetic:
+            fallback = load_preseason_cup_fixtures(cup_window_days, comp_name)
+            if not fallback.empty:
+                fixtures = fallback
+                print(f"  Preseason fallback: {len(fixtures)} fixtures for {cup_name}.")
+
+        if fixtures.empty:
+            if comp_name in skip_synthetic:
+                print(f"No real fixtures found for {cup_name}; preseason fallback disabled.")
+            else:
+                print(f"No fixtures found for {cup_name} from any source.")
             continue
 
-        # UEFA cups: ESPN has more reliable future fixtures than TheSportsDB free tier
-        if espn_uefa:
-            fixtures = load_upcoming_matchweek_fixtures_from_espn(
-                cup_window_days,
-                comp_name,
-                cup_data["espn_id"],
-                lookahead_days=max(cup_window_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS),
-            )
-            if not fixtures.empty:
-                all_fixtures.append(fixtures)
-                print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from ESPN.")
-                continue
+        all_fixtures.append(fixtures)
+        print(f"SUCCESS: {len(fixtures)} unique fixtures for {cup_name} after merge/dedupe.")
 
-        # B. Try TheSportsDB (skip for espn_first and UEFA cups)
-        if comp_name not in {
-            "Spain/Copa del Rey",
-            "France/Coupe de France",
-            "Italy/Coppa Italia",
-            "Germany/DFB-Pokal",
-            "Europe/Champions League",
-            "Europe/Europa League",
-            "Europe/Conference League",
-        }:
-            fixtures = load_upcoming_matchweek_fixtures_from_thesportsdb(cup_window_days, comp_name)
-            if not fixtures.empty:
-                all_fixtures.append(fixtures)
-                print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from TheSportsDB.")
-                continue
-
-        # C. Try ESPN (primary fallback for non-espn_first competitions)
-        if not espn_uefa:
-            fixtures = load_upcoming_matchweek_fixtures_from_espn(
-                cup_window_days,
-                comp_name,
-                cup_data["espn_id"],
-                lookahead_days=max(cup_window_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS),
-            )
-            if not fixtures.empty:
-                all_fixtures.append(fixtures)
-                print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from ESPN.")
-                continue
-
-        if skip_synthetic:
-            print(f"No real fixtures found for {cup_name}; preseason fallback disabled.")
-            continue
-
-        fixtures = load_preseason_cup_fixtures(cup_window_days, comp_name)
-        if not fixtures.empty:
-            all_fixtures.append(fixtures)
-            print(f"SUCCESS: Loaded {len(fixtures)} fixtures for {cup_name} from preseason fallback.")
-            continue
-
-    # Aggregate all fixtures into one DataFrame
     if not all_fixtures:
         return pd.DataFrame()
-    
-    final_fixtures = pd.concat(all_fixtures, ignore_index=True)
+
+    final_fixtures = merge_cup_fixture_frames(all_fixtures, label="ALL CUPS")
     return final_fixtures
 
 def main():

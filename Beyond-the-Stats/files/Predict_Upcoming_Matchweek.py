@@ -840,7 +840,7 @@ def load_upcoming_matchweek_fixtures_from_api(api_token, window_days):
     headers = {"X-Auth-Token": api_token}
     accessible_competitions = 0
 
-    # League fixtures only — cups use Predict_Upcoming_Cups with a rolling window.
+    # League fixtures only — cups use Predict_Upcoming_Cups.py with a rolling window.
     # Rate limiting is handled inside fetch_json (skipped entirely on cache hits).
     for competition_code, competition_name in API_COMPETITIONS.items():
         date_params = season_calendar.football_data_api_date_params(competition_name, reference_date=today)
