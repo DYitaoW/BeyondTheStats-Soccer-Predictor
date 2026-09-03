@@ -143,10 +143,11 @@ def _merge_completed_to_history():
     return cleared_standings
 
 def _effective_poller_date():
-    """Return the primary date for live-score polling (ET calendar).
+    """Return the primary ET calendar date for live-score polling.
 
-    Before 2am ET the previous day's games are still active, so we return
-    yesterday's date.  After 2am ET we switch to today's date.
+    The backend host runs in Eastern Time; all live-score day boundaries use
+    ``America/New_York``. Before 2am ET, yesterday's slate can still be active,
+    so we return yesterday. From 2am ET onward the primary date is today.
     """
     now_et = datetime.now(ZoneInfo("America/New_York"))
     if now_et.hour < 2:
@@ -155,22 +156,100 @@ def _effective_poller_date():
 
 
 def _poll_dates_for_cycle():
-    """Dates to query ESPN for this poll cycle.
+    """ESPN scoreboard dates (ET) for this poll cycle.
 
-    Always include the ET calendar day. Before 2am ET also keep yesterday so
-    late-finishing / still-in-progress games are not dropped while today's
-    early fixtures are still invisible to a yesterday-only poll.
-    After 2am ET still include yesterday for spillover finals until noon ET.
+    - Before 2am ET: yesterday + today (late finishers + early kickoffs).
+    - 2am–6am ET: today + yesterday (spillover finals only briefly).
+    - After 6am ET: today only.
+
+    Dual-date mornings used to leave yesterday's completed games stuck in
+    ``_live_scores`` all afternoon because the day-boundary clear only fires
+    when the *primary* date changes. Callers must prune memory to these dates.
     """
     now_et = datetime.now(ZoneInfo("America/New_York"))
     today = now_et.date()
     yesterday = today - timedelta(days=1)
-    if now_et.hour < 12:
-        # Preserve order: primary effective date first for day-boundary logic.
-        primary = _effective_poller_date()
-        secondary = yesterday if primary == today else today
-        return [primary, secondary]
+    if now_et.hour < 2:
+        return [yesterday, today]
+    if now_et.hour < 6:
+        return [today, yesterday]
     return [today]
+
+
+def _stamp_scoreboard_date(games, date_str):
+    """Tag each game with the ESPN scoreboard date it was fetched for (YYYYMMDD)."""
+    stamped = []
+    for game in games or []:
+        entry = dict(game)
+        entry["scoreboard_date"] = str(date_str)
+        stamped.append(entry)
+    return stamped
+
+
+def _game_et_calendar_date(game):
+    """Best-effort ET calendar date for a live-score game dict."""
+    raw = game.get("scoreboard_date")
+    if raw:
+        text = str(raw).strip()
+        for fmt in ("%Y%m%d", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(text[:10] if fmt == "%Y-%m-%d" else text[:8], fmt).date()
+            except ValueError:
+                continue
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            pass
+    for key in ("kickoff_et", "kickoff_utc", "match_date", "date", "start_time"):
+        value = game.get(key)
+        if not value:
+            continue
+        try:
+            dt = pd.to_datetime(value, utc=True, errors="coerce")
+            if pd.notna(dt):
+                if getattr(dt, "tzinfo", None) is None and hasattr(dt, "tz_localize"):
+                    dt = dt.tz_localize("UTC")
+                return dt.tz_convert(ZoneInfo("America/New_York")).date()
+        except Exception:
+            try:
+                return date.fromisoformat(str(value)[:10])
+            except Exception:
+                continue
+    return None
+
+
+def _keep_game_for_poll_window(game, allowed_dates):
+    """Whether a game belongs in the current ET poll window.
+
+    In-progress games are always kept (can spill past midnight). Completed and
+    upcoming games must fall on one of the allowed ET scoreboard dates.
+    """
+    status = str(game.get("status") or "").strip().lower()
+    if status == "in":
+        return True
+    game_date = _game_et_calendar_date(game)
+    if game_date is None:
+        return False
+    return game_date in allowed_dates
+
+
+def _prune_live_scores_to_dates(allowed_dates):
+    """Drop competitions/games outside the active ET poll window (in-place)."""
+    allowed = set(allowed_dates or [])
+    if not allowed:
+        return
+    stale_comps = []
+    for comp_name, comp_data in list(_live_scores.items()):
+        games = [
+            g for g in (comp_data.get("games") or [])
+            if _keep_game_for_poll_window(g, allowed)
+        ]
+        if not games:
+            stale_comps.append(comp_name)
+            continue
+        comp_data["games"] = games
+    for comp_name in stale_comps:
+        _live_scores.pop(comp_name, None)
 
 def _backfill_recent_live_score_history():
     """Recover the retained history window from ESPN at poller startup."""
@@ -736,6 +815,7 @@ def _fetch_live_poll_results(live_comps, today_str):
                     non_chelsea = [g for g in games if not _is_chelsea_live_game(g) and g.get("status") == "post"]
                     games = chelsea + non_chelsea
                 games = _filter_live_games_for_competition(name, games)
+                games = _stamp_scoreboard_date(games, today_str)
                 if not games:
                     continue
                 results[name] = {
@@ -771,6 +851,7 @@ def _fetch_deferred_poll_results(deferred_comps, today_str):
                 games = filtered
             else:
                 games = [g for g in games if g.get("status") == "post"]
+            games = _stamp_scoreboard_date(games, today_str)
             if games:
                 results[comp_name] = {
                     "competition": comp_name,
@@ -783,8 +864,9 @@ def _fetch_deferred_poll_results(deferred_comps, today_str):
     return results
 
 
-def _merge_poll_results_into_live_scores(results, poll_date):
+def _merge_poll_results_into_live_scores(results, poll_date, allowed_dates=None):
     global _poller_last_cycle_utc, _poller_last_cycle_games
+    allowed = list(allowed_dates) if allowed_dates else [poll_date]
     with _live_scores_lock:
         _poller_day_str = poll_date.isoformat()
         if getattr(_live_score_poller_loop, "_poller_date", None) != _poller_day_str:
@@ -816,21 +898,27 @@ def _merge_poll_results_into_live_scores(results, poll_date):
             existing = _live_scores.get(comp_name, {"games": []})
             if not new_games and existing.get("games"):
                 continue
-            games_by_id = {g["match_id"]: g for g in existing["games"] if g.get("match_id")}
-            for g in new_games:
-                if g.get("match_id"):
-                    g["competition"] = comp_name
-                    mid = g["match_id"]
-                    if mid in games_by_id:
-                        games_by_id[mid].update(g)
-                    else:
-                        games_by_id[mid] = g
+            # Start from this cycle's games, then keep only in-window leftovers
+            # from memory (e.g. still-live spillover). Never retain yesterday's
+            # completed slate after the overnight window closes.
+            games_by_id = {
+                g["match_id"]: g
+                for g in new_games
+                if g.get("match_id")
+            }
+            for g in existing.get("games") or []:
+                mid = g.get("match_id")
+                if not mid or mid in games_by_id:
+                    continue
+                if _keep_game_for_poll_window(g, set(allowed)):
+                    games_by_id[mid] = g
             _live_scores[comp_name] = {
                 "competition": comp_name,
                 "games": list(games_by_id.values()),
                 "last_polled_utc": comp_data["last_polled_utc"],
                 "cup_format": config._CUP_FORMATS.get(comp_name),
             }
+        _prune_live_scores_to_dates(allowed)
         with _live_summary_cache_lock:
             for comp_data in _live_scores.values():
                 for g in comp_data.get("games", []):
@@ -857,7 +945,7 @@ def refresh_live_scores_now(*, force: bool = False) -> dict:
         poll_dates = _poll_dates_for_cycle()
         primary_date = poll_dates[0]
         results, _todays = _poll_espn_for_dates(poll_dates, include_deferred=True)
-        _merge_poll_results_into_live_scores(results, primary_date)
+        _merge_poll_results_into_live_scores(results, primary_date, allowed_dates=poll_dates)
         _last_on_demand_refresh_ts = time.time()
 
     with _live_scores_lock:
@@ -915,7 +1003,9 @@ def _live_score_poller_loop():
                 poll_dates, include_deferred=include_deferred
             )
 
-            _merge_poll_results_into_live_scores(results, poll_date)
+            _merge_poll_results_into_live_scores(
+                results, poll_date, allowed_dates=poll_dates
+            )
             # Persist any newly completed games to history file.
             merged_comps = _merge_completed_to_history()
 
