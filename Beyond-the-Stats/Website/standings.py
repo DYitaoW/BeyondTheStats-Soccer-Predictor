@@ -623,7 +623,15 @@ def _live_history_cutoff(as_of=None):
 
 
 def _live_history_game_date(game):
-    for field in ("kickoff_utc", "match_datetime_utc", "completed_at", "match_date_iso", "match_date"):
+    for field in (
+        "kickoff_utc",
+        "kickoff_et",
+        "match_datetime_utc",
+        "completed_at",
+        "match_date_iso",
+        "match_date",
+        "scoreboard_date",
+    ):
         raw = str(game.get(field, "") or "").strip()
         if not raw:
             continue
@@ -632,8 +640,16 @@ def _live_history_game_date(game):
                 return datetime.strptime(raw, "%Y-%m-%d").date()
             except ValueError:
                 continue
+        if re.fullmatch(r"\d{8}", raw):
+            try:
+                return datetime.strptime(raw, "%Y%m%d").date()
+            except ValueError:
+                continue
         try:
-            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            text = raw.replace("Z", "+00:00")
+            if len(text) >= 5 and text[-5] in "+-" and text[-3] != ":":
+                text = text[:-2] + ":" + text[-2:]
+            parsed = datetime.fromisoformat(text)
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             return parsed.astimezone(ZoneInfo("America/New_York")).date()

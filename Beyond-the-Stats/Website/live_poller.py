@@ -109,6 +109,15 @@ def _sync_friendlies_results_if_due():
     _last_friendlies_sync_ts = now
 
 
+def _flush_completed_live_scores_to_history():
+    """Persist finished in-memory games to live_score_history.json.
+
+    Caller must already hold ``_live_scores_lock`` (or be okay with a nested
+    RLock acquisition via ``_merge_completed_to_history``).
+    """
+    return _merge_completed_to_history()
+
+
 def _merge_completed_to_history():
     """Move finished games from _live_scores into persistent history file.
 
@@ -918,6 +927,10 @@ def _merge_poll_results_into_live_scores(results, poll_date, allowed_dates=None)
                 "last_polled_utc": comp_data["last_polled_utc"],
                 "cup_format": config._CUP_FORMATS.get(comp_name),
             }
+        # Flush completed games to history BEFORE pruning the overnight
+        # slate. Otherwise yesterday's finals leave memory and never reach
+        # live_score_history.json /api/past-games.
+        _flush_completed_live_scores_to_history()
         _prune_live_scores_to_dates(allowed)
         with _live_summary_cache_lock:
             for comp_data in _live_scores.values():

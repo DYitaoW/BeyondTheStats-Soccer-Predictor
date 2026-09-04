@@ -115,6 +115,35 @@ class PollDateWindowTests(unittest.TestCase):
         _prune_live_scores_to_dates(live, [date(2026, 9, 3)])
         self.assertNotIn("North America/Leagues Cup", live)
 
+    def test_scoreboard_date_yyyyymmdd_parses(self):
+        self.assertEqual(
+            _game_et_calendar_date({"scoreboard_date": "20260902"}),
+            date(2026, 9, 2),
+        )
+
+    def test_flush_before_prune_required_for_history(self):
+        """Document the past-games regression: prune without flush loses finals.
+
+        `/api/past-games` reads `live_score_history.json`. Overnight finals must
+        be flushed before the morning prune drops them from `_live_scores`.
+        """
+        live = {
+            "England/Championship": {
+                "games": [
+                    {"match_id": "y1", "status": "post", "scoreboard_date": "20260902"},
+                    {"match_id": "t1", "status": "post", "scoreboard_date": "20260903"},
+                ]
+            }
+        }
+        flushed = [
+            dict(g) for g in live["England/Championship"]["games"] if g["status"] == "post"
+        ]
+        _prune_live_scores_to_dates(live, [date(2026, 9, 3)])
+        memory_ids = {g["match_id"] for g in live["England/Championship"]["games"]}
+        history_ids = {g["match_id"] for g in flushed}
+        self.assertEqual(memory_ids, {"t1"})
+        self.assertEqual(history_ids, {"y1", "t1"})
+
 
 if __name__ == "__main__":
     unittest.main()
