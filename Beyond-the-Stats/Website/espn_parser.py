@@ -359,6 +359,70 @@ def _utc_to_et(utc_str):
     except Exception:
         return ""
 
+_ESPN_STATUS_PERIOD_LABELS = {
+    "STATUS_FIRST_HALF": "1st Half",
+    "STATUS_HALFTIME": "Halftime",
+    "STATUS_SECOND_HALF": "2nd Half",
+    "STATUS_FULL_TIME": "FT",
+    "STATUS_EXTRA_TIME": "Extra Time",
+    "STATUS_EXTRA_FIRST_HALF": "ET 1st Half",
+    "STATUS_EXTRA_HALFTIME": "ET Halftime",
+    "STATUS_EXTRA_SECOND_HALF": "ET 2nd Half",
+    "STATUS_SHOOTOUT": "Penalties",
+    "STATUS_END_REGULAR_TIME": "FT",
+}
+
+
+def _period_label_from_espn_status(type_name, detail, period_num=None):
+    """Human period label. ESPN often puts the clock in ``type.detail`` ("15'")."""
+    mapped = _ESPN_STATUS_PERIOD_LABELS.get(str(type_name or "").strip().upper())
+    if mapped:
+        return mapped
+    detail_s = str(detail or "").strip()
+    # Clock-like details are not period names.
+    if detail_s and not re.search(r"\d", detail_s):
+        return detail_s
+    try:
+        n = int(period_num)
+    except (TypeError, ValueError):
+        n = None
+    if n == 1:
+        return "1st Half"
+    if n == 2:
+        return "2nd Half"
+    return detail_s
+
+
+def _is_halftime_break(period_str, status_type=""):
+    """True during the interval, not during 1st/2nd half play."""
+    period = str(period_str or "").strip().lower()
+    status_type = str(status_type or "").strip().upper()
+    if status_type in {"STATUS_HALFTIME", "STATUS_EXTRA_HALFTIME"}:
+        return True
+    if "halftime" in period or period in {"ht", "half"}:
+        return True
+    if "et halftime" in period:
+        return True
+    return False
+
+
+def _key_event_match_minute(event):
+    """Elapsed match minute for an ESPN key event.
+
+    Soccer ``clock.displayValue`` is already total elapsed time
+    ("28'" in the first half, "52'" in the second). Do not add
+    ``(period - 1) * 45`` — that double-counts the second half.
+    """
+    clock = ""
+    if isinstance(event, dict):
+        raw_clock = event.get("clock")
+        if isinstance(raw_clock, dict):
+            clock = str(raw_clock.get("displayValue") or "")
+        else:
+            clock = str(raw_clock or "")
+    return _parse_elapsed_minutes(clock, "")
+
+
 def _parse_espn_live_event(event):
     """Parse a single ESPN event dict into a minimal live-score payload."""
     try:
@@ -373,8 +437,18 @@ def _parse_espn_live_event(event):
         type_detail = status.get("type") or {}
         state = type_detail.get("state", "pre")
         detail = type_detail.get("detail", "")
-        clock = comp_data.get("clock") or ""
-        display_clock = f"{clock} {detail}" if clock else detail
+        type_name = str(type_detail.get("name") or "")
+        period_num = status.get("period")
+        display_clock = str(status.get("displayClock") or "").strip()
+        if not display_clock:
+            raw_clock = status.get("clock")
+            # ESPN soccer ``status.clock`` is elapsed seconds (e.g. 900.0 at 15').
+            # Never treat that as minutes or concatenate it with the detail string.
+            if isinstance(raw_clock, (int, float)) and raw_clock > 0:
+                display_clock = f"{int(raw_clock // 60)}'"
+            else:
+                display_clock = str(detail or "").strip()
+        period_label = _period_label_from_espn_status(type_name, detail, period_num)
 
         home_team_name = str(home.get("team", {}).get("displayName", ""))
         away_team_name = str(away.get("team", {}).get("displayName", ""))
@@ -462,7 +536,9 @@ def _parse_espn_live_event(event):
             "home_score": _to_int(home.get("score")),
             "away_score": _to_int(away.get("score")),
             "status": state,
-            "period": detail,
+            "status_type": type_name,
+            "period": period_label,
+            "period_number": period_num,
             "clock": display_clock.strip(),
             "kickoff_utc": _utc_to_et(raw_date),
             "match_date": match_date_str,
@@ -661,25 +737,19 @@ def _parse_espn_boxscore_stats(summary_data):
 def _parse_elapsed_minutes(clock_str, period_str):
     """Parse elapsed match minutes from ESPN clock/period strings.
 
-    Soccer uses total elapsed time (clock "90:00" = 90 min played).
-    Handles HT, stoppage time ("90+5"), and extra time.
+    Soccer uses total elapsed time (clock "90:00" / "52'" = minutes played).
+    Handles HT, stoppage time ("90'+5'"), and extra-time HT.
     """
     clock_str = str(clock_str or "0'").strip()
     period_str = str(period_str or "").strip().lower()
-    # Halftime break — period is "Halftime", "Half", "HT", or similar.
-    # Do NOT match "1st Half" (normal play) or "Extra Time 1st Half".
-    if "halftime" in period_str or period_str in ("ht", "half", "halftime"):
-        return 45
-    # Parse numeric base from clock (before any "+")
+    if _is_halftime_break(period_str):
+        return 90 if "et" in period_str else 45
     nums = re.findall(r"\d+", clock_str.split("+")[0])
     if not nums:
         return 0
     base = int(nums[0])
-    # Add stoppage time shown as "+N" (e.g. "90+5" → 95)
     if "+" in clock_str:
-        extra = re.findall(r"\d+", clock_str.split("+")[1] if "+" in clock_str else "")
+        extra = re.findall(r"\d+", clock_str.split("+")[1])
         if extra:
             base += int(extra[0])
-    # For soccer the clock IS total elapsed minutes — no offset needed.
-    # Cap at a reasonable max (160 = 120+40 stoppage for extreme extra time).
     return min(base, 160)
