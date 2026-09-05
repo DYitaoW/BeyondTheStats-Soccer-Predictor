@@ -80,9 +80,9 @@ PATH_B_SKIP_COMPETITIONS = frozenset({
     "United States/MLS",
 })
 
-# Only these leagues get a synthetic PATH B fallback table during the offseason
-# (before their new-season CSV appears). Every other league shows zeroed/previous
-# rows until its new-season data starts, per product requirements.
+# Priority / historically curated PATH B leagues. PATH B now runs for *any*
+# competition with a usable roster; this set is kept for compatibility and
+# documentation of the original preseason scope.
 PRESEASON_FALLBACK_LEAGUES = frozenset({
     "England/Premier League",
     "England/Championship",
@@ -885,12 +885,11 @@ def project_competition(ctx, competition, raw_file):
         teams = sorted({r for t in raw_teams if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
     else:
         # ── PATH B: No current-season CSV — roster then format-aware slate ──
-        # Only the leagues in PRESEASON_FALLBACK_LEAGUES get a synthetic
-        # fallback table in the offseason. All other leagues return nothing so
-        # main() emits zeroed placeholders until their new-season CSV appears.
-        if competition not in PRESEASON_FALLBACK_LEAGUES:
+        # Any competition with a usable roster gets a synthetic full-season
+        # Monte Carlo (including position odds). No roster → zeroed placeholders.
+        if not _load_any_roster(competition):
             print(
-                f"  No current-season CSV and {competition} not in preseason fallback scope — "
+                f"  No current-season CSV and no roster for {competition} — "
                 f"showing zeroed/previous rows"
             )
             return [], []

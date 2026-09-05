@@ -96,7 +96,10 @@ class BackendConfig:
     pipeline_skip_extra: bool = False
     pipeline_skip_global: bool = False
     pipeline_timeout_s: int = DEFAULT_PIPELINE_TIMEOUT_S
-    run_on_start: bool = True  # run a full pipeline once on startup
+    # Manual backend/DB restarts should always kick a full retrain + season
+    # projections (not the light Tue/Fri-off refresh). Override with
+    # PIPELINE_FULL_RETRAIN_ON_START=0 if needed.
+    run_on_start: bool = True
 
     # Future-games watcher
     enable_watcher: bool = True
@@ -144,7 +147,17 @@ class BackendServer:
         if self.config.run_on_start:
             pipeline_enabled = os.environ.get("PIPELINE_ENABLED", "1").strip().lower() in {"1", "true", "yes"}
             if pipeline_enabled:
-                self._run_pipeline_in_background(trigger="startup", full_retrain=False)
+                # Always full-retrain on manual restart so new-season league
+                # tables, position odds, brackets, and full-season fixtures are
+                # rebuilt — light refreshes alone left most leagues empty/stale
+                # into September.
+                full_on_start = os.environ.get(
+                    "PIPELINE_FULL_RETRAIN_ON_START", "1"
+                ).strip().lower() in {"1", "true", "yes"}
+                self._run_pipeline_in_background(
+                    trigger="startup",
+                    full_retrain=full_on_start,
+                )
             else:
                 LOG.warning("[startup] PIPELINE_ENABLED=0 — skipping startup pipeline run")
 
