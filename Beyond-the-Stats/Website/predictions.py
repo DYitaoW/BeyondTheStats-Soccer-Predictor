@@ -2270,16 +2270,35 @@ def _enrich_json_past_row(r):
 
 def _past_row_date_iso(row: dict) -> str:
     """Normalize any past-game row to an ISO date (YYYY-MM-DD) in US/Eastern."""
-    for key in ("match_date_iso", "match_date", "kickoff_utc", "match_datetime_utc", "completed_at"):
+    for key in (
+        "match_date_iso",
+        "match_date",
+        "kickoff_utc",
+        "kickoff_et",
+        "match_datetime_utc",
+        "completed_at",
+        "scoreboard_date",
+    ):
         raw = str(row.get(key, "") or "").strip()
         if not raw:
             continue
-        if len(raw) >= 10 and _valid_date_iso(raw[:10]):
-            return raw[:10]
+        # Pure calendar dates only — do not slice datetime stamps (UTC vs ET).
+        if len(raw) == 10 and _valid_date_iso(raw):
+            return raw
+        # ESPN scoreboard stamps use YYYYMMDD.
+        if len(raw) == 8 and raw.isdigit():
+            try:
+                return datetime.strptime(raw, "%Y%m%d").date().isoformat()
+            except ValueError:
+                pass
         try:
             from datetime import datetime as _dt, timezone as _tz
 
-            parsed = _dt.fromisoformat(raw.replace("Z", "+00:00"))
+            text = raw.replace("Z", "+00:00")
+            # Accept offsets like -0400 from ESPN ET stamps.
+            if len(text) >= 5 and text[-5] in "+-" and text[-3] != ":":
+                text = text[:-2] + ":" + text[-2:]
+            parsed = _dt.fromisoformat(text)
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=_tz.utc)
             return parsed.astimezone(ZoneInfo("America/New_York")).date().isoformat()
