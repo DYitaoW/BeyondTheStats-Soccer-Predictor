@@ -86,9 +86,9 @@ PATH_B_SKIP_COMPETITIONS = frozenset({
     "United States/MLS",
 })
 
-# Only these leagues get a synthetic PATH B fallback table during the offseason
-# (before their 2026-27 CSV appears). Every other league shows zeroed/previous
-# rows until its new-season data starts, per product requirements.
+# Priority leagues for the manually curated 2026-27 roster JSON. PATH B now
+# runs for *any* competition with a usable roster (current_season_teams /
+# fallback / league_teams); this set only controls roster-source priority.
 PRESEASON_FALLBACK_LEAGUES = frozenset({
     "England/Premier League",
     "England/Championship",
@@ -902,17 +902,17 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
 
     else:
         # ── PATH B: No current-season CSV or CSV is from a past season ──
-        # Only the leagues in PRESEASON_FALLBACK_LEAGUES get a synthetic
-        # fallback table in the offseason. All other leagues return nothing so
-        # main() emits zeroed placeholders until their new-season CSV appears.
-        if competition not in PRESEASON_FALLBACK_LEAGUES:
+        # Any competition with a usable roster gets a synthetic full-season
+        # Monte Carlo (position odds included). Leagues with no roster still
+        # return nothing so main() emits zeroed placeholders.
+        if not _load_any_roster(competition):
             print(
-                f"  No current-season CSV and {competition} not in preseason fallback scope — "
+                f"  No current-season CSV and no roster for {competition} — "
                 f"showing zeroed/previous rows"
             )
             return [], []
 
-        # Roster priority: 2026-27 preseason fallback (top-5 leagues) →
+        # Roster priority: 2026-27 preseason fallback (top priority leagues) →
         #                   current_season_teams.json → league_teams.json
         # The fallback JSON is manually kept current for promotion/relegation;
         # current_season_teams.json can lag during the transition window.

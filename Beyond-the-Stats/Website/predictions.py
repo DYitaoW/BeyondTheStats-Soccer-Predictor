@@ -1782,6 +1782,50 @@ def _slugify_competition_for_leagueresult(competition: str) -> str:
     return out.strip("_") or "unknown"
 
 
+def _parse_league_result_generated_at(payload: dict) -> datetime | None:
+    raw = str(
+        (payload or {}).get("generated_at_utc")
+        or (payload or {}).get("generated_at")
+        or ""
+    ).strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _league_result_is_current_season(payload: dict, competition: str = "") -> bool:
+    """Reject prior-season LeagueResult JSON after the season flip.
+
+    Without this, a missing ``projected_league_tables.csv`` made the website
+    keep serving finished 2025-26 tables (e.g. June finals with 100% title odds)
+    well into the new season.
+    """
+    generated = _parse_league_result_generated_at(payload)
+    if generated is None:
+        return False
+    try:
+        import season_calendar as sc
+    except ImportError:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        import season_calendar as sc
+
+    gen_date = generated.date() if hasattr(generated, "date") else generated
+    name = str(competition or (payload or {}).get("competition") or "")
+    if sc.competition_uses_calendar_year(name):
+        return int(gen_date.year) >= int(sc.expected_season_start_year(name))
+    season_start = int(sc.european_season_start_year())
+    flip = datetime(
+        season_start,
+        sc.EUROPEAN_SEASON_FLIP_MONTH,
+        sc.EUROPEAN_SEASON_FLIP_DAY,
+        tzinfo=timezone.utc,
+    ).date()
+    return gen_date >= flip
+
+
 def _rows_from_leagueresult_json(comp_name: str) -> list[dict]:
     """Load published LeagueResult JSON rows when projected CSV is missing."""
     lookup_names = [str(comp_name or "").strip()]
@@ -1810,7 +1854,11 @@ def _rows_from_leagueresult_json(comp_name: str) -> list[dict]:
                     payload = json.load(fh)
             except Exception:
                 continue
-            teams_raw = payload.get("teams") if isinstance(payload, dict) else None
+            if not isinstance(payload, dict):
+                continue
+            if not _league_result_is_current_season(payload, lookup_names[0] or payload.get("competition", "")):
+                continue
+            teams_raw = payload.get("teams")
             if not isinstance(teams_raw, list) or not teams_raw:
                 continue
             rows = []
