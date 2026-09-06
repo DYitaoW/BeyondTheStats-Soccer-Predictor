@@ -1,4 +1,4 @@
-﻿"""
+"""
 Full pipeline orchestrator — runs all data, model, and prediction steps.
 
 Invoked by ``Daily_Pipeline.py`` (scheduled) or directly from the command
@@ -179,6 +179,33 @@ def _should_build_model_cache(args, label: str, predict_script: Path) -> tuple[b
     return False, detail
 
 
+def _projected_tables_are_mostly_zeroed(output_csv_path: str, *, min_fraction: float = 0.85) -> bool:
+    """True when projected_league_tables.csv is missing usable Monte Carlo rows.
+
+    Light-day skips must not leave leagues parked on ``sim_runs=0`` placeholders
+    into the season — force a rebuild when the CSV is absent or mostly zeroed.
+    """
+    if not output_csv_path or not os.path.exists(output_csv_path):
+        return True
+    try:
+        import csv
+
+        with open(output_csv_path, "r", encoding="utf-8-sig", newline="") as fh:
+            rows = list(csv.DictReader(fh))
+        if not rows:
+            return True
+        zeroed = 0
+        for row in rows:
+            try:
+                if float(row.get("sim_runs") or 0) <= 0:
+                    zeroed += 1
+            except Exception:
+                zeroed += 1
+        return (zeroed / max(1, len(rows))) >= float(min_fraction)
+    except Exception:
+        return True
+
+
 def _should_run_league_tables(args, output_csv_path: str, processed_dirs: list[str], extra_inputs: list[str] | None = None) -> bool:
     """Skip league table projection on light days when no processed data changed.
 
@@ -187,6 +214,9 @@ def _should_run_league_tables(args, output_csv_path: str, processed_dirs: list[s
     processed CSV — if it is newer than all of them, no data changed since the
     last projection, so the step is skipped.
 
+    Always force a rebuild when the projected CSV is missing or mostly
+    ``sim_runs=0`` placeholders, even on light days.
+
     ``extra_inputs`` are additional files that, if newer than the output, force a
     re-run (e.g. the roster/PATH B files that change projected tables even when
     raw match data is unchanged).
@@ -194,6 +224,13 @@ def _should_run_league_tables(args, output_csv_path: str, processed_dirs: list[s
     if not args.skip_model_train:
         return True
     if not output_csv_path or not os.path.exists(output_csv_path):
+        return True
+    if _projected_tables_are_mostly_zeroed(output_csv_path):
+        print(
+            f"[pipeline] forcing league table projection — "
+            f"output mostly zeroed/missing usable sims: {output_csv_path}",
+            flush=True,
+        )
         return True
     out_mtime = os.path.getmtime(output_csv_path)
     for input_file in (extra_inputs or []):

@@ -187,7 +187,8 @@ def _load_roster_from_json(path, competition):
     if not path or not os.path.exists(path):
         return None
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        # utf-8-sig strips a UTF-8 BOM if present (league_teams.json has shipped with one).
+        with open(path, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         if not isinstance(data, dict):
             return None
@@ -1151,7 +1152,7 @@ def _merge_roster_only_competitions(latest: dict, available_teams=None) -> dict:
         try:
             if not os.path.exists(filepath):
                 continue
-            with open(filepath, "r", encoding="utf-8") as fh:
+            with open(filepath, "r", encoding="utf-8-sig") as fh:
                 data = json.load(fh)
             if not isinstance(data, dict):
                 continue
