@@ -567,7 +567,7 @@ def _add_if_today(entry, comp_name, today_date, now_et, out_dict):
         pass
 
 
-def _compute_poll_interval(now, results, live_comps, todays_comps):
+def _compute_poll_interval(results, todays_comps):
     """Return the sleep interval in seconds before the next poll cycle.
 
     - 60 seconds  if any game is in-progress or just kicked off (past 90 min),
@@ -578,43 +578,47 @@ def _compute_poll_interval(now, results, live_comps, todays_comps):
       15-min pre-match polling mode at the 1h mark)
     - 1800 seconds otherwise (no games or all finished)
     """
-    # Check live results for in-progress games
-    for comp_data in results.values():
-        for g in comp_data.get("games", []):
-            if g.get("status") == "in":
-                return 60
+    try:
+        # Check live results for in-progress games
+        for comp_data in (results or {}).values():
+            for g in (comp_data or {}).get("games", []) or []:
+                if g.get("status") == "in":
+                    return 60
 
-    now_et = datetime.now(ZoneInfo("America/New_York"))
-    nearest_future = None
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+        nearest_future = None
 
-    for comp_name, kickoffs in todays_comps.items():
-        for kt in kickoffs:
-            try:
-                if isinstance(kt, datetime):
-                    diff = (kt - now_et).total_seconds()
-                    # Game started within last 90 min -> poll at 60s
-                    if -5400 <= diff <= 0:
-                        return 60
-                    # Within 3 minutes of kickoff -> poll every 60s so we catch
-                    # the pre→in transition within seconds.
-                    if 0 < diff <= 180:
-                        return 60
-                    # Future kickoff within 60 min -> poll every 15 min
-                    if 0 < diff <= 3600:
-                        return 900
-                    # Future kickoff — track the nearest one
-                    if diff > 0 and (nearest_future is None or diff < nearest_future):
-                        nearest_future = diff
-            except Exception:
-                continue
+        for _comp_name, kickoffs in (todays_comps or {}).items():
+            for kt in kickoffs or []:
+                try:
+                    if isinstance(kt, datetime):
+                        diff = (kt - now_et).total_seconds()
+                        # Game started within last 90 min -> poll at 60s
+                        if -5400 <= diff <= 0:
+                            return 60
+                        # Within 3 minutes of kickoff -> poll every 60s so we catch
+                        # the pre→in transition within seconds.
+                        if 0 < diff <= 180:
+                            return 60
+                        # Future kickoff within 60 min -> poll every 15 min
+                        if 0 < diff <= 3600:
+                            return 900
+                        # Future kickoff — track the nearest one
+                        if diff > 0 and (nearest_future is None or diff < nearest_future):
+                            nearest_future = diff
+                except Exception:
+                    continue
 
-    # Wake up at nearest future − 1h so pre-match 15-min polling starts on time.
-    # If the nearest kickoff is within 3 min, we'd already have returned 60 above.
-    if nearest_future is not None and nearest_future < 7200:
-        wake_at = nearest_future - 3600
-        return max(10, wake_at)
+        # Wake up at nearest future − 1h so pre-match 15-min polling starts on time.
+        # If the nearest kickoff is within 3 min, we'd already have returned 60 above.
+        if nearest_future is not None and nearest_future < 7200:
+            wake_at = nearest_future - 3600
+            return max(10, int(wake_at))
 
-    return 1800
+        return 1800
+    except Exception:
+        # Never let interval math kill the poller thread.
+        return 60
 
 
 _last_on_demand_refresh_ts = 0.0
@@ -623,10 +627,23 @@ _on_demand_refresh_lock = threading.Lock()
 _poller_last_cycle_utc: str | None = None
 _poller_last_cycle_games = 0
 _poller_started = False
+_poller_thread: threading.Thread | None = None
+
+
+def _poller_thread_is_alive() -> bool:
+    thread = _poller_thread
+    return thread is not None and thread.is_alive()
 
 
 def get_live_poller_status() -> dict:
-    """Lightweight poller health snapshot for API responses."""
+    """Lightweight poller health snapshot for API responses.
+
+    Also restarts the poller thread if it exited (e.g. after an uncaught
+    NameError) while ``started`` was left True — that stuck state is exactly
+    what left scores frozen at the first cycle in production.
+    """
+    if _poller_started and not _poller_thread_is_alive():
+        start_live_score_poller(force=True)
     with _live_scores_lock:
         total_games = sum(len(v.get("games", [])) for v in _live_scores.values())
         last_polled = max(
@@ -636,6 +653,7 @@ def get_live_poller_status() -> dict:
         competitions = list(_live_scores.keys())
     return {
         "started": _poller_started,
+        "thread_alive": _poller_thread_is_alive(),
         "last_cycle_utc": _poller_last_cycle_utc,
         "last_cycle_games": _poller_last_cycle_games,
         "competitions_in_memory": competitions,
@@ -1378,24 +1396,53 @@ def _live_score_poller_loop():
 
         _sync_friendlies_results_if_due()
 
-        now = datetime.now()
         # Exclude deferred comps from interval calc so they don't force 60s polling.
-        live_results = {k: v for k, v in results.items() if k not in config.RESULT_ONLY_COMPETITIONS and k not in config.REDUCED_POLLING_COMPETITIONS}
-        live_todays = {k: v for k, v in todays_comps.items() if k not in config.RESULT_ONLY_COMPETITIONS and k not in config.REDUCED_POLLING_COMPETITIONS}
-        interval = _compute_poll_interval(now, live_results, live_comps, live_todays)
-        time.sleep(interval)
+        # NOTE: do not reference undefined cycle locals here — a prior NameError on
+        # ``live_comps`` killed the daemon after the first successful collect, which
+        # froze scores at status=pre while poller.started stayed true.
+        try:
+            live_results = {
+                k: v
+                for k, v in (results or {}).items()
+                if k not in config.RESULT_ONLY_COMPETITIONS
+                and k not in config.REDUCED_POLLING_COMPETITIONS
+            }
+            live_todays = {
+                k: v
+                for k, v in (todays_comps or {}).items()
+                if k not in config.RESULT_ONLY_COMPETITIONS
+                and k not in config.REDUCED_POLLING_COMPETITIONS
+            }
+            interval = _compute_poll_interval(live_results, live_todays)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            interval = 60
+        time.sleep(max(10, int(interval or 60)))
 
 
-def start_live_score_poller() -> None:
+def start_live_score_poller(*, force: bool = False) -> None:
     """Start the live score poller thread if not already running.
 
     Called by BackendServer on Steam Deck (gunicorn) and by ``__main__``
-    in dev mode.  Safe to call multiple times — the ``_started`` guard
-    ensures only one thread is created.
+    in dev mode.  Safe to call multiple times — only one live thread is kept.
+    Pass ``force=True`` (or call via status) to revive a dead thread.
     """
-    if not getattr(start_live_score_poller, "_started", False):
-        start_live_score_poller._started = True
-        global _poller_started
-        _poller_started = True
-        threading.Thread(target=_live_score_poller_loop, daemon=True, name="live-score-poller").start()
-        print("[startup] Live score poller started (60s live / 60s 3min pre-kickoff / 15min pre-match / 30min idle).")
+    global _poller_started, _poller_thread
+    if _poller_thread_is_alive() and not force:
+        return
+    if _poller_thread_is_alive() and force:
+        return
+    _poller_started = True
+    start_live_score_poller._started = True
+    thread = threading.Thread(
+        target=_live_score_poller_loop,
+        daemon=True,
+        name="live-score-poller",
+    )
+    _poller_thread = thread
+    thread.start()
+    print(
+        "[startup] Live score poller started "
+        "(60s live / 60s 3min pre-kickoff / 15min pre-match / 30min idle)."
+    )
