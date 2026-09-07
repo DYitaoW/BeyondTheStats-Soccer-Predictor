@@ -1763,13 +1763,33 @@ def _build_mls_winners_odds_bundle() -> dict:
                     if float(pct or 0) > 0
                 ]
                 champion = winners_odds[0]["team"] if winners_odds else (bracket.get("mls_cup") or {}).get("winner")
-                bundle["mls_cup"] = {
+                cup_view = {
                     "competition": config.MLS_CUP_COMPETITION,
                     "winner_probabilities": {k: round(float(v), 2) for k, v in cup_probs.items() if float(v or 0) > 0},
                     "winners_odds": winners_odds,
                     "champion": champion,
                     "simulations_run": bracket.get("simulations_run"),
                 }
+                make_playoffs = bracket.get("make_playoffs_probabilities") or {}
+                if make_playoffs:
+                    cup_view["make_playoffs_probabilities"] = {
+                        k: round(float(v), 2) for k, v in make_playoffs.items() if float(v or 0) > 0
+                    }
+                round_reach = bracket.get("round_reach_probabilities") or {}
+                if isinstance(round_reach, dict) and round_reach:
+                    cup_view["round_reach_probabilities"] = {
+                        rnd: {
+                            team: round(float(pct), 2)
+                            for team, pct in (team_map or {}).items()
+                            if float(pct or 0) > 0
+                        }
+                        for rnd, team_map in round_reach.items()
+                        if isinstance(team_map, dict)
+                    }
+                elim = bracket.get("elimination_round_probabilities") or {}
+                if isinstance(elim, dict) and elim:
+                    cup_view["elimination_round_probabilities"] = elim
+                bundle["mls_cup"] = cup_view
     return bundle
 
 

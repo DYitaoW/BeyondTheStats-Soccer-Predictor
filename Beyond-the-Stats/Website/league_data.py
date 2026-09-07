@@ -225,6 +225,14 @@ def _mls_league_data_cache_missing_cup(comp_name: str, payload: dict) -> bool:
     has_cup_odds = isinstance(cup_odds, dict) and bool(
         cup_odds.get("winner_probabilities") or cup_odds.get("winners_odds") or cup_odds.get("champion")
     )
+    has_playoff_odds = bool(
+        payload.get("make_playoffs_probabilities")
+        or payload.get("round_reach_probabilities")
+        or (isinstance(cup_odds, dict) and (
+            cup_odds.get("make_playoffs_probabilities")
+            or cup_odds.get("round_reach_probabilities")
+        ))
+    )
     projected = ((payload.get("bracket") or {}).get("projected") or {})
     has_real_bracket = isinstance(projected, dict) and any(
         key in projected
@@ -232,6 +240,20 @@ def _mls_league_data_cache_missing_cup(comp_name: str, payload: dict) -> bool:
     )
     bracket_path = getattr(config, "MLS_PROJECTED_BRACKET_FILE", "")
     if bracket_path and os.path.exists(bracket_path):
+        # Force rebuild when Cup winner odds exist in the file but playoff-round
+        # odds were never written into the LeagueData cache.
+        try:
+            with open(bracket_path, "r", encoding="utf-8") as fh:
+                bracket_file = json.load(fh)
+        except Exception:
+            bracket_file = {}
+        file_has_playoff_odds = isinstance(bracket_file, dict) and bool(
+            bracket_file.get("make_playoffs_probabilities")
+            or bracket_file.get("round_reach_probabilities")
+            or bracket_file.get("mls_cup_winner_probabilities")
+        )
+        if file_has_playoff_odds and not (has_cup_odds and has_real_bracket and has_playoff_odds):
+            return True
         return not (has_cup_odds and has_real_bracket)
     # Even without the pipeline file, keep a stable mls_cup slot in winners_odds.
     return "mls_cup" not in (winners or {})
@@ -962,6 +984,28 @@ def _enrich_mls_payload(comp: str, payload: dict) -> dict:
             "winners_odds": cup_view.get("winners_odds") or [],
             "simulations_run": cup_view.get("simulations_run"),
         }
+        if cup_view.get("make_playoffs_probabilities"):
+            payload["predicted"]["make_playoffs_probabilities"] = cup_view["make_playoffs_probabilities"]
+            payload["make_playoffs_probabilities"] = cup_view["make_playoffs_probabilities"]
+        if cup_view.get("round_reach_probabilities"):
+            payload["predicted"]["round_reach_probabilities"] = cup_view["round_reach_probabilities"]
+            payload["round_reach_probabilities"] = cup_view["round_reach_probabilities"]
+        if cup_view.get("elimination_round_probabilities"):
+            payload["predicted"]["elimination_round_odds"] = cup_view["elimination_round_probabilities"]
+            payload["elimination_round_odds"] = cup_view["elimination_round_probabilities"]
+
+    # Prefer live bracket-file playoff odds when winners bundle is sparse.
+    projected = ((payload.get("bracket") or {}).get("projected") or {})
+    if isinstance(projected, dict):
+        if not payload.get("make_playoffs_probabilities") and projected.get("make_playoffs_probabilities"):
+            payload["make_playoffs_probabilities"] = projected["make_playoffs_probabilities"]
+            payload["predicted"]["make_playoffs_probabilities"] = projected["make_playoffs_probabilities"]
+        if not payload.get("round_reach_probabilities") and projected.get("round_reach_probabilities"):
+            payload["round_reach_probabilities"] = projected["round_reach_probabilities"]
+            payload["predicted"]["round_reach_probabilities"] = projected["round_reach_probabilities"]
+        if not payload.get("elimination_round_odds") and projected.get("elimination_round_probabilities"):
+            payload["elimination_round_odds"] = projected["elimination_round_probabilities"]
+            payload["predicted"]["elimination_round_odds"] = projected["elimination_round_probabilities"]
 
     if not payload.get("fixtures"):
         payload["fixtures"] = _load_fixtures(comp)
