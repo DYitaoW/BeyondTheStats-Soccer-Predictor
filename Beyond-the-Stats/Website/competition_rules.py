@@ -44,6 +44,20 @@ MLS_WESTERN_CONFERENCE_TEAMS = frozenset({
 MLS_SEASON_FILE_RE = re.compile(r"^mlsstat(\d{4})\.csv$", re.IGNORECASE)
 LIGA_MX_SEASON_FILE_RE = re.compile(r"^mexstat(\d{4})\.csv$", re.IGNORECASE)
 
+# Non-regular-season markers that sometimes land in the MLS games bucket
+# (US Open Cup, Leagues Cup, friendlies, MLS Cup playoffs, etc.).
+_MLS_NON_REGULAR_COMP_RE = re.compile(
+    r"(open\s*cup|leagues?\s*cup|friendly|friendlies|concacaf|"
+    r"campeones|club\s*world|champions\s*cup)",
+    re.IGNORECASE,
+)
+_MLS_NON_REGULAR_ROUND_RE = re.compile(
+    r"(open\s*cup|leagues?\s*cup|friendly|friendlies|pre-?season|"
+    r"play-?offs?|mls\s*cup|wildcard|knockout|concacaf|"
+    r"campeones|club\s*world|champions\s*cup|audi\s*cup)",
+    re.IGNORECASE,
+)
+
 _UEFA_COMPETITIONS = frozenset({
     "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
     "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
@@ -278,6 +292,13 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
     for g in by_comp.get(config.LIGA_MX_COMPETITION, []):
         g["home_team"] = resolve_liga_mx_team_name(g.get("home_team", ""))
         g["away_team"] = resolve_liga_mx_team_name(g.get("away_team", ""))
+
+    # Drop Open Cup / Leagues Cup / friendly / playoff contamination from the
+    # MLS bucket so Shield + conference tables only count regular-season MLS.
+    if "United States/MLS" in by_comp:
+        by_comp["United States/MLS"] = filter_mls_regular_season_games(
+            by_comp["United States/MLS"]
+        )
 
     return dict(by_comp)
 
@@ -1768,6 +1789,51 @@ def build_structured_standings_groups(comp_name: str, teams: list[str]) -> list[
             ]
 
     return [{"name": "Overall", "entries": _entries_from_teams(team_list)}]
+
+
+def _mls_roster_team_set() -> set[str]:
+    """Canonical MLS club names for the current East/West conference rosters."""
+    return set(MLS_EASTERN_CONFERENCE_TEAMS) | set(MLS_WESTERN_CONFERENCE_TEAMS)
+
+
+def is_mls_regular_season_game(game: dict | None) -> bool:
+    """True when a completed result should count toward MLS league tables.
+
+    Excludes US Open Cup, Leagues Cup, friendlies, playoffs / MLS Cup, and any
+    match involving a non-MLS club (common Open Cup contamination).
+    """
+    if not isinstance(game, dict):
+        return False
+    comp = str(game.get("competition") or "").strip()
+    if comp and _MLS_NON_REGULAR_COMP_RE.search(comp):
+        return False
+    if comp and comp != "United States/MLS" and not comp.startswith("United States/MLS"):
+        # Games explicitly tagged to another competition never count for MLS.
+        if "/" in comp:
+            return False
+
+    round_blob = " ".join(
+        str(game.get(key) or "")
+        for key in ("round", "stage", "group", "detail", "status_detail", "league_name", "notes")
+    )
+    if _MLS_NON_REGULAR_ROUND_RE.search(round_blob):
+        return False
+
+    home = resolve_mls_team_name(game.get("home_team", ""))
+    away = resolve_mls_team_name(game.get("away_team", ""))
+    if not home or not away or home == away:
+        return False
+    roster = _mls_roster_team_set()
+    if home not in roster or away not in roster:
+        return False
+    return True
+
+
+def filter_mls_regular_season_games(games: list[dict] | None) -> list[dict]:
+    """Drop cup / friendly / playoff / non-MLS results from an MLS game list."""
+    if not games:
+        return []
+    return [g for g in games if is_mls_regular_season_game(g)]
 
 
 def filter_games_to_active_season(

@@ -37,6 +37,7 @@ from competition_rules import (
     extract_group_label,
     filter_games_to_liga_mx_tournament,
     filter_games_to_active_season,
+    filter_mls_regular_season_games,
     load_wc_team_groups,
     mls_conference,
     normalize_team_key,
@@ -307,28 +308,39 @@ def _canonical_roster_teams(comp_name: str) -> list[str]:
     """Return the team set real tables must share with predicted tables.
 
     Order of preference:
-      1. Predicted/projected table teams (identical names & count as predictions tab)
-      2. ``current_season_teams.json``
-      3. ``league_teams.json``
+      1. ``current_season_teams.json`` (authoritative for promotion/relegation)
+      2. Predicted/projected table teams (only when they match the current roster)
+      3. ``league_teams.json`` (historical; may still contain relegated clubs)
 
-    All names are normalized through the shared ESPN→football-data mapping.
+    Preferring current-season first prevents real tables from locking onto a
+    stale LeagueResult / projected CSV that still lists last year's clubs
+    (e.g. Burnley / West Ham / Wolves in PL after they were relegated).
     """
     base_comp, _view = resolve_competition_query(comp_name)
     lookup_names = {comp_name, base_comp}
-    raw_teams: list[str] = _teams_from_predicted_table(comp_name)
+    raw_teams: list[str] = []
+
+    try:
+        if os.path.exists(config.CURRENT_SEASON_TEAMS_FILE):
+            with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8-sig") as fh:
+                current = json.load(fh)
+            if isinstance(current, dict):
+                for name in lookup_names:
+                    cached = current.get(name)
+                    if isinstance(cached, list) and len(cached) >= 2:
+                        raw_teams = list(cached)
+                        break
+    except Exception:
+        raw_teams = []
+
     if not raw_teams:
-        try:
-            if os.path.exists(config.CURRENT_SEASON_TEAMS_FILE):
-                with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
-                    current = json.load(fh)
-                if isinstance(current, dict):
-                    for name in lookup_names:
-                        cached = current.get(name)
-                        if cached:
-                            raw_teams = list(cached)
-                            break
-        except Exception:
-            raw_teams = []
+        predicted = _teams_from_predicted_table(comp_name)
+        # Reject predicted rosters that still contain prior-season clubs when
+        # current_season_teams is unavailable but league_teams is newer — if
+        # predicted is empty we fall through.
+        if predicted:
+            raw_teams = list(predicted)
+
     if not raw_teams:
         league_teams = _load_league_teams()
         for name in lookup_names:
@@ -336,6 +348,7 @@ def _canonical_roster_teams(comp_name: str) -> list[str]:
             if cached:
                 raw_teams = list(cached)
                 break
+
     seen: set[str] = set()
     out: list[str] = []
     for team in raw_teams:
@@ -939,6 +952,10 @@ def _compute_standings_from_history(comp_name, force_recompute=False):
             ) or comp_games
         except Exception:
             pass
+    if base_comp == "United States/MLS":
+        # Never count Open Cup / Leagues Cup / friendlies / playoffs toward
+        # Supporters Shield or conference tables.
+        comp_games = filter_mls_regular_season_games(comp_games)
     if not comp_games:
         return None
 
@@ -1335,17 +1352,30 @@ def _compute_standings_from_history(comp_name, force_recompute=False):
         all_entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
 
         # Conference tables use full-season stats (all 34 games), same as Supporters Shield.
+        # Copy rows so East/West ranking cannot mutate shared Shield dicts.
         east_teams = {t for t in teams if _mls_conference(t) == "east"}
         west_teams = {t for t in teams if _mls_conference(t) == "west"}
-        east_table = {team: full_table[team] for team in east_teams if team in full_table}
-        west_table = {team: full_table[team] for team in west_teams if team in full_table}
+        east_table = {team: dict(full_table[team]) for team in east_teams if team in full_table}
+        west_table = {team: dict(full_table[team]) for team in west_teams if team in full_table}
         east_ranked = _rank_table(east_table, match_records)
         west_ranked = _rank_table(west_table, match_records)
 
         groups = [
             {"name": "Supporters Shield", "entries": all_entries},
-            {"name": "Eastern Conference", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(east_ranked)]},
-            {"name": "Western Conference", "entries": [{"team": t, "rank": i+1, **s} for i, (t, s) in enumerate(west_ranked)]},
+            {
+                "name": "Eastern Conference",
+                "entries": [
+                    {"team": t, "rank": i + 1, **dict(s)}
+                    for i, (t, s) in enumerate(east_ranked)
+                ],
+            },
+            {
+                "name": "Western Conference",
+                "entries": [
+                    {"team": t, "rank": i + 1, **dict(s)}
+                    for i, (t, s) in enumerate(west_ranked)
+                ],
+            },
         ]
         return _finalize(groups, source="computed")
 
@@ -1654,17 +1684,20 @@ def _build_fallback_standings(comp_name):
     base_comp, _view = resolve_competition_query(comp_name)
     lookup_names = _competition_names_for_lookup(comp_name)
     teams = set()
+    used_current_season_roster = False
 
     # 1. Prefer current-season roster, then broader league_teams.json
     try:
         if os.path.exists(config.CURRENT_SEASON_TEAMS_FILE):
-            with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8") as fh:
+            with open(config.CURRENT_SEASON_TEAMS_FILE, "r", encoding="utf-8-sig") as fh:
                 current = json.load(fh)
             if isinstance(current, dict):
                 for lookup_name in lookup_names:
                     cached = current.get(lookup_name)
-                    if cached:
+                    if isinstance(cached, list) and len(cached) >= 2:
                         teams.update(cached)
+                        used_current_season_roster = True
+                        break
     except Exception:
         pass
     league_teams = _load_league_teams()
@@ -1674,40 +1707,43 @@ def _build_fallback_standings(comp_name):
             if cached:
                 teams.update(cached)
 
-    # 2. Upcoming prediction CSVs and projected table CSVs
-    csv_sources = [
-        config.GLOBAL_UPCOMING_FILE,
-        config.MLS_UPCOMING_FILE,
-        config.EXTRA_UPCOMING_FILE,
-        config.CUP_UPCOMING_FILE,
-        config.NATIONAL_UPCOMING_FILE,
-        os.path.join(config.PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv"),
-        os.path.join(config.PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv"),
-        os.path.join(config.PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv"),
-        config.GLOBAL_PROJECTED_TABLE_FILE,
-        config.MLS_PROJECTED_TABLE_FILE,
-        config.EXTRA_PROJECTED_TABLE_FILE,
-        config.CUP_PROJECTED_TABLE_FILE,
-    ]
-    for path in csv_sources:
-        if not os.path.exists(path):
-            continue
-        try:
-            df = pd.read_csv(path, dtype=str, encoding="utf-8")
-        except Exception:
-            continue
-        if "competition" not in df.columns:
-            continue
-        mask = df["competition"].astype(str).str.strip().isin(lookup_names)
-        sub = df[mask]
-        if sub.empty:
-            continue
-        if "team" in sub.columns:
-            teams.update(sub["team"].dropna().astype(str).str.strip())
-        elif "home_team" in sub.columns:
-            teams.update(sub["home_team"].dropna().astype(str).str.strip())
-        if "away_team" in sub.columns:
-            teams.update(sub["away_team"].dropna().astype(str).str.strip())
+    # 2. Upcoming / projected CSVs — ONLY when no authoritative current-season
+    # roster exists. Unioning CSVs reintroduces relegated clubs still present
+    # in stale prediction files (PL Burnley/West Ham/Wolves symptom).
+    if not used_current_season_roster:
+        csv_sources = [
+            config.GLOBAL_UPCOMING_FILE,
+            config.MLS_UPCOMING_FILE,
+            config.EXTRA_UPCOMING_FILE,
+            config.CUP_UPCOMING_FILE,
+            config.NATIONAL_UPCOMING_FILE,
+            os.path.join(config.PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv"),
+            os.path.join(config.PROJECT_DIR, "Output", "Europe", "Upcoming", "europe_upcoming.csv"),
+            os.path.join(config.PROJECT_DIR, "Output", "National", "Upcoming", "national_upcoming.csv"),
+            config.GLOBAL_PROJECTED_TABLE_FILE,
+            config.MLS_PROJECTED_TABLE_FILE,
+            config.EXTRA_PROJECTED_TABLE_FILE,
+            config.CUP_PROJECTED_TABLE_FILE,
+        ]
+        for path in csv_sources:
+            if not os.path.exists(path):
+                continue
+            try:
+                df = pd.read_csv(path, dtype=str, encoding="utf-8")
+            except Exception:
+                continue
+            if "competition" not in df.columns:
+                continue
+            mask = df["competition"].astype(str).str.strip().isin(lookup_names)
+            sub = df[mask]
+            if sub.empty:
+                continue
+            if "team" in sub.columns:
+                teams.update(sub["team"].dropna().astype(str).str.strip())
+            elif "home_team" in sub.columns:
+                teams.update(sub["home_team"].dropna().astype(str).str.strip())
+            if "away_team" in sub.columns:
+                teams.update(sub["away_team"].dropna().astype(str).str.strip())
 
     # Normalize all team names through the mapping file to prevent duplicates
     normalized = set()

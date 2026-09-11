@@ -603,6 +603,9 @@ def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, confere
     east_pos_counts = defaultdict(lambda: defaultdict(int))
     west_pos_counts = defaultdict(lambda: defaultdict(int))
     cup_win_counts = defaultdict(int)
+    make_playoffs_counts = defaultdict(int)
+    round_reach_counts = defaultdict(lambda: defaultdict(int))
+    elimination_counts = defaultdict(lambda: defaultdict(int))
 
     # Precompute home-win probs for every MLS matchup once. Without this cache,
     # each Monte Carlo season re-ran full sklearn predict_match calls for every
@@ -637,10 +640,150 @@ def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, confere
                 ctx, east_ranked, west_ranked, matchup_cache=matchup_cache
             )
             cup_winner = (bracket.get("mls_cup") or {}).get("winner")
-            if cup_winner in cup_win_counts:
+            # defaultdict membership is always True for existing keys only after
+            # insert; ``in`` on a missing key previously skipped every winner.
+            if cup_winner:
                 cup_win_counts[cup_winner] += 1
+            accumulate_mls_playoff_outcome_counts(
+                bracket,
+                make_playoffs_counts,
+                round_reach_counts,
+                elimination_counts,
+                set(canonical_teams),
+            )
+        else:
+            # No playoff simulation — still mark non-qualifiers when possible.
+            for team in canonical_teams:
+                elimination_counts[team]["missed_playoffs"] += 1
 
-    return stat_sums, league_pos_counts, east_pos_counts, west_pos_counts, cup_win_counts
+    return (
+        stat_sums,
+        league_pos_counts,
+        east_pos_counts,
+        west_pos_counts,
+        cup_win_counts,
+        make_playoffs_counts,
+        round_reach_counts,
+        elimination_counts,
+    )
+
+
+def _series_participants(series) -> tuple[str | None, str | None, str | None]:
+    """Return (home/high, away/low, winner) for a single-match or Bo3 payload."""
+    if not isinstance(series, dict):
+        return None, None, None
+    home = (
+        series.get("home_team")
+        or series.get("high_seed_team")
+        or series.get("home")
+    )
+    away = (
+        series.get("away_team")
+        or series.get("low_seed_team")
+        or series.get("away")
+    )
+    winner = series.get("winner")
+    return (
+        str(home).strip() if home else None,
+        str(away).strip() if away else None,
+        str(winner).strip() if winner else None,
+    )
+
+
+def accumulate_mls_playoff_outcome_counts(
+    bracket,
+    make_playoffs_counts,
+    round_reach_counts,
+    elimination_counts,
+    canonical_teams,
+):
+    """Tally make-playoffs / round-reach / elimination outcomes for one sim."""
+    playoff_teams = set()
+    for conf_key in ("eastern_seeds", "western_seeds"):
+        for entry in bracket.get(conf_key) or []:
+            if not isinstance(entry, dict):
+                continue
+            team = str(entry.get("team") or "").strip()
+            if not team or team.startswith("Seed"):
+                continue
+            playoff_teams.add(team)
+            make_playoffs_counts[team] += 1
+            round_reach_counts["made_playoffs"][team] += 1
+
+    for team in canonical_teams:
+        if team not in playoff_teams:
+            elimination_counts[team]["missed_playoffs"] += 1
+
+    def _apply_round(round_key, series_list):
+        for series in series_list:
+            home, away, winner = _series_participants(series)
+            participants = []
+            for team in (home, away):
+                if team and not team.startswith("Seed"):
+                    participants.append(team)
+                    round_reach_counts[round_key][team] += 1
+            if not participants:
+                continue
+            if winner and not winner.startswith("Seed"):
+                for team in participants:
+                    if team != winner:
+                        elimination_counts[team][round_key] += 1
+            else:
+                # No resolved winner — do not invent elimination credits.
+                pass
+
+    wc = bracket.get("wildcard") or {}
+    _apply_round("wildcard", [wc.get("east") or {}, wc.get("west") or {}])
+
+    r1 = bracket.get("round_one") or {}
+    r1_series = []
+    for conf in ("east", "west"):
+        conf_map = r1.get(conf) or {}
+        if isinstance(conf_map, dict):
+            r1_series.extend(conf_map.values())
+    _apply_round("round_one", r1_series)
+
+    sf = bracket.get("conference_semifinals") or {}
+    sf_series = []
+    for conf in ("east", "west"):
+        conf_list = sf.get(conf) or []
+        if isinstance(conf_list, list):
+            sf_series.extend(conf_list)
+    _apply_round("conference_semifinals", sf_series)
+
+    cf = bracket.get("conference_finals") or {}
+    _apply_round("conference_finals", [cf.get("east") or {}, cf.get("west") or {}])
+
+    cup = bracket.get("mls_cup") or {}
+    home, away, winner = _series_participants(cup)
+    for team in (home, away):
+        if team and not team.startswith("Seed"):
+            round_reach_counts["mls_cup"][team] += 1
+    if winner and not winner.startswith("Seed"):
+        for team in (home, away):
+            if team and team != winner and not team.startswith("Seed"):
+                elimination_counts[team]["mls_cup"] += 1
+        elimination_counts[winner]["champion"] += 1
+    elif home and away:
+        # Unresolved final — no champion credit.
+        pass
+
+
+def counts_to_probability_map(counts, total_runs):
+    runs = max(1, int(total_runs))
+    return {
+        team: round((int(count) / runs) * 100.0, 2)
+        for team, count in counts.items()
+        if int(count) > 0
+    }
+
+
+def nested_counts_to_probability_maps(nested_counts, total_runs):
+    return {
+        round_key: counts_to_probability_map(team_counts, total_runs)
+        for round_key, team_counts in nested_counts.items()
+        if team_counts
+    }
 
 
 def build_cup_probability_columns(cup_win_counts, team, total_runs):
@@ -1473,7 +1616,16 @@ def project_competition(ctx, competition, raw_file):
             add_predicted_fixture(home, away, "")
 
     conference_lookup = build_conference_lookup()
-    stat_sums, league_pos_counts, east_pos_counts, west_pos_counts, cup_win_counts = run_monte_carlo_mls(
+    (
+        stat_sums,
+        league_pos_counts,
+        east_pos_counts,
+        west_pos_counts,
+        cup_win_counts,
+        make_playoffs_counts,
+        round_reach_counts,
+        elimination_counts,
+    ) = run_monte_carlo_mls(
         canonical_teams, table, future_predictions, conference_lookup, SIMULATION_RUNS, ctx=ctx
     )
     averaged = {}
@@ -1545,14 +1697,27 @@ def project_competition(ctx, competition, raw_file):
     bracket_payload = None
     if len(east_ranked) >= 9 and len(west_ranked) >= 9:
         bracket_payload = build_mls_playoff_bracket_prediction(ctx, east_ranked, west_ranked)
-        cup_probs = {
-            team: round((count / SIMULATION_RUNS) * 100.0, 2)
-            for team, count in cup_win_counts.items()
-            if count > 0
+        cup_probs = counts_to_probability_map(cup_win_counts, SIMULATION_RUNS)
+        make_playoffs_probs = counts_to_probability_map(make_playoffs_counts, SIMULATION_RUNS)
+        round_reach_probs = nested_counts_to_probability_maps(round_reach_counts, SIMULATION_RUNS)
+        elimination_probs = {
+            team: {
+                round_key: round((int(count) / max(1, SIMULATION_RUNS)) * 100.0, 2)
+                for round_key, count in rounds.items()
+                if int(count) > 0
+            }
+            for team, rounds in elimination_counts.items()
+            if rounds
         }
+        bracket_payload["simulations_run"] = int(SIMULATION_RUNS)
         if cup_probs:
             bracket_payload["mls_cup_winner_probabilities"] = cup_probs
-            bracket_payload["simulations_run"] = int(SIMULATION_RUNS)
+        if make_playoffs_probs:
+            bracket_payload["make_playoffs_probabilities"] = make_playoffs_probs
+        if round_reach_probs:
+            bracket_payload["round_reach_probabilities"] = round_reach_probs
+        if elimination_probs:
+            bracket_payload["elimination_round_probabilities"] = elimination_probs
 
     return out_rows, future_rows, bracket_payload
 
