@@ -1062,11 +1062,11 @@ def _live_score_poller_loop():
                 traceback.print_exc()
 
             # ── Live Activity updates (iOS 16.1+) ─────────────────────
-            # Send push updates when match scores change and end pushes
-            # when matches finish.
+            # Push content-state whenever the scoreboard changes so Live
+            # Activities refresh the score. Goals also push via the key-event
+            # block below (with an ``event`` label for the UI).
             try:
                 import notifications as _la
-                from notifications import _apns_notification_queue
 
                 with _live_scores_lock:
                     for comp_name, comp_data in _live_scores.items():
@@ -1082,49 +1082,27 @@ def _live_score_poller_loop():
                             cur_minute = g.get("clock") or g.get("match_minute") or 0
                             home_team = g.get("home_team", "")
                             away_team = g.get("away_team", "")
-                            # Match ended
+                            state = {
+                                "match_id": mid,
+                                "competition": comp_name,
+                                "home_team": home_team,
+                                "away_team": away_team,
+                                "home_score": cur_home,
+                                "away_score": cur_away,
+                                "status": cur_status,
+                                "match_minute": cur_minute,
+                            }
+                            # Match ended — dismiss Live Activity with final score.
                             if prev and prev[1] != "post" and cur_status == "post":
-                                activities = _la.for_match(mid, comp_name)
-                                for entry in activities:
-                                    _apns_notification_queue.append({
-                                        "type": "liveactivity",
-                                        "token": entry["activity_token"],
-                                        "event": "end",
-                                        "content_state": {
-                                            "match_id": mid,
-                                            "competition": comp_name,
-                                            "home_team": home_team,
-                                            "away_team": away_team,
-                                            "home_score": cur_home,
-                                            "away_score": cur_away,
-                                            "status": "finished",
-                                        },
-                                    })
-                                _la.unregister_by_match(mid, comp_name)
-                            # Score changed or went live
+                                state["status"] = "finished"
+                                _la.send_live_activity_end(mid, comp_name, state)
+                            # Score changed while live/finished — update LA scoreboard.
                             elif cur_status in ("in", "post") and (
                                 prev_home != cur_home or prev_away != cur_away
                             ):
-                                activities = _la.for_match(mid, comp_name)
-                                if not activities:
-                                    continue
-                                state = {
-                                    "match_id": mid,
-                                    "competition": comp_name,
-                                    "home_team": home_team,
-                                    "away_team": away_team,
-                                    "home_score": cur_home,
-                                    "away_score": cur_away,
-                                    "status": cur_status,
-                                    "match_minute": cur_minute,
-                                }
-                                for entry in activities:
-                                    _apns_notification_queue.append({
-                                        "type": "liveactivity",
-                                        "token": entry["activity_token"],
-                                        "event": "update",
-                                        "content_state": state,
-                                    })
+                                score_state = dict(state)
+                                score_state["event"] = "score"
+                                _la.send_live_activity_update(mid, comp_name, score_state)
             except Exception:
                 import traceback
                 traceback.print_exc()
@@ -1262,9 +1240,15 @@ def _live_score_poller_loop():
 
             # ── Event push notifications (goals, red cards, halftime, full time) ──
             try:
-                from notifications import _apns_notification_queue
-                from notifications import for_match as la_for_match
-                from notifications import for_match_tokens as la_for_match_tokens
+                from notifications import (
+                    clear_match_subscriptions,
+                    for_match_tokens as la_for_match_tokens,
+                    send_live_activity_update,
+                )
+
+                # Scoring types that must refresh Live Activity scores.
+                _SCORING_EVENT_TYPES = frozenset({"goal", "own goal", "penalty"})
+                _ALERT_EVENT_TYPES = _SCORING_EVENT_TYPES | frozenset({"red card"})
 
                 with _live_scores_lock, _notified_events_lock:
                     for comp_name, comp_data in _live_scores.items():
@@ -1278,11 +1262,11 @@ def _live_score_poller_loop():
 
                             notified = _notified_events.setdefault(mid, set())
                             subscribers = la_for_match_tokens(mid, comp_name)
-                            la_regs = la_for_match(mid, comp_name)
 
-                            def _queue_alert(title, body):
+                            def _queue_alert(title, body, _subscribers=subscribers):
                                 """Queue a regular alert push to match subscribers only."""
-                                for token in subscribers:
+                                for token in _subscribers:
+                                    from notifications import _apns_notification_queue
                                     _apns_notification_queue.append({
                                         "token": token,
                                         "title": title,
@@ -1290,16 +1274,6 @@ def _live_score_poller_loop():
                                         "badge": 0,
                                         "match_id": mid,
                                         "competition": comp_name,
-                                    })
-
-                            def _queue_la_update(event, content_state):
-                                """Queue a Live Activity update to every registration of this match."""
-                                for entry in la_regs:
-                                    _apns_notification_queue.append({
-                                        "type": "liveactivity",
-                                        "token": entry["activity_token"],
-                                        "content_state": content_state,
-                                        "event": event,
                                     })
 
                             ht = g.get("home_team", "")
@@ -1318,25 +1292,56 @@ def _live_score_poller_loop():
                                 "match_minute": minute,
                             }
 
-                            # Key events: goals, red cards
+                            # Key events: goals (incl. own goal / penalty) + red cards.
+                            # Every scoring event pushes a Live Activity content-state
+                            # update with the current score so the Dynamic Island /
+                            # Lock Screen scoreboard stays in sync.
                             for ev in (g.get("key_events") or []):
                                 ev_type = str(ev.get("type", "")).lower().strip()
-                                if ev_type not in ("goal", "red card"):
+                                is_scoring = (
+                                    ev_type in _SCORING_EVENT_TYPES
+                                    or (
+                                        bool(ev.get("scoring_play"))
+                                        and "missed" not in ev_type
+                                        and "penalty shoot" not in ev_type
+                                    )
+                                )
+                                if not is_scoring and ev_type not in _ALERT_EVENT_TYPES:
                                     continue
-                                ev_id = f"{ev_type}|{ev.get('clock', '')}|{ev.get('athlete_id', '')}"
+                                ev_id = (
+                                    f"{ev_type}|{ev.get('clock', '')}|"
+                                    f"{ev.get('athlete_id', '')}|{ev.get('text', '')}"
+                                )
                                 if ev_id in notified:
                                     continue
                                 notified.add(ev_id)
 
                                 clock = ev.get("clock", "")
                                 text = ev.get("text", "") or ev.get("short_text", "")
-                                title = "Goal" if ev_type == "goal" else "Red Card"
+                                if is_scoring:
+                                    title = "Goal"
+                                    la_event_label = (
+                                        "own goal" if "own" in ev_type
+                                        else "penalty" if "penalty" in ev_type
+                                        else "goal"
+                                    )
+                                else:
+                                    title = "Red Card"
+                                    la_event_label = "red card"
                                 body = f"{ht} {hs}-{as_} {at} ({clock}')"
                                 if text:
                                     body = f"{body} - {text}"
 
                                 _queue_alert(title, body)
-                                _queue_la_update("update", {**state_base, "event": ev_type, "clock": clock})
+                                la_state = {
+                                    **state_base,
+                                    "event": la_event_label,
+                                    "clock": clock,
+                                }
+                                if text:
+                                    la_state["event_text"] = text
+                                # Always push LA score update for goals (and red cards).
+                                send_live_activity_update(mid, comp_name, la_state)
 
                             # Halftime: detected when period string first contains "halftime"
                             period_raw = str(g.get("period", "") or g.get("clock", "") or "").lower()
@@ -1345,19 +1350,18 @@ def _live_score_poller_loop():
                                 if ht_id not in notified:
                                     notified.add(ht_id)
                                     _queue_alert("Halftime", f"{ht} {hs}-{as_} {at} - Halftime")
-                                    _queue_la_update("update", {**state_base, "event": "halftime"})
+                                    send_live_activity_update(
+                                        mid, comp_name, {**state_base, "event": "halftime"}
+                                    )
 
                             # Full time: status transitioned to "post" this cycle.
-                            # (Live Activity "end" event is handled by the block below.)
+                            # (Live Activity "end" event is handled by the score block above.)
                             p = prev_statuses.get(mid)
                             if p and p[1] != "post" and cur_status == "post":
                                 ft_id = f"fulltime|{mid}"
                                 if ft_id not in notified:
                                     notified.add(ft_id)
                                     _queue_alert("Full Time", f"{ht} {hs}-{as_} {at} - Full Time")
-                                # Clean up per-match push subscriptions once the
-                                # match is over (no more events can fire).
-                                from notifications import clear_match_subscriptions
                                 clear_match_subscriptions(mid, comp_name)
 
                             # Match started (pre -> in)
@@ -1366,7 +1370,9 @@ def _live_score_poller_loop():
                                 if start_id not in notified:
                                     notified.add(start_id)
                                     _queue_alert("Match Started", f"{ht} vs {at} - Kickoff!")
-                                    _queue_la_update("update", {**state_base, "event": "kickoff"})
+                                    send_live_activity_update(
+                                        mid, comp_name, {**state_base, "event": "kickoff"}
+                                    )
             except Exception:
                 import traceback
                 traceback.print_exc()

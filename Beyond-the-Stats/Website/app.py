@@ -2322,16 +2322,7 @@ def api_update_live_activity():
         return jsonify({"ok": False, "error": "match_id, competition, and content_state required"}), 400
     if len(match_id) > 256 or len(competition) > 256:
         return jsonify({"ok": False, "error": "input too long"}), 400
-    activities = live_activities.for_match(match_id, competition)
-    sent = 0
-    for entry in activities:
-        _apns_notification_queue.append({
-            "type": "liveactivity",
-            "token": entry["activity_token"],
-            "content_state": content_state,
-            "event": "update",
-        })
-        sent += 1
+    sent = send_live_activity_update(match_id, competition, content_state)
     return jsonify({"ok": True, "sent": sent})
 
 
@@ -2354,17 +2345,7 @@ def api_end_live_activity():
     content_state = payload.get("content_state", {})
     if not isinstance(content_state, dict):
         content_state = {}
-    activities = live_activities.for_match(match_id, competition)
-    sent = 0
-    for entry in activities:
-        _apns_notification_queue.append({
-            "type": "liveactivity",
-            "token": entry["activity_token"],
-            "content_state": content_state,
-            "event": "end",
-        })
-        sent += 1
-    live_activities.unregister_by_match(match_id, competition)
+    sent = send_live_activity_end(match_id, competition, content_state)
     return jsonify({"ok": True, "sent": sent, "deregistered": True})
 
 

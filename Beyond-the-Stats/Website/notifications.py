@@ -20,6 +20,7 @@ ios_device_tokens: set[str] = set()
 
 # Live Activity storage: key = "{match_id}|{competition}"
 _live_activities: dict[str, list[dict]] = {}
+_live_activities_lock = threading.Lock()
 
 # Regular push subscription store: key = "{match_id}|{competition}",
 # value = set of device tokens that asked to be notified about that match.
@@ -27,8 +28,39 @@ _match_notification_subscriptions: dict[str, set[str]] = {}
 _match_notification_subscriptions_lock = threading.Lock()
 
 
+def normalize_live_competition(competition: str) -> str:
+    """Canonical competition key shared by the live poller and LA registry."""
+    import config
+
+    raw = str(competition or "").strip()
+    if not raw:
+        return ""
+    resolved = config.resolve_live_competition(raw)
+    return resolved or raw
+
+
 def _match_key(match_id: str, competition: str) -> str:
-    return f"{match_id}|{competition}"
+    return f"{match_id}|{normalize_live_competition(competition)}"
+
+
+def _match_lookup_keys(match_id: str, competition: str) -> list[str]:
+    """Return possible registry keys for a match (canonical + aliases)."""
+    import config
+
+    mid = str(match_id or "").strip()
+    if not mid:
+        return []
+    keys: list[str] = []
+    seen: set[str] = set()
+    for alias in config.competition_live_aliases(competition):
+        key = f"{mid}|{alias}"
+        if key not in seen:
+            seen.add(key)
+            keys.append(key)
+    canonical = _match_key(mid, competition)
+    if canonical and canonical not in seen:
+        keys.insert(0, canonical)
+    return keys
 
 
 def subscribe_match(device_token: str, match_id: str, competition: str) -> bool:
@@ -58,16 +90,26 @@ def unsubscribe_match(device_token: str, match_id: str, competition: str) -> boo
 
 def for_match_tokens(match_id: str, competition: str) -> list[str]:
     """Device tokens subscribed to regular pushes for a match."""
+    tokens: list[str] = []
+    seen: set[str] = set()
     with _match_notification_subscriptions_lock:
-        return list(_match_notification_subscriptions.get(_match_key(match_id, competition), ()))
+        for key in _match_lookup_keys(match_id, competition):
+            for token in _match_notification_subscriptions.get(key, ()):
+                if token not in seen:
+                    seen.add(token)
+                    tokens.append(token)
+    return tokens
 
 
 def clear_match_subscriptions(match_id: str, competition: str) -> int:
     """Drop all regular-push subscriptions for a finished match."""
-    key = _match_key(match_id, competition)
+    removed = 0
     with _match_notification_subscriptions_lock:
-        subs = _match_notification_subscriptions.pop(key, None)
-        return len(subs) if subs else 0
+        for key in _match_lookup_keys(match_id, competition):
+            subs = _match_notification_subscriptions.pop(key, None)
+            if subs:
+                removed += len(subs)
+    return removed
 
 
 def send_match_notification(match_id: str, competition: str, title: str, body: str) -> int:
@@ -79,46 +121,74 @@ def send_match_notification(match_id: str, competition: str, title: str, body: s
             "title": title,
             "body": body,
             "badge": 0,
+            "match_id": match_id,
+            "competition": normalize_live_competition(competition),
         })
     return len(tokens)
 
 
 def register(activity_token: str, device_token: str, match_id: str, competition: str) -> bool:
-    key = f"{match_id}|{competition}"
-    existing = _live_activities.setdefault(key, [])
-    if any(e["activity_token"] == activity_token for e in existing):
-        return False
-    existing.append({
-        "activity_token": activity_token,
-        "device_token": device_token,
-        "registered_at": datetime.now(timezone.utc).isoformat(),
-    })
-    return True
+    key = _match_key(match_id, competition)
+    with _live_activities_lock:
+        existing = _live_activities.setdefault(key, [])
+        if any(e["activity_token"] == activity_token for e in existing):
+            return False
+        existing.append({
+            "activity_token": activity_token,
+            "device_token": device_token,
+            "match_id": str(match_id or "").strip(),
+            "competition": normalize_live_competition(competition),
+            "registered_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return True
 
 
 def unregister(activity_token: str) -> bool:
-    for key in list(_live_activities):
-        _live_activities[key] = [e for e in _live_activities[key] if e["activity_token"] != activity_token]
-        if not _live_activities[key]:
-            del _live_activities[key]
-            return True
-    return False
+    removed = False
+    with _live_activities_lock:
+        for key in list(_live_activities):
+            before = len(_live_activities[key])
+            _live_activities[key] = [
+                e for e in _live_activities[key] if e["activity_token"] != activity_token
+            ]
+            if len(_live_activities[key]) < before:
+                removed = True
+            if not _live_activities[key]:
+                del _live_activities[key]
+    return removed
 
 
 def for_match(match_id: str, competition: str) -> list[dict]:
-    return list(_live_activities.get(f"{match_id}|{competition}", []))
+    """Return Live Activity registrations for a match across competition aliases."""
+    out: list[dict] = []
+    seen_tokens: set[str] = set()
+    with _live_activities_lock:
+        for key in _match_lookup_keys(match_id, competition):
+            for entry in _live_activities.get(key, []):
+                token = entry.get("activity_token")
+                if not token or token in seen_tokens:
+                    continue
+                seen_tokens.add(token)
+                out.append(dict(entry))
+    return out
 
 
 def unregister_by_match(match_id: str, competition: str) -> bool:
-    return _live_activities.pop(f"{match_id}|{competition}", None) is not None
+    removed = False
+    with _live_activities_lock:
+        for key in _match_lookup_keys(match_id, competition):
+            if _live_activities.pop(key, None) is not None:
+                removed = True
+    return removed
 
 
 def all_activities() -> list[dict]:
-    return [
-        {**entry, "key": key}
-        for key, entries in _live_activities.items()
-        for entry in entries
-    ]
+    with _live_activities_lock:
+        return [
+            {**entry, "key": key}
+            for key, entries in _live_activities.items()
+            for entry in entries
+        ]
 
 
 # ── APNs JWT generation (ES256 with .p8 key) ─────────────────────
@@ -264,15 +334,31 @@ def _drain_queue() -> None:
             pass
 
 
-def send_live_activity_update(match_id: str, competition: str, content_state: dict) -> int:
-    """Queue a Live Activity content-state update for every registration of a match."""
+def send_live_activity_update(
+    match_id: str,
+    competition: str,
+    content_state: dict,
+    event: str = "update",
+) -> int:
+    """Queue a Live Activity content-state update for every registration of a match.
+
+    Always includes scores from ``content_state`` so goal pushes refresh the
+    Live Activity scoreboard (ActivityKit ``content-state``).
+    """
     activities = for_match(match_id, competition)
+    if not activities:
+        return 0
+    state = dict(content_state or {})
+    state.setdefault("match_id", match_id)
+    state.setdefault("competition", normalize_live_competition(competition))
     for entry in activities:
         _apns_notification_queue.append({
             "type": "liveactivity",
             "token": entry["activity_token"],
-            "content_state": content_state,
-            "event": "update",
+            "content_state": state,
+            "event": event or "update",
+            "match_id": match_id,
+            "competition": normalize_live_competition(competition),
         })
     return len(activities)
 
@@ -280,12 +366,21 @@ def send_live_activity_update(match_id: str, competition: str, content_state: di
 def send_live_activity_end(match_id: str, competition: str, content_state: dict | None = None) -> int:
     """Queue an 'end' Live Activity push (dismisses the card) for a match."""
     activities = for_match(match_id, competition)
+    if not activities:
+        unregister_by_match(match_id, competition)
+        return 0
+    state = dict(content_state or {})
+    state.setdefault("match_id", match_id)
+    state.setdefault("competition", normalize_live_competition(competition))
+    state.setdefault("status", "finished")
     for entry in activities:
         _apns_notification_queue.append({
             "type": "liveactivity",
             "token": entry["activity_token"],
-            "content_state": content_state or {},
+            "content_state": state,
             "event": "end",
+            "match_id": match_id,
+            "competition": normalize_live_competition(competition),
         })
     unregister_by_match(match_id, competition)
     return len(activities)
