@@ -8,7 +8,7 @@
 3. **`files/Update_Live_Prediction_Results.py`** — cups removed (`cup_df = None`); `Track_Cup_Results.py` is sole cup owner (fixes double-settle, lost `completed_cup_predictions.csv` archiving, duplicate ESPN scraping).
 
 ### API speed
-4. **`football_data_api.py`** — rate-limit pause moved inside `fetch_json` (`wait_between_requests` + `_last_request_ts`): sleeps only before LIVE HTTP requests; cache hits return instantly. Old behavior slept 120s before every competition even on cache hits (~45 min/run). Verified by test: hit 0.01s, spaced misses enforced. Old `wait_between_competition_requests` removed; 4 call sites updated (Predict_Upcoming_Matchweek :844/:1030/:1097 regions, Predict_Upcoming_National_Team_Games :212).
+4. **`football_data_api.py`** — rate limiter REWRITTEN again (2026-09-12): moved from fixed 120s spacing to a **rolling 60s per-minute budget** (`_request_timestamps` deque; default 60 req/min via `FOOTBALL_DATA_API_MAX_REQUESTS_PER_MINUTE`, safe up to 100). Cache hits return instantly; live calls only wait when the window is actually full. Verified: burst of 3 instant, 4th in-window waits ~60s, window prune frees slots. `FOOTBALL_DATA_API_DELAY_SECONDS` now back-compat min-gap (default 0); 429 retries wait for a free slot instead of sleeping blindly. Old `wait_between_competition_requests` removed earlier; 4 call sites updated (Predict_Upcoming_Matchweek :844/:1030/:1097 regions, Predict_Upcoming_National_Team_Games :212).
 5. **`espn_api_cache.py` (NEW)** — per-league ESPN disk cache: `Data/ApiCache/espn/<espn_id>/<yyyymmdd>.json`, atomic writes, TTL 2h today/past + 24h future, `max_age_seconds` override param, `clear_cache()`. Wired into:
    - `files/Predict_Upcoming_Cups` 366-day crawl (was 366 uncached calls per cup)
    - `files/Update_Club_Friendlies.py` 365-day crawl + removed dead `fetch_json`/ESPN constant/unused imports
@@ -19,9 +19,10 @@
 
 ## Diagnosis: why frontend shows "no live events"
 - Poller only polls competitions found with fixtures dated TODAY-ET by `_get_todays_competitions()` (sources: 6 upcoming CSVs + WC JSON + cup bracket JSON).
-- Current disk state: global `upcoming_matchweek_predictions.csv` MISSING, `upcoming_club_friendlies.csv` MISSING, MLS/Extra stale Jul 12, cups Jun 10, national Jun 8 -> zero leagues detected -> empty `_live_scores` -> `/api/live-scores` returns "No live games" and rows get `live_updates:false`.
+- STATUS 2026-09-12 22:15 ET: all 7 detection CSVs REGENERATED (global upcoming, MLS, extra, national, cup, friendlies) — mtimes 9/12 ~10 PM local (02:09Z). None is "missing" anymore. However `today_count=0` in ALL of them because the fixture windows start 9/13 (MLS+extra recommence Sun) — legitimately no games TODAY via CSV path; poller falls back to live ESPN discovery for in-progress games.
+- Root cause of the earlier "missing/stale" message was MISSING/stale source CSVs (pipeline steps hadn't produced them), NOT the football-data.org rate limit. Rate limiting only paces HTTP requests; it cannot mark data stale. A too-strict fixed 120s pause could only delay a run, never corrupt output.
 - Tiers are CORRECT (`config.py`): PL/La Liga/Serie A/Bundesliga/Ligue 1/Championship/Liga Portugal/Eredivisie/MLS = full; second divisions reduced; ~22 small leagues result-only; UEFA comps deferred until 2026-09-01. Not a tier problem — a detection-data problem.
-- Fix path: re-run upstream generators (global upcoming matchweek, MLS/extra upcoming, friendlies sync) so fresh CSVs exist; verify via `/api/debug/live-score-sources`. My publish_to_output fix refreshes Output trees but cannot recreate missing upstream CSVs.
+- Fix path: re-run upstream generators (global upcoming matchweek, MLS/extra upcoming, friendlies sync) so fresh CSVs exist; verify via `/api/debug/live-score-sources`. My publish_to_output fix refreshes Output trees but cannot recreate missing upstream CSVs. NOW DONE (files exist); confirm detection via the debug endpoint next.
 
 ## Pending user decisions (reported, not changed)
 - past_games.json parallel write race (3 sub-pipelines + Website archive; `.past_games_counter` missing so pruning never fires)
