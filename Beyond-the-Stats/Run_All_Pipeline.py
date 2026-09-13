@@ -207,45 +207,19 @@ def _projected_tables_are_mostly_zeroed(output_csv_path: str, *, min_fraction: f
 
 
 def _should_run_league_tables(args, output_csv_path: str, processed_dirs: list[str], extra_inputs: list[str] | None = None) -> bool:
-    """Skip league table projection on light days when no processed data changed.
+    """Projected league tables always run on every scheduled pipeline run.
 
-    On Tue/Fri retrain days (``skip_model_train == False``) the tables always
-    run.  On light days the output file's mtime is compared against every
-    processed CSV — if it is newer than all of them, no data changed since the
-    last projection, so the step is skipped.
+    The season projections are meant to be redone every day regardless of
+    whether it is a full model-retrain day or a light refresh.  The mtime-based
+    light-day skip was removed because it made the projected tables sticky:
+    once ``projected_league_tables.csv`` became the newest file it stayed
+    newest, so the table projection was skipped day after day and the season
+    tables never updated on the backend.
 
-    Always force a rebuild when the projected CSV is missing or mostly
-    ``sim_runs=0`` placeholders, even on light days.
-
-    ``extra_inputs`` are additional files that, if newer than the output, force a
-    re-run (e.g. the roster/PATH B files that change projected tables even when
-    raw match data is unchanged).
+    The legacy parameters (``processed_dirs`` / ``extra_inputs``) are kept for
+    call-site compatibility; they no longer influence the decision.
     """
-    if not args.skip_model_train:
-        return True
-    if not output_csv_path or not os.path.exists(output_csv_path):
-        return True
-    if _projected_tables_are_mostly_zeroed(output_csv_path):
-        print(
-            f"[pipeline] forcing league table projection — "
-            f"output mostly zeroed/missing usable sims: {output_csv_path}",
-            flush=True,
-        )
-        return True
-    out_mtime = os.path.getmtime(output_csv_path)
-    for input_file in (extra_inputs or []):
-        if input_file and os.path.exists(input_file) and os.path.getmtime(input_file) > out_mtime + 1:
-            return True
-    for proc_dir in processed_dirs:
-        if not proc_dir or not os.path.isdir(proc_dir):
-            continue
-        for root, _, files in os.walk(proc_dir):
-            for fname in files:
-                if not fname.endswith(".csv"):
-                    continue
-                if os.path.getmtime(os.path.join(root, fname)) > out_mtime + 1:
-                    return True
-    return False
+    return True
 
 
 # Projected league tables can be CPU/network heavy (Monte Carlo + ESPN crawls).

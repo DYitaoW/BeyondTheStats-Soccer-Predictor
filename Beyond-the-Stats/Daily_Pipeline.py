@@ -455,7 +455,7 @@ def _condense_world_cup(path):
     if not path.exists():
         return {}
     try:
-        with path.open("r", encoding="utf-8") as f:
+        with path.open("r", encoding="utf-8-sig") as f:
             proj = json.load(f)
     except Exception as exc:
         print(f"[WARN] Failed to read {path}: {exc}")
@@ -478,7 +478,7 @@ def _condense_cup_brackets(path):
     if not path.exists():
         return {}
     try:
-        with path.open("r", encoding="utf-8") as f:
+        with path.open("r", encoding="utf-8-sig") as f:
             return json.load(f)
     except Exception as exc:
         print(f"[WARN] Failed to read {path}: {exc}")
@@ -961,7 +961,7 @@ def _publish_world_cup(output_dir):
     out_dir = output_dir / "National"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "world_cup.json"
-    with src.open("r", encoding="utf-8") as f:
+    with src.open("r", encoding="utf-8-sig") as f:
         data = json.load(f)
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2, default=str)
@@ -1147,7 +1147,7 @@ def _load_comp_player_stats(comp_name):
     path = _comp_stats_path(comp_name)
     if path.exists():
         try:
-            with path.open("r", encoding="utf-8") as fh:
+            with path.open("r", encoding="utf-8-sig") as fh:
                 return json.load(fh)
         except Exception:
             pass

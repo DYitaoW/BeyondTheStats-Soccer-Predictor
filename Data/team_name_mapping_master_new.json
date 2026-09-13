@@ -1,0 +1,98 @@
+{
+  "Netherlands/Eredivisie": {},
+  "Scotland/Premiership": {},
+  "Turkey/Super Lig": {
+    "Amed SFK": "",
+    "Çorum FK": ""
+  },
+  "Belgium/First Division A": {},
+  "Argentina/Primera Division": {},
+  "Japan/J1 League": {},
+  "Brazil/Brasileirão": {},
+  "England/Premier League": {
+    "Coventry City FC": "Coventry",
+    "Lincoln City FC": "Lincoln",
+    "Burnley FC": "Burnley",
+    "Cardiff City FC": "Cardiff",
+    "Ipswich Town FC": "Ipswich",
+    "Hull City AFC": "Hull",
+    "Bolton Wanderers FC": "Bolton"
+  },
+  "Spain/La Liga": {
+    "RC Deportivo La Coruña": "La Coruna",
+    "Málaga CF": "Malaga",
+    "Real Sociedad de Fútbol": "Sociedad B",
+    "Club Atlético de Madrid": "",
+    "Real Racing Club de Santander": "Santander",
+    "Betis CF": "Betis"
+  },
+  "Italy/Serie A": {
+    "AC Monza": "Monza",
+    "Venezia FC": "Venezia",
+    "Frosinone Calcio": "Frosinone"
+  },
+  "England/Championship": {
+    "Wolverhampton Wanderers FC": "Wolves",
+    "Lincoln City FC": "Lincoln",
+    "Burnley FC": "Burnley",
+    "Cardiff City FC": "Cardiff",
+    "West Ham United FC": "West Ham",
+    "Bolton Wanderers FC": "Bolton"
+  },
+  "Portugal/Liga Portugal": {
+    "FC Arouca": "Arouca",
+    "CD Santa Clara": "Santa Clara",
+    "Sport Lisboa e Benfica": "Benfica",
+    "Moreirense FC": "Moreirense",
+    "CS Marítimo": "Maritimo",
+    "CF Estrela da Amadora": "Estrela",
+    "FC Alverca": "Alverca",
+    "Académico de Viseu FC": "Academico Viseu"
+  },
+  "Germany/Bundesliga": {
+    "SV 07 Elversberg": "Elversberg",
+    "FC Schalke 04": "Schalke 04"
+  },
+  "France/Ligue 1": {
+    "Le Mans FC": "Le Mans",
+    "ES Troyes AC": "Troyes"
+  },
+  "United States/MLS": {},
+  "France/Ligue 2": {},
+  "Spain/La Liga 2": {},
+  "Italy/Serie B": {},
+  "Germany/Bundesliga 2": {},
+  "Germany/DFB-Pokal": {},
+  "Greece/Super League": {},
+  "Norway/Eliteserien": {},
+  "Poland/Ekstraklasa": {},
+  "Romania/Liga I": {},
+  "Sweden/Allsvenskan": {},
+  "Austria/Bundesliga": {},
+  "Mexico/Liga MX": {},
+  "Switzerland/Super League": {},
+  "Ukraine/Premier League": {},
+  "Croatia/HNL": {},
+  "Hungary/NB I": {},
+  "Czech Republic/First League": {},
+  "Serbia/SuperLiga": {},
+  "Cyprus/First Division": {},
+  "Slovakia/Super Liga": {},
+  "Slovenia/PrvaLiga": {},
+  "Bulgaria/First League": {},
+  "England/FA Cup": {},
+  "England/League Cup": {},
+  "Spain/Copa del Rey": {},
+  "France/Coupe de France": {},
+  "Italy/Coppa Italia": {},
+  "United States/US Open Cup": {},
+  "North America/Leagues Cup": {},
+  "Europe/Champions League": {},
+  "Europe/Europa League": {},
+  "Europe/Conference League": {},
+  "International/World Cup": {},
+  "International/Friendly": {},
+  "Club Friendlies": {},
+  "Denmark/Danish Superliga": {},
+  "Israel/Premier League": {}
+}

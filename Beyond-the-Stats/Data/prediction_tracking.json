@@ -1,11 +1,2010 @@
 {
   "all_time": {
     "total": {
-      "correct": 0,
-      "incorrect": 0
+      "correct": 8,
+      "incorrect": 60
     },
-    "by_league": {}
+    "by_league": {
+      "Netherlands/Eredivisie": {
+        "correct": 0,
+        "incorrect": 16
+      },
+      "England/Championship": {
+        "correct": 0,
+        "incorrect": 4
+      },
+      "England/Premier League": {
+        "correct": 4,
+        "incorrect": 4
+      },
+      "France/Ligue 1": {
+        "correct": 0,
+        "incorrect": 8
+      },
+      "Italy/Serie A": {
+        "correct": 4,
+        "incorrect": 4
+      },
+      "Belgium/First Division A": {
+        "correct": 0,
+        "incorrect": 8
+      },
+      "Turkey/Super Lig": {
+        "correct": 0,
+        "incorrect": 16
+      }
+    }
   },
-  "weekly": {},
-  "per_team": {}
+  "weekly": {
+    "2026-09-10T22:18:47.124834": {
+      "week_start": "2026-09-10T22:18:47.124834",
+      "by_league": {
+        "Netherlands/Eredivisie": {
+          "correct": 0,
+          "incorrect": 4
+        },
+        "England/Championship": {
+          "correct": 0,
+          "incorrect": 1
+        },
+        "England/Premier League": {
+          "correct": 1,
+          "incorrect": 1
+        },
+        "France/Ligue 1": {
+          "correct": 0,
+          "incorrect": 2
+        },
+        "Italy/Serie A": {
+          "correct": 1,
+          "incorrect": 1
+        },
+        "Belgium/First Division A": {
+          "correct": 0,
+          "incorrect": 2
+        },
+        "Turkey/Super Lig": {
+          "correct": 0,
+          "incorrect": 4
+        }
+      }
+    },
+    "2026-09-10T22:19:00.479281": {
+      "week_start": "2026-09-10T22:19:00.479281",
+      "by_league": {
+        "Netherlands/Eredivisie": {
+          "correct": 0,
+          "incorrect": 4
+        },
+        "England/Championship": {
+          "correct": 0,
+          "incorrect": 1
+        },
+        "England/Premier League": {
+          "correct": 1,
+          "incorrect": 1
+        },
+        "France/Ligue 1": {
+          "correct": 0,
+          "incorrect": 2
+        },
+        "Italy/Serie A": {
+          "correct": 1,
+          "incorrect": 1
+        },
+        "Belgium/First Division A": {
+          "correct": 0,
+          "incorrect": 2
+        },
+        "Turkey/Super Lig": {
+          "correct": 0,
+          "incorrect": 4
+        }
+      }
+    },
+    "2026-09-10T22:20:39.986184": {
+      "week_start": "2026-09-10T22:20:39.986184",
+      "by_league": {
+        "Netherlands/Eredivisie": {
+          "correct": 0,
+          "incorrect": 4
+        },
+        "England/Championship": {
+          "correct": 0,
+          "incorrect": 1
+        },
+        "England/Premier League": {
+          "correct": 1,
+          "incorrect": 1
+        },
+        "France/Ligue 1": {
+          "correct": 0,
+          "incorrect": 2
+        },
+        "Italy/Serie A": {
+          "correct": 1,
+          "incorrect": 1
+        },
+        "Belgium/First Division A": {
+          "correct": 0,
+          "incorrect": 2
+        },
+        "Turkey/Super Lig": {
+          "correct": 0,
+          "incorrect": 4
+        }
+      }
+    },
+    "2026-09-10T22:20:51.994459": {
+      "week_start": "2026-09-10T22:20:51.994459",
+      "by_league": {
+        "Netherlands/Eredivisie": {
+          "correct": 0,
+          "incorrect": 4
+        },
+        "England/Championship": {
+          "correct": 0,
+          "incorrect": 1
+        },
+        "England/Premier League": {
+          "correct": 1,
+          "incorrect": 1
+        },
+        "France/Ligue 1": {
+          "correct": 0,
+          "incorrect": 2
+        },
+        "Italy/Serie A": {
+          "correct": 1,
+          "incorrect": 1
+        },
+        "Belgium/First Division A": {
+          "correct": 0,
+          "incorrect": 2
+        },
+        "Turkey/Super Lig": {
+          "correct": 0,
+          "incorrect": 4
+        }
+      }
+    }
+  },
+  "per_team": {
+    "FC Twente": {
+      "predictions": [
+        {
+          "match_id": "401875610",
+          "opponent": "ADO Den Haag",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:30:00-0400"
+        },
+        {
+          "match_id": "401875610",
+          "opponent": "ADO Den Haag",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:30:00-0400"
+        },
+        {
+          "match_id": "401875610",
+          "opponent": "ADO Den Haag",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:30:00-0400"
+        },
+        {
+          "match_id": "401875610",
+          "opponent": "ADO Den Haag",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:30:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "ADO Den Haag": {
+      "predictions": [
+        {
+          "match_id": "401875610",
+          "opponent": "FC Twente",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:30:00-0400"
+        },
+        {
+          "match_id": "401875610",
+          "opponent": "FC Twente",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:30:00-0400"
+        },
+        {
+          "match_id": "401875610",
+          "opponent": "FC Twente",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:30:00-0400"
+        },
+        {
+          "match_id": "401875610",
+          "opponent": "FC Twente",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:30:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Go Ahead Eagles": {
+      "predictions": [
+        {
+          "match_id": "401875609",
+          "opponent": "FC Groningen",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T12:45:00-0400"
+        },
+        {
+          "match_id": "401875609",
+          "opponent": "FC Groningen",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T12:45:00-0400"
+        },
+        {
+          "match_id": "401875609",
+          "opponent": "FC Groningen",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T12:45:00-0400"
+        },
+        {
+          "match_id": "401875609",
+          "opponent": "FC Groningen",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T12:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "FC Groningen": {
+      "predictions": [
+        {
+          "match_id": "401875609",
+          "opponent": "Go Ahead Eagles",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T12:45:00-0400"
+        },
+        {
+          "match_id": "401875609",
+          "opponent": "Go Ahead Eagles",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T12:45:00-0400"
+        },
+        {
+          "match_id": "401875609",
+          "opponent": "Go Ahead Eagles",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T12:45:00-0400"
+        },
+        {
+          "match_id": "401875609",
+          "opponent": "Go Ahead Eagles",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T12:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Fortuna Sittard": {
+      "predictions": [
+        {
+          "match_id": "401875608",
+          "opponent": "Ajax Amsterdam",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:00:00-0400"
+        },
+        {
+          "match_id": "401875608",
+          "opponent": "Ajax Amsterdam",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:00:00-0400"
+        },
+        {
+          "match_id": "401875608",
+          "opponent": "Ajax Amsterdam",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:00:00-0400"
+        },
+        {
+          "match_id": "401875608",
+          "opponent": "Ajax Amsterdam",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Ajax Amsterdam": {
+      "predictions": [
+        {
+          "match_id": "401875608",
+          "opponent": "Fortuna Sittard",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:00:00-0400"
+        },
+        {
+          "match_id": "401875608",
+          "opponent": "Fortuna Sittard",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:00:00-0400"
+        },
+        {
+          "match_id": "401875608",
+          "opponent": "Fortuna Sittard",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:00:00-0400"
+        },
+        {
+          "match_id": "401875608",
+          "opponent": "Fortuna Sittard",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "SC Cambuur": {
+      "predictions": [
+        {
+          "match_id": "401875604",
+          "opponent": "NEC Nijmegen",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401875604",
+          "opponent": "NEC Nijmegen",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401875604",
+          "opponent": "NEC Nijmegen",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401875604",
+          "opponent": "NEC Nijmegen",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "NEC Nijmegen": {
+      "predictions": [
+        {
+          "match_id": "401875604",
+          "opponent": "SC Cambuur",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401875604",
+          "opponent": "SC Cambuur",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401875604",
+          "opponent": "SC Cambuur",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401875604",
+          "opponent": "SC Cambuur",
+          "competition": "Netherlands/Eredivisie",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Southampton": {
+      "predictions": [
+        {
+          "match_id": "401880261",
+          "opponent": "Bristol City",
+          "competition": "England/Championship",
+          "prediction": "H",
+          "prob_home": "0.550199",
+          "prob_draw": "0.192364",
+          "prob_away": "0.257437",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401880261",
+          "opponent": "Bristol City",
+          "competition": "England/Championship",
+          "prediction": "H",
+          "prob_home": "0.550199",
+          "prob_draw": "0.192364",
+          "prob_away": "0.257437",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401880261",
+          "opponent": "Bristol City",
+          "competition": "England/Championship",
+          "prediction": "H",
+          "prob_home": "0.550199",
+          "prob_draw": "0.192364",
+          "prob_away": "0.257437",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401880261",
+          "opponent": "Bristol City",
+          "competition": "England/Championship",
+          "prediction": "H",
+          "prob_home": "0.550199",
+          "prob_draw": "0.192364",
+          "prob_away": "0.257437",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Bristol City": {
+      "predictions": [
+        {
+          "match_id": "401880261",
+          "opponent": "Southampton",
+          "competition": "England/Championship",
+          "prediction": "H",
+          "prob_home": "0.550199",
+          "prob_draw": "0.192364",
+          "prob_away": "0.257437",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401880261",
+          "opponent": "Southampton",
+          "competition": "England/Championship",
+          "prediction": "H",
+          "prob_home": "0.550199",
+          "prob_draw": "0.192364",
+          "prob_away": "0.257437",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401880261",
+          "opponent": "Southampton",
+          "competition": "England/Championship",
+          "prediction": "H",
+          "prob_home": "0.550199",
+          "prob_draw": "0.192364",
+          "prob_away": "0.257437",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401880261",
+          "opponent": "Southampton",
+          "competition": "England/Championship",
+          "prediction": "H",
+          "prob_home": "0.550199",
+          "prob_draw": "0.192364",
+          "prob_away": "0.257437",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Liverpool": {
+      "predictions": [
+        {
+          "match_id": "401879279",
+          "opponent": "Fulham",
+          "competition": "England/Premier League",
+          "prediction": "A",
+          "prob_home": "0.184432",
+          "prob_draw": "0.164517",
+          "prob_away": "0.651051",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401879279",
+          "opponent": "Fulham",
+          "competition": "England/Premier League",
+          "prediction": "A",
+          "prob_home": "0.184432",
+          "prob_draw": "0.164517",
+          "prob_away": "0.651051",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401879279",
+          "opponent": "Fulham",
+          "competition": "England/Premier League",
+          "prediction": "A",
+          "prob_home": "0.184432",
+          "prob_draw": "0.164517",
+          "prob_away": "0.651051",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401879279",
+          "opponent": "Fulham",
+          "competition": "England/Premier League",
+          "prediction": "A",
+          "prob_home": "0.184432",
+          "prob_draw": "0.164517",
+          "prob_away": "0.651051",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Fulham": {
+      "predictions": [
+        {
+          "match_id": "401879279",
+          "opponent": "Liverpool",
+          "competition": "England/Premier League",
+          "prediction": "A",
+          "prob_home": "0.184432",
+          "prob_draw": "0.164517",
+          "prob_away": "0.651051",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401879279",
+          "opponent": "Liverpool",
+          "competition": "England/Premier League",
+          "prediction": "A",
+          "prob_home": "0.184432",
+          "prob_draw": "0.164517",
+          "prob_away": "0.651051",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401879279",
+          "opponent": "Liverpool",
+          "competition": "England/Premier League",
+          "prediction": "A",
+          "prob_home": "0.184432",
+          "prob_draw": "0.164517",
+          "prob_away": "0.651051",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401879279",
+          "opponent": "Liverpool",
+          "competition": "England/Premier League",
+          "prediction": "A",
+          "prob_home": "0.184432",
+          "prob_draw": "0.164517",
+          "prob_away": "0.651051",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Sunderland": {
+      "predictions": [
+        {
+          "match_id": "401878779",
+          "opponent": "Arsenal",
+          "competition": "England/Premier League",
+          "prediction": "H",
+          "prob_home": "0.809951",
+          "prob_draw": "0.127195",
+          "prob_away": "0.062853",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401878779",
+          "opponent": "Arsenal",
+          "competition": "England/Premier League",
+          "prediction": "H",
+          "prob_home": "0.809951",
+          "prob_draw": "0.127195",
+          "prob_away": "0.062853",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401878779",
+          "opponent": "Arsenal",
+          "competition": "England/Premier League",
+          "prediction": "H",
+          "prob_home": "0.809951",
+          "prob_draw": "0.127195",
+          "prob_away": "0.062853",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401878779",
+          "opponent": "Arsenal",
+          "competition": "England/Premier League",
+          "prediction": "H",
+          "prob_home": "0.809951",
+          "prob_draw": "0.127195",
+          "prob_away": "0.062853",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 1.0
+    },
+    "Arsenal": {
+      "predictions": [
+        {
+          "match_id": "401878779",
+          "opponent": "Sunderland",
+          "competition": "England/Premier League",
+          "prediction": "H",
+          "prob_home": "0.809951",
+          "prob_draw": "0.127195",
+          "prob_away": "0.062853",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401878779",
+          "opponent": "Sunderland",
+          "competition": "England/Premier League",
+          "prediction": "H",
+          "prob_home": "0.809951",
+          "prob_draw": "0.127195",
+          "prob_away": "0.062853",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401878779",
+          "opponent": "Sunderland",
+          "competition": "England/Premier League",
+          "prediction": "H",
+          "prob_home": "0.809951",
+          "prob_draw": "0.127195",
+          "prob_away": "0.062853",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        },
+        {
+          "match_id": "401878779",
+          "opponent": "Sunderland",
+          "competition": "England/Premier League",
+          "prediction": "H",
+          "prob_home": "0.809951",
+          "prob_draw": "0.127195",
+          "prob_away": "0.062853",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T15:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 1.0
+    },
+    "Lorient": {
+      "predictions": [
+        {
+          "match_id": "401876461",
+          "opponent": "Toulouse",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.325007",
+          "prob_draw": "0.290017",
+          "prob_away": "0.384976",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876461",
+          "opponent": "Toulouse",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.325007",
+          "prob_draw": "0.290017",
+          "prob_away": "0.384976",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876461",
+          "opponent": "Toulouse",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.325007",
+          "prob_draw": "0.290017",
+          "prob_away": "0.384976",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876461",
+          "opponent": "Toulouse",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.325007",
+          "prob_draw": "0.290017",
+          "prob_away": "0.384976",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Toulouse": {
+      "predictions": [
+        {
+          "match_id": "401876461",
+          "opponent": "Lorient",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.325007",
+          "prob_draw": "0.290017",
+          "prob_away": "0.384976",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876461",
+          "opponent": "Lorient",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.325007",
+          "prob_draw": "0.290017",
+          "prob_away": "0.384976",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876461",
+          "opponent": "Lorient",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.325007",
+          "prob_draw": "0.290017",
+          "prob_away": "0.384976",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876461",
+          "opponent": "Lorient",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.325007",
+          "prob_draw": "0.290017",
+          "prob_away": "0.384976",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Paris FC": {
+      "predictions": [
+        {
+          "match_id": "401876460",
+          "opponent": "Lyon",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.242742",
+          "prob_draw": "0.317818",
+          "prob_away": "0.43944",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876460",
+          "opponent": "Lyon",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.242742",
+          "prob_draw": "0.317818",
+          "prob_away": "0.43944",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876460",
+          "opponent": "Lyon",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.242742",
+          "prob_draw": "0.317818",
+          "prob_away": "0.43944",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876460",
+          "opponent": "Lyon",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.242742",
+          "prob_draw": "0.317818",
+          "prob_away": "0.43944",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Lyon": {
+      "predictions": [
+        {
+          "match_id": "401876460",
+          "opponent": "Paris FC",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.242742",
+          "prob_draw": "0.317818",
+          "prob_away": "0.43944",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876460",
+          "opponent": "Paris FC",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.242742",
+          "prob_draw": "0.317818",
+          "prob_away": "0.43944",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876460",
+          "opponent": "Paris FC",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.242742",
+          "prob_draw": "0.317818",
+          "prob_away": "0.43944",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401876460",
+          "opponent": "Paris FC",
+          "competition": "France/Ligue 1",
+          "prediction": "A",
+          "prob_home": "0.242742",
+          "prob_draw": "0.317818",
+          "prob_away": "0.43944",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Genoa": {
+      "predictions": [
+        {
+          "match_id": "401874991",
+          "opponent": "Frosinone",
+          "competition": "Italy/Serie A",
+          "prediction": "A",
+          "prob_home": "0.304939",
+          "prob_draw": "0.28684",
+          "prob_away": "0.408221",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T09:00:00-0400"
+        },
+        {
+          "match_id": "401874991",
+          "opponent": "Frosinone",
+          "competition": "Italy/Serie A",
+          "prediction": "A",
+          "prob_home": "0.304939",
+          "prob_draw": "0.28684",
+          "prob_away": "0.408221",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T09:00:00-0400"
+        },
+        {
+          "match_id": "401874991",
+          "opponent": "Frosinone",
+          "competition": "Italy/Serie A",
+          "prediction": "A",
+          "prob_home": "0.304939",
+          "prob_draw": "0.28684",
+          "prob_away": "0.408221",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T09:00:00-0400"
+        },
+        {
+          "match_id": "401874991",
+          "opponent": "Frosinone",
+          "competition": "Italy/Serie A",
+          "prediction": "A",
+          "prob_home": "0.304939",
+          "prob_draw": "0.28684",
+          "prob_away": "0.408221",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T09:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Frosinone": {
+      "predictions": [
+        {
+          "match_id": "401874991",
+          "opponent": "Genoa",
+          "competition": "Italy/Serie A",
+          "prediction": "A",
+          "prob_home": "0.304939",
+          "prob_draw": "0.28684",
+          "prob_away": "0.408221",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T09:00:00-0400"
+        },
+        {
+          "match_id": "401874991",
+          "opponent": "Genoa",
+          "competition": "Italy/Serie A",
+          "prediction": "A",
+          "prob_home": "0.304939",
+          "prob_draw": "0.28684",
+          "prob_away": "0.408221",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T09:00:00-0400"
+        },
+        {
+          "match_id": "401874991",
+          "opponent": "Genoa",
+          "competition": "Italy/Serie A",
+          "prediction": "A",
+          "prob_home": "0.304939",
+          "prob_draw": "0.28684",
+          "prob_away": "0.408221",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T09:00:00-0400"
+        },
+        {
+          "match_id": "401874991",
+          "opponent": "Genoa",
+          "competition": "Italy/Serie A",
+          "prediction": "A",
+          "prob_home": "0.304939",
+          "prob_draw": "0.28684",
+          "prob_away": "0.408221",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T09:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Atalanta": {
+      "predictions": [
+        {
+          "match_id": "401874979",
+          "opponent": "Cagliari",
+          "competition": "Italy/Serie A",
+          "prediction": "H",
+          "prob_home": "0.522709",
+          "prob_draw": "0.231334",
+          "prob_away": "0.245957",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401874979",
+          "opponent": "Cagliari",
+          "competition": "Italy/Serie A",
+          "prediction": "H",
+          "prob_home": "0.522709",
+          "prob_draw": "0.231334",
+          "prob_away": "0.245957",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401874979",
+          "opponent": "Cagliari",
+          "competition": "Italy/Serie A",
+          "prediction": "H",
+          "prob_home": "0.522709",
+          "prob_draw": "0.231334",
+          "prob_away": "0.245957",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401874979",
+          "opponent": "Cagliari",
+          "competition": "Italy/Serie A",
+          "prediction": "H",
+          "prob_home": "0.522709",
+          "prob_draw": "0.231334",
+          "prob_away": "0.245957",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 1.0
+    },
+    "Cagliari": {
+      "predictions": [
+        {
+          "match_id": "401874979",
+          "opponent": "Atalanta",
+          "competition": "Italy/Serie A",
+          "prediction": "H",
+          "prob_home": "0.522709",
+          "prob_draw": "0.231334",
+          "prob_away": "0.245957",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401874979",
+          "opponent": "Atalanta",
+          "competition": "Italy/Serie A",
+          "prediction": "H",
+          "prob_home": "0.522709",
+          "prob_draw": "0.231334",
+          "prob_away": "0.245957",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401874979",
+          "opponent": "Atalanta",
+          "competition": "Italy/Serie A",
+          "prediction": "H",
+          "prob_home": "0.522709",
+          "prob_draw": "0.231334",
+          "prob_away": "0.245957",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401874979",
+          "opponent": "Atalanta",
+          "competition": "Italy/Serie A",
+          "prediction": "H",
+          "prob_home": "0.522709",
+          "prob_draw": "0.231334",
+          "prob_away": "0.245957",
+          "actual_result": "H",
+          "correct": true,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 1.0
+    },
+    "OH Leuven": {
+      "predictions": [
+        {
+          "match_id": "401878993",
+          "opponent": "Cercle Brugge KSV",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878993",
+          "opponent": "Cercle Brugge KSV",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878993",
+          "opponent": "Cercle Brugge KSV",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878993",
+          "opponent": "Cercle Brugge KSV",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Cercle Brugge KSV": {
+      "predictions": [
+        {
+          "match_id": "401878993",
+          "opponent": "OH Leuven",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878993",
+          "opponent": "OH Leuven",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878993",
+          "opponent": "OH Leuven",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878993",
+          "opponent": "OH Leuven",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Union St.-Gilloise": {
+      "predictions": [
+        {
+          "match_id": "401878992",
+          "opponent": "Lommel SK",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878992",
+          "opponent": "Lommel SK",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878992",
+          "opponent": "Lommel SK",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878992",
+          "opponent": "Lommel SK",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Lommel SK": {
+      "predictions": [
+        {
+          "match_id": "401878992",
+          "opponent": "Union St.-Gilloise",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878992",
+          "opponent": "Union St.-Gilloise",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878992",
+          "opponent": "Union St.-Gilloise",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        },
+        {
+          "match_id": "401878992",
+          "opponent": "Union St.-Gilloise",
+          "competition": "Belgium/First Division A",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T14:45:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Eyupspor": {
+      "predictions": [
+        {
+          "match_id": "401888297",
+          "opponent": "Caykur Rizespor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888297",
+          "opponent": "Caykur Rizespor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888297",
+          "opponent": "Caykur Rizespor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888297",
+          "opponent": "Caykur Rizespor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Caykur Rizespor": {
+      "predictions": [
+        {
+          "match_id": "401888297",
+          "opponent": "Eyupspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888297",
+          "opponent": "Eyupspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888297",
+          "opponent": "Eyupspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888297",
+          "opponent": "Eyupspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Samsunspor": {
+      "predictions": [
+        {
+          "match_id": "401888383",
+          "opponent": "\u00c7orum FK",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888383",
+          "opponent": "\u00c7orum FK",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888383",
+          "opponent": "\u00c7orum FK",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888383",
+          "opponent": "\u00c7orum FK",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "\u00c7orum FK": {
+      "predictions": [
+        {
+          "match_id": "401888383",
+          "opponent": "Samsunspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888383",
+          "opponent": "Samsunspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888383",
+          "opponent": "Samsunspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        },
+        {
+          "match_id": "401888383",
+          "opponent": "Samsunspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "H",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T10:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Alanyaspor": {
+      "predictions": [
+        {
+          "match_id": "401888296",
+          "opponent": "Goztepe",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888296",
+          "opponent": "Goztepe",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888296",
+          "opponent": "Goztepe",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888296",
+          "opponent": "Goztepe",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Goztepe": {
+      "predictions": [
+        {
+          "match_id": "401888296",
+          "opponent": "Alanyaspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888296",
+          "opponent": "Alanyaspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888296",
+          "opponent": "Alanyaspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888296",
+          "opponent": "Alanyaspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "D",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Konyaspor": {
+      "predictions": [
+        {
+          "match_id": "401888294",
+          "opponent": "Trabzonspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888294",
+          "opponent": "Trabzonspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888294",
+          "opponent": "Trabzonspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888294",
+          "opponent": "Trabzonspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    },
+    "Trabzonspor": {
+      "predictions": [
+        {
+          "match_id": "401888294",
+          "opponent": "Konyaspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888294",
+          "opponent": "Konyaspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888294",
+          "opponent": "Konyaspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        },
+        {
+          "match_id": "401888294",
+          "opponent": "Konyaspor",
+          "competition": "Turkey/Super Lig",
+          "prediction": "nan",
+          "prob_home": "0.0",
+          "prob_draw": "0.0",
+          "prob_away": "0.0",
+          "actual_result": "A",
+          "correct": false,
+          "kickoff_utc": "2026-09-12T13:00:00-0400"
+        }
+      ],
+      "total": 4,
+      "accuracy": 0.0
+    }
+  }
 }
