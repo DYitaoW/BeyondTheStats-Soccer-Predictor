@@ -1,0 +1,1510 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Kylian Mbappé": {
+      "team": "Real Madrid",
+      "goals": 6,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Álvaro Carreras": {
+      "team": "Real Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jude Bellingham": {
+      "team": "Real Madrid",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sergio Camello": {
+      "team": "Vallecano",
+      "goals": 6,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Pathé Ciss": {
+      "team": "Vallecano",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Facundo Buonanotte": {
+      "team": "Elche",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Iñaki Williams": {
+      "team": "Ath Bilbao",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Federico Redondo": {
+      "team": "Elche",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Abiel Osorio": {
+      "team": "Elche",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Álex Berenguer": {
+      "team": "Ath Bilbao",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Beñat Gerenabarrena": {
+      "team": "Ath Bilbao",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Rubén Sánchez": {
+      "team": "Elche",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yuri Berchiche": {
+      "team": "Ath Bilbao",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Roberto Fernández": {
+      "team": "Espanol",
+      "goals": 5,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Enrique Barja": {
+      "team": "Osasuna",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Jon Moncayola": {
+      "team": "Osasuna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Clemens Riedel": {
+      "team": "Espanol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Omar El Hilali": {
+      "team": "Espanol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Roger Hinojo": {
+      "team": "Espanol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ville Koski": {
+      "team": "Alaves",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Yassir Zabiri": {
+      "team": "Racing Santander",
+      "goals": 5,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Nahuel Tenaglia": {
+      "team": "Alaves",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Pablo Ibáñez": {
+      "team": "Alaves",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Antonio Blanco": {
+      "team": "Alaves",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Jorge Salinas": {
+      "team": "Racing Santander",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "André Almeida": {
+      "team": "Racing Santander",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Juan Iglesias": {
+      "team": "Sevilla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ryunosuke Sato": {
+      "team": "Valencia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Chidera Ejuke": {
+      "team": "Sevilla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pablo Maffeo": {
+      "team": "Valencia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Job Ochieng": {
+      "team": "Sociedad",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Yangel Herrera": {
+      "team": "Sociedad",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Thomas Lemar": {
+      "team": "Elche",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fernando Niño": {
+      "team": "Elche",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luka Sucic": {
+      "team": "Sociedad",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jon Aramburu": {
+      "team": "Sociedad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "José Antonio Morente": {
+      "team": "Elche",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Germán Valera": {
+      "team": "Elche",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jon Martín": {
+      "team": "Sociedad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Martín Satriano": {
+      "team": "Getafe",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Carl Starfelt": {
+      "team": "Celta",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Johan Mojica": {
+      "team": "Getafe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Zaid Romero": {
+      "team": "Getafe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Ramón Terrats": {
+      "team": "Getafe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marcos Alonso": {
+      "team": "Celta",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Lucas Stassin": {
+      "team": "Sevilla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marcos Fernández": {
+      "team": "Espanol",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Giorgi Kochorashvili": {
+      "team": "Sevilla",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Cala": {
+      "team": "Espanol",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Robbie Ure": {
+      "team": "Sevilla",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Miguel Sierra": {
+      "team": "Sevilla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Gabriel Moscardo": {
+      "team": "Espanol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Arouna Sangante": {
+      "team": "Sevilla",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Lucas Boyé": {
+      "team": "Alaves",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mariano Díaz": {
+      "team": "Alaves",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ante Budimir": {
+      "team": "Osasuna",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Abel Bretones": {
+      "team": "Osasuna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Abde Rebbach": {
+      "team": "Alaves",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Rockson Yeboah": {
+      "team": "Osasuna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Daniel Lorenzo": {
+      "team": "Malaga",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rafa Garrido": {
+      "team": "Malaga",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pablo Martínez": {
+      "team": "Malaga",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adrián de la Fuente": {
+      "team": "Levante",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Carlos Puga": {
+      "team": "Malaga",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Aïssa Mandi": {
+      "team": "Levante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lamine Yamal": {
+      "team": "Barcelona",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fermín López": {
+      "team": "Barcelona",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Raphinha": {
+      "team": "Barcelona",
+      "goals": 6,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Pedri": {
+      "team": "Barcelona",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Pau Cubarsí": {
+      "team": "Barcelona",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rodri": {
+      "team": "Barcelona",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Arnau Martínez": {
+      "team": "Valencia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicolas Pépé": {
+      "team": "Villarreal",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luismi Cruz": {
+      "team": "Deportivo",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Adama Traoré": {
+      "team": "Villarreal",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Zakaria Eddahchouri": {
+      "team": "Deportivo",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Pierre-Emerick Aubameyang": {
+      "team": "Deportivo",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Santi Comesaña": {
+      "team": "Villarreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tajon Buchanan": {
+      "team": "Villarreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lorenzo Amatucci": {
+      "team": "Deportivo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Yeremay Hernández": {
+      "team": "Deportivo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sergio Canales": {
+      "team": "Racing Santander",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Andrei Ratiu": {
+      "team": "Vallecano",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Pablo García": {
+      "team": "Betis",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Óscar Valentín": {
+      "team": "Vallecano",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Iñigo Vicente": {
+      "team": "Racing Santander",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Florian Lejeune": {
+      "team": "Barcelona",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fran Pérez": {
+      "team": "Vallecano",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Jorge de Frutos": {
+      "team": "Vallecano",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Nico Williams": {
+      "team": "Ath Bilbao",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Robert Navarro": {
+      "team": "Ath Bilbao",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Oihan Sancet": {
+      "team": "Ath Bilbao",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lee Kang-In": {
+      "team": "Ath Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Troy Parrott": {
+      "team": "Betis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Arda Güler": {
+      "team": "Real Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ibrahima Konaté": {
+      "team": "Real Madrid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Eduardo Camavinga": {
+      "team": "Real Madrid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Facundo Bernal": {
+      "team": "Betis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marc Roca": {
+      "team": "Betis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Natan": {
+      "team": "Betis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Vinícius Júnior": {
+      "team": "Real Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Yoel Lago": {
+      "team": "Celta",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Couhaib Driouech": {
+      "team": "Celta",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adrià Pedrosa": {
+      "team": "Vallecano",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jorge Herrando": {
+      "team": "Osasuna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Djené": {
+      "team": "Getafe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Enes Ünal": {
+      "team": "Getafe",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Orel Mangala": {
+      "team": "Getafe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Iker Muñoz": {
+      "team": "Osasuna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Raúl García": {
+      "team": "Osasuna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sergio Herrera": {
+      "team": "Osasuna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "César Tárrega": {
+      "team": "Deportivo",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Umar Sadiq": {
+      "team": "Valencia",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mouctar Diakhaby": {
+      "team": "Valencia",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Adrià Altimira": {
+      "team": "Deportivo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Alfonso Herrero": {
+      "team": "Real Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Chupete": {
+      "team": "Malaga",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ramón Enríquez": {
+      "team": "Malaga",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Álex Baena": {
+      "team": "Ath Madrid",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ademola Lookman": {
+      "team": "Ath Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marcos Llorente": {
+      "team": "Ath Madrid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Isaac Romero": {
+      "team": "Sevilla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Gabriel Suazo": {
+      "team": "Sevilla",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Marc Pubill": {
+      "team": "Ath Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ander Barrenetxea": {
+      "team": "Sociedad",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Orri Óskarsson": {
+      "team": "Sociedad",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Beñat Turrientes": {
+      "team": "Sociedad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Urko Gonzalez": {
+      "team": "Espanol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Rafael Bauza": {
+      "team": "Espanol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Igor Zubeldia": {
+      "team": "Sociedad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Marc Bartra": {
+      "team": "Betis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Enzo Bardeli": {
+      "team": "Levante",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Rodrigo Riquelme": {
+      "team": "Betis",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Roger Brugué": {
+      "team": "Levante",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jon Ander Olasagasti": {
+      "team": "Levante",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jeremy Toljan": {
+      "team": "Levante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Antonio Sivera": {
+      "team": "Alaves",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Renato Veiga": {
+      "team": "Villarreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Buba Sangaré": {
+      "team": "Elche",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Facundo González": {
+      "team": "Racing Santander",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alvaro Mantilla": {
+      "team": "Racing Santander",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Xavi Espart": {
+      "team": "Barcelona",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gorka Guruzeta": {
+      "team": "Ath Bilbao",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Johaneko Louis Jean": {
+      "team": "Ath Bilbao",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Iago Aspas": {
+      "team": "Celta",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luken Beitia": {
+      "team": "Sociedad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Junior Firpo": {
+      "team": "Betis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mario Soriano Carreno": {
+      "team": "Deportivo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Giacomo Quagliata": {
+      "team": "Deportivo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "David Larrubia": {
+      "team": "Malaga",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ximo Navarro": {
+      "team": "Deportivo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Bil Nsongo": {
+      "team": "Deportivo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Iván Romero": {
+      "team": "Levante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Karim Adeyemi": {
+      "team": "Barcelona",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ali Houary": {
+      "team": "Elche",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Saba Sazonov": {
+      "team": "Getafe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Manu": {
+      "team": "Racing Santander",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gerard Moreno": {
+      "team": "Villarreal",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Georges Mikautadze": {
+      "team": "Villarreal",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Giuliano Simeone": {
+      "team": "Ath Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Santiago Mouriño": {
+      "team": "Villarreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Morten Hjulmand": {
+      "team": "Ath Madrid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "José María Giménez": {
+      "team": "Ath Madrid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Juan Foyth": {
+      "team": "Villarreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Robin Le Normand": {
+      "team": "Ath Madrid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Carlos Espí": {
+      "team": "Real Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Edu Expósito": {
+      "team": "Espanol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pere Milla": {
+      "team": "Espanol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pol Lozano": {
+      "team": "Espanol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Justin de Haas": {
+      "team": "Valencia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Stole Dimitrievski": {
+      "team": "Valencia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sergio Carreira": {
+      "team": "Celta",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Javi Rueda": {
+      "team": "Celta",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Andrei Radu": {
+      "team": "Celta",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Oso": {
+      "team": "Sevilla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Aitor Paredes": {
+      "team": "Ath Bilbao",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Peque": {
+      "team": "Sevilla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jon Guridi": {
+      "team": "Sevilla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Iñigo Ruiz de Galarreta": {
+      "team": "Ath Bilbao",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nico Guillén": {
+      "team": "Sevilla",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sergio Gómez": {
+      "team": "Sociedad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fran García": {
+      "team": "Betis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Héctor Bellerín": {
+      "team": "Betis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicolás Valentini": {
+      "team": "Alaves",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dávid Hancko": {
+      "team": "Ath Madrid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jorge Domínguez": {
+      "team": "Ath Madrid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Juan Cruz": {
+      "team": "Malaga",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marc Aguado": {
+      "team": "Elche",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Gonzalo Villar": {
+      "team": "Elche",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Umaru": {
+      "team": "Elche",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tyrhys Dolan": {
+      "team": "Espanol",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Javi Hernandez": {
+      "team": "Espanol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Andrés Martín": {
+      "team": "Racing Santander",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sergio Martínez": {
+      "team": "Racing Santander",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Pape Gueye": {
+      "team": "Villarreal",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gustavo Puerta": {
+      "team": "Racing Santander",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pablo Ramon": {
+      "team": "Racing Santander",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Carlos Romero": {
+      "team": "Villarreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Álvaro García": {
+      "team": "Vallecano",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Unai López": {
+      "team": "Vallecano",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lucien Agoumé": {
+      "team": "Sevilla",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alexandre Alemão": {
+      "team": "Vallecano",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Enrique Salas": {
+      "team": "Sevilla",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Mikel Rodriguez": {
+      "team": "Alaves",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Davinchi": {
+      "team": "Getafe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mario Martín": {
+      "team": "Getafe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Denis Suárez": {
+      "team": "Alaves",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kiko Femenía": {
+      "team": "Getafe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    }
+  },
+  "processed_ids": [
+    "401882880",
+    "401882886",
+    "401882882",
+    "401882881",
+    "401882878",
+    "401882893",
+    "401882891",
+    "401882892",
+    "401882896",
+    "401882890",
+    "401882888",
+    "401882887",
+    "401882889",
+    "401882895",
+    "401882894",
+    "401882867",
+    "401882903",
+    "401882901",
+    "401882905",
+    "401882904",
+    "401882899",
+    "401882897",
+    "401882898",
+    "401882902",
+    "401882906",
+    "401882900",
+    "401882921",
+    "401882924",
+    "401882919",
+    "401882917",
+    "401882910",
+    "401882909",
+    "401882913",
+    "401882911",
+    "401882915",
+    "401882912",
+    "401882907",
+    "401882916",
+    "401882914",
+    "401882908",
+    "401882925",
+    "401882923",
+    "401882922",
+    "401882920",
+    "401882918",
+    "401882926"
+  ],
+  "updated_at": "2026-09-13T14:47:09.785907+00:00"
+}

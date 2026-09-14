@@ -1,0 +1,2062 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Oladapo Afolayan": {
+      "team": "Blackburn",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lyndon Dykes": {
+      "team": "Millwall",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Andri Gudjohnsen": {
+      "team": "Blackburn",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hayden Carter": {
+      "team": "Blackburn",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sam Morsy": {
+      "team": "Blackburn",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 4,
+      "red_cards": 0
+    },
+    "Harry Pickering": {
+      "team": "Blackburn",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Zak Sturge": {
+      "team": "Wrexham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gady Beyuku": {
+      "team": "Blackburn",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jenson Metcalfe": {
+      "team": "Millwall",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 1
+    },
+    "Jayden Fevrier": {
+      "team": "Blackburn",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mark Sykes": {
+      "team": "Millwall",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Miles Leaburn": {
+      "team": "Charlton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ebrima Adams": {
+      "team": "Portsmouth",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mohamed Toure": {
+      "team": "Norwich",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sebastian Berhalter": {
+      "team": "Middlesbrough",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Amario Cozier-Duberry": {
+      "team": "Middlesbrough",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jovon Makama": {
+      "team": "Norwich",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jacob Wright": {
+      "team": "Norwich",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ashley Phillips": {
+      "team": "Middlesbrough",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Riley McGree": {
+      "team": "Middlesbrough",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jack Stacey": {
+      "team": "Norwich",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Freddie Draper": {
+      "team": "Lincoln",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Harrison Clarke": {
+      "team": "Preston",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Dom Jefferies": {
+      "team": "Lincoln",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Cyle Larin": {
+      "team": "Southampton",
+      "goals": 7,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lorent Tolaj": {
+      "team": "Bristol City",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kuryu Matsuki": {
+      "team": "Southampton",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Finn Azaz": {
+      "team": "Southampton",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lisav Eissat": {
+      "team": "Bristol City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sam Greenwood": {
+      "team": "Bristol City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adam Idah": {
+      "team": "Swansea",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Moussa Yeo": {
+      "team": "Swansea",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Largie Ramazani": {
+      "team": "Burnley",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Zan Vipotnik": {
+      "team": "Swansea",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lucas Pires": {
+      "team": "Burnley",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Filip Lissah": {
+      "team": "Swansea",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Jack McGlynn": {
+      "team": "Stoke",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Eric Bocat": {
+      "team": "Stoke",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Amin Nabizada": {
+      "team": "Watford",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Iker Bravo": {
+      "team": "Watford",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Djibril Soumaré": {
+      "team": "Stoke",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "George Hirst": {
+      "team": "Stoke",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Thierry Gale": {
+      "team": "Bolton",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ben Davies": {
+      "team": "Bolton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kyliane Dong": {
+      "team": "Bolton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Samuel Iling-Junior": {
+      "team": "Bolton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joel Colwill": {
+      "team": "Cardiff",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Perry Ng": {
+      "team": "Cardiff",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Jayden Nelson": {
+      "team": "Bolton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bobby Clark": {
+      "team": "Derby",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Carlos Vicente": {
+      "team": "Birmingham",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Paik Seung-Ho": {
+      "team": "Birmingham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mohammed Fuseini": {
+      "team": "Derby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Alex Cochrane": {
+      "team": "Birmingham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "August Priske": {
+      "team": "Birmingham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Chris Mepham": {
+      "team": "QPR",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Callum Styles": {
+      "team": "Burnley",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Glen Kamara": {
+      "team": "QPR",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Jake Clark-Salter": {
+      "team": "QPR",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 4,
+      "red_cards": 0
+    },
+    "Jonathan Varane": {
+      "team": "QPR",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rumarn Burrell": {
+      "team": "QPR",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ousmane Diakite": {
+      "team": "West Brom",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 4,
+      "red_cards": 0
+    },
+    "Jarrod Bowen": {
+      "team": "West Ham",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Joël Piroe": {
+      "team": "West Ham",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Konstantinos Mavropanos": {
+      "team": "West Ham",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Valentín Castellanos": {
+      "team": "West Ham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Mohamadou Kanté": {
+      "team": "West Ham",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Manor Solomon": {
+      "team": "West Ham",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Oliver Scarles": {
+      "team": "West Ham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Kealey Adamson": {
+      "team": "QPR",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aune Heggebo": {
+      "team": "West Brom",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Harry Whitwell": {
+      "team": "West Brom",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Brayann Pereira": {
+      "team": "West Brom",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Jimmy Morgan": {
+      "team": "West Brom",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Oscar Schwartau": {
+      "team": "Norwich",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pape Diallo": {
+      "team": "Norwich",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Benjamin Chrisene": {
+      "team": "Norwich",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "José Córdoba": {
+      "team": "Norwich",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 4,
+      "red_cards": 1
+    },
+    "Phil Neumann": {
+      "team": "Birmingham",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ante Crnac": {
+      "team": "Norwich",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ethan Erhahon": {
+      "team": "Bolton",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ruben Rodrigues": {
+      "team": "Bolton",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kristi Montgomery": {
+      "team": "Blackburn",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Thomas Cannon": {
+      "team": "Sheffield United",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sydie Peck": {
+      "team": "Sheffield United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Romelle Donovan": {
+      "team": "Sheffield United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Japhet Tanganga": {
+      "team": "Sheffield United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ben Johnson": {
+      "team": "Stoke",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ben Wilmot": {
+      "team": "Stoke",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luke Graham": {
+      "team": "Stoke",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Léo Scienza": {
+      "team": "Southampton",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ronald": {
+      "team": "Swansea",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Callum Lang": {
+      "team": "Preston",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Edo Kayembe": {
+      "team": "Watford",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mamadou Doumbia": {
+      "team": "Watford",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Andrija Vukcevic": {
+      "team": "Preston",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lewis Gibson": {
+      "team": "Preston",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Zeki Amdouni": {
+      "team": "Burnley",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jacques Ekomie": {
+      "team": "Wrexham",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Issa Kaboré": {
+      "team": "Wrexham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aaron Ramsey": {
+      "team": "Burnley",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dominic Hyam": {
+      "team": "Wrexham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Reo Hatate": {
+      "team": "Burnley",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fernando López": {
+      "team": "Wolves",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jay Stansfield": {
+      "team": "Birmingham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ladislav Krejcí": {
+      "team": "Wolves",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jackson Tchatchoua": {
+      "team": "Birmingham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marshall Munetsi": {
+      "team": "Wolves",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Christoph Klarer": {
+      "team": "Birmingham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joseph Opoku": {
+      "team": "Swansea",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ben Cabango": {
+      "team": "Swansea",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Stephen Welsh": {
+      "team": "Swansea",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Robert Dickie": {
+      "team": "Bristol City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yu Hirakawa": {
+      "team": "Bristol City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Hjalmar Ekdal": {
+      "team": "Burnley",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kyle Walker": {
+      "team": "Burnley",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Armando Broja": {
+      "team": "Burnley",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Caleb Taylor": {
+      "team": "Millwall",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Camiel Neghli": {
+      "team": "Millwall",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Akin Famewo": {
+      "team": "Bolton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Josh Sheehan": {
+      "team": "Bolton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Conor Shaughnessy": {
+      "team": "Portsmouth",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marko Milovanovic": {
+      "team": "Portsmouth",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Krystian Bielik": {
+      "team": "Cardiff",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ollie Tanner": {
+      "team": "Cardiff",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Alex Robertson": {
+      "team": "Cardiff",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Yousef Salech": {
+      "team": "Cardiff",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Will Lankshear": {
+      "team": "Middlesbrough",
+      "goals": 5,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Adilson Malanda": {
+      "team": "Middlesbrough",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Callum Brittain": {
+      "team": "Middlesbrough",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Anthony Musaba": {
+      "team": "Norwich",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Patrick Bamford": {
+      "team": "Sheffield United",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mathias Kvistgaarden": {
+      "team": "Norwich",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ruairi McConville": {
+      "team": "Norwich",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Kellen Fisher": {
+      "team": "Norwich",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Liam Kitching": {
+      "team": "Sheffield United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rhys Norrington-Davies": {
+      "team": "Sheffield United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Martín Payero": {
+      "team": "Watford",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Nathaniel Phillips": {
+      "team": "West Brom",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Isaac Price": {
+      "team": "West Brom",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Edvin Austbø": {
+      "team": "West Ham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alex Mowatt": {
+      "team": "Derby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Welington": {
+      "team": "Southampton",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mikkel Ladefoged": {
+      "team": "Lincoln",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Conor McGrandles": {
+      "team": "Lincoln",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Ivan Varfolomeev": {
+      "team": "Lincoln",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Stanley Mills": {
+      "team": "Blackburn",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yuri Ribeiro": {
+      "team": "Blackburn",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Delano Burgzorg": {
+      "team": "Preston",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jordan Thompson": {
+      "team": "Preston",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Justin Devenny": {
+      "team": "Stoke",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ethan Galbraith": {
+      "team": "Stoke",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Dan McNamara": {
+      "team": "Charlton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Conor Coventry": {
+      "team": "Charlton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aidan Morris": {
+      "team": "Middlesbrough",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ugo Raghouber": {
+      "team": "Burnley",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hannibal Mejbri": {
+      "team": "Burnley",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alfie Jones": {
+      "team": "Middlesbrough",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kieffer Moore": {
+      "team": "Wrexham",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Casper de Norre": {
+      "team": "Millwall",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Benjamin Whiteman": {
+      "team": "Wrexham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Tyreece Campbell": {
+      "team": "Charlton",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Tyler Bindon": {
+      "team": "Charlton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Keven Schlotterbeck": {
+      "team": "Southampton",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Bright Osayi-Samuel": {
+      "team": "Birmingham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Divin Mubama": {
+      "team": "Southampton",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jhon Solis": {
+      "team": "Birmingham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nathan Wood": {
+      "team": "Southampton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luis Vázquez": {
+      "team": "Birmingham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bosun Lawal": {
+      "team": "Stoke",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Kenny McLean": {
+      "team": "Norwich",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tom Atcheson": {
+      "team": "Blackburn",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Jake Garrett": {
+      "team": "Blackburn",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adam Forshaw": {
+      "team": "Blackburn",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Sammie Szmodics": {
+      "team": "Derby",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lars Jorgen Salvesen": {
+      "team": "Derby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sondre Langas": {
+      "team": "Derby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Terry Devlin": {
+      "team": "Portsmouth",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Charlie Taylor": {
+      "team": "Derby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Scott Twine": {
+      "team": "Bristol City",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Caleb Wiley": {
+      "team": "Preston",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dominic Ballard": {
+      "team": "Bristol City",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Liam Lindsay": {
+      "team": "Preston",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Xavier Simons": {
+      "team": "Bolton",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sam Dalby": {
+      "team": "Bolton",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Gaizka Larrazabal": {
+      "team": "Bolton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "John Mcatee": {
+      "team": "Bolton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Eom Ji-Sung": {
+      "team": "Swansea",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Omar-Haktab Traoré": {
+      "team": "Watford",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hector Kyprianou": {
+      "team": "Watford",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Kévin Keben": {
+      "team": "Watford",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Jordan Zemura": {
+      "team": "Watford",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Divine Mukasa": {
+      "team": "West Ham",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jordan James": {
+      "team": "Wolves",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ryoya Morishita": {
+      "team": "Blackburn",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Paul Smyth": {
+      "team": "QPR",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jimmy Dunne": {
+      "team": "QPR",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ronnie Edwards": {
+      "team": "QPR",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Sean McLoughlin": {
+      "team": "Blackburn",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ben House": {
+      "team": "Lincoln",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jason Knight": {
+      "team": "Bristol City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Rio Cardines": {
+      "team": "Bristol City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jack Moylan": {
+      "team": "Cardiff",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Callum O'Hare": {
+      "team": "Sheffield United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Cian Ashford": {
+      "team": "Cardiff",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mark McGuinness": {
+      "team": "Sheffield United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Karlan Grant": {
+      "team": "Charlton",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Leo Leroy": {
+      "team": "Preston",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Joe Rankin-Costello": {
+      "team": "Charlton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Andre Brooks": {
+      "team": "Norwich",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Josh Laurent": {
+      "team": "Burnley",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Anis Slimane": {
+      "team": "Norwich",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Zian Flemming": {
+      "team": "Burnley",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Tom Fellows": {
+      "team": "Southampton",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ryan Manning": {
+      "team": "Southampton",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Matthew Pollock": {
+      "team": "Watford",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Edoardo Bove": {
+      "team": "Watford",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Othmane Maamma": {
+      "team": "Watford",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Joël Veltman": {
+      "team": "West Ham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marko Stamenic": {
+      "team": "Swansea",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dion Sanderson": {
+      "team": "Derby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Lewis Travis": {
+      "team": "Derby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Elijah Just": {
+      "team": "Swansea",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sam Gallagher": {
+      "team": "Stoke",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Rodrigo Gomes": {
+      "team": "Wolves",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Raúl Jiménez": {
+      "team": "Wolves",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Bae Jun-Ho": {
+      "team": "Stoke",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mateus Mané": {
+      "team": "Wolves",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Sorba Thomas": {
+      "team": "Stoke",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Callum Doyle": {
+      "team": "Wrexham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Bailey Cadamarteri": {
+      "team": "Wrexham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Oliver Sonne": {
+      "team": "Burnley",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "George Campbell": {
+      "team": "West Brom",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marcus Edwards": {
+      "team": "Burnley",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jeremy Sarmiento": {
+      "team": "Middlesbrough",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Todd Cantwell": {
+      "team": "Blackburn",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Carlton Morris": {
+      "team": "Derby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Corey Taylor": {
+      "team": "Derby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Oscar Fraulo": {
+      "team": "Derby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Max Johnston": {
+      "team": "Derby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adam Armstrong": {
+      "team": "Wolves",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Andrew Hughes": {
+      "team": "Preston",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alistair McCann": {
+      "team": "Preston",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ryan Hardie": {
+      "team": "Bolton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "James Bree": {
+      "team": "Southampton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Flynn Downes": {
+      "team": "Southampton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Maksym Talovierov": {
+      "team": "Stoke",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Svante Ingelsson": {
+      "team": "Stoke",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Harrison Burrows": {
+      "team": "Sheffield United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jay Fulton": {
+      "team": "Swansea",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lloyd Jones": {
+      "team": "Charlton",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Max Kilman": {
+      "team": "West Ham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luca Kjerrumgaard": {
+      "team": "Watford",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Danny Imray": {
+      "team": "Wrexham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nathan Broadhead": {
+      "team": "Wrexham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sam Tickle": {
+      "team": "Birmingham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Demarai Gray": {
+      "team": "Birmingham",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Patrick Roberts": {
+      "team": "Birmingham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ryan Kavuma-Mcqueen": {
+      "team": "Portsmouth",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Adrian Segecic": {
+      "team": "Portsmouth",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Recco Hackett-Fairchild": {
+      "team": "Lincoln",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Rocco Robert Shein": {
+      "team": "Portsmouth",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tom Bayliss": {
+      "team": "Lincoln",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Thomas Hamer": {
+      "team": "Lincoln",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Taïryk Arconte": {
+      "team": "Millwall",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luke Cundle": {
+      "team": "Millwall",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Harry Darling": {
+      "team": "Norwich",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rubin Colwill": {
+      "team": "Cardiff",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mads Hermansen": {
+      "team": "West Ham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "El Hadji Malick Diouf": {
+      "team": "West Ham",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Josh Coburn": {
+      "team": "Millwall",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adam Randell": {
+      "team": "Bristol City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Rhian Brewster": {
+      "team": "Derby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adam Reach": {
+      "team": "Lincoln",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Isaac Olaofe": {
+      "team": "Lincoln",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ilias Chair": {
+      "team": "QPR",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Koki Saito": {
+      "team": "QPR",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Melker Widell": {
+      "team": "Swansea",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Josh Tymon": {
+      "team": "Swansea",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jusef Erabi": {
+      "team": "Preston",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Pol Valentín": {
+      "team": "Preston",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Christian Forino Joseph": {
+      "team": "Bolton",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    }
+  },
+  "processed_ids": [
+    "401880268",
+    "401880266",
+    "401880264",
+    "401880263",
+    "401880261",
+    "401880260",
+    "401880259",
+    "401880267",
+    "401880265",
+    "401880258",
+    "401880257",
+    "401880272",
+    "401880271",
+    "401880270",
+    "401880275",
+    "401880276",
+    "401880273",
+    "401880279",
+    "401880278",
+    "401880269",
+    "401880292",
+    "401880283",
+    "401880291",
+    "401880289",
+    "401880288",
+    "401880286",
+    "401880285",
+    "401880282",
+    "401880281",
+    "401880290",
+    "401880287",
+    "401880284",
+    "401880296",
+    "401880295",
+    "401880294",
+    "401880293",
+    "401880304",
+    "401880299",
+    "401880303",
+    "401880302",
+    "401880301",
+    "401880300",
+    "401880298",
+    "401880297",
+    "401880316",
+    "401880315",
+    "401880314",
+    "401880313",
+    "401880312",
+    "401880309",
+    "401880308",
+    "401880307",
+    "401880311",
+    "401880310",
+    "401880306",
+    "401880305",
+    "401880319",
+    "401880327",
+    "401880326",
+    "401880323",
+    "401880322",
+    "401880321",
+    "401880320",
+    "401880318",
+    "401880317",
+    "401880328",
+    "401880325",
+    "401880324",
+    "401880329",
+    "401880330",
+    "401880331",
+    "401880332",
+    "401880338",
+    "401880337",
+    "401880336",
+    "401880335",
+    "401880334",
+    "401880333",
+    "401880339",
+    "401880340"
+  ],
+  "updated_at": "2026-09-13T14:47:09.786415+00:00"
+}

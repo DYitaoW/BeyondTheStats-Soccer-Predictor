@@ -1,0 +1,920 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Sotiris Tsiloulis": {
+      "team": "Atromitos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Pedro Marques": {
+      "team": "Iraklis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kylian Kaïboué": {
+      "team": "Iraklis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Vitor Meer": {
+      "team": "Iraklis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Juan Perea": {
+      "team": "Atromitos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Stavros Pnevmonidis": {
+      "team": "Atromitos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ivi": {
+      "team": "Iraklis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Dimitrios Stavropoulos": {
+      "team": "Kalamata",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kenan Kodro": {
+      "team": "OFI Crete",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lorenzo Pirola": {
+      "team": "Olympiakos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kings Kangwa": {
+      "team": "Panathinaikos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dimitris Theodoridis": {
+      "team": "Kifisia",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Vicente Taborda": {
+      "team": "Panathinaikos",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Elmin Rastoder": {
+      "team": "Panathinaikos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Clément Jolibois": {
+      "team": "Kifisia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Tiago Manso": {
+      "team": "Kifisia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Etienne Camara": {
+      "team": "Panathinaikos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Jeremy Antonisse": {
+      "team": "Kifisia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bernardo Martins": {
+      "team": "Kifisia",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Édgar Yoel Bárcenas": {
+      "team": "Iraklis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jordan Silva": {
+      "team": "Asteras Tripolis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Giannis Bouzoukis": {
+      "team": "Asteras Tripolis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Praxitelis Vouros": {
+      "team": "Iraklis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yohan Roche": {
+      "team": "Iraklis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Franz Brorsson": {
+      "team": "Asteras Tripolis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Andrews Tetteh": {
+      "team": "Panathinaikos",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ognjen Ugresic": {
+      "team": "PAOK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dimitris Bataoulas": {
+      "team": "PAOK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Georgios Kyriakopoulos": {
+      "team": "Panathinaikos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aritz Elustondo": {
+      "team": "PAOK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Cyriel Dessers": {
+      "team": "Panathinaikos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Kwadwo Opoku": {
+      "team": "Panetolikos",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Youssouph Badji": {
+      "team": "Panetolikos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yevhenii Kucherenko": {
+      "team": "Panetolikos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Thanasis Androutsos": {
+      "team": "OFI Crete",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Andreas Bouchalakis": {
+      "team": "OFI Crete",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Gerson Sousa": {
+      "team": "Kifisia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Moisés Ramírez": {
+      "team": "Kifisia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Thiago Thomas Nuss": {
+      "team": "OFI Crete",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Samuel Moutoussamy": {
+      "team": "Atromitos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Stefanos Strougis": {
+      "team": "Kalamata",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Juan Cataldi": {
+      "team": "Kalamata",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Jovanny Bolívar": {
+      "team": "Kalamata",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Eleutherios Lyratzis": {
+      "team": "Atromitos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Djibril Diarra": {
+      "team": "Kalamata",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Barnabás Varga": {
+      "team": "AEK",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Razvan Marin": {
+      "team": "AEK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Aboubakary Koita": {
+      "team": "AEK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Zini": {
+      "team": "AEK",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lovro Majer": {
+      "team": "AEK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lazaros Rota": {
+      "team": "AEK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Jota Silva": {
+      "team": "Olympiakos",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Maximiliano Comba": {
+      "team": "Volos NFC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joca": {
+      "team": "Volos NFC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Georgios Mygas": {
+      "team": "Volos NFC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Marios Siampanis": {
+      "team": "OFI Crete",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Giannis Kargas": {
+      "team": "Volos NFC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Panagiotis Retsos": {
+      "team": "Olympiakos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Gustavo Furtado": {
+      "team": "Volos NFC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ioannis Kosti": {
+      "team": "Panathinaikos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Santino Andino": {
+      "team": "Panathinaikos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Panagiotis Vichos": {
+      "team": "Levadeiakos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sotiris Kontouris": {
+      "team": "Panathinaikos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Imran Louza": {
+      "team": "Panathinaikos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Panagiotis Simelidis": {
+      "team": "Levadeiakos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Ketu Jih Kalvin": {
+      "team": "Asteras Tripolis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dimitrios Kourbelis": {
+      "team": "Asteras Tripolis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Franco Orozco": {
+      "team": "Asteras Tripolis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Santiago Hezze": {
+      "team": "Olympiakos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Remo Freuler": {
+      "team": "Olympiakos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nayair Tiknizyan": {
+      "team": "Olympiakos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Imam Jagne": {
+      "team": "Kifisia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hugo Sousa": {
+      "team": "Kifisia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Roshon van Eijma": {
+      "team": "Kifisia",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Christopher Nuñez": {
+      "team": "Atromitos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dimitris Pelkas": {
+      "team": "PAOK",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dimitris Tsakmakis": {
+      "team": "Atromitos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Greg Taylor": {
+      "team": "PAOK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Manu García": {
+      "team": "Aris",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Christian Kouamé": {
+      "team": "Aris",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Benjamin Garre": {
+      "team": "Aris",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Noah Fadiga": {
+      "team": "Aris",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Achilleas Poungouras": {
+      "team": "OFI Crete",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fredrik Oldrup Jensen": {
+      "team": "Aris",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ricardo Velho": {
+      "team": "Aris",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gustav Granath": {
+      "team": "Panetolikos",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Salifou Soumah": {
+      "team": "Panetolikos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Giannis Satsias": {
+      "team": "Panetolikos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Arnór Sigurdsson": {
+      "team": "Kalamata",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Christian Manrique": {
+      "team": "Panetolikos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Julián Bonetto": {
+      "team": "Kalamata",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ahmad Mendes Moreira": {
+      "team": "Kalamata",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Novica Erakovic": {
+      "team": "Panetolikos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nanu": {
+      "team": "Iraklis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Matías González": {
+      "team": "Volos NFC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jan Hurtado": {
+      "team": "Volos NFC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Vasileios Grosdis": {
+      "team": "Volos NFC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rob Nizet": {
+      "team": "Iraklis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Keidi Bare": {
+      "team": "Volos NFC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Elvir Koljic": {
+      "team": "Iraklis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fabio Refatllari": {
+      "team": "Volos NFC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Charalampos Mavrias": {
+      "team": "Panetolikos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Federico Macheda": {
+      "team": "Asteras Tripolis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kosta Aleksic": {
+      "team": "Panetolikos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Shola Shoretire": {
+      "team": "PAOK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Anestis Mythou": {
+      "team": "PAOK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Andrija Zivkovic": {
+      "team": "PAOK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Hatim Essaoubi": {
+      "team": "Volos NFC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hamza Mendyl": {
+      "team": "Volos NFC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Giorgos Kanellopoulos": {
+      "team": "OFI Crete",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "David Carmo": {
+      "team": "Olympiakos",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Theocharis Tsiggaras": {
+      "team": "Atromitos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Panagiotis Tsantilas": {
+      "team": "Atromitos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jere Uronen": {
+      "team": "Atromitos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gelson Martins": {
+      "team": "Olympiakos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rodinei": {
+      "team": "Olympiakos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Thanasis Karamanis": {
+      "team": "Atromitos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Giorgos Tzovaras": {
+      "team": "Atromitos",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luka Jovic": {
+      "team": "AEK",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Milán Vitális": {
+      "team": "AEK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Uros Racic": {
+      "team": "Aris",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kenneth Vargas": {
+      "team": "Kalamata",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fabiano": {
+      "team": "Aris",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Petros Kaloutsikidis": {
+      "team": "Kalamata",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rodrigues": {
+      "team": "Kalamata",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ilias Chatzitheodoridis": {
+      "team": "Kalamata",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jeremy Petris": {
+      "team": "Aris",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    }
+  },
+  "processed_ids": [
+    "401896822",
+    "401896762",
+    "401896777",
+    "401896794",
+    "401896765",
+    "401896767",
+    "401896766",
+    "401896825",
+    "401896769",
+    "401896768",
+    "401896770",
+    "401896774",
+    "401896771",
+    "401896772",
+    "401896773",
+    "401896826",
+    "401896827",
+    "401896776",
+    "401896775",
+    "401896778",
+    "401896779",
+    "401896829",
+    "401896828"
+  ],
+  "updated_at": "2026-09-13T14:47:09.783887+00:00"
+}

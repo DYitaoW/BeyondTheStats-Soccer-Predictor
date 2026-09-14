@@ -1,0 +1,910 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Felix Beijmo": {
+      "team": "FC Copenhagen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Viktor Dadason": {
+      "team": "FC Copenhagen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jimi Tauriainen": {
+      "team": "Horsens",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Ismaila Ceesay": {
+      "team": "Horsens",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ákos Markgráf": {
+      "team": "FC Copenhagen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "John Batigi": {
+      "team": "Horsens",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Mark Brink Christensen": {
+      "team": "Nordsjaelland",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Friday Etim": {
+      "team": "Midtjylland",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Hjalte Boe Rasmussen": {
+      "team": "Nordsjaelland",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Martin Erlic": {
+      "team": "Midtjylland",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Viktor Bak": {
+      "team": "Midtjylland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Elies Mahmoud": {
+      "team": "Randers FC",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mike Themsen": {
+      "team": "Randers FC",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mohamed Sankoh": {
+      "team": "Randers FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sabil Hansen": {
+      "team": "Randers FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Luis Binks": {
+      "team": "Brondby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Nikolai Hopland": {
+      "team": "Randers FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Laurits Pedersen": {
+      "team": "Randers FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Thapelo Maseko": {
+      "team": "FC Copenhagen",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Asger Sørensen": {
+      "team": "FC Copenhagen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marvin Nasnas": {
+      "team": "FC Copenhagen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Maher Carrizo": {
+      "team": "FC Copenhagen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marcus Mccoy": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Birger Meling": {
+      "team": "FC Copenhagen",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Noah Ganaus": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alex Král": {
+      "team": "FC Copenhagen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Osaze De Rosario": {
+      "team": "Sonderjyske",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ole Martin Kolskogen": {
+      "team": "Horsens",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Yamirou Ouorou": {
+      "team": "Horsens",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Abdul Salam Moro": {
+      "team": "Odense",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kelvin Ehibhatiomhan": {
+      "team": "Horsens",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alexander Munksgaard": {
+      "team": "Sonderjyske",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mohamed Haidara": {
+      "team": "Sonderjyske",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Maxime Soulas": {
+      "team": "Sonderjyske",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Jacob Bonde": {
+      "team": "Odense",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dalton Wilkins": {
+      "team": "Sonderjyske",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Stefan Velkov": {
+      "team": "Sonderjyske",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Rami Al Hajj": {
+      "team": "Silkeborg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lucas Thorst Riisgaard": {
+      "team": "Silkeborg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Janni Serra": {
+      "team": "Aarhus",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mikkel Anderson": {
+      "team": "Aarhus",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Isak Thorvaldsson": {
+      "team": "Lyngby",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Simon Colyn": {
+      "team": "Lyngby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ruben Alte": {
+      "team": "Viborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Robert": {
+      "team": "FC Copenhagen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicklas Rojkjaer": {
+      "team": "Nordsjaelland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Justin Janssen": {
+      "team": "Nordsjaelland",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Thomas Delaney": {
+      "team": "FC Copenhagen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mohamed Elyounoussi": {
+      "team": "FC Copenhagen",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "William Clem": {
+      "team": "FC Copenhagen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Denil Castillo": {
+      "team": "Midtjylland",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Colin Rösler": {
+      "team": "Aarhus",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kjell-Arik Wätjen": {
+      "team": "Midtjylland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Magnus Knudsen": {
+      "team": "Aarhus",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Philip Billing": {
+      "team": "Midtjylland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Rasmus Kristensen": {
+      "team": "Midtjylland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mads Emil Madsen": {
+      "team": "FC Copenhagen",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ismaïl Seydi": {
+      "team": "Sonderjyske",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Brynjar Bjarnason": {
+      "team": "Sonderjyske",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Alexander Lind": {
+      "team": "Nordsjaelland",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Patrick Mortensen": {
+      "team": "Brondby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Bartosz Slisz": {
+      "team": "Brondby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Juho Lähteenmäki": {
+      "team": "Nordsjaelland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Prince Amoako": {
+      "team": "Nordsjaelland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Peter Ankersen": {
+      "team": "Nordsjaelland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kristian Malt Arnstad": {
+      "team": "Aarhus",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Stefen Tchamche": {
+      "team": "Aarhus",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Axel Henriksson": {
+      "team": "Randers FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "James Gomez": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Julius Berthel Askou": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lauge Sandgrav": {
+      "team": "Lyngby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Christian Gammelgaard": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Munashe Garananga": {
+      "team": "Lyngby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Renzo Tytens": {
+      "team": "Lyngby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ulrik Jenssen": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Frederik Gytkjaer": {
+      "team": "Lyngby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "William Kirk": {
+      "team": "Silkeborg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Stanley Iheanacho": {
+      "team": "Midtjylland",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Julius Emefile": {
+      "team": "Midtjylland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Dorian Hanza": {
+      "team": "Viborg",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Charly Horneman": {
+      "team": "Viborg",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Asker Bech": {
+      "team": "Viborg",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ivan Milicevic": {
+      "team": "Horsens",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Julius Madsen": {
+      "team": "Horsens",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Oliver Kristensen": {
+      "team": "Viborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adam Herdonsson": {
+      "team": "Horsens",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Callum McCowatt": {
+      "team": "Silkeborg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Jordi Vanlerberghe": {
+      "team": "Brondby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Oskar Fenger": {
+      "team": "Brondby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mats Köhlert": {
+      "team": "Brondby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "William Løkke Møller": {
+      "team": "Silkeborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mads Frökjaer": {
+      "team": "Brondby",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Alexander Madsen": {
+      "team": "Silkeborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adrian Justinussen": {
+      "team": "Horsens",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alagie Saine": {
+      "team": "Horsens",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kristian Kirkegaard": {
+      "team": "Horsens",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mikkel Kupijbida": {
+      "team": "Horsens",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gustav Fraulo": {
+      "team": "Lyngby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Casper Winther": {
+      "team": "Lyngby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Cornelius Allen": {
+      "team": "Lyngby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "James Bogere": {
+      "team": "Aarhus",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jann-Fiete Arp": {
+      "team": "Odense",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Rasmus Carstensen": {
+      "team": "Aarhus",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Rasmus Falk Jensen": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Peter Therkildsen": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ismahila Ouédraogo": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Topi Keskinen": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alex Ahl-Holmström": {
+      "team": "Odense",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Darío Osorio": {
+      "team": "Midtjylland",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Magnus Jensen": {
+      "team": "Midtjylland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Markus Walker": {
+      "team": "Nordsjaelland",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Villum Berthelsen": {
+      "team": "Nordsjaelland",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sefer Emini": {
+      "team": "Sonderjyske",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Olti Hyseni": {
+      "team": "Brondby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Bubacarr Tambedou": {
+      "team": "Sonderjyske",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lirim Kjamili": {
+      "team": "Sonderjyske",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Matthew Hoppe": {
+      "team": "Sonderjyske",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marcos López": {
+      "team": "FC Copenhagen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Amin Al Hamawi": {
+      "team": "Randers FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Asbjørn Bøndergaard": {
+      "team": "Lyngby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ibrahim Adel": {
+      "team": "Nordsjaelland",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Noah Markmann": {
+      "team": "Nordsjaelland",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Robin Ostrom": {
+      "team": "Silkeborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mads Søndergaard": {
+      "team": "Viborg",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Frederik Emmery": {
+      "team": "Aarhus",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    }
+  },
+  "processed_ids": [
+    "401874540",
+    "401874509",
+    "401874530",
+    "401874532",
+    "401874485",
+    "401874506",
+    "401874504",
+    "401874523",
+    "401874501",
+    "401874513",
+    "401874496",
+    "401874533",
+    "401874484",
+    "401874489",
+    "401874526",
+    "401874505",
+    "401874522",
+    "401874486",
+    "401874480",
+    "401874507",
+    "401874515",
+    "401874477",
+    "401874482",
+    "401874502",
+    "401874490",
+    "401874483",
+    "401874479"
+  ],
+  "updated_at": "2026-09-13T14:47:09.786612+00:00"
+}

@@ -978,6 +978,7 @@ def main():
         extra_df.to_csv(EXTRA_PREDICTIONS_FILE, index=False)
 
     cup_removed_completed = 0
+    cup_updates = 0
     if cup_df is not None:
         today_et = datetime.now(EASTERN_TZ).date()
         cup_df, cup_future_cleared = clear_future_settled_rows(cup_df, today_et)
@@ -990,6 +991,7 @@ def main():
         cup_df.to_csv(CUP_PREDICTIONS_FILE, index=False)
 
     national_removed_completed = 0
+    national_updates = 0
     if national_df is not None:
         today_et = datetime.now(EASTERN_TZ).date()
         national_df, national_future_cleared = clear_future_settled_rows(national_df, today_et)
@@ -1002,6 +1004,7 @@ def main():
         national_df.to_csv(NATIONAL_PREDICTIONS_FILE, index=False)
 
     friendlies_removed_completed = 0
+    friendlies_updates = 0
     if friendlies_df is not None:
         today_et = datetime.now(EASTERN_TZ).date()
         friendlies_df, friendlies_future_cleared = clear_future_settled_rows(friendlies_df, today_et)

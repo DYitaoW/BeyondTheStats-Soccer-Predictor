@@ -1,0 +1,2622 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Ronald Donkor": {
+      "team": "New York Red Bulls",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Santiago Rodríguez": {
+      "team": "Columbus Crew",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Mohammed Sofo": {
+      "team": "New York Red Bulls",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Steven Moreira": {
+      "team": "Columbus Crew",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mauricio Amaro": {
+      "team": "Atlanta Utd",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tristan Muyumba": {
+      "team": "Atlanta Utd",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kye Rowles": {
+      "team": "DC United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Kimito Nono": {
+      "team": "DC United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jared Stroud": {
+      "team": "DC United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pavel Bucha": {
+      "team": "FC Cincinnati",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Liel Abada": {
+      "team": "Charlotte",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Pep Biel": {
+      "team": "Charlotte",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kévin Denkey": {
+      "team": "FC Cincinnati",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Idan Toklomati": {
+      "team": "Charlotte",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Samuel Gidi": {
+      "team": "FC Cincinnati",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Kenji Mboma Dem": {
+      "team": "FC Cincinnati",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rodolfo Aloko": {
+      "team": "Charlotte",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sam Surridge": {
+      "team": "Nashville SC",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Reed Baker-Whiting": {
+      "team": "Nashville SC",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lionel Messi": {
+      "team": "Inter Miami",
+      "goals": 7,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alex Muyl": {
+      "team": "Nashville SC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fricio Caicedo": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Maxwell Woledzi": {
+      "team": "Nashville SC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Germán Berterame": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Matías Galarza": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Antoine Griezmann": {
+      "team": "Orlando City",
+      "goals": 7,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Harvey Sarajian": {
+      "team": "Orlando City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Iván Angulo": {
+      "team": "Orlando City",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luis Otávio": {
+      "team": "Orlando City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Joran Gerbet": {
+      "team": "Orlando City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Derrick Etienne Jr.": {
+      "team": "Toronto FC",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alonso Coello": {
+      "team": "Toronto FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Iago Teodoro": {
+      "team": "Orlando City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jude Terry": {
+      "team": "Los Angeles FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Armindo Sieb": {
+      "team": "Los Angeles FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dylan Nealis": {
+      "team": "New York Red Bulls",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kenny Nielsen": {
+      "team": "Los Angeles FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Julián Bazán": {
+      "team": "New York Red Bulls",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Ryan Raposo": {
+      "team": "Los Angeles FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rafael Navarro": {
+      "team": "Colorado Rapids",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kristoffer Velde": {
+      "team": "Portland Timbers",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dante Polvara": {
+      "team": "St. Louis City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jaziel Orozco": {
+      "team": "St. Louis City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tomas Totland": {
+      "team": "St. Louis City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Eric Miller": {
+      "team": "Portland Timbers",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Niko Tsakiris": {
+      "team": "San Jose Earthquakes",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Preston Judd": {
+      "team": "San Jose Earthquakes",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ousseni Bouda": {
+      "team": "San Jose Earthquakes",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Anders Dreyer": {
+      "team": "San Diego FC",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Cédric Bakambu": {
+      "team": "San Diego FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "CJ dos Santos": {
+      "team": "San Diego FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Christopher McVey": {
+      "team": "San Diego FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Beau Leroux": {
+      "team": "San Jose Earthquakes",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jeppe Tverskov": {
+      "team": "San Diego FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Max Floriani": {
+      "team": "San Jose Earthquakes",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Ronaldo Vieira": {
+      "team": "San Jose Earthquakes",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Brian White": {
+      "team": "Vancouver Whitecaps",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ryan Gauld": {
+      "team": "Vancouver Whitecaps",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bruno Caicedo": {
+      "team": "Vancouver Whitecaps",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Justin Haak": {
+      "team": "Los Angeles Galaxy",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Sergi Roberto": {
+      "team": "Los Angeles Galaxy",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Carlos Garcés": {
+      "team": "Los Angeles Galaxy",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Yadaly Diaby": {
+      "team": "Vancouver Whitecaps",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Paxten Aaronson": {
+      "team": "Colorado Rapids",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Facundo Torres": {
+      "team": "Austin FC",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Joshua Atencio": {
+      "team": "Colorado Rapids",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Reggie Cannon": {
+      "team": "Colorado Rapids",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Robert Lewandowski": {
+      "team": "Chicago Fire",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Casemiro": {
+      "team": "Inter Miami",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Telasco Segovia": {
+      "team": "Inter Miami",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Maximiliano Falcón": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Jonathan Dean": {
+      "team": "Chicago Fire",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "D'Avilla Dje Tah": {
+      "team": "Chicago Fire",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Guilherme Augusto": {
+      "team": "Houston Dynamo",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Saba Lobjanidze": {
+      "team": "Real Salt Lake",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mateusz Bogusz": {
+      "team": "Houston Dynamo",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Diego Luna": {
+      "team": "Real Salt Lake",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Juan Arias": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Héctor Herrera": {
+      "team": "Houston Dynamo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Colin Guske": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Philip Quinton": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kaick": {
+      "team": "FC Dallas",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kelvin Yeboah": {
+      "team": "Minnesota United",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Santiago Moreno": {
+      "team": "FC Dallas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Osaze Urhoghide": {
+      "team": "FC Dallas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Nectarios Triantis": {
+      "team": "Minnesota United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ramiro": {
+      "team": "FC Dallas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Owen Gene": {
+      "team": "Minnesota United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Carles Gil": {
+      "team": "New England Revolution",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luighi Hanri": {
+      "team": "New York City",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Dániel Gazdag": {
+      "team": "New England Revolution",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alhassan Yusuf": {
+      "team": "New England Revolution",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Matt Polster": {
+      "team": "New England Revolution",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Quinn Sullivan": {
+      "team": "Philadelphia Union",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Bruno Damiani": {
+      "team": "Philadelphia Union",
+      "goals": 5,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Milan Iloski": {
+      "team": "Philadelphia Union",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Evander": {
+      "team": "FC Cincinnati",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Tah Anunga": {
+      "team": "FC Cincinnati",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Obinna Nwobodo": {
+      "team": "FC Cincinnati",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "David Brekalo": {
+      "team": "Orlando City",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Tyrese Spicer": {
+      "team": "Orlando City",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Tomás Jacob": {
+      "team": "Atlanta Utd",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Justin Ellis": {
+      "team": "Orlando City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Daniel Ríos": {
+      "team": "CF Montreal",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Victor Loturi": {
+      "team": "CF Montreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "David Schnegg": {
+      "team": "Charlotte",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Matthew Longstaff": {
+      "team": "CF Montreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Tai Baribo": {
+      "team": "DC United",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Tarun Karumanchi": {
+      "team": "Columbus Crew",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Cesar Ruvalcaba": {
+      "team": "Columbus Crew",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "João Peglow": {
+      "team": "DC United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Sean Johnson": {
+      "team": "DC United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Niklas Dorsch": {
+      "team": "Toronto FC",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dániel Sallói": {
+      "team": "Toronto FC",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Emilio Aristizábal": {
+      "team": "Toronto FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luka Gavran": {
+      "team": "Toronto FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Vincent Janssen": {
+      "team": "Portland Timbers",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Drake Callender": {
+      "team": "Portland Timbers",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marcus Caldeira": {
+      "team": "Minnesota United",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Anthony Markanich": {
+      "team": "Minnesota United",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tomás Chancalay": {
+      "team": "Minnesota United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Michael Boxall": {
+      "team": "Minnesota United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Finn Surman": {
+      "team": "Portland Timbers",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jefferson Díaz": {
+      "team": "Minnesota United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Morris Duggan": {
+      "team": "Minnesota United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Emmanuel Sabbi": {
+      "team": "Vancouver Whitecaps",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Simon Becher": {
+      "team": "St. Louis City",
+      "goals": 5,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Conrad Wallem": {
+      "team": "St. Louis City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Thomas Müller": {
+      "team": "Vancouver Whitecaps",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mathías Laborda": {
+      "team": "Vancouver Whitecaps",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Christopher Durkin": {
+      "team": "St. Louis City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Fallou Fall": {
+      "team": "St. Louis City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marco Reus": {
+      "team": "Los Angeles Galaxy",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Robert Taylor": {
+      "team": "Los Angeles Galaxy",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "William Sands": {
+      "team": "Toronto FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jack Harrison": {
+      "team": "New England Revolution",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Harbor Miller": {
+      "team": "Los Angeles Galaxy",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Hirving Lozano": {
+      "team": "Los Angeles Galaxy",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Mamadou Fofana": {
+      "team": "New England Revolution",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Denis Bouanga": {
+      "team": "Los Angeles FC",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Son Heung-Min": {
+      "team": "Los Angeles FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Noel Caliskan": {
+      "team": "Real Salt Lake",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luca Moisa": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Miguel Almirón": {
+      "team": "Atlanta Utd",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luis Suárez": {
+      "team": "Inter Miami",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Breel Embolo": {
+      "team": "Atlanta Utd",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Cooper Sanchez": {
+      "team": "Atlanta Utd",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Paulo Díaz": {
+      "team": "Atlanta Utd",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dayne St. Clair": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rodrigo De Paul": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Matt Edwards": {
+      "team": "Atlanta Utd",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Guilherme Biro": {
+      "team": "Austin FC",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Reid Roberts": {
+      "team": "San Jose Earthquakes",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Brad Stuver": {
+      "team": "Austin FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Taylor Calheira": {
+      "team": "Sporting Kansas City",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Stephen Afrifa": {
+      "team": "Sporting Kansas City",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Logan Farrington": {
+      "team": "FC Dallas",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Petar Musa": {
+      "team": "FC Dallas",
+      "goals": 5,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Moisés Mosquera": {
+      "team": "Sporting Kansas City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 1
+    },
+    "Emir Karic": {
+      "team": "Sporting Kansas City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Justin Che": {
+      "team": "New York Red Bulls",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Paul Rothrock": {
+      "team": "Seattle Sounders",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Felipe Andrade": {
+      "team": "Houston Dynamo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tim Ream": {
+      "team": "Charlotte",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Djibril Diani": {
+      "team": "Charlotte",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Agustín Resch": {
+      "team": "Houston Dynamo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ashley Westwood": {
+      "team": "Charlotte",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Artur": {
+      "team": "Houston Dynamo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Allan Saint-Maximin": {
+      "team": "Charlotte",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gonzalo Tapia": {
+      "team": "Columbus Crew",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Taha Habroune": {
+      "team": "Columbus Crew",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Brooks Lennon": {
+      "team": "Columbus Crew",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Patrick Schulte": {
+      "team": "Columbus Crew",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "David Vazquez": {
+      "team": "San Diego FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kieran Sargeant": {
+      "team": "San Diego FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Danley Jean Jacques": {
+      "team": "Philadelphia Union",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Cavan Sullivan": {
+      "team": "Philadelphia Union",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Jovan Lukic": {
+      "team": "Philadelphia Union",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Hennadii Synchuk": {
+      "team": "CF Montreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Samuel Piette": {
+      "team": "CF Montreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dawid Bugaj": {
+      "team": "CF Montreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kai Wagner": {
+      "team": "Philadelphia Union",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Jesús Bueno": {
+      "team": "Philadelphia Union",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Maren Haile-Selassie": {
+      "team": "Chicago Fire",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Josh Sargent": {
+      "team": "Toronto FC",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Walker Zimmerman": {
+      "team": "Toronto FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Samual Rogers": {
+      "team": "Chicago Fire",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Markus Cimermancic": {
+      "team": "Toronto FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Robin Lod": {
+      "team": "Chicago Fire",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Benjamín Kuscevic": {
+      "team": "Toronto FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Andy Nájar": {
+      "team": "Nashville SC",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Patrick Yazbek": {
+      "team": "Nashville SC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hany Mukhtar": {
+      "team": "Nashville SC",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kevin O'Toole": {
+      "team": "New York City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Malachi Jones": {
+      "team": "New York City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Bryan Acosta": {
+      "team": "Nashville SC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Shaq Moore": {
+      "team": "FC Dallas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Daniel Edelman": {
+      "team": "St. Louis City",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Carlo Holse": {
+      "team": "St. Louis City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sebastien Ibeagha": {
+      "team": "FC Dallas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lukas MacNaughton": {
+      "team": "St. Louis City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Brais Méndez": {
+      "team": "Columbus Crew",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dor Turgeman": {
+      "team": "New England Revolution",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Antony": {
+      "team": "Portland Timbers",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Oleksandr Svatok": {
+      "team": "Austin FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Mikkel Desler": {
+      "team": "Austin FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "José Caicedo": {
+      "team": "Portland Timbers",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joseph Rosales": {
+      "team": "Austin FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Elias Achouri": {
+      "team": "San Diego FC",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Amahl Pellegrino": {
+      "team": "San Diego FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Gabriel Pirani": {
+      "team": "San Diego FC",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aníbal Godoy": {
+      "team": "San Diego FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joseph Paintsil": {
+      "team": "Los Angeles Galaxy",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hamzat Ojediran": {
+      "team": "Colorado Rapids",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rob Holding": {
+      "team": "Colorado Rapids",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aiden Hezarkhani": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Morgan Guilavogui": {
+      "team": "Real Salt Lake",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Miguel Navarro": {
+      "team": "Colorado Rapids",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Daryl Dike": {
+      "team": "Orlando City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marco Pasalic": {
+      "team": "Orlando City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ahmed Qasim": {
+      "team": "Nashville SC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jeisson Palacios": {
+      "team": "Nashville SC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Edvard Tagseth": {
+      "team": "Nashville SC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bryan Ramirez": {
+      "team": "FC Cincinnati",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Rayan Elloumi": {
+      "team": "Vancouver Whitecaps",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Tate Johnson": {
+      "team": "Vancouver Whitecaps",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adrian Gill": {
+      "team": "Atlanta Utd",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Fabian Herbers": {
+      "team": "CF Montreal",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alexander Shaw": {
+      "team": "Inter Miami",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ian Fray": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Noah Streit": {
+      "team": "CF Montreal",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Neil Pierre": {
+      "team": "Philadelphia Union",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Eric Maxim Choupo-Moting": {
+      "team": "New York Red Bulls",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Augustin Anello": {
+      "team": "Philadelphia Union",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicolás Fernández": {
+      "team": "New York City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Andrés Perea": {
+      "team": "New York City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Djordje Mihailovic": {
+      "team": "Toronto FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Matheus Pereira": {
+      "team": "Toronto FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Jonathan Shore": {
+      "team": "New York City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dejan Joveljic": {
+      "team": "Seattle Sounders",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Snyder Brunell": {
+      "team": "Seattle Sounders",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fafà Picault": {
+      "team": "Atlanta Utd",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luke Brennan": {
+      "team": "Atlanta Utd",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Elías Baez": {
+      "team": "Atlanta Utd",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "James Sands": {
+      "team": "New York City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Keaton Parks": {
+      "team": "New York City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "David Da Costa": {
+      "team": "Portland Timbers",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mathieu Choinière": {
+      "team": "Los Angeles FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Kevin Kelsy": {
+      "team": "Portland Timbers",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Onni Valakari": {
+      "team": "San Diego FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Keegan Rosenberry": {
+      "team": "Colorado Rapids",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alex Harris": {
+      "team": "Colorado Rapids",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Timo Werner": {
+      "team": "San Jose Earthquakes",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Joaquín Pereyra": {
+      "team": "Minnesota United",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mauricio Gonzalez": {
+      "team": "Minnesota United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Benjamin Kikanovic": {
+      "team": "San Jose Earthquakes",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Édier Ocampo": {
+      "team": "Vancouver Whitecaps",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ran Binyamin": {
+      "team": "FC Dallas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Joshua Torquato": {
+      "team": "FC Dallas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lalas Abubakar": {
+      "team": "FC Dallas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Brendan Hines-Ike": {
+      "team": "Austin FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ervin Torres": {
+      "team": "Austin FC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mohamed Farsi": {
+      "team": "Columbus Crew",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "André Gomes": {
+      "team": "Columbus Crew",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Daniel Lovitz": {
+      "team": "Nashville SC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ibrahim Aliyu": {
+      "team": "Houston Dynamo",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Alexandru Matan": {
+      "team": "St. Louis City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Agustín Bouzat": {
+      "team": "Houston Dynamo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Lucas Halter": {
+      "team": "Houston Dynamo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ruben Ramos": {
+      "team": "Los Angeles Galaxy",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Maya Yoshida": {
+      "team": "Los Angeles Galaxy",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Prince Owusu": {
+      "team": "CF Montreal",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Brandan Craig": {
+      "team": "CF Montreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Brayan Ceballos": {
+      "team": "CF Montreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "JT Marcinkowski": {
+      "team": "Los Angeles Galaxy",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Louis Munteanu": {
+      "team": "DC United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Will Cleary": {
+      "team": "Charlotte",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Keisuke Kurokawa": {
+      "team": "DC United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Silvan Hefti": {
+      "team": "DC United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tyger Smalls": {
+      "team": "Charlotte",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kalani Kossa-Rienzi": {
+      "team": "Seattle Sounders",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ryan Sailor": {
+      "team": "Seattle Sounders",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Peter Kingston": {
+      "team": "Seattle Sounders",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Richie Laryea": {
+      "team": "Toronto FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "David Ayala": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dominik Marczuk": {
+      "team": "Real Salt Lake",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lineker Rodrigues": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Alexandros Katranis": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kobi Henry": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Eduard Atuesta": {
+      "team": "Orlando City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Cameron Harper": {
+      "team": "New York Red Bulls",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Leonardo Barroso": {
+      "team": "Chicago Fire",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joel Waterman": {
+      "team": "Chicago Fire",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nick Fernandez": {
+      "team": "San Jose Earthquakes",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lucas Sanabria": {
+      "team": "Los Angeles Galaxy",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Dave Romney": {
+      "team": "San Jose Earthquakes",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jack Jasinski": {
+      "team": "San Jose Earthquakes",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ariel Lassiter": {
+      "team": "Portland Timbers",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Oscar Verhoeven": {
+      "team": "San Diego FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Franco Negri": {
+      "team": "Houston Dynamo",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Andrés Cubas": {
+      "team": "Vancouver Whitecaps",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jeremy Ebobisse": {
+      "team": "Colorado Rapids",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Yevhen Cheberko": {
+      "team": "Los Angeles FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Youssef Maziz": {
+      "team": "Colorado Rapids",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Eddie Segura": {
+      "team": "Los Angeles FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Nkosi Tafari": {
+      "team": "Los Angeles FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Darren Yapi": {
+      "team": "Colorado Rapids",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kosi Thompson": {
+      "team": "Colorado Rapids",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joaquín Valiente": {
+      "team": "FC Dallas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sergi Solans": {
+      "team": "Real Salt Lake",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nolan Norris": {
+      "team": "FC Dallas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "DeAndre Yedlin": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pablo Ruiz": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Stuart Hawkins": {
+      "team": "Seattle Sounders",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Júnior Alonso": {
+      "team": "Atlanta Utd",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Eduard Löwen": {
+      "team": "St. Louis City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Calvin Harris": {
+      "team": "Sporting Kansas City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Zorhan Bassong": {
+      "team": "Sporting Kansas City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Jansen Miller": {
+      "team": "Sporting Kansas City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Thomas Gillier": {
+      "team": "Columbus Crew",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Rudy Camacho": {
+      "team": "Columbus Crew",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Brayan Vera": {
+      "team": "CF Montreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jalen Neal": {
+      "team": "CF Montreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Brooklyn Raines": {
+      "team": "New England Revolution",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Andre Dozzell": {
+      "team": "DC United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Matt Miazga": {
+      "team": "FC Cincinnati",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Puso Dithejane": {
+      "team": "Chicago Fire",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Robin Jansson": {
+      "team": "Orlando City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Viktor Radojevic": {
+      "team": "Chicago Fire",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Indiana Vassilev": {
+      "team": "Philadelphia Union",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dániel Pintér": {
+      "team": "Inter Miami",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sergio Reguilón": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ezekiel Alladoh": {
+      "team": "Philadelphia Union",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yannick Bright": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Matthew Corcoran": {
+      "team": "Nashville SC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Henry Kessler": {
+      "team": "Charlotte",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jackson Ragen": {
+      "team": "Seattle Sounders",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nouhou Tolo": {
+      "team": "Seattle Sounders",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mateja Djordjevic": {
+      "team": "Austin FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bernard Kamungo": {
+      "team": "FC Dallas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Myrto Uzuni": {
+      "team": "Austin FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Brandon Bye": {
+      "team": "Portland Timbers",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Anton Saletros": {
+      "team": "Chicago Fire",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bénie Traoré": {
+      "team": "New York City",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nathan Harriel": {
+      "team": "Philadelphia Union",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tayvon Gray": {
+      "team": "New York City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alejandro Alvarado Jr.": {
+      "team": "San Diego FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mark Delgado": {
+      "team": "Los Angeles FC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Shapi Suleymanov": {
+      "team": "Sporting Kansas City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kwaku Agyabeng": {
+      "team": "Sporting Kansas City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Zach Booth": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Stijn Spierings": {
+      "team": "Real Salt Lake",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lawrence Ennali": {
+      "team": "Houston Dynamo",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "David Ruiz": {
+      "team": "Inter Miami",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Emil Forsberg": {
+      "team": "New York Red Bulls",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jackson Hopkins": {
+      "team": "DC United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luca Petrasso": {
+      "team": "CF Montreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Brandt Bronico": {
+      "team": "Charlotte",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Chase Adams": {
+      "team": "Columbus Crew",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Wilson Harris": {
+      "team": "New England Revolution",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    }
+  },
+  "processed_ids": [
+    "761804",
+    "761803",
+    "761802",
+    "761800",
+    "761801",
+    "761795",
+    "761796",
+    "761797",
+    "761799",
+    "761794",
+    "761792",
+    "761791",
+    "761793",
+    "761788",
+    "761786",
+    "761787",
+    "761785",
+    "761789",
+    "761790",
+    "761783",
+    "761784",
+    "761773",
+    "761782",
+    "761781",
+    "761777",
+    "761778",
+    "761779",
+    "761780",
+    "761774",
+    "761775",
+    "761771",
+    "761772",
+    "761776",
+    "761770",
+    "761769",
+    "761758",
+    "761768",
+    "761767",
+    "761766",
+    "761765",
+    "761763",
+    "761764",
+    "761762",
+    "761759",
+    "761756",
+    "761757",
+    "761761",
+    "761760",
+    "761755",
+    "761754",
+    "761753",
+    "761751",
+    "761750",
+    "761752",
+    "761749",
+    "761748",
+    "761746",
+    "761747",
+    "761745",
+    "761741",
+    "761743",
+    "761742",
+    "761740",
+    "761744",
+    "761738",
+    "761737",
+    "761739",
+    "761734",
+    "761735",
+    "761736",
+    "761733",
+    "761732",
+    "761726",
+    "761725",
+    "761730",
+    "761729",
+    "761727",
+    "761728",
+    "761731",
+    "761724",
+    "761717",
+    "761723",
+    "761722",
+    "761720",
+    "761721",
+    "761718",
+    "761719",
+    "761715",
+    "761716",
+    "761712",
+    "761711",
+    "761710",
+    "761713",
+    "761714"
+  ],
+  "updated_at": "2026-09-13T14:47:09.785776+00:00"
+}

@@ -1,0 +1,824 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Jamal Musiala": {
+      "team": "Bayern Munich",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Harry Kane": {
+      "team": "Bayern Munich",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alphonso Davies": {
+      "team": "Bayern Munich",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Michael Olise": {
+      "team": "Bayern Munich",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sondre Brunstad Fet": {
+      "team": "Bodo/Glimt",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Odin Bjørtuft": {
+      "team": "Bodo/Glimt",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Martin Baturina": {
+      "team": "Como",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Anastasios Douvikas": {
+      "team": "Como",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Assane Diao": {
+      "team": "Como",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Andrija Maksimovic": {
+      "team": "RB Leipzig",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Máximo Perrone": {
+      "team": "Como",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Willi Orbán": {
+      "team": "RB Leipzig",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Christopher Nkunku": {
+      "team": "RB Leipzig",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nico Paz": {
+      "team": "Como",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ezechiel Banzuzi": {
+      "team": "RB Leipzig",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Matheus Cunha": {
+      "team": "Manchester United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Bruno Fernandes": {
+      "team": "Manchester United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Benjamin Sesko": {
+      "team": "Manchester United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lisandro Martínez": {
+      "team": "Manchester United",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Patrick Dorgu": {
+      "team": "Manchester United",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ivan Lepinjica": {
+      "team": "Sabah FK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Danijel Sturm": {
+      "team": "Slavia Prague",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Abdallah Sima": {
+      "team": "Lens",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Florian Thauvin": {
+      "team": "Lens",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ruben Aguilar": {
+      "team": "Lens",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Pierre Ganiou": {
+      "team": "Lens",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mikulás Konecny": {
+      "team": "Slavia Prague",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Bryan Cristante": {
+      "team": "AS Roma",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Archie Brown": {
+      "team": "Fenerbahce",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Devyne Rensch": {
+      "team": "AS Roma",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kerem Aktürkoglu": {
+      "team": "Fenerbahce",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mert Müldür": {
+      "team": "Fenerbahce",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ismail Yüksek": {
+      "team": "Fenerbahce",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gleiker Mendoza": {
+      "team": "Shakhtar Donetsk",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sergiño Dest": {
+      "team": "PSV Eindhoven",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Vinicius Augusto": {
+      "team": "Shakhtar Donetsk",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pedrinho": {
+      "team": "Shakhtar Donetsk",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Armando Obispo": {
+      "team": "PSV Eindhoven",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Valeriy Bondar": {
+      "team": "Shakhtar Donetsk",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ruben Van Bommel": {
+      "team": "PSV Eindhoven",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dmytro Kryskiv": {
+      "team": "Shakhtar Donetsk",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marlon Gomes": {
+      "team": "Shakhtar Donetsk",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marcos Llorente": {
+      "team": "Atlético Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dominik Szoboszlai": {
+      "team": "Liverpool",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alexis Mac Allister": {
+      "team": "Liverpool",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marc Pubill": {
+      "team": "Atlético Madrid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Martin Ødegaard": {
+      "team": "Arsenal",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Billy Gilmour": {
+      "team": "Napoli",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lorenzo Lucca": {
+      "team": "Napoli",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ousmane Dembélé": {
+      "team": "Paris Saint-Germain",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ferran Torres": {
+      "team": "Paris Saint-Germain",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Suleiman Camara": {
+      "team": "Slovan Bratislava",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fabián Ruiz": {
+      "team": "Paris Saint-Germain",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "César Blackman": {
+      "team": "Slovan Bratislava",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gonçalo Inácio": {
+      "team": "Galatasaray",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Geny Catamo": {
+      "team": "Sporting CP",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luis Suárez": {
+      "team": "Sporting CP",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rodrigo Zalazar": {
+      "team": "Sporting CP",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sergi Altimira": {
+      "team": "Sporting CP",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Eren Elmali": {
+      "team": "Galatasaray",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Deniz Gül": {
+      "team": "Galatasaray",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ismail Jakobs": {
+      "team": "Galatasaray",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Raphinha": {
+      "team": "Barcelona",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Karim Adeyemi": {
+      "team": "Barcelona",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lamine Yamal": {
+      "team": "Barcelona",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sem Steijn": {
+      "team": "Feyenoord Rotterdam",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Gabriel Jesus": {
+      "team": "Barcelona",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Charles Vanhoutte": {
+      "team": "Feyenoord Rotterdam",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dani Olmo": {
+      "team": "Barcelona",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ermedin Demirovic": {
+      "team": "VfB Stuttgart",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Zlatko Tripic": {
+      "team": "Viking FK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kristoffer Askildsen": {
+      "team": "Viking FK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Peter Christiansen": {
+      "team": "Viking FK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joe Bell": {
+      "team": "Viking FK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Renato Veiga": {
+      "team": "Borussia Dortmund",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Santiago Mouriño": {
+      "team": "Villarreal",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Serhou Guirassy": {
+      "team": "Borussia Dortmund",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Waldemar Anton": {
+      "team": "Borussia Dortmund",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pau Navarro": {
+      "team": "Villarreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sergi Cardona": {
+      "team": "Villarreal",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Erling Haaland": {
+      "team": "Manchester City",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Josko Gvardiol": {
+      "team": "Manchester City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gianluigi Donnarumma": {
+      "team": "Manchester City",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pablo Rosario": {
+      "team": "FC Porto",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ayase Ueda": {
+      "team": "Lille",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marc Bartra": {
+      "team": "Real Betis",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alexsandro": {
+      "team": "Lille",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Troy Parrott": {
+      "team": "Real Betis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Natan": {
+      "team": "Real Betis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Facundo Bernal": {
+      "team": "Real Betis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marc Roca": {
+      "team": "Real Betis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Olivier Giroud": {
+      "team": "Lille",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ethan Mbappé": {
+      "team": "Lille",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Kylian Mbappé": {
+      "team": "Real Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Federico Valverde": {
+      "team": "Real Madrid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Carlos Augusto": {
+      "team": "Internazionale",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Hakan Çalhanoglu": {
+      "team": "Internazionale",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dean Huijsen": {
+      "team": "Real Madrid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lautaro Martínez": {
+      "team": "Internazionale",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yann Bisseck": {
+      "team": "Internazionale",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Razvan Marin": {
+      "team": "AEK Athens",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luka Jovic": {
+      "team": "AEK Athens",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Melayro Bogarde": {
+      "team": "LASK Linz",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Andrés Andrade": {
+      "team": "LASK Linz",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "John McGinn": {
+      "team": "Aston Villa",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hugo Vetlesen": {
+      "team": "Club Brugge",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Emiliano Buendía": {
+      "team": "Aston Villa",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nicolas Jackson": {
+      "team": "Aston Villa",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nicolo Tresoldi": {
+      "team": "Club Brugge",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ian Maatsen": {
+      "team": "Aston Villa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hans Vanaken": {
+      "team": "Club Brugge",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jan Virgili": {
+      "team": "Club Brugge",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Romeo Vermant": {
+      "team": "Club Brugge",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "João Gomes": {
+      "team": "Aston Villa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    }
+  },
+  "processed_ids": [
+    "401915443",
+    "401915441",
+    "401915442",
+    "401915440",
+    "401915444",
+    "401915422",
+    "401915446",
+    "401915423",
+    "401915445",
+    "401915447",
+    "401915424",
+    "401915448",
+    "401915449",
+    "401915425",
+    "401915450",
+    "401915451",
+    "401915452",
+    "401915426"
+  ],
+  "updated_at": "2026-09-13T14:47:09.777880+00:00"
+}

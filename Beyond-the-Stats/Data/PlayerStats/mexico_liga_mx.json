@@ -1,0 +1,1158 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Alexis Vega": {
+      "team": "Toluca",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jesús Angulo": {
+      "team": "Toluca",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Federico Viñas": {
+      "team": "Toluca",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Florián Monzón": {
+      "team": "Atlas",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Paulinho": {
+      "team": "Toluca",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jorge Rodríguez": {
+      "team": "Monterrey",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Duk": {
+      "team": "Atlas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Manuel Capasso": {
+      "team": "Atlas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Helinho": {
+      "team": "Toluca",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Milton Valenzuela": {
+      "team": "Atlas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jesús Serrato": {
+      "team": "Atlas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mateo Coronel": {
+      "team": "Queretaro",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Daniel Parra": {
+      "team": "Queretaro",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bayron Duarte": {
+      "team": "Queretaro",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ali Avila": {
+      "team": "Queretaro",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Santiago Homenchenko": {
+      "team": "Queretaro",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Diego Reyes": {
+      "team": "Queretaro",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Salomón Rondón": {
+      "team": "Pachuca",
+      "goals": 5,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kenedy": {
+      "team": "Pachuca",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Oussama Idrissi": {
+      "team": "Pachuca",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Christian Rivera": {
+      "team": "Pachuca",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Eduardo Tercero": {
+      "team": "Atlante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Martín Fernández": {
+      "team": "Atlante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sergio Rodríguez": {
+      "team": "Pachuca",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Carlos Sánchez": {
+      "team": "Pachuca",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Mathías Tomás": {
+      "team": "Puebla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Juan Pablo Vargas": {
+      "team": "Puebla",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Raúl Martínez": {
+      "team": "Necaxa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fernando Monarrez": {
+      "team": "Puebla",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Carlos Baltazar": {
+      "team": "Puebla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luis Jiménez": {
+      "team": "Necaxa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Juninho": {
+      "team": "UNAM Pumas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "José Alvarado": {
+      "team": "Club Leon",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Robert Morales": {
+      "team": "UNAM Pumas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Pedro Vite": {
+      "team": "UNAM Pumas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Angel Azuaje": {
+      "team": "UNAM Pumas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Juan Domínguez": {
+      "team": "Club Leon",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luciano Herrera": {
+      "team": "UNAM Pumas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "José Paradela": {
+      "team": "Cruz Azul",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aldo López": {
+      "team": "Santos Laguna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Luís Esteves": {
+      "team": "Atlas",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Martín Sarrafiore": {
+      "team": "Atlante",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Eugenio Pizzuto": {
+      "team": "Atlante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Aldo Rocha": {
+      "team": "Atlas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joaquín Moxica": {
+      "team": "Atlante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rodrigo Schlegel": {
+      "team": "Atlas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Owen González": {
+      "team": "Necaxa",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rodrigo Aguirre": {
+      "team": "Tigres UANL",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fernando Ordóñez": {
+      "team": "Tigres UANL",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ricardo Monreal": {
+      "team": "Necaxa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Nahuel Guzmán": {
+      "team": "Tigres UANL",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pedro Pedraza": {
+      "team": "Necaxa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Andrés Sánchez": {
+      "team": "Guadalajara Chivas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ricardo Marín": {
+      "team": "Guadalajara Chivas",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Richard Ledezma": {
+      "team": "Guadalajara Chivas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Johan Caicedo": {
+      "team": "Atl. San Luis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alan Bautista": {
+      "team": "Pachuca",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Denzell García": {
+      "team": "Juarez",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jesús Murillo": {
+      "team": "Juarez",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Eder López": {
+      "team": "Juarez",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Javier Aquino": {
+      "team": "Juarez",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Rodrigo Dourado": {
+      "team": "Juarez",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sergio Barreto": {
+      "team": "Pachuca",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Alejandro Mayorga": {
+      "team": "Juarez",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Francisco Venegas": {
+      "team": "Pachuca",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "David Rodriguez": {
+      "team": "Atl. San Luis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Rafa Llorente": {
+      "team": "Atl. San Luis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Hugo Cuypers": {
+      "team": "Monterrey",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Oscar Macías": {
+      "team": "Atl. San Luis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Eduardo Águila": {
+      "team": "Atl. San Luis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Daniel Aceves": {
+      "team": "Monterrey",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Anderson Duarte": {
+      "team": "Atl. San Luis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Oswaldo Virgen": {
+      "team": "Toluca",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Francisco Nevarez": {
+      "team": "Juarez",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Franco Pardo": {
+      "team": "Santos Laguna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fernando Gorriarán": {
+      "team": "Tigres UANL",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Javier Güemez": {
+      "team": "Santos Laguna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luis Gómez": {
+      "team": "Santos Laguna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ícaro ca Conceição": {
+      "team": "Club America",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Brian Rodríguez": {
+      "team": "Club America",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sergio Sanabria": {
+      "team": "Puebla",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Carlo García": {
+      "team": "Queretaro",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Enzo Giménez": {
+      "team": "Queretaro",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Paulo Victor": {
+      "team": "Queretaro",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Roberto Alvarado": {
+      "team": "Guadalajara Chivas",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Andrés Arroyo": {
+      "team": "Pachuca",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gilberto Mora": {
+      "team": "Club Tijuana",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Adalberto Carrasquilla": {
+      "team": "UNAM Pumas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Iván Tona": {
+      "team": "Club Tijuana",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pablo Bennevendo": {
+      "team": "UNAM Pumas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Sebastián Vegas": {
+      "team": "Club Leon",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luis Puente": {
+      "team": "Atlante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ángel Márquez": {
+      "team": "Cruz Azul",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicolás Ibáñez": {
+      "team": "Cruz Azul",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Willer Ditta": {
+      "team": "Cruz Azul",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Miguel Rodríguez": {
+      "team": "Necaxa",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Daniel Leyva": {
+      "team": "Necaxa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Amaury García": {
+      "team": "Cruz Azul",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Javier Ruiz": {
+      "team": "Necaxa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Juan Torres": {
+      "team": "Necaxa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Julián Carranza": {
+      "team": "Necaxa",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Israel Luna": {
+      "team": "UNAM Pumas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luis Nájera": {
+      "team": "Atl. San Luis",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Carlos Moreno": {
+      "team": "Pachuca",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Eduardo Bauermann": {
+      "team": "Pachuca",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Edgar Zaldivar": {
+      "team": "Atlas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Facundo Almada": {
+      "team": "Puebla",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Eduardo Mustre": {
+      "team": "Puebla",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ezequiel Bullaude": {
+      "team": "Santos Laguna",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kevin Picón": {
+      "team": "Santos Laguna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Santiago Sandoval": {
+      "team": "Guadalajara Chivas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Diego Campillo": {
+      "team": "Guadalajara Chivas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Elias Manoel": {
+      "team": "Club Tijuana",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Efrain Álvarez": {
+      "team": "Guadalajara Chivas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ramiro Árciga": {
+      "team": "Club Tijuana",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Miguel Gómez": {
+      "team": "Guadalajara Chivas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luis Romo": {
+      "team": "Guadalajara Chivas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Óscar Estupiñán": {
+      "team": "Juarez",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Henry Martín": {
+      "team": "Club America",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Madson": {
+      "team": "Juarez",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jairo Torres": {
+      "team": "Juarez",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Raphael Veiga": {
+      "team": "Club America",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fernando Arce": {
+      "team": "Toluca",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicolás Castro": {
+      "team": "Toluca",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Iker Benito": {
+      "team": "Queretaro",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Diego Zaragoza": {
+      "team": "Toluca",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Jordi Cortizo": {
+      "team": "Club Leon",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Daniel Arcila": {
+      "team": "Club Leon",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ricardo Chávez": {
+      "team": "Monterrey",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luis Cárdenas": {
+      "team": "Monterrey",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Juan Guevara": {
+      "team": "Club Leon",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jhohan Romaña": {
+      "team": "Club Leon",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Juan Brunetta": {
+      "team": "Tigres UANL",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luis Calzadilla": {
+      "team": "Atlante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Emiliano Gomez": {
+      "team": "Puebla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kevin Velasco": {
+      "team": "Puebla",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Matías Espíndola": {
+      "team": "Necaxa",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kaiky Naves": {
+      "team": "Necaxa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bryan Colula": {
+      "team": "Club Leon",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rodrigo Echeverría": {
+      "team": "Club Leon",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Ignacio Rivero": {
+      "team": "Club Tijuana",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Osinachi Ebere": {
+      "team": "Cruz Azul",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adonis Preciado": {
+      "team": "Club Tijuana",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alán Montes": {
+      "team": "Cruz Azul",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mauricio Cuevas": {
+      "team": "Santos Laguna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Óscar Perea": {
+      "team": "Club America",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Osvaldo Arriaga": {
+      "team": "Club America",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Robson Bambu": {
+      "team": "Atl. San Luis",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Nathan Silva": {
+      "team": "UNAM Pumas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jean Unjanque": {
+      "team": "Queretaro",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Víctor Ríos": {
+      "team": "Atlas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jesús Garza": {
+      "team": "Tigres UANL",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Juanjo Purata": {
+      "team": "Atlas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Luca Orellano": {
+      "team": "Monterrey",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Diego Rossi": {
+      "team": "Monterrey",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Orbelín Pineda": {
+      "team": "Monterrey",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lucas Ocampos": {
+      "team": "Monterrey",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Aarón Quirós": {
+      "team": "Atlante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicolás Carrera": {
+      "team": "Atlante",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    }
+  },
+  "processed_ids": [
+    "401876982",
+    "401876978",
+    "401876979",
+    "401876980",
+    "401876984",
+    "401876983",
+    "401876985",
+    "401876987",
+    "401876989",
+    "401876990",
+    "401876992",
+    "401876993",
+    "401876994",
+    "401876995",
+    "401876997",
+    "401876996",
+    "401876998",
+    "401876999",
+    "401877000",
+    "401877001",
+    "401877002",
+    "401877003",
+    "401877009",
+    "401877006",
+    "401877008",
+    "401877007",
+    "401877005",
+    "401877004",
+    "401877010",
+    "401877011",
+    "401877012",
+    "401877013",
+    "401877014",
+    "401877015",
+    "401877016",
+    "401877017",
+    "401877018"
+  ],
+  "updated_at": "2026-09-13T14:47:09.785781+00:00"
+}

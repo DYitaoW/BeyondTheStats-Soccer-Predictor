@@ -1,0 +1,988 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Sam Larsson": {
+      "team": "Goteborg",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Felix Eriksson": {
+      "team": "Goteborg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rocco Ascone": {
+      "team": "Halmstad",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Hussein Carneil": {
+      "team": "Halmstad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tom Trybull": {
+      "team": "Halmstad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Noah Tolf": {
+      "team": "Goteborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alfons Borén": {
+      "team": "Goteborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Johan Hove": {
+      "team": "AIK",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jens Magnusson": {
+      "team": "Vasteras SK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Mamadou Diagné": {
+      "team": "Vasteras SK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ismet Lushaku": {
+      "team": "Vasteras SK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Abdelrahman Boudah Saidi": {
+      "team": "Vasteras SK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jacob Bergstrom": {
+      "team": "Mjallby",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Julius Lindberg": {
+      "team": "Hacken",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jesper Gustavsson": {
+      "team": "Mjallby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Bo Hegland": {
+      "team": "Djurgarden",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Abdussalam Magashy": {
+      "team": "Kalmar",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Christos Almyras": {
+      "team": "Djurgarden",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Max Larsson": {
+      "team": "Djurgarden",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Mads Thychosen": {
+      "team": "AIK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sead Haksabanovic": {
+      "team": "Malmo FF",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Amel Mujanic": {
+      "team": "AIK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nino Zugelj": {
+      "team": "Goteborg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alexander Simmelhack": {
+      "team": "Goteborg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Olle Lindberg": {
+      "team": "Mjallby",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Hjörtur Hermannsson": {
+      "team": "Goteborg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Oliver Månsson": {
+      "team": "Goteborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jeppe Kjaer Jensen": {
+      "team": "Mjallby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ludvig Tidstrand": {
+      "team": "Mjallby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Anton Kurochkin": {
+      "team": "Brommapojkarna",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Momoh Kamara": {
+      "team": "Elfsborg",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Viggo Elfstrom": {
+      "team": "Brommapojkarna",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kaare Barslund": {
+      "team": "Brommapojkarna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Leo Östman": {
+      "team": "Elfsborg",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alexander Jensen": {
+      "team": "Elfsborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "William Hofvander": {
+      "team": "Orgryte",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Victor Lind": {
+      "team": "Hammarby",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Victor Eriksson": {
+      "team": "Hammarby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Markus Karlsson": {
+      "team": "Hammarby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jesper Uneken": {
+      "team": "Sirius",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Axel Taonsa": {
+      "team": "Vasteras SK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Philip Bonde": {
+      "team": "Vasteras SK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ludvig Fritzson": {
+      "team": "Degerfors",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nahom Netabay": {
+      "team": "Degerfors",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dijan Vukojevic": {
+      "team": "Degerfors",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Samba Diatara": {
+      "team": "Degerfors",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Oskar Ågren": {
+      "team": "GAIS",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "William Milovanovic": {
+      "team": "GAIS",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Kristian Stromland Lien": {
+      "team": "Djurgarden",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jeppe Okkels": {
+      "team": "Djurgarden",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Viktor Gustafson": {
+      "team": "Mjallby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Oskar Fallenius": {
+      "team": "Djurgarden",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tom Pettersson": {
+      "team": "Mjallby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Villiam Granath": {
+      "team": "Mjallby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Miro Tenho": {
+      "team": "Djurgarden",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Patric Åslund": {
+      "team": "Djurgarden",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Romeo Leandersson": {
+      "team": "Mjallby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rasmus Niklasson Petrovic": {
+      "team": "GAIS",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Frosti Thorkelsson": {
+      "team": "GAIS",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Samuel Salter": {
+      "team": "GAIS",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Max Andersson": {
+      "team": "GAIS",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jordan Simpson": {
+      "team": "Brommapojkarna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Wilmer Odefalk": {
+      "team": "Brommapojkarna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Christos Gravius": {
+      "team": "GAIS",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Atle Wahlund": {
+      "team": "Brommapojkarna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Diego García": {
+      "team": "Malmo FF",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tobias Anker": {
+      "team": "Sirius",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Mohamed Soumah": {
+      "team": "Sirius",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Adrian Skogmar": {
+      "team": "Malmo FF",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adam Bergmark Wiberg": {
+      "team": "Goteborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Frank Junior Adjei": {
+      "team": "Hammarby",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Linus Carlstrand": {
+      "team": "AIK",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Paulos Abraham": {
+      "team": "Hammarby",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Axel Kouame": {
+      "team": "AIK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sixten Gustafsson": {
+      "team": "AIK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Wilmer Olofsson": {
+      "team": "AIK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Abdihakim Ali": {
+      "team": "AIK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yannick Geiger": {
+      "team": "AIK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ladji Camara": {
+      "team": "AIK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Erik Arvidsson": {
+      "team": "Halmstad",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Niilo Mäenpää": {
+      "team": "Halmstad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alexander Almqvist": {
+      "team": "Kalmar",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Simon Gefvert": {
+      "team": "Vasteras SK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bonaventure Lendambi": {
+      "team": "Vasteras SK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mattias Hellisdal": {
+      "team": "Vasteras SK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Christ Wawa": {
+      "team": "Hacken",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Abdoulaye Doumbia": {
+      "team": "Hacken",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Etrit Berisha": {
+      "team": "Hacken",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Leo Väisänen": {
+      "team": "Hacken",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Ari Sigurpálsson": {
+      "team": "Elfsborg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Robin Dzabic": {
+      "team": "Degerfors",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Malte Palsson": {
+      "team": "Malmo FF",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Busanello": {
+      "team": "Malmo FF",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kenan Busuladzic": {
+      "team": "Malmo FF",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Otto Rosengren": {
+      "team": "Malmo FF",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Henry Sletsjøe": {
+      "team": "GAIS",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Matteo de Brienne": {
+      "team": "GAIS",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mads Hansen": {
+      "team": "Brommapojkarna",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Oliver Zandén": {
+      "team": "Brommapojkarna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ahmad Faqa": {
+      "team": "Degerfors",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tobias Heintz": {
+      "team": "Goteborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Simon Olsson": {
+      "team": "Elfsborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rasmus Wikstrom": {
+      "team": "Elfsborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Julius Beck": {
+      "team": "Elfsborg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Victor Wernersson": {
+      "team": "Vasteras SK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lars Saetra": {
+      "team": "Kalmar",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tobias Sana": {
+      "team": "Orgryte",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Joel Allansson": {
+      "team": "Halmstad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Benjamin Laturnus": {
+      "team": "Orgryte",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gustav Lindgren": {
+      "team": "Hacken",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Melker Heier": {
+      "team": "Sirius",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "David Seger": {
+      "team": "Hacken",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Harun Ibrahim": {
+      "team": "Hacken",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pascal Gregor": {
+      "team": "Halmstad",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adrian Svanbäck": {
+      "team": "Hacken",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Filip Beckman": {
+      "team": "Malmo FF",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Theodor Lundbergh": {
+      "team": "Malmo FF",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jens Stryger Larsen": {
+      "team": "Malmo FF",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Frederik Winther": {
+      "team": "Hammarby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Noah Persson": {
+      "team": "Hammarby",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Karim Boutera": {
+      "team": "Degerfors",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kazper Karlsson": {
+      "team": "Degerfors",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kristoffer Nordfeldt": {
+      "team": "AIK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hampus Gustafsson": {
+      "team": "Brommapojkarna",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lukas Björklund": {
+      "team": "Brommapojkarna",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jerome Tibbling Ugwo": {
+      "team": "Orgryte",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "William Kenndal": {
+      "team": "Orgryte",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marlon Ebietomere": {
+      "team": "Orgryte",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Otso Liimatta": {
+      "team": "Sirius",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Isak Bjerkebo": {
+      "team": "Sirius",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Oscar Krusnell": {
+      "team": "Sirius",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tony Miettinen": {
+      "team": "Mjallby",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Júlíus Magnússon": {
+      "team": "Elfsborg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marcus Baggesen": {
+      "team": "Vasteras SK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jonathan Karlsson": {
+      "team": "Vasteras SK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    }
+  },
+  "processed_ids": [
+    "401874088",
+    "401874086",
+    "401874082",
+    "401874079",
+    "401874084",
+    "401874015",
+    "401842812",
+    "401842817",
+    "401874013",
+    "401874080",
+    "401873993",
+    "401874077",
+    "401874014",
+    "401873991",
+    "401874012",
+    "401842805",
+    "401842802",
+    "401874078",
+    "401874020",
+    "401874011",
+    "401874010",
+    "401842794",
+    "401842795",
+    "401842797",
+    "401842799",
+    "401874017",
+    "401873989",
+    "401842791",
+    "401842790",
+    "401842792",
+    "401842787",
+    "401842786",
+    "401842788",
+    "401842793",
+    "401842789"
+  ],
+  "updated_at": "2026-09-13T14:47:09.786628+00:00"
+}

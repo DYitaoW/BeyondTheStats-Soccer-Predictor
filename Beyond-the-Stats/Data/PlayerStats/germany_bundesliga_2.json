@@ -1,0 +1,1245 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Joel Chima Fujita": {
+      "team": "St Pauli",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lars Ritzka": {
+      "team": "St Pauli",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Cleiton": {
+      "team": "VfL Wolfsburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Abdoulie Ceesay": {
+      "team": "St Pauli",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joakim Maehle": {
+      "team": "VfL Wolfsburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Emmanuel Iyoha": {
+      "team": "Magdeburg",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alexander Nollenberger": {
+      "team": "Magdeburg",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Maxwell Gyamfi": {
+      "team": "Kaiserslautern",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Anselmo Garcia MacNulty": {
+      "team": "Magdeburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Jan Elvedi": {
+      "team": "Kaiserslautern",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicolai Rapp": {
+      "team": "Dynamo Dresden",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Maximilian Entrup": {
+      "team": "Braunschweig",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mehmet Can Aydin": {
+      "team": "Braunschweig",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Thomas Keller": {
+      "team": "Dynamo Dresden",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Robert Wagner": {
+      "team": "Dynamo Dresden",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Max Marie": {
+      "team": "Braunschweig",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Samuele Di Benedetto": {
+      "team": "Braunschweig",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ben Bobzien": {
+      "team": "Dynamo Dresden",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Andi Hoti": {
+      "team": "Braunschweig",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Philipp Hofmann": {
+      "team": "Bochum",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Omar Sillah": {
+      "team": "Greuther Furth",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mats Pannewig": {
+      "team": "Bochum",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 1
+    },
+    "Julian Justvan": {
+      "team": "Nurnberg",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lars Gindorf": {
+      "team": "Hannover",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mohamed Alì Zoma": {
+      "team": "Nurnberg",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Finn Becker": {
+      "team": "Nurnberg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Piet Scobel": {
+      "team": "Nurnberg",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Maurice Neubauer": {
+      "team": "Hannover",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Tim Janisch": {
+      "team": "Nurnberg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lee Ho-Jae": {
+      "team": "Darmstadt",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marius Worl": {
+      "team": "Arminia Bielefeld",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Milan Smit": {
+      "team": "Darmstadt",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Monju Momuluh": {
+      "team": "Arminia Bielefeld",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Raoul Petretta": {
+      "team": "Darmstadt",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Noah Weißhaupt": {
+      "team": "Darmstadt",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kai Klefisch": {
+      "team": "Darmstadt",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Henri Koudossou": {
+      "team": "Arminia Bielefeld",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Josip Brekalo": {
+      "team": "Hertha",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Falko Michel": {
+      "team": "Magdeburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Oluwaseun Adewumi": {
+      "team": "Hertha",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jon Dagur Thorsteinsson": {
+      "team": "Hertha",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Tobias Müller": {
+      "team": "Magdeburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Paul Seguin": {
+      "team": "Hertha",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Budu Zivzivadze": {
+      "team": "1. FC Heidenheim 1846",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Krisztián Keresztes": {
+      "team": "Greuther Furth",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jan Schöppner": {
+      "team": "1. FC Heidenheim 1846",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Daniel-Kofi Kyereh": {
+      "team": "VfL Osnabruck",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Bjarke Jacobsen": {
+      "team": "VfL Osnabruck",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Robin Meißner": {
+      "team": "VfL Osnabruck",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Yann Sturm": {
+      "team": "Braunschweig",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fridolin Wagner": {
+      "team": "VfL Osnabruck",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kevin Ehlers": {
+      "team": "Braunschweig",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Fabio Di-Michele-Sanchez": {
+      "team": "Braunschweig",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Noah Katterbach": {
+      "team": "Braunschweig",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Florian Flick": {
+      "team": "Braunschweig",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Koji Miyoshi": {
+      "team": "Bochum",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Enis Cokaj": {
+      "team": "Bochum",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Gerrit Holtmann": {
+      "team": "Bochum",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tom Meyer": {
+      "team": "Bochum",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Oliver Olsen": {
+      "team": "Bochum",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Maximilian Wittek": {
+      "team": "Bochum",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alexander Rossipal": {
+      "team": "Dynamo Dresden",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jarne Steuckers": {
+      "team": "Bochum",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adam Markhiev": {
+      "team": "Nurnberg",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Phil Harres": {
+      "team": "Holstein Kiel",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Adrian Kapralik": {
+      "team": "Holstein Kiel",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "David Zec": {
+      "team": "Holstein Kiel",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Eric Porstner": {
+      "team": "Nurnberg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Guillermo Balzi": {
+      "team": "Holstein Kiel",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Leon Parduzi": {
+      "team": "Holstein Kiel",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rafael Lubach": {
+      "team": "Nurnberg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mario Sauer": {
+      "team": "Kaiserslautern",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Thierry Fidjeu-Tazemeta": {
+      "team": "Kaiserslautern",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mergim Berisha": {
+      "team": "Kaiserslautern",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Yannik Lührs": {
+      "team": "Darmstadt",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Simon Asta": {
+      "team": "Kaiserslautern",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "David Schramm": {
+      "team": "Kaiserslautern",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Robert Glatzel": {
+      "team": "VfL Wolfsburg",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Vinicius Souza": {
+      "team": "VfL Wolfsburg",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Luca Erlein": {
+      "team": "Energie Cottbus",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "King Manu": {
+      "team": "Energie Cottbus",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Tolcay Cigerci": {
+      "team": "Energie Cottbus",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mattias Svanberg": {
+      "team": "VfL Wolfsburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dmytro Bohdanov": {
+      "team": "Energie Cottbus",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Elvis Rexhbecaj": {
+      "team": "VfL Wolfsburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mathys Angély": {
+      "team": "VfL Wolfsburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Moritz Hannemann": {
+      "team": "Energie Cottbus",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jannik Rochelt": {
+      "team": "Arminia Bielefeld",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Taichi Hara": {
+      "team": "St Pauli",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Joel Grodowski": {
+      "team": "Arminia Bielefeld",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marvin Mehlem": {
+      "team": "Arminia Bielefeld",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tomoya Ando": {
+      "team": "St Pauli",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Eric Smith": {
+      "team": "St Pauli",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Arkadiusz Pyrka": {
+      "team": "St Pauli",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Maximilian Bauer": {
+      "team": "Arminia Bielefeld",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Shio Fukuda": {
+      "team": "Karlsruhe",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marcel Hartel": {
+      "team": "Hannover",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Rafael Pedrosa": {
+      "team": "Karlsruhe",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Stefán Teitur Thórdarson": {
+      "team": "Hannover",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Noel Eichinger": {
+      "team": "Karlsruhe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bastian Allgeier": {
+      "team": "Hannover",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Waniss Taibi": {
+      "team": "Hannover",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Christoph Kobald": {
+      "team": "Karlsruhe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Boris Tomiak": {
+      "team": "Hannover",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mateusz Zukowski": {
+      "team": "Magdeburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luka Hyryläinen": {
+      "team": "Magdeburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jonas Therkelsen": {
+      "team": "Holstein Kiel",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Baris Atik": {
+      "team": "Magdeburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pierre Nadjombe": {
+      "team": "Magdeburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Kasper Davidsen": {
+      "team": "Holstein Kiel",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Jonas Meffert": {
+      "team": "Holstein Kiel",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ivan Nekic": {
+      "team": "Holstein Kiel",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Erencan Yardimci": {
+      "team": "Kaiserslautern",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "David Nemeth": {
+      "team": "St Pauli",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marcus Mathiesen": {
+      "team": "St Pauli",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jacob Rasmussen": {
+      "team": "Kaiserslautern",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ibrahim Kanate": {
+      "team": "Kaiserslautern",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Fabian Kunze": {
+      "team": "Kaiserslautern",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Franz Roggow": {
+      "team": "Hannover",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marcel Schuhen": {
+      "team": "Darmstadt",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Aleksandar Vukotic": {
+      "team": "Darmstadt",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Kristian Mandic": {
+      "team": "Nurnberg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Vincent Vermeij": {
+      "team": "Dynamo Dresden",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Friedrich Müller": {
+      "team": "1. FC Heidenheim 1846",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Oualid Mhamdi": {
+      "team": "1. FC Heidenheim 1846",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Julian Niehues": {
+      "team": "1. FC Heidenheim 1846",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Maximilian Breunig": {
+      "team": "1. FC Heidenheim 1846",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jonas Sterner": {
+      "team": "Dynamo Dresden",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luca Kerber": {
+      "team": "1. FC Heidenheim 1846",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mathias Honsak": {
+      "team": "1. FC Heidenheim 1846",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lucas Copado": {
+      "team": "Energie Cottbus",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Felix Klaus": {
+      "team": "Greuther Furth",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fousseny Doumbia": {
+      "team": "Greuther Furth",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ole Pohlmann": {
+      "team": "Greuther Furth",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jannis Heuer": {
+      "team": "Greuther Furth",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jannis Boziaris": {
+      "team": "Energie Cottbus",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Doni Arifi": {
+      "team": "Greuther Furth",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alexander Bernhardsson": {
+      "team": "VfL Wolfsburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marvin Wanitzek": {
+      "team": "Karlsruhe",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fabian Reese": {
+      "team": "VfL Wolfsburg",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Hauke Wahl": {
+      "team": "VfL Wolfsburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jan Urbich": {
+      "team": "Braunschweig",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lino Tempelmann": {
+      "team": "Braunschweig",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Linus Gechter": {
+      "team": "Hertha",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pascal Klemens": {
+      "team": "Hertha",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ismail Badjie": {
+      "team": "VfL Osnabruck",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Patrick Kammerbauer": {
+      "team": "VfL Osnabruck",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Niklas Wiemann": {
+      "team": "VfL Osnabruck",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luca Raimund": {
+      "team": "VfL Osnabruck",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Henry Rorig": {
+      "team": "Energie Cottbus",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Benjamin Boakye": {
+      "team": "Arminia Bielefeld",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Justin Butler": {
+      "team": "Energie Cottbus",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tim Handwerker": {
+      "team": "Arminia Bielefeld",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jonas Adjetey": {
+      "team": "VfL Wolfsburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jean Hugonet": {
+      "team": "Hannover",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Deniz Ofli": {
+      "team": "Karlsruhe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lilian Egloff": {
+      "team": "Karlsruhe",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marlon Ritter": {
+      "team": "Kaiserslautern",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sebastian Gronning": {
+      "team": "Hertha",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marten Winkler": {
+      "team": "Hertha",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Deyovaiso Zeefuik": {
+      "team": "Hertha",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Patrick Mainka": {
+      "team": "1. FC Heidenheim 1846",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Julian Eitscberger": {
+      "team": "Hertha",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Javier Fernández": {
+      "team": "Nurnberg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rayan Ghrieb": {
+      "team": "Nurnberg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aaron Keller": {
+      "team": "Greuther Furth",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Konrad Faber": {
+      "team": "VfL Osnabruck",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Martijn Kaars": {
+      "team": "St Pauli",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mathias Rasmussen": {
+      "team": "St Pauli",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Timon Weiner": {
+      "team": "Holstein Kiel",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ricky-Jade Jones": {
+      "team": "St Pauli",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Daniel Hanslik": {
+      "team": "Bochum",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    }
+  },
+  "processed_ids": [
+    "401885119",
+    "401885113",
+    "401885112",
+    "401885115",
+    "401885116",
+    "401885117",
+    "401885125",
+    "401885121",
+    "401885120",
+    "401885124",
+    "401885123",
+    "401885126",
+    "401885128",
+    "401885122",
+    "401885127",
+    "401885131",
+    "401885137",
+    "401885135",
+    "401885134",
+    "401885136",
+    "401885129",
+    "401885132",
+    "401885130",
+    "401885133",
+    "401885141",
+    "401885143",
+    "401885146",
+    "401885145",
+    "401885144",
+    "401885139",
+    "401885138",
+    "401885142",
+    "401885140"
+  ],
+  "updated_at": "2026-09-13T14:47:09.786651+00:00"
+}

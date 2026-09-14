@@ -17,6 +17,7 @@ EXTRA_FILES_DIR = os.path.join(PROJECT_DIR, "Extra-leagues", "files")
 WEBSITE_FILES_DIR = os.path.join(WEBSITE_DIR, "files")
 GRAPHICS_DIR = os.path.join(WEBSITE_DIR, "graphics")
 ACCURACY_TOTALS_FILE = os.path.join(WEBSITE_FILES_DIR, "accuracy_totals.json")
+ACCURACY_HISTORY_DIR = os.path.join(WEBSITE_FILES_DIR, "accuracy_history")
 
 # ── Prediction Files ──────────────────────────────────────────────
 

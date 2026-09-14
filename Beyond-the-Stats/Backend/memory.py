@@ -150,17 +150,17 @@ class MemoryMonitor:
 
     def _read_once(self) -> MemoryReading:
         rss = 0
-        source = "fallback"
+        source = "unknown"
         if self._proc is not None:
+            # Sum the whole process tree (backend + pipeline subprocess +
+            # its step children) so the RAM cap actually sees the pipeline.
+            # A self-only RSS reading made the ceiling useless: the backend
+            # server itself is small while the pipeline tree holds the GBs,
+            # so the kernel OOM killer fired instead of this monitor.
             try:
-                rss = int(self._proc.memory_info().rss)
-                source = "psutil-self"
-            except Exception:
-                rss = 0
-        if rss == 0 and _HAS_PSUTIL:
-            try:
-                rss = int(psutil.Process(os.getpid()).memory_info().rss)
-                source = "psutil-retry"
+                tree = [self._proc] + list(self._proc.children(recursive=True))
+                rss = int(sum(p.memory_info().rss for p in tree))
+                source = "psutil-tree"
             except Exception:
                 rss = 0
         if rss == 0:
