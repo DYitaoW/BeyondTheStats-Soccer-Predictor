@@ -1,0 +1,1245 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Ilyes Hamache": {
+      "team": "Cambuur",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Iwan Henstra": {
+      "team": "Cambuur",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Devid Eugene Bouah": {
+      "team": "Cambuur",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tobias Storm": {
+      "team": "Nijmegen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Philippe Sandler": {
+      "team": "Nijmegen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Noé Lebreton": {
+      "team": "Nijmegen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Almugera Kabar": {
+      "team": "Nijmegen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Julian Brandt": {
+      "team": "Ajax",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Anthony Descotte": {
+      "team": "For Sittard",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Thilo Kehrer": {
+      "team": "Ajax",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Davy Klaassen": {
+      "team": "Ajax",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kasper Dolberg": {
+      "team": "Ajax",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Youri Baas": {
+      "team": "Ajax",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Jorthy Mokio": {
+      "team": "Ajax",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lequincio Zeefuik": {
+      "team": "For Sittard",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Steven Berghuis": {
+      "team": "Ajax",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Caio Henrique": {
+      "team": "Ajax",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Abdellah Ouazane": {
+      "team": "Ajax",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Brynjólfur Willumsson": {
+      "team": "Groningen",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sören Tengstedt": {
+      "team": "Go Ahead Eagles",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Yassir Rahmouni": {
+      "team": "Go Ahead Eagles",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Wout Weghorst": {
+      "team": "Twente",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Robin Pröpper": {
+      "team": "Twente",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Finn De Bruin": {
+      "team": "Den Haag",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jalen Hawkins": {
+      "team": "Den Haag",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Max Bruns": {
+      "team": "Twente",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sekou Sylla": {
+      "team": "Den Haag",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jordy Clasie": {
+      "team": "AZ Alkmaar",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Devin Haen": {
+      "team": "Willem II",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Tonny Vilhena": {
+      "team": "Willem II",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sondre Ørjasaeter": {
+      "team": "Twente",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Younes Taha": {
+      "team": "Twente",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nökkvi Thórisson": {
+      "team": "Sparta Rotterdam",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Marvin Peersman": {
+      "team": "Telstar",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sem Valk": {
+      "team": "Telstar",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adam Tahaui": {
+      "team": "Nijmegen",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "David Garden": {
+      "team": "Excelsior",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Valentin Sulzbacher": {
+      "team": "Excelsior",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jamiro Monteiro": {
+      "team": "Nijmegen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lennard Hartjes": {
+      "team": "Excelsior",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rick Meissen": {
+      "team": "Excelsior",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mathis Suray": {
+      "team": "Go Ahead Eagles",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Victor Edvardsen": {
+      "team": "Go Ahead Eagles",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dani de Wit": {
+      "team": "Utrecht",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Matisse Didden": {
+      "team": "Utrecht",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Artem Stepanov": {
+      "team": "Utrecht",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Davy van den Berg": {
+      "team": "Utrecht",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joris Kramer": {
+      "team": "Go Ahead Eagles",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mohamed Ihattaren": {
+      "team": "For Sittard",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Yannick Eduardo": {
+      "team": "Den Haag",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jesse Bal": {
+      "team": "Den Haag",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Shiloh ’t Zand": {
+      "team": "For Sittard",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jasper Dahlhaus": {
+      "team": "For Sittard",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Justin Hubner": {
+      "team": "Groningen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Philip Brittijn": {
+      "team": "For Sittard",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ro-Zangelo Daal": {
+      "team": "AZ Alkmaar",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nolhan Courtens": {
+      "team": "Heerenveen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ringo Meerveld": {
+      "team": "Heerenveen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mexx Meerdink": {
+      "team": "AZ Alkmaar",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ayoub Oufkir": {
+      "team": "AZ Alkmaar",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Rafik El Arguioui": {
+      "team": "Cambuur",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicolas Binder": {
+      "team": "Cambuur",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ronald Koeman": {
+      "team": "Telstar",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rui Mendes": {
+      "team": "Telstar",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ismaël Baouf": {
+      "team": "Cambuur",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rik Mulders": {
+      "team": "Cambuur",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Abdelnour Soualhia": {
+      "team": "Telstar",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Sami Bouhoudane": {
+      "team": "Cambuur",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marko Pjaca": {
+      "team": "Twente",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Thom Van Bergen": {
+      "team": "Groningen",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Tygo Land": {
+      "team": "Groningen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ramiz Zerrouki": {
+      "team": "Twente",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Márk Csinger": {
+      "team": "Groningen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Irakli Yegoian": {
+      "team": "Excelsior",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kasper Boogaard": {
+      "team": "Willem II",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jaden Slory": {
+      "team": "Willem II",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nesto Groen": {
+      "team": "Excelsior",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ricardo Pepi": {
+      "team": "PSV Eindhoven",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Tolu Arokodare": {
+      "team": "Ajax",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lutsharel Geertruida": {
+      "team": "PSV Eindhoven",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Esmir Bajraktarevic": {
+      "team": "PSV Eindhoven",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kodai Sano": {
+      "team": "PSV Eindhoven",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Noah Fernandez": {
+      "team": "PSV Eindhoven",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Filip Kostic": {
+      "team": "PSV Eindhoven",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ruben Van Bommel": {
+      "team": "PSV Eindhoven",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ivan Perisic": {
+      "team": "PSV Eindhoven",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Anton Gaaei": {
+      "team": "Ajax",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gjivai Zechiël": {
+      "team": "Feyenoord",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Darko Nejasmic": {
+      "team": "Nijmegen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Luciano Valente": {
+      "team": "Feyenoord",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jerayno Schaken": {
+      "team": "Feyenoord",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Oussama Targhaline": {
+      "team": "Feyenoord",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ibrahim Cissoko": {
+      "team": "Zwolle",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Milan Zonneveld": {
+      "team": "Sparta Rotterdam",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Isaac Babadi": {
+      "team": "Sparta Rotterdam",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Koen Kostons": {
+      "team": "Zwolle",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sherel Floranus": {
+      "team": "Zwolle",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tobias Sommer": {
+      "team": "Zwolle",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ruud Nijstad": {
+      "team": "Twente",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nicky Souren": {
+      "team": "Cambuur",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Marcos Leonardo": {
+      "team": "Ajax",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nigel Thomas": {
+      "team": "Den Haag",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ayase Ueda": {
+      "team": "Feyenoord",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Anis Hadj Moussa": {
+      "team": "Feyenoord",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pascal Mulder": {
+      "team": "Den Haag",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mylian Jimenez": {
+      "team": "Den Haag",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Evan Rottier": {
+      "team": "Den Haag",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Uriel Van Aalst": {
+      "team": "Willem II",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jacob Trenskow": {
+      "team": "Heerenveen",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Oliver Braude": {
+      "team": "Heerenveen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Guus Til": {
+      "team": "PSV Eindhoven",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mauro Júnior": {
+      "team": "PSV Eindhoven",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sven Mijnans": {
+      "team": "PSV Eindhoven",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sergiño Dest": {
+      "team": "PSV Eindhoven",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Guus Offerhaus": {
+      "team": "Utrecht",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Arthur Zagre": {
+      "team": "Utrecht",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Armando Obispo": {
+      "team": "PSV Eindhoven",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Vasilios Barkas": {
+      "team": "Utrecht",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Siebe Horemans": {
+      "team": "Utrecht",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tjaronn Chery": {
+      "team": "Nijmegen",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Perr Schuurs": {
+      "team": "Nijmegen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dusan Tadic": {
+      "team": "Nijmegen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Olivier Aertssen": {
+      "team": "Zwolle",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dave Kwakman": {
+      "team": "AZ Alkmaar",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lewis Schouten": {
+      "team": "AZ Alkmaar",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mateo Chávez": {
+      "team": "AZ Alkmaar",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aymen Sliti": {
+      "team": "Excelsior",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jens Toornstra": {
+      "team": "Sparta Rotterdam",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Simon Janssen": {
+      "team": "Excelsior",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ágúst Þorsteinsson": {
+      "team": "Excelsior",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "David Van Der Werff": {
+      "team": "Groningen",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rodrigo Guth": {
+      "team": "For Sittard",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jacob Ondrejka": {
+      "team": "Groningen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Etienne Vaessen": {
+      "team": "Groningen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Edouard Michut": {
+      "team": "For Sittard",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Travis Hearnes": {
+      "team": "Groningen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Thijs Jansen": {
+      "team": "Feyenoord",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Thijmen Blokzijl": {
+      "team": "PSV Eindhoven",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Stefan Ingi Sigurdarson": {
+      "team": "Go Ahead Eagles",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Julius Dirksen": {
+      "team": "Go Ahead Eagles",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Juho Kilo": {
+      "team": "Den Haag",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nick Viergever": {
+      "team": "Zwolle",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ryan Thomas": {
+      "team": "Zwolle",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marcus Linday": {
+      "team": "Heerenveen",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marvin Young": {
+      "team": "Sparta Rotterdam",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Adrian Blake": {
+      "team": "Utrecht",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nick Verschuren": {
+      "team": "Sparta Rotterdam",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jizz Hornkamp": {
+      "team": "AZ Alkmaar",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ole Romeny": {
+      "team": "For Sittard",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Bernt Klaverboer": {
+      "team": "Ajax",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Maxence Rivera": {
+      "team": "Heerenveen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Youri Regeer": {
+      "team": "Ajax",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aaron Bouwman": {
+      "team": "Ajax",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lucas Rosa": {
+      "team": "Ajax",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Elias Sörensen": {
+      "team": "Zwolle",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Daouda Weidmann": {
+      "team": "Twente",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dylan Mbayo": {
+      "team": "Twente",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Daan Rots": {
+      "team": "Twente",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nils Eggens": {
+      "team": "Groningen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lucas Jetten": {
+      "team": "Cambuur",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Casper Widell": {
+      "team": "Excelsior",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jan Plug": {
+      "team": "Excelsior",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Peer Koopmeiners": {
+      "team": "AZ Alkmaar",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Weslley Patati": {
+      "team": "AZ Alkmaar",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ferdinand Pohl": {
+      "team": "Utrecht",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bryan Linssen": {
+      "team": "Nijmegen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kaj Sierhuis": {
+      "team": "Nijmegen",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Thomas Verheydt": {
+      "team": "Willem II",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Nathan Tjoe-A-On": {
+      "team": "Willem II",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Robin Van Cruijsen": {
+      "team": "Sparta Rotterdam",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lushendry Martes": {
+      "team": "Sparta Rotterdam",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    }
+  },
+  "processed_ids": [
+    "401875604",
+    "401875608",
+    "401875609",
+    "401875610",
+    "401875611",
+    "401875612",
+    "401875636",
+    "401875619",
+    "401875613",
+    "401875615",
+    "401875614",
+    "401875616",
+    "401875617",
+    "401875618",
+    "401875620",
+    "401875621",
+    "401875622",
+    "401875623",
+    "401875624",
+    "401875625",
+    "401875626",
+    "401875627",
+    "401875628",
+    "401875629",
+    "401875630",
+    "401875631",
+    "401875632",
+    "401875633",
+    "401875634",
+    "401875635",
+    "401875637",
+    "401875638",
+    "401875639",
+    "401875640",
+    "401875641",
+    "401875642",
+    "401875643",
+    "401875644",
+    "401875645",
+    "401875646"
+  ],
+  "updated_at": "2026-09-13T14:47:09.786549+00:00"
+}

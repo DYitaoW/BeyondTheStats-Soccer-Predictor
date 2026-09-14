@@ -1,0 +1,1288 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Rhaldney": {
+      "team": "Goztep",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Paolo Fernandes": {
+      "team": "Alanyaspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Juan": {
+      "team": "Goztep",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Gaïus Makouta": {
+      "team": "Alanyaspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ianis Hagi": {
+      "team": "Alanyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nuno Lima": {
+      "team": "Alanyaspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Arda Okan Kurtulan": {
+      "team": "Goztep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Rajmund Tóth": {
+      "team": "Konyaspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Deniz Turuc": {
+      "team": "Konyaspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Aral Simsir": {
+      "team": "Trabzonspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mustafa Eskihellac": {
+      "team": "Trabzonspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "André Onana": {
+      "team": "Trabzonspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Melih Ibrahimoglu": {
+      "team": "Konyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Chidozie Awaziem": {
+      "team": "Konyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ali Sowe": {
+      "team": "Rizespor",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Emrecan Bulut": {
+      "team": "Rizespor",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Modibo Sagnan": {
+      "team": "Rizespor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Attila Mocsi": {
+      "team": "Rizespor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Mithat Pala": {
+      "team": "Rizespor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Valentin Mihaila": {
+      "team": "Rizespor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Jesús Ramírez": {
+      "team": "Çorum FK",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Logi Tomasson": {
+      "team": "Samsunspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Cengiz Ünder": {
+      "team": "Çorum FK",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alexandros Kyziridis": {
+      "team": "Çorum FK",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Gokhan Sazdagi": {
+      "team": "Çorum FK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Ylber Ramadani": {
+      "team": "Çorum FK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Andrei Borza": {
+      "team": "Çorum FK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Emir Han Topcu": {
+      "team": "Besiktas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Leandro Trossard": {
+      "team": "Besiktas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yakup Kırtay": {
+      "team": "Besiktas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Orkun Kökçü": {
+      "team": "Besiktas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Kassoum Ouattara": {
+      "team": "Besiktas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Salih Özcan": {
+      "team": "Besiktas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Zakaria Ariss": {
+      "team": "Gaziantep",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Meschack Elia": {
+      "team": "Alanyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Halil Dervisoglu": {
+      "team": "Gaziantep",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Myenty Abena": {
+      "team": "Gaziantep",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kacper Kozlowski": {
+      "team": "Gaziantep",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Trivante Stewart": {
+      "team": "Gaziantep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sinclair Armstrong": {
+      "team": "Goztep",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Drissa Camara": {
+      "team": "Gaziantep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ogün Bayrak": {
+      "team": "Goztep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Florian Ayé": {
+      "team": "Kocaelispor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Massadio Haidara": {
+      "team": "Kocaelispor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Paul Onuachu": {
+      "team": "Trabzonspor",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mohamed Salah": {
+      "team": "Trabzonspor",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ernest Muçi": {
+      "team": "Trabzonspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Franculino Djú": {
+      "team": "Trabzonspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ousmane Diabate": {
+      "team": "Genclerbirligi",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Fabinho": {
+      "team": "Trabzonspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Chibuike Nwaiwu": {
+      "team": "Trabzonspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 3,
+      "red_cards": 0
+    },
+    "Ermin Mahmic": {
+      "team": "Çorum FK",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "David Costa": {
+      "team": "Eyupspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 1
+    },
+    "Anil Yasar": {
+      "team": "Eyupspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Guven Yalcin": {
+      "team": "Kasimpasa",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adrian Benedyczak": {
+      "team": "Kasimpasa",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Gift Orban": {
+      "team": "Amed SFK",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dia Saba": {
+      "team": "Amed SFK",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kerem Demirbay": {
+      "team": "Kasimpasa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jesurun Rak-Sakyi": {
+      "team": "Kasimpasa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Emi̇Rhan Boz": {
+      "team": "Kasimpasa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "David Bates": {
+      "team": "Amed SFK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ali Yavuz Kol": {
+      "team": "Kasimpasa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Milan Skriniar": {
+      "team": "Fenerbahce",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ridvan Yilmaz": {
+      "team": "Besiktas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dusan Vlahovic": {
+      "team": "Besiktas",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Mason Greenwood": {
+      "team": "Fenerbahce",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ederson": {
+      "team": "Fenerbahce",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Václav Cerný": {
+      "team": "Besiktas",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Matteo Guendouzi": {
+      "team": "Fenerbahce",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Eren Tozlu": {
+      "team": "Erzurum BB",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Rayyan Baniya": {
+      "team": "Konyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marko Jevtovic": {
+      "team": "Konyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jackson Muleka": {
+      "team": "Konyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adil Demirbag": {
+      "team": "Konyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Martín Rodríguez": {
+      "team": "Erzurum BB",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Victor Osimhen": {
+      "team": "Galatasaray",
+      "goals": 6,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Eldor Shomurodov": {
+      "team": "Istanbul Basaksehir",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lucas Torreira": {
+      "team": "Galatasaray",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Davinson Sánchez": {
+      "team": "Galatasaray",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gabriel Sara": {
+      "team": "Galatasaray",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Christopher Operi": {
+      "team": "Istanbul Basaksehir",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Roland Sallai": {
+      "team": "Galatasaray",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Rafael Leão": {
+      "team": "Galatasaray",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Saba Kharebashvili": {
+      "team": "Istanbul Basaksehir",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Umut Bozok": {
+      "team": "Istanbul Basaksehir",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Yira Sor": {
+      "team": "Amed SFK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sidny Lopes Cabral": {
+      "team": "Trabzonspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Samuel Ballet": {
+      "team": "Amed SFK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Umut Meras": {
+      "team": "Amed SFK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Furkan Soyalp": {
+      "team": "Amed SFK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ermal Krasniqi": {
+      "team": "Amed SFK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Stefan Savic": {
+      "team": "Trabzonspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Mohammed Diomande": {
+      "team": "Çorum FK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ilhan Fakili": {
+      "team": "Besiktas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Amir Murillo": {
+      "team": "Besiktas",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fousseni Diabate": {
+      "team": "Kasimpasa",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jerome Opoku": {
+      "team": "Istanbul Basaksehir",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Olivier Kemen": {
+      "team": "Istanbul Basaksehir",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Cláudio Winck": {
+      "team": "Kasimpasa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Hamza Güreler": {
+      "team": "Istanbul Basaksehir",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Vedat Muriqi": {
+      "team": "Fenerbahce",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Oguz Aydin": {
+      "team": "Fenerbahce",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Romelu Lukaku": {
+      "team": "Fenerbahce",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Arda Usluoglu": {
+      "team": "Alanyaspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ahmed Abdullahi": {
+      "team": "Eyupspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Zak Jules": {
+      "team": "Eyupspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Chandrel Géraud Massanga": {
+      "team": "Eyupspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Umit Akdag": {
+      "team": "Alanyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Talha Ülvan": {
+      "team": "Eyupspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Charles-Andre Raux Yao": {
+      "team": "Eyupspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Novatus Miroshi": {
+      "team": "Goztep",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "André Henrique": {
+      "team": "Goztep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Malcom Bokele": {
+      "team": "Goztep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Baris Alper Yilmaz": {
+      "team": "Galatasaray",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Eren Elmali": {
+      "team": "Galatasaray",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Enver Kulasin": {
+      "team": "Gaziantep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dal Varesanovic": {
+      "team": "Rizespor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tanguy Zoukrou": {
+      "team": "Kocaelispor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Metehan Altunbas": {
+      "team": "Kocaelispor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mahamadou Susoho": {
+      "team": "Kocaelispor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Daniel Agyei": {
+      "team": "Kocaelispor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Matej Maglica": {
+      "team": "Kocaelispor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Enis Bardhi": {
+      "team": "Konyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Adama Traoré": {
+      "team": "Genclerbirligi",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Mustafa Yumlu": {
+      "team": "Erzurum BB",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Pedro Pereira": {
+      "team": "Genclerbirligi",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ogulcan Ülgün": {
+      "team": "Genclerbirligi",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Elisha Owusu": {
+      "team": "Erzurum BB",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nihad Mujakic": {
+      "team": "Erzurum BB",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Berkan Kutlu": {
+      "team": "Kocaelispor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lumbardh Dellova": {
+      "team": "Amed SFK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Alban Lafont": {
+      "team": "Amed SFK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Sekou Koita": {
+      "team": "Genclerbirligi",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alex Matos": {
+      "team": "Goztep",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Dimitrios Goutas": {
+      "team": "Genclerbirligi",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Cheikh Niasse": {
+      "team": "Genclerbirligi",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Deian Sorescu": {
+      "team": "Gaziantep",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Juninho Bacuna": {
+      "team": "Gaziantep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Bertug Yildirim": {
+      "team": "Istanbul Basaksehir",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Davie Selke": {
+      "team": "Istanbul Basaksehir",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Onur Ergün": {
+      "team": "Istanbul Basaksehir",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ebrima Colley": {
+      "team": "Konyaspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marco Asensio": {
+      "team": "Fenerbahce",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Josafat Mendes": {
+      "team": "Samsunspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fatih Kaya": {
+      "team": "Samsunspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jakob Jessen": {
+      "team": "Kasimpasa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Matei Ilie": {
+      "team": "Kasimpasa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ahmed Ildiz": {
+      "team": "Çorum FK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ayberk Karapo": {
+      "team": "Kasimpasa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yunus Akgün": {
+      "team": "Galatasaray",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nariman Akhundzade": {
+      "team": "Erzurum BB",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marius Mouandilmadji": {
+      "team": "Samsunspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Emre Kilinc": {
+      "team": "Samsunspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Efkan Bekiroglu": {
+      "team": "Goztep",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Celil Yuksel": {
+      "team": "Samsunspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Toni Borevkovic": {
+      "team": "Samsunspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Santos": {
+      "team": "Goztep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Gökhan Gül": {
+      "team": "Amed SFK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Rayan Raveloson": {
+      "team": "Amed SFK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tiago Djaló": {
+      "team": "Besiktas",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tayfur Bingöl": {
+      "team": "Kocaelispor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Abbosbek Fayzullaev": {
+      "team": "Istanbul Basaksehir",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Omer Sahiner": {
+      "team": "Istanbul Basaksehir",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ruan": {
+      "team": "Alanyaspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fidan Aliti": {
+      "team": "Alanyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Serdar Dursun": {
+      "team": "Gaziantep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Enes Keskin": {
+      "team": "Alanyaspor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Victor Gidado": {
+      "team": "Gaziantep",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Talisca": {
+      "team": "Fenerbahce",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Franco Tongya": {
+      "team": "Genclerbirligi",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Kerem Aktürkoglu": {
+      "team": "Fenerbahce",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Noah Saviolo": {
+      "team": "Trabzonspor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Andri Fannar Baldursson": {
+      "team": "Kasimpasa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Mortadha Ben Ouanes": {
+      "team": "Kasimpasa",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Qazim Laçi": {
+      "team": "Rizespor",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Adedire Mebude": {
+      "team": "Rizespor",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    }
+  },
+  "processed_ids": [
+    "401888296",
+    "401888294",
+    "401888297",
+    "401888383",
+    "401888292",
+    "401888303",
+    "401888302",
+    "401888300",
+    "401888305",
+    "401888385",
+    "401888386",
+    "401888301",
+    "401888299",
+    "401888304",
+    "401888388",
+    "401888387",
+    "401888310",
+    "401888306",
+    "401888311",
+    "401888307",
+    "401888312",
+    "401888308",
+    "401888309",
+    "401888389",
+    "401888317",
+    "401888315",
+    "401888318",
+    "401888319",
+    "401888314",
+    "401888316",
+    "401888390",
+    "401888313",
+    "401888320",
+    "401888392",
+    "401888321",
+    "401888324",
+    "401888326",
+    "401888323",
+    "401888325",
+    "401888322",
+    "401888391"
+  ],
+  "updated_at": "2026-09-13T14:47:09.786539+00:00"
+}

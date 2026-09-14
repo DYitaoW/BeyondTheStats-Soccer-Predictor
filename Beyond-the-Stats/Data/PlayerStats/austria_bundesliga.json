@@ -1,0 +1,743 @@
+{
+  "season": "2026-2027",
+  "players": {
+    "Serge Raux Yao": {
+      "team": "SK Rapid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nenad Cvetkovic": {
+      "team": "SK Rapid",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Petter Dahl": {
+      "team": "SK Rapid",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicolas Bajlicz": {
+      "team": "SK Rapid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Phillip Verhounig": {
+      "team": "Wolfsberger AC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Bendegúz Bolla": {
+      "team": "SK Rapid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dominik Fitz": {
+      "team": "Wolfsberger AC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yannick Oberleitner": {
+      "team": "Grazer AK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yann Litawumba": {
+      "team": "Altach",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alexander Hofleitner": {
+      "team": "Grazer AK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Lukas Jäger": {
+      "team": "Altach",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Karim Konaté": {
+      "team": "Salzburg",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Philipp Pomer": {
+      "team": "Ried",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Sota Kitano": {
+      "team": "Salzburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Abubakr Barry": {
+      "team": "Salzburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Stefan Schwab": {
+      "team": "Ried",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nikolas Veratschnig": {
+      "team": "Salzburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Joris Boguo": {
+      "team": "Ried",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Haris Tabakovic": {
+      "team": "Salzburg",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Edmund Baidoo": {
+      "team": "Salzburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Matthias Seidl": {
+      "team": "SK Rapid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Drew Murray": {
+      "team": "Tirol",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Aleksandar Dragovic": {
+      "team": "Austria Vienna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marc Striednig": {
+      "team": "Tirol",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lee Kang-hee": {
+      "team": "Salzburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Matteo Schablas": {
+      "team": "Austria Vienna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Fabian Wohlmuth": {
+      "team": "Wolfsberger AC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Xavier Mbuyamba": {
+      "team": "LASK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Melayro Bogarde": {
+      "team": "LASK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Alessandro Schöpf": {
+      "team": "LASK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Yvan Dibango": {
+      "team": "LASK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Moses Usor": {
+      "team": "LASK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Otar Mamageishvili": {
+      "team": "Wolfsberger AC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Raffael Behounek": {
+      "team": "Wolfsberger AC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 1
+    },
+    "Bartosz Mazurek": {
+      "team": "Salzburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Manfred Fischer": {
+      "team": "Austria Vienna",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Yorbe Vertessen": {
+      "team": "Salzburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Dominik Schmid": {
+      "team": "Salzburg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Yusuf Demir": {
+      "team": "SK Rapid",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Belmin Beganovic": {
+      "team": "Sturm Graz",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marco Tilio": {
+      "team": "SK Rapid",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jürgen Heil": {
+      "team": "Sturm Graz",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Jon Gorenc Stankovic": {
+      "team": "Sturm Graz",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Amane Romeo": {
+      "team": "SK Rapid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Luca Weinhandl": {
+      "team": "Sturm Graz",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nikolaus Wurmbrand": {
+      "team": "SK Rapid",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Albert Vallci": {
+      "team": "Sturm Graz",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Marco Hoffman": {
+      "team": "Hartberg",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Samuel Johansen Chukwudi": {
+      "team": "Ried",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Evan Eghosa": {
+      "team": "Ried",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Jonas Karner": {
+      "team": "Hartberg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lukas Malicsek": {
+      "team": "Ried",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Youba Diarra": {
+      "team": "Hartberg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Niama Sissoko": {
+      "team": "Ried",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Christoph Lang": {
+      "team": "LASK",
+      "goals": 3,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Florian Flecker": {
+      "team": "LASK",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Ousmane Diawara": {
+      "team": "Altach",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Vesel Demaku": {
+      "team": "Altach",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Patrick Greil": {
+      "team": "Altach",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Alemão": {
+      "team": "LASK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Filip Milojevic": {
+      "team": "Altach",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Peter Michorl": {
+      "team": "Grazer AK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Donovan Pines": {
+      "team": "Grazer AK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Daniel Maderner": {
+      "team": "Grazer AK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Marco Sulzner": {
+      "team": "Wolfsberger AC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nicolas Wimmer": {
+      "team": "Wolfsberger AC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Michael Olakigbe": {
+      "team": "Tirol",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nikolai Baden Frederiksen": {
+      "team": "Tirol",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Antonio Verinac": {
+      "team": "A. Lustenau",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Phillip Böhm": {
+      "team": "A. Lustenau",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Moritz Oswald": {
+      "team": "Tirol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Dominik Weixelbraun": {
+      "team": "A. Lustenau",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Seedy Jatta": {
+      "team": "Sturm Graz",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Lord Afrifa": {
+      "team": "A. Lustenau",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nelson Weiper": {
+      "team": "Sturm Graz",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Fabian Gmeiner": {
+      "team": "A. Lustenau",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Gizo Mamageishvili": {
+      "team": "Sturm Graz",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Haris Ismailcebioglu": {
+      "team": "A. Lustenau",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Domenik Schierl": {
+      "team": "A. Lustenau",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    },
+    "Angelo Gattermayer": {
+      "team": "Hartberg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 2,
+      "red_cards": 0
+    },
+    "Benjamin Markus": {
+      "team": "Hartberg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Fabian Wilfinger": {
+      "team": "Hartberg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nikolaus Feldhofer": {
+      "team": "Hartberg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Anderson Dos Santos Gomes": {
+      "team": "Grazer AK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Beres Owusu": {
+      "team": "Grazer AK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Tino Kusanovic": {
+      "team": "Ried",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Ercan Kara": {
+      "team": "SK Rapid",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Tonni Adamsen": {
+      "team": "SK Rapid",
+      "goals": 4,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Tobias Koch": {
+      "team": "Grazer AK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Leon Klassen": {
+      "team": "Grazer AK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Daniel Nnodim": {
+      "team": "Austria Vienna",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Julian Hettwer": {
+      "team": "Austria Vienna",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Habib Coulibaly": {
+      "team": "Hartberg",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Kelvin Boateng": {
+      "team": "Austria Vienna",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Frans Krätzig": {
+      "team": "Salzburg",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Raphael Gschösser": {
+      "team": "Tirol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Nemanja Celic": {
+      "team": "Tirol",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Giacomo Vrioni": {
+      "team": "Wolfsberger AC",
+      "goals": 1,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Marco Schabauer": {
+      "team": "Wolfsberger AC",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Lenn Jastremski": {
+      "team": "A. Lustenau",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 1,
+      "red_cards": 0
+    },
+    "Samuel Adeniran": {
+      "team": "LASK",
+      "goals": 2,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 0
+    },
+    "Robert Ljubicic": {
+      "team": "LASK",
+      "goals": 0,
+      "assists": 0,
+      "yellow_cards": 0,
+      "red_cards": 1
+    }
+  },
+  "processed_ids": [
+    "401881789",
+    "401881787",
+    "401881790",
+    "401881798",
+    "401881799",
+    "401881800",
+    "401881792",
+    "401881794",
+    "401881793",
+    "401881795",
+    "401881796",
+    "401881797",
+    "401881802",
+    "401881801",
+    "401881803",
+    "401881804",
+    "401881806",
+    "401881805",
+    "401881807",
+    "401881808",
+    "401881809"
+  ],
+  "updated_at": "2026-09-13T14:47:09.786583+00:00"
+}

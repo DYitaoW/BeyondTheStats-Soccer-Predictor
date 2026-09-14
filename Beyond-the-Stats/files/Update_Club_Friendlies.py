@@ -1,8 +1,8 @@
 """Sync club preseason friendlies from ESPN into the upcoming friendlies CSV.
 
-- All friendlies appear on the upcoming schedule.
-- Non-Chelsea friendlies are schedule + final result only (no model predictions).
-- Chelsea FC friendlies also receive global-model predictions.
+All friendlies appear on the upcoming schedule as schedule-only entries
+(no model predictions -- most friendlies pair teams that never normally play
+each other). Settled results are still tracked for display.
 """
 import os
 import sys
@@ -28,7 +28,6 @@ TEAM_MAPPING_FILE = os.path.join(BASE_DIR, "..", "Data", "team_name_mapping_mast
 CLUB_FRIENDLIES_COMPETITION = "Club Friendlies"
 EASTERN_TZ = ZoneInfo("America/New_York")
 LOOKAHEAD_DAYS = 365
-CHELSEA_KEYS = {"chelsea", "chelseafc"}
 
 RESULT_COLUMNS = [
     "prediction_key",
@@ -75,14 +74,6 @@ def normalize_team_key(name):
     stop_words = {"fc", "cf", "ac", "ca", "sc", "sv", "fk", "club", "de", "the"}
     parts = [p for p in parts if p not in stop_words]
     return "".join(parts)
-
-
-def is_chelsea_team(name):
-    return normalize_team_key(name) in CHELSEA_KEYS
-
-
-def is_chelsea_fixture(home_team, away_team):
-    return is_chelsea_team(home_team) or is_chelsea_team(away_team)
 
 
 def load_team_mapping():
@@ -203,118 +194,6 @@ def make_prediction_key(match_date, home_team, away_team):
     return f"{match_date.strftime('%Y-%m-%d')}|{CLUB_FRIENDLIES_COMPETITION}|{team_pair[0]}|{team_pair[1]}"
 
 
-def build_prediction_context():
-    matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
-    if not os.path.exists(pm.MODEL_CACHE):
-        raise FileNotFoundError(
-            f"Missing model cache: {pm.MODEL_CACHE}. Run the daily pipeline to build it."
-        )
-
-    bundle = __import__("joblib").load(pm.MODEL_CACHE)
-    fingerprint = pm.data_fingerprint(season_files)
-    if bundle.get("fingerprint") != fingerprint:
-        raise RuntimeError(
-            "Model cache is stale for current processed data. "
-            "Run the daily pipeline or Predict_Match.py to rebuild."
-        )
-
-    overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json")) or {}
-    season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json")) or {}
-    head_to_head = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "head_to_head.json")) or {}
-    current_form = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "current_form.json")) or {}
-    league_strength = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "league_strength.json")) or {}
-    market_value = pm.load_json_if_exists(
-        os.path.join(pm.TEAM_DATA_DIR, "team_top_market_value_players.json")
-    ) or {}
-
-    latest_season = max(season_files.keys()) if season_files else ""
-    latest_start_year = pm.parse_start_year_from_key(latest_season) if latest_season else datetime.now().year
-    available_teams = sorted(overall_teams.keys()) if isinstance(overall_teams, dict) else []
-    team_comp_map = {}
-    for team_name, seasons in season_teams.items():
-        if isinstance(seasons, dict) and seasons:
-            team_comp_map[team_name] = os.path.dirname(next(iter(seasons.keys()))).replace("\\", "/")
-
-    return {
-        "clf": bundle["model"],
-        "home_goal_reg": bundle["home_goal_reg"],
-        "away_goal_reg": bundle["away_goal_reg"],
-        "home_shot_reg": bundle.get("home_shot_reg"),
-        "away_shot_reg": bundle.get("away_shot_reg"),
-        "home_sot_reg": bundle.get("home_sot_reg"),
-        "away_sot_reg": bundle.get("away_sot_reg"),
-        "result_le": bundle["result_le"],
-        "train_columns": bundle["train_columns"],
-        "overall_teams": overall_teams,
-        "season_teams": season_teams,
-        "head_to_head": head_to_head,
-        "current_form": current_form,
-        "league_strength": league_strength,
-        "market_value_data": market_value,
-        "available_teams": available_teams,
-        "team_comp_map": team_comp_map,
-        "latest_season": latest_season,
-        "latest_start_year": latest_start_year,
-    }
-
-
-def predict_chelsea_fixture(home_team, away_team, context):
-    prediction_season = pm.choose_season_for_teams(
-        home_team, away_team, context["season_teams"], context["latest_season"]
-    )
-    competition_key = "England/Premier League"
-    start_year = pm.parse_start_year_from_key(prediction_season)
-    season_coeff = pm.season_recency_coefficient(context["latest_start_year"], start_year)
-    home_comp = context["team_comp_map"].get(home_team, competition_key)
-    away_comp = context["team_comp_map"].get(away_team, competition_key)
-
-    X = pm.build_features(
-        pm.build_match_input(home_team, away_team),
-        prediction_season,
-        competition_key,
-        season_coeff,
-        context["overall_teams"],
-        context["season_teams"],
-        context["head_to_head"],
-        context["current_form"],
-        context["league_strength"],
-        home_competition_override=home_comp,
-        away_competition_override=away_comp,
-    )
-    X = pd.get_dummies(X, columns=["competition"], dtype=float)
-    X = X.reindex(columns=context["train_columns"], fill_value=0.0)
-
-    probs = {"H": 0.0, "D": 0.0, "A": 0.0}
-    pvals = context["clf"].predict_proba(X)[0]
-    for idx, enc in enumerate(context["clf"].classes_):
-        label = context["result_le"].inverse_transform([enc])[0]
-        probs[label] = float(pvals[idx])
-    probs = pm.reduce_draw_probability(probs)
-    predicted = max(probs, key=probs.get)
-    phg = max(0.0, float(context["home_goal_reg"].predict(X)[0]))
-    pag = max(0.0, float(context["away_goal_reg"].predict(X)[0]))
-    if predicted == "H" and phg <= pag:
-        phg = pag + 1
-    elif predicted == "A" and pag <= phg:
-        pag = phg + 1
-    elif predicted == "D":
-        pag = phg
-
-    return {
-        "predicted_result": predicted,
-        "prob_home": round(probs["H"], 6),
-        "prob_draw": round(probs["D"], 6),
-        "prob_away": round(probs["A"], 6),
-        "pred_home_goals": int(round(phg)),
-        "pred_away_goals": int(round(pag)),
-        "pred_home_shots": round(float(context["home_shot_reg"].predict(X)[0]), 3) if context.get("home_shot_reg") else "",
-        "pred_away_shots": round(float(context["away_shot_reg"].predict(X)[0]), 3) if context.get("away_shot_reg") else "",
-        "pred_home_sot": round(float(context["home_sot_reg"].predict(X)[0]), 3) if context.get("home_sot_reg") else "",
-        "pred_away_sot": round(float(context["away_sot_reg"].predict(X)[0]), 3) if context.get("away_sot_reg") else "",
-        "probability_reasoning": "",
-    }
-
-
 def load_existing():
     if not os.path.exists(PREDICTIONS_FILE):
         return pd.DataFrame(columns=RESULT_COLUMNS)
@@ -337,13 +216,7 @@ def sync_friendlies():
         return
 
     mapping = load_team_mapping()
-    try:
-        context = build_prediction_context()
-    except Exception as exc:
-        print(f"Could not build prediction context ({exc}); schedule-only sync will continue.")
-        context = None
-
-    available_teams = context["available_teams"] if context else []
+    available_teams = []
     created_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     existing = load_existing()
     existing_by_key = {}
@@ -355,7 +228,6 @@ def sync_friendlies():
         }
 
     rows = []
-    chelsea_predictions = 0
     for _, fixture in fixtures.iterrows():
         raw_home = str(fixture["home_team"]).strip()
         raw_away = str(fixture["away_team"]).strip()
@@ -365,7 +237,6 @@ def sync_friendlies():
         prediction_key = make_prediction_key(match_date, home_team, away_team)
         prior = existing_by_key.get(prediction_key, {})
 
-        chelsea_match = is_chelsea_fixture(home_team, away_team) or is_chelsea_fixture(raw_home, raw_away)
         row = {col: "" for col in RESULT_COLUMNS}
         row.update(
             {
@@ -379,24 +250,14 @@ def sync_friendlies():
                 "away_team": away_team,
                 "display_home_team": raw_home,
                 "display_away_team": raw_away,
-                "schedule_only": "0" if chelsea_match else "1",
-                "live_tracking": "1" if chelsea_match else "0",
+                "schedule_only": "1",
+                "live_tracking": "0",
                 "espn_event_id": str(fixture.get("espn_event_id", "")),
                 "actual_home_goals": fixture.get("actual_home_goals", ""),
                 "actual_away_goals": fixture.get("actual_away_goals", ""),
                 "actual_result": fixture.get("actual_result", ""),
             }
         )
-
-        if chelsea_match and context is not None:
-            try:
-                pred = predict_chelsea_fixture(home_team, away_team, context)
-                row.update(pred)
-                chelsea_predictions += 1
-            except Exception as exc:
-                print(f"Skipped Chelsea prediction for {raw_home} vs {raw_away}: {exc}")
-                row["schedule_only"] = "1"
-                row["live_tracking"] = "0"
 
         if str(row.get("actual_result", "")).strip().upper() in {"H", "D", "A"}:
             predicted = str(row.get("predicted_result", "")).strip().upper()
@@ -413,7 +274,7 @@ def sync_friendlies():
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
     out.to_csv(PREDICTIONS_FILE, index=False)
     print(f"Saved club friendlies: {PREDICTIONS_FILE}")
-    print(f"Fixtures: {len(out)} | Chelsea predictions: {chelsea_predictions}")
+    print(f"Fixtures: {len(out)} | schedule-only (no predictions)")
     print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
 
 

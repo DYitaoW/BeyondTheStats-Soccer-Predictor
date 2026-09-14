@@ -232,12 +232,25 @@ PROJECTED_TABLE_TIMEOUT_S = {
 }
 
 
-def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
+def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None, log_file=None):
     print(f"\n=== {name} ===", flush=True)
     print(" ".join(str(c) for c in cmd), flush=True)
     started = time.monotonic()
     print(f"[DEBUG] run_step starting '{name}' at T+{started - _pipeline_start_global:.0f}s "
           f"timeout={timeout}s", flush=True)
+    # Optional full-output capture. Set STEP_LOG_DIR to tee every step's stdout/
+    # stderr to a file (sub-pipeline output is otherwise lost on Windows spawn).
+    if log_file is None:
+        log_dir_env = os.environ.get("STEP_LOG_DIR", "").strip()
+        if log_dir_env:
+            _safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in name).strip("_") or "step"
+            log_file = os.path.join(log_dir_env, f"{_safe}.log")
+    log_fh = None
+    if log_file:
+        try:
+            log_fh = open(log_file, "a", encoding="utf-8")
+        except Exception:
+            log_fh = None
     # Own process group so timeouts can kill Project_League_Table worker pools
     # (grandchildren) instead of leaving them orphaned on the host.
     try:
@@ -263,6 +276,11 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
         try:
             for line in iter(stream.readline, ""):
                 print(line, end="" if line.endswith("\n") else "\n", flush=True)
+                if log_fh is not None:
+                    try:
+                        log_fh.write(line)
+                    except Exception:
+                        pass
         except Exception:
             pass
         finally:
@@ -315,6 +333,12 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
     for t in readers:
         t.join(timeout=10)
 
+    if log_fh is not None:
+        try:
+            log_fh.close()
+        except Exception:
+            pass
+
     elapsed = time.monotonic() - started
     print(f"[DEBUG] run_step finished '{name}' rc={proc.returncode} elapsed={elapsed:.1f}s "
           f"at T+{time.monotonic() - _pipeline_start_global:.0f}s", flush=True)
@@ -327,19 +351,94 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None):
     return True
 
 
+def _system_ram_gb():
+    """Total system RAM in GB, or 0.0 when it cannot be determined.
+
+    Honored override: ``BTS_RAM_GB`` (e.g. ``BTS_RAM_GB=8``) for hosts where
+    the real total cannot be detected (containers, cgroup limits).
+    """
+    override = os.environ.get("BTS_RAM_GB", "").strip()
+    if override:
+        try:
+            return float(override)
+        except Exception:
+            pass
+    try:
+        import psutil  # noqa: PLC0415
+
+        return float(psutil.virtual_memory().total) / (1024 ** 3)
+    except Exception:
+        pass
+    if sys.platform.startswith("linux"):
+        try:
+            return (
+                os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / (1024 ** 3)
+            )
+        except Exception:
+            return 0.0
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes  # noqa: PLC0415
+
+            class _MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            ms = _MEMORYSTATUSEX()
+            ms.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(ms)):
+                return float(ms.ullTotalPhys) / (1024 ** 3)
+        except Exception:
+            return 0.0
+    return 0.0
+
+
 def _resolve_competition_workers(args):
-    """Cap nested projection workers when sub-pipelines already run in parallel."""
+    """Cap nested projection workers by CPU, sub-pipeline concurrency, and RAM.
+
+    Every competition worker calls :func:`Project_League_Table.project_competition`
+    which loads its own copy of the multi-GB model cache (model_cache.pkl is
+    ~4.3 GB). The naive ``min(CPU_count, 4)`` auto default can therefore stack
+    tens of gigabytes on low-RAM hosts and get silently killed by the kernel
+    OOM killer (no Python traceback). Downshift when the host cannot back N
+    parallel cache loads. Override with ``BTS_COMPETITION_WORKERS``.
+    """
     requested = int(getattr(args, "competition_workers", 0) or 0)
+    override = os.environ.get("BTS_COMPETITION_WORKERS", "").strip()
+    if override:
+        try:
+            forced = max(1, int(override))
+            return min(forced, max(1, os.cpu_count() or 1))
+        except Exception:
+            pass
     workers = max(1, int(getattr(args, "workers", 1) or 1))
     cpu = os.cpu_count() or 1
+    ram_gb = _system_ram_gb()
     if requested <= 0:
         # Auto: leave headroom for concurrent global/MLS/extra processes.
         if workers > 1:
-            return max(1, min(2, cpu // workers or 1))
-        return max(1, min(cpu, 4))
-    if workers > 1:
-        return max(1, min(requested, 2))
-    return max(1, requested)
+            auto = max(1, min(2, cpu // workers or 1))
+        else:
+            auto = max(1, min(cpu, 4))
+    else:
+        auto = max(1, int(requested))
+    if ram_gb:
+        if ram_gb < 12:
+            auto = min(auto, 1)
+        elif ram_gb < 24:
+            auto = min(auto, 2)
+        else:
+            auto = min(auto, 4)
+    return auto
 
 
 def _project_table_cmd(files_dir, comp_workers, base_name):
@@ -348,6 +447,72 @@ def _project_table_cmd(files_dir, comp_workers, base_name):
     if comp_workers and comp_workers > 0:
         cmd += ["--competition-workers", str(comp_workers)]
     return cmd
+
+
+def _projected_tables_usable(csv_path):
+    """True when the CSV exists and at least half its rows have usable sim_runs."""
+    import csv as _csv
+
+    if not csv_path or not os.path.exists(csv_path):
+        return False
+    try:
+        with open(csv_path, "r", encoding="utf-8-sig", newline="") as fh:
+            rows = list(_csv.DictReader(fh))
+    except Exception:
+        return False
+    if not rows:
+        return False
+    usable = 0
+    for row in rows:
+        try:
+            if float(row.get("sim_runs") or 0) > 0:
+                usable += 1
+        except Exception:
+            pass
+    return (usable / len(rows)) >= 0.5
+
+
+def _ensure_projected_tables(args):
+    """Guarantee projected league tables exist after the sub-pipelines.
+
+    The tables are normally written inside each sub-pipeline child process.
+    If a child died before reaching that step (e.g. OOM or an uncaught
+    fork/executor exception on the host), the website would be left without
+    season projections for the day. Re-run the projection in the parent.
+    """
+    targets = []
+    if not args.skip_global:
+        targets.append(
+            ("global", FILES_DIR, str(SP_DIR / "Data" / "Predictions" / "projected_league_tables.csv"))
+        )
+    if not args.skip_mls:
+        targets.append(
+            ("mls", MLS_FILES_DIR, str(SP_DIR / "MLS" / "Data" / "Predictions" / "projected_league_tables.csv"))
+        )
+    if not args.skip_extra:
+        targets.append(
+            (
+                "extra",
+                EXTRA_FILES_DIR,
+                str(SP_DIR / "Extra-leagues" / "Data" / "Predictions" / "projected_league_tables.csv"),
+            )
+        )
+    comp_workers = _resolve_competition_workers(args)
+    results = {}
+    for key, files_dir, csv_path in targets:
+        if _projected_tables_usable(csv_path):
+            results[f"{key}_projected_league_tables"] = True
+            continue
+        print(
+            f"[WARN] {key} projected_league_tables.csv missing or unusable after "
+            "sub-pipeline; forcing re-projection in parent process"
+        )
+        results[f"{key}_projected_league_tables"] = run_step(
+            f"[{key}] Projected league tables (fallback)",
+            _project_table_cmd(files_dir, comp_workers, "Project_League_Table.py"),
+            continue_on_error=True,
+        )
+    return results
 
 
 def _run_global_subpipeline(args, api_token):
@@ -740,10 +905,32 @@ def run_full_pipeline(args, api_token, results=None):
 
     _check_dependencies()
 
+    ram_gb = _system_ram_gb()
+    print(
+        f"[INFO] host: {sys.platform} | detected RAM: "
+        + (f"~{ram_gb:.0f}GB" if ram_gb else "unknown (set BTS_RAM_GB to override)")
+        + f" | CPUs: {os.cpu_count() or 'unknown'}"
+    )
+
     # ── Pre-pipeline: build real standings from completed games ──
     results["build_real_standings"] = _build_real_standings()
 
     workers = max(1, min(int(getattr(args, "workers", 1) or 1), MAX_SUBPIPELINE_WORKERS))
+    forced_subs = os.environ.get("BTS_SUBPIPELINE_WORKERS", "").strip()
+    if forced_subs:
+        try:
+            workers = max(1, min(int(forced_subs), MAX_SUBPIPELINE_WORKERS))
+        except Exception:
+            pass
+    else:
+        ram_gb = _system_ram_gb()
+        if ram_gb and ram_gb < 16 and workers > 1:
+            print(
+                f"[WARN] host RAM ~{ram_gb:.0f}GB < 16GB: downshifting sub-pipeline "
+                f"parallelism {workers} -> 1 to avoid OOM. Set BTS_SUBPIPELINE_WORKERS "
+                "to override (or BTS_RAM_GB if total-RAM detection is wrong)."
+            )
+            workers = 1
     sub_tasks = []
     if not args.skip_global:
         sub_tasks.append(("global", _run_global_subpipeline))
@@ -785,6 +972,10 @@ def run_full_pipeline(args, api_token, results=None):
                     sub_result = {f"{name}_failed": False}
                 results.update(sub_result)
                 print(f"  [OK] {name} sub-pipeline finished")
+
+    # Ensure tables on disk even if a sub-pipeline child died before reaching
+    # its projection step (OOM / uncaught executor exception on the host).
+    results.update(_ensure_projected_tables(args))
 
     # Post-pipeline steps (depend on all sub-pipelines' outputs being on disk).
     post_start = time.monotonic()
