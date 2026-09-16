@@ -80,6 +80,10 @@ PAST_GAMES_FILE = SP_DIR / "Data" / "Predictions" / "past_games.json"
 # Monotonic timestamp set by run_full_pipeline so run_step can log elapsed time.
 _pipeline_start_global: float = 0.0
 
+# Last run_step outcome, exposed for downstream diagnostics (exit code of a
+# failed step: e.g. -9/137 means the kernel OOM killer killed the process).
+_last_step_result = {"rc": None, "success": False}
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -222,6 +226,10 @@ def _should_run_league_tables(args, output_csv_path: str, processed_dirs: list[s
     return True
 
 
+def _tables_only():
+    return os.environ.get("BTS_TABLES_ONLY", "").strip().lower() in {"1", "true", "yes"}
+
+
 # Projected league tables can be CPU/network heavy (Monte Carlo + ESPN crawls).
 # Bound them so a hung/slow projection cannot pin the daily pipeline for hours.
 PROJECTED_TABLE_TIMEOUT_S = {
@@ -233,6 +241,8 @@ PROJECTED_TABLE_TIMEOUT_S = {
 
 
 def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None, log_file=None):
+    global _last_step_result
+    _last_step_result = {"rc": None, "success": False}
     print(f"\n=== {name} ===", flush=True)
     print(" ".join(str(c) for c in cmd), flush=True)
     started = time.monotonic()
@@ -345,9 +355,11 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None, 
     if proc.returncode != 0:
         print(f"[ERROR] {name} failed with exit code {proc.returncode} (after {elapsed:.1f}s)", flush=True)
         print(f"  -> Skipping (continue_on_error={continue_on_error})", flush=True)
+        _last_step_result = {"rc": proc.returncode, "success": False}
         return False
 
     print(f"[OK] {name} ({elapsed:.1f}s)", flush=True)
+    _last_step_result = {"rc": proc.returncode, "success": True}
     return True
 
 
@@ -449,27 +461,71 @@ def _project_table_cmd(files_dir, comp_workers, base_name):
     return cmd
 
 
-def _projected_tables_usable(csv_path):
-    """True when the CSV exists and at least half its rows have usable sim_runs."""
+def _probe_projected_tables(csv_path):
+    """Return a diagnostic dict describing the state of a projected tables CSV."""
     import csv as _csv
 
+    diag = {
+        "path": csv_path,
+        "exists": False,
+        "mtime": None,
+        "rows": 0,
+        "zeroed_rows": 0,
+        "usable_fraction": 0.0,
+        "usable": False,
+        "reason": "file missing",
+    }
     if not csv_path or not os.path.exists(csv_path):
-        return False
+        return diag
     try:
+        diag["exists"] = True
+        diag["mtime"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(csv_path)))
         with open(csv_path, "r", encoding="utf-8-sig", newline="") as fh:
             rows = list(_csv.DictReader(fh))
-    except Exception:
-        return False
+    except Exception as exc:
+        diag["reason"] = f"read error: {exc}"
+        return diag
+    diag["rows"] = len(rows)
     if not rows:
-        return False
-    usable = 0
+        diag["reason"] = "empty CSV (0 rows)"
+        return diag
+    zeroed = 0
     for row in rows:
         try:
-            if float(row.get("sim_runs") or 0) > 0:
-                usable += 1
+            if float(row.get("sim_runs") or 0) <= 0:
+                zeroed += 1
         except Exception:
-            pass
-    return (usable / len(rows)) >= 0.5
+            zeroed += 1
+    diag["zeroed_rows"] = zeroed
+    usable_fraction = (len(rows) - zeroed) / len(rows)
+    diag["usable_fraction"] = round(usable_fraction, 4)
+    diag["usable"] = usable_fraction >= 0.5
+    diag["reason"] = (
+        f"{len(rows)} rows, {zeroed} zeroed (sim_runs=0), "
+        f"{round(usable_fraction * 100.0, 1)}% usable"
+    )
+    return diag
+
+
+def _write_tables_diagnostics(diagnostics):
+    """Persist a compact health report so the tables state is visible on the host.
+
+    Written to ``Data/Predictions/projected_tables_diagnostics.json`` after
+    every pipeline run. Shows per-pipeline path, mtime, row counts, zeroed
+    rows, and the reason a CSV was unusable.
+    """
+    try:
+        out_path = SP_DIR / "Data" / "Predictions" / "projected_tables_diagnostics.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "written_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+            "host": {"platform": sys.platform, "ram_gb": round(_system_ram_gb(), 1) or None},
+            "pipelines": {k: v for k, v in sorted(diagnostics.items())},
+        }
+        out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(f"[tables] diagnostics written: {out_path}")
+    except Exception as exc:
+        print(f"[WARN] could not write projected_tables_diagnostics.json: {exc}")
 
 
 def _ensure_projected_tables(args):
@@ -478,7 +534,8 @@ def _ensure_projected_tables(args):
     The tables are normally written inside each sub-pipeline child process.
     If a child died before reaching that step (e.g. OOM or an uncaught
     fork/executor exception on the host), the website would be left without
-    season projections for the day. Re-run the projection in the parent.
+    season projections for the day. Re-run the projection in the parent and
+    record a clean before/after health report.
     """
     targets = []
     if not args.skip_global:
@@ -499,19 +556,36 @@ def _ensure_projected_tables(args):
         )
     comp_workers = _resolve_competition_workers(args)
     results = {}
+    diagnostics = {}
     for key, files_dir, csv_path in targets:
-        if _projected_tables_usable(csv_path):
+        before = _probe_projected_tables(csv_path)
+        diagnostics[key] = {"before": before, "after": None, "reprojected": None}
+        if before["usable"]:
+            print(f"[tables] {key}: OK ({before['reason']})")
             results[f"{key}_projected_league_tables"] = True
             continue
         print(
-            f"[WARN] {key} projected_league_tables.csv missing or unusable after "
-            "sub-pipeline; forcing re-projection in parent process"
+            f"[tables] {key}: UNUSABLE ({before['reason']}) -- "
+            "forcing re-projection in parent process"
         )
-        results[f"{key}_projected_league_tables"] = run_step(
+        reprojected = run_step(
             f"[{key}] Projected league tables (fallback)",
             _project_table_cmd(files_dir, comp_workers, "Project_League_Table.py"),
             continue_on_error=True,
         )
+        after = _probe_projected_tables(csv_path)
+        diagnostics[key]["after"] = after
+        diagnostics[key]["reprojected"] = reprojected
+        if after["usable"]:
+            print(f"[tables] {key}: {('RECOVERED' if reprojected else 'OK')} ({after['reason']})")
+            results[f"{key}_projected_league_tables"] = True
+        else:
+            rc = _last_step_result.get("rc")
+            print(
+                f"[tables] {key}: FAILED -- fallback step rc={rc} ({after['reason']})"
+            )
+            results[f"{key}_projected_league_tables"] = False
+    _write_tables_diagnostics(diagnostics)
     return results
 
 
@@ -520,6 +594,14 @@ def _run_global_subpipeline(args, api_token):
     py = sys.executable
     sub = {}
     comp_workers = _resolve_competition_workers(args)
+
+    if _tables_only():
+        sub["global_projected_league_tables"] = run_step(
+            "[global] Projected league tables",
+            _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
+            continue_on_error=args.continue_on_error,
+        )
+        return sub
 
     sub["global_download_process_sort"] = run_step(
         "[global] Download, process and sort latest data",
@@ -609,6 +691,15 @@ def _run_mls_subpipeline(args, api_token):
     sub = {}
     comp_workers = _resolve_competition_workers(args)
 
+    if _tables_only():
+        sub["mls_projected_league_tables"] = run_step(
+            "[mls] Projected league tables",
+            _project_table_cmd(MLS_FILES_DIR, comp_workers, "Project_League_Table.py"),
+            continue_on_error=args.continue_on_error,
+            timeout=PROJECTED_TABLE_TIMEOUT_S["mls"],
+        )
+        return sub
+
     mls_dl_cmd = [py, str(MLS_FILES_DIR / "Download_Latest_Data.py")]
     if args.skip_model_train:
         mls_dl_cmd.append("--skip-squad-values")
@@ -657,6 +748,14 @@ def _run_extra_subpipeline(args, api_token):
     # Extra PATH B + Monte Carlo under nested workers is a frequent OOM/SIGKILL
     # source (-9) when global/MLS already run in parallel. Keep this sequential.
     comp_workers = 1
+    if _tables_only():
+        sub["extra_projected_league_tables"] = run_step(
+            "[extra] Projected league tables",
+            _project_table_cmd(EXTRA_FILES_DIR, comp_workers, "Project_League_Table.py"),
+            continue_on_error=args.continue_on_error,
+            timeout=PROJECTED_TABLE_TIMEOUT_S["extra"],
+        )
+        return sub
     sub["extra_download_process_sort"] = run_step(
         "[extra] Download/process/sort latest data",
         [py, str(EXTRA_FILES_DIR / "Download_Latest_Data.py")],
@@ -702,22 +801,23 @@ def _run_shared_post_steps(args, api_token):
     py = sys.executable
     sub = {}
 
-    sub["settle_predictions"] = run_step(
-        "Settle predictions with live/final results",
-        [py, str(FILES_DIR / "Update_Live_Prediction_Results.py")],
-        continue_on_error=args.continue_on_error,
-    )
-    sub["sync_club_friendlies"] = run_step(
-        "Sync club friendlies schedule and Chelsea predictions",
-        [py, str(FILES_DIR / "Update_Club_Friendlies.py")],
-        continue_on_error=args.continue_on_error,
-    )
-    if not args.skip_global:
-        sub["track_cup_results"] = run_step(
-            "Track completed cup predictions and cup projections",
-            [py, str(FILES_DIR / "Track_Cup_Results.py")],
+    if not _tables_only():
+        sub["settle_predictions"] = run_step(
+            "Settle predictions with live/final results",
+            [py, str(FILES_DIR / "Update_Live_Prediction_Results.py")],
             continue_on_error=args.continue_on_error,
         )
+        sub["sync_club_friendlies"] = run_step(
+            "Sync club friendlies schedule and Chelsea predictions",
+            [py, str(FILES_DIR / "Update_Club_Friendlies.py")],
+            continue_on_error=args.continue_on_error,
+        )
+        if not args.skip_global:
+            sub["track_cup_results"] = run_step(
+                "Track completed cup predictions and cup projections",
+                [py, str(FILES_DIR / "Track_Cup_Results.py")],
+                continue_on_error=args.continue_on_error,
+            )
     sub["update_website_accuracy_history"] = run_step(
         "Update website accuracy history",
         [
@@ -983,8 +1083,11 @@ def run_full_pipeline(args, api_token, results=None):
     results.update(_run_shared_post_steps(args, api_token))
 
     # Archive completed games AFTER settle (so CSVs have actual_result filled).
-    print("\n=== [past-games] Archive completed games to past_games.json ===")
-    _archive_completed_games()
+    if not _tables_only():
+        print("\n=== [past-games] Archive completed games to past_games.json ===")
+        _archive_completed_games()
+    else:
+        print("\n[tables-only] Skipped settle/friendlies/cups/archive/upcoming steps")
 
     print(f"  [TIMING] post-pipeline steps: {time.monotonic() - post_start:.1f}s")
     print(f"\n[TIMING] full pipeline: {time.monotonic() - pipeline_start:.1f}s")
@@ -1001,6 +1104,9 @@ def run_full_pipeline(args, api_token, results=None):
     print(f"  Total: {len(results)} steps, {passed} passed, {failed} failed"
           + (f" ({skipped} skipped)" if skipped else ""))
     print("--- End Summary ---\n")
+    _tables_diag = SP_DIR / "Data" / "Predictions" / "projected_tables_diagnostics.json"
+    if _tables_diag.exists():
+        print(f"[tables] full health report: {_tables_diag}")
 
     _write_pipeline_status(results)
     return results
