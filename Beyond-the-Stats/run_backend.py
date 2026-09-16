@@ -11,18 +11,19 @@ Usage:
     python Beyond-the-Stats/run_backend.py --no-website        # scheduler + watcher only
     python Beyond-the-Stats/run_backend.py --host 127.0.0.1    # local-only
     python Beyond-the-Stats/run_backend.py --port 8080         # custom port
-    python Beyond-the-Stats/run_backend.py --workers 3         # pipeline parallelism
     python Beyond-the-Stats/run_backend.py --memory-limit-gb 8 # tighter cap
     python Beyond-the-Stats/run_backend.py --no-run-on-start   # wait for the 2am ET run
     python Beyond-the-Stats/run_backend.py --refresh-time 03:30 --timezone America/New_York
 
 What "multiple cores" means here:
-  - Sub-pipelines (global, MLS, extra) run concurrently via
-    ``ProcessPoolExecutor`` -- three Python processes for the duration of
-    a pipeline run. This is what ``--workers 3`` (the default) enables.
-  - Per-competition parallelism inside ``Project_League_Table.py`` is
-    forwarded via ``--competition-workers``. The default of 0 picks
-    ``min(CPU_count, 4)`` automatically.
+  - Sub-pipelines (global, MLS, extra) ALWAYS run sequentially (global ->
+    MLS -> extra, cups last), so only one training run or table projection is
+    active at a time. The ``--workers`` flag is kept only for compatibility
+    and values above 1 are ignored.
+  - Per-competition parallelism inside ``Project_League_Table.py`` gets every
+    CPU except one; that one core is reserved for the backend's live score
+    polling and API/file serving during the run. When the pipeline is idle the
+    whole CPU is available to the API again.
   - The Flask server uses ``gunicorn`` workers on POSIX (auto-falls back
     to the threaded dev server on Windows). Workers are capped at 4 so
     the pipeline processes retain headroom.
@@ -108,10 +109,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--workers",
         type=int,
-        default=3,
+        default=1,
         help=(
-            "Number of sub-pipelines (global/MLS/extra) to run concurrently. "
-            "1 = sequential, 3 = all in parallel (default). Max 3."
+            "Accepted for backward compatibility. Sub-pipelines always run "
+            "sequentially (global -> MLS -> extra) so only one train/table "
+            "build is active at a time; values above 1 are ignored."
         ),
     )
     parser.add_argument(
@@ -120,7 +122,7 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help=(
             "Per-competition worker count passed to Project_League_Table.py. "
-            "0 = auto (min(CPU_count, 4)). 1 = serial."
+            "0 = auto (all CPUs minus 1 reserved for the backend, RAM-capped). 1 = serial."
         ),
     )
     parser.add_argument(
@@ -205,18 +207,16 @@ def main() -> int:
             print(f"[ERROR] --refresh-time {refresh_time!r} is not HH:MM", file=sys.stderr)
             return 2
 
-    workers = max(1, min(int(args.workers), 3))
+    workers = max(1, min(int(args.workers), 3))  # kept for CLI compat (pipeline always runs sequentially)
     cpu_count = os.cpu_count() or 1
-    # When sub-pipelines already run in parallel, keep competition workers low
-    # so Global+MLS+Extra projection pools do not oversubscribe the host.
+    # During a pipeline run one core must stay free for the backend's live
+    # score polling and API/file serving; everything else goes to the single
+    # active pipeline step (projection/training). When the pipeline is idle the
+    # whole CPU is available to the API again — no permanent reservation.
     if args.competition_workers <= 0:
-        competition_workers = max(1, min(2 if workers > 1 else 4, cpu_count))
-        if workers > 1:
-            competition_workers = max(1, min(competition_workers, cpu_count // workers or 1))
+        competition_workers = max(1, cpu_count - 1)
     else:
         competition_workers = max(1, int(args.competition_workers))
-        if workers > 1:
-            competition_workers = max(1, min(competition_workers, 2))
 
     config = BackendConfig(
         serve_website=not args.no_website,

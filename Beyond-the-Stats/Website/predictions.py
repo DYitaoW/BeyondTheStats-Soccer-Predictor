@@ -107,6 +107,22 @@ def _save_last_refresh() -> None:
         pass
 
 
+def _write_backend_run_status(ok: bool, trigger: str = "website") -> None:
+    """Persist the finished-pipeline status the API serves (/api/pipeline/status)."""
+    try:
+        os.makedirs(os.path.dirname(config.BACKEND_RUN_STATUS_FILE), exist_ok=True)
+        with open(config.BACKEND_RUN_STATUS_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "finished_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                "return_code": 0 if ok else 1,
+                "ok": ok,
+                "trigger": trigger,
+                "log_file": "",
+            }, f, indent=2)
+    except Exception:
+        pass
+
+
 def _load_last_refresh() -> datetime | None:
     """Load the persisted last-refresh timestamp from disk."""
     if not os.path.exists(config.LAST_REFRESH_FILE):
@@ -2205,21 +2221,23 @@ def _run_full_pipeline_once(*, full_retrain: bool = True):
             print(f"[refresh] Pipeline failed with rc={proc.returncode}.")
             _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
             _save_last_refresh()
+            _write_backend_run_status(False, trigger="website")
             return False
         print(f"[refresh] Pipeline finished successfully (full_retrain={full_retrain}).")
     except subprocess.TimeoutExpired:
         print("[refresh] Pipeline timed out after 3600s.")
+        _write_backend_run_status(False, trigger="website")
         return False
     except Exception as exc:
         print(f"[refresh] Pipeline error: {exc}")
+        _write_backend_run_status(False, trigger="website")
         return False
 
     _last_pipeline_run = datetime.now(ZoneInfo("America/New_York"))
     _save_last_refresh()
     _save_last_data_refresh()
     _invalidate_prediction_caches(reload_contexts=True)
-    from accuracy_tracker import update_accuracy_history_files
-    update_accuracy_history_files()
+    _write_backend_run_status(True, trigger="website")
     return True
 
 

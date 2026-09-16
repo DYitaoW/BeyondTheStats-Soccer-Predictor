@@ -1,18 +1,16 @@
-"""Beyond The Stats CLI — predict, refresh, and status commands.
+"""Beyond The Stats CLI — predict and status commands.
 
 Usage:
     python bts.py predict <home_team> <away_team> [--mode global|mls|extra]
-    python bts.py refresh [--once]
     python bts.py status
 """
 import argparse
-import datetime
 import json
 import os
-import subprocess
 import sys
-import time
 from pathlib import Path
+
+import pandas as pd
 
 
 SP_DIR = Path(__file__).resolve().parent
@@ -50,7 +48,8 @@ def cmd_predict(args):
 
     match_input = pm.build_match_input(home, away)
     competition = args.competition or "Unknown/League"
-    prediction_season = pm.choose_season_for_teams(home, away, season_teams)
+    latest_season = max(season_teams.keys(), key=pm.parse_start_year_from_key) if season_teams else "Unknown"
+    prediction_season = pm.choose_season_for_teams(home, away, season_teams, latest_season)
     season_coeff = 1.0
 
     X = pm.build_features(
@@ -77,49 +76,27 @@ def cmd_predict(args):
     print()
 
 
-def cmd_refresh(args):
-    if args.deploy:
-        print("[deploy] Pulling latest code from git...")
-        result = subprocess.run(
-            ["git", "pull", "--ff-only"],
-            cwd=str(PROJECT_ROOT),
-            capture_output=True, text=True, timeout=60,
-        )
-        if result.returncode != 0:
-            print(f"[deploy] git pull failed:\n{result.stderr.strip()}")
-            sys.exit(1)
-        print(f"[deploy] {result.stdout.strip()}")
-    from Run_All_Pipeline import run_full_pipeline
-    t0 = time.monotonic()
-    success = run_full_pipeline(
-        skip_mls=args.skip_mls,
-        skip_extra=args.skip_extra,
-        skip_global=args.skip_global,
-        continue_on_error=not args.fail_fast,
-        window_days=args.window_days,
-        national_window_days=args.national_window_days,
-        workers=args.workers,
-        competition_workers=args.competition_workers,
-        daily_pipeline_path=str(SP_DIR / "Daily_Pipeline.py"),
-    )
-    elapsed = time.monotonic() - t0
-    print(f"\nPipeline {'succeeded' if success else 'FAILED'} in {elapsed:.0f}s")
-
-
 def cmd_status(args):
     predicted_file = SP_DIR / "Data" / "Predictions" / "upcoming_matchweek_predictions.csv"
     mobile_feed = SP_DIR / "Output" / "mobile_app_feed.json"
-    last_run = None
-    pipeline_log = SP_DIR / "logs"
-    if os.path.exists(SP_DIR / "last_pipeline_run.txt"):
-        with open(SP_DIR / "last_pipeline_run.txt") as f:
-            last_run = f.read().strip()
+    run_status = SP_DIR / "Data" / "backend_run_status.json"
 
     print(f"  {'Project Root:':<25} {PROJECT_ROOT}")
     print(f"  {'Predictions File:':<25} {'exists' if predicted_file.exists() else 'missing'}")
     print(f"  {'Mobile Feed:':<25} {'exists' if mobile_feed.exists() else 'missing'}")
-    if last_run:
-        print(f"  {'Last Pipeline Run:':<25} {last_run}")
+
+    if run_status.exists():
+        try:
+            with open(run_status, encoding="utf-8") as f:
+                data = json.load(f)
+            ok = bool(data.get("ok"))
+            print(f"  {'Last Pipeline Run:':<25} {data.get('finished_utc') or 'unknown'}")
+            print(f"  {'Status:':<25} {'ok' if ok else 'failed'}"
+                  f" (rc={data.get('return_code')}, trigger={data.get('trigger') or 'unknown'})")
+            if data.get("log_file"):
+                print(f"  {'Log:':<25} {data['log_file']}")
+        except Exception as exc:
+            print(f"  {'Last Pipeline Run:':<25} unreadable ({exc})")
     print()
 
 
@@ -133,19 +110,6 @@ def parse_args():
     p_predict.add_argument("--mode", choices=["global", "mls", "extra"], default="global")
     p_predict.add_argument("--competition", help="Override competition name (default: Unknown/League)")
     p_predict.set_defaults(func=cmd_predict)
-
-    p_refresh = sub.add_parser("refresh", help="Run the full data/model refresh pipeline")
-    p_refresh.add_argument("--deploy", action="store_true", help="Git pull before running pipeline (Steam Deck deploy)")
-    p_refresh.add_argument("--once", action="store_true", help="Run pipeline once and exit")
-    p_refresh.add_argument("--skip-mls", action="store_true")
-    p_refresh.add_argument("--skip-extra", action="store_true")
-    p_refresh.add_argument("--skip-global", action="store_true")
-    p_refresh.add_argument("--fail-fast", action="store_true", help="Stop on first pipeline error")
-    p_refresh.add_argument("--window-days", type=int, default=365)
-    p_refresh.add_argument("--national-window-days", type=int, default=90)
-    p_refresh.add_argument("--workers", type=int, default=3)
-    p_refresh.add_argument("--competition-workers", type=int, default=2)
-    p_refresh.set_defaults(func=cmd_refresh)
 
     p_status = sub.add_parser("status", help="Show system status")
     p_status.set_defaults(func=cmd_status)

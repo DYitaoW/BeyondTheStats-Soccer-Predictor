@@ -6,13 +6,18 @@ line.  Also triggered by the ``/api/refresh`` endpoint on the Flask server.
 
 Execution order
 ---------------
-1. **Sub-pipelines** (global / MLS / extra) — run in parallel if ``--workers > 1``
-   Each sub-pipeline runs sequentially: Download → Process → Sort → Model Cache
-   → Predict Upcoming → Project League Table → (cups / national team / WC)
-2. **Post-pipeline steps** (sequential, after all sub-pipelines finish):
-   Settle predictions (update CSVs with real results from ESPN)
-   Track cup results
-   Update website accuracy history
+1. **Real standings** (pre-pipeline) — build real tables from completed CSV results
+2. **Sub-pipelines** — always sequential, in a fixed order: global first, then
+   MLS, then the other leagues (extra). Only one training run or table
+   projection is active at a time; each heavy step gets every CPU except one
+   (the core left free for the backend's live score polling and API/file
+   serving). Each sub-pipeline runs its steps sequentially: Download → Process
+   → Sort → Model Cache → Predict Upcoming → Project League Table →
+   (national team / WC when a World Cup is active)
+3. **Post-pipeline steps** (after all sub-pipelines finish):
+   Settle predictions (update CSVs with real results from ESPN),
+   Sync club friendlies, Track cup results
+4. **Cups last** — upcoming cup predictions run after every league sub-pipeline
 
 Flags
 -----
@@ -20,7 +25,7 @@ Flags
 ``--skip-model-train`` — skip model retraining on light refresh days; still builds
   the cache automatically when the file is missing or unloadable. Full retrains
   run on Tuesday and Friday via the backend scheduler.
-``--continue-on-error`` — keep going even if individual steps fail (default: true)
+``--continue-on-error`` — keep going even if individual steps fail (default: fail-fast)
 """
 import argparse
 import json
@@ -30,7 +35,6 @@ import subprocess
 import sys
 import threading
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -48,7 +52,10 @@ MLS_FILES_DIR = SP_DIR / "MLS" / "files"
 EXTRA_FILES_DIR = SP_DIR / "Extra-leagues" / "files"
 LOCAL_KEYS_FILE = FILES_DIR / "local_api_keys.json"
 
-DEFAULT_SUBPIPELINE_WORKERS = 3
+# Sub-pipelines ALWAYS run sequentially (global -> MLS -> extra, cups last) so
+# only one training run or table projection is ever active. The --workers flag
+# is accepted for backward compatibility but values above 1 are ignored.
+DEFAULT_SUBPIPELINE_WORKERS = 1
 MAX_SUBPIPELINE_WORKERS = 3
 
 LAST_REFRESH_FILE = SP_DIR / "Data" / "last_refresh.json"
@@ -132,10 +139,9 @@ def parse_args():
         type=int,
         default=DEFAULT_SUBPIPELINE_WORKERS,
         help=(
-            f"Number of sub-pipelines (global/MLS/extra) to run concurrently via ProcessPoolExecutor. "
-            f"1 = sequential, 3 = run all three sub-pipelines in parallel (default), up to {MAX_SUBPIPELINE_WORKERS} = parallel. "
-            f"Per-step multithreading (e.g. Project_League_Table competitions) is controlled by "
-            f"--competition-workers."
+            "Sub-pipelines always run sequentially (global -> MLS -> extra) so only "
+            "one training run or table projection is active at a time. This flag is "
+            "accepted for backwards compatibility but values above 1 are ignored."
         ),
     )
     parser.add_argument(
@@ -144,7 +150,7 @@ def parse_args():
         default=0,
         help=(
             "Worker count passed to Project_League_Table.py for per-competition parallel projection. "
-            "0 = auto (min(CPU_count, 4)); 1 = serial; N = use N processes."
+            "0 = auto (all CPUs minus 1 reserved for the backend, then RAM-capped); 1 = serial; N = use N processes."
         ),
     )
     parser.add_argument(
@@ -240,6 +246,15 @@ PROJECTED_TABLE_TIMEOUT_S = {
 }
 
 
+class _StepError(Exception):
+    """Raised by run_step when a step fails and continue_on_error is False."""
+
+    def __init__(self, name, rc):
+        super().__init__(f"'{name}' failed (rc={rc})")
+        self.name = name
+        self.rc = rc
+
+
 def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None, log_file=None):
     global _last_step_result
     _last_step_result = {"rc": None, "success": False}
@@ -279,7 +294,9 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None, 
     except Exception as exc:
         elapsed = time.monotonic() - started
         print(f"[ERROR] {name}: failed to start: {exc} (after {elapsed:.1f}s)", flush=True)
-        print(f"  -> Skipping (continue_on_error={continue_on_error})", flush=True)
+        print(f"  -> Stopping pipeline here: '{name}' failed (set --continue-on-error to keep going)", flush=True)
+        if not continue_on_error:
+            raise _StepError(name, -1) from exc
         return False
 
     def _drain(stream):
@@ -332,12 +349,18 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None, 
             proc.wait(timeout=5)
         except Exception:
             pass
-        print(f"  -> Skipping (continue_on_error={continue_on_error})", flush=True)
+        _last_step_result = {"rc": -1, "success": False}
+        print(f"  -> Stopping pipeline here: '{name}' timed out (set --continue-on-error to keep going)", flush=True)
+        if not continue_on_error:
+            raise _StepError(name, -1)
         return False
     except Exception as exc:
         elapsed = time.monotonic() - started
         print(f"[ERROR] {name}: {exc} (after {elapsed:.1f}s)", flush=True)
-        print(f"  -> Skipping (continue_on_error={continue_on_error})", flush=True)
+        _last_step_result = {"rc": None, "success": False}
+        print(f"  -> Stopping pipeline here: '{name}' failed (set --continue-on-error to keep going)", flush=True)
+        if not continue_on_error:
+            raise _StepError(name, -1) from exc
         return False
 
     for t in readers:
@@ -354,8 +377,10 @@ def run_step(name, cmd, continue_on_error=False, input_text=None, timeout=None, 
           f"at T+{time.monotonic() - _pipeline_start_global:.0f}s", flush=True)
     if proc.returncode != 0:
         print(f"[ERROR] {name} failed with exit code {proc.returncode} (after {elapsed:.1f}s)", flush=True)
-        print(f"  -> Skipping (continue_on_error={continue_on_error})", flush=True)
         _last_step_result = {"rc": proc.returncode, "success": False}
+        print(f"  -> Stopping pipeline here: '{name}' failed (set --continue-on-error to keep going)", flush=True)
+        if not continue_on_error:
+            raise _StepError(name, proc.returncode)
         return False
 
     print(f"[OK] {name} ({elapsed:.1f}s)", flush=True)
@@ -415,14 +440,16 @@ def _system_ram_gb():
 
 
 def _resolve_competition_workers(args):
-    """Cap nested projection workers by CPU, sub-pipeline concurrency, and RAM.
+    """Choose per-competition projection workers for a single active build.
 
-    Every competition worker calls :func:`Project_League_Table.project_competition`
-    which loads its own copy of the multi-GB model cache (model_cache.pkl is
-    ~4.3 GB). The naive ``min(CPU_count, 4)`` auto default can therefore stack
-    tens of gigabytes on low-RAM hosts and get silently killed by the kernel
-    OOM killer (no Python traceback). Downshift when the host cannot back N
-    parallel cache loads. Override with ``BTS_COMPETITION_WORKERS``.
+    Sub-pipelines always run sequentially, so only one training or table
+    projection is ever active at a time. The auto value therefore lends every
+    CPU *except one* to that build: the core that is saved for the backend's
+    live score polling and API/file serving, which must keep running while the
+    pipeline is active. Projection workers load their own copy of the multi-GB
+    model cache (model_cache.pkl is ~4.3 GB), so the count is still downshifted
+    when the host's RAM cannot back N parallel cache loads. Override with
+    ``BTS_COMPETITION_WORKERS`` or ``--competition-workers N``.
     """
     requested = int(getattr(args, "competition_workers", 0) or 0)
     override = os.environ.get("BTS_COMPETITION_WORKERS", "").strip()
@@ -432,15 +459,12 @@ def _resolve_competition_workers(args):
             return min(forced, max(1, os.cpu_count() or 1))
         except Exception:
             pass
-    workers = max(1, int(getattr(args, "workers", 1) or 1))
     cpu = os.cpu_count() or 1
     ram_gb = _system_ram_gb()
     if requested <= 0:
-        # Auto: leave headroom for concurrent global/MLS/extra processes.
-        if workers > 1:
-            auto = max(1, min(2, cpu // workers or 1))
-        else:
-            auto = max(1, min(cpu, 4))
+        # Auto: reserve one core for the backend (live polling / API serving);
+        # the remaining cores go to the single active pipeline step.
+        auto = max(1, cpu - 1)
     else:
         auto = max(1, int(requested))
     if ram_gb:
@@ -625,15 +649,6 @@ def _run_global_subpipeline(args, api_token):
         continue_on_error=args.continue_on_error,
         timeout=3600,
     )
-    # Upcoming cups before projected tables so all upcoming-game CSVs are
-    # produced first (and available to the website) before the heavier
-    # Monte Carlo projection step.
-    sub["global_upcoming_cups"] = run_step(
-        "[global] Upcoming cup predictions",
-        [py, str(FILES_DIR / "Predict_Upcoming_Cups.py"), "--window-days", str(args.cup_window_days)],
-        continue_on_error=args.continue_on_error,
-        timeout=3600,
-    )
     global_out_csv = str(SP_DIR / "Data" / "Predictions" / "projected_league_tables.csv")
     global_proc_dirs = [str(SP_DIR / "Data" / "Processed_Data")]
     global_roster_inputs = [
@@ -745,9 +760,12 @@ def _run_extra_subpipeline(args, api_token):
     """Run the extra-leagues sub-pipeline (smaller European / S. American / Asian leagues)."""
     py = sys.executable
     sub = {}
-    # Extra PATH B + Monte Carlo under nested workers is a frequent OOM/SIGKILL
-    # source (-9) when global/MLS already run in parallel. Keep this sequential.
-    comp_workers = 1
+    # Extra league tables use the same single-build worker auto as global/MLS:
+    # sub-pipelines always run sequentially here, so the full machine minus the
+    # one reserved backend core can work on this build alone. (RAM caps in
+    # _resolve_competition_workers still protect against stack-on-stack cache
+    # loads, which is what caused the old -9 SIGKILLs.)
+    comp_workers = _resolve_competition_workers(args)
     if _tables_only():
         sub["extra_projected_league_tables"] = run_step(
             "[extra] Projected league tables",
@@ -796,8 +814,25 @@ def _run_extra_subpipeline(args, api_token):
     return sub
 
 
+def _run_sub_pipeline(name, fn, args, api_token):
+    """Run one sub-pipeline, converting a hard step failure into a result entry.
+
+    With fail-fast (continue_on_error=False), run_step raises _StepError so no
+    later step in the sub-pipeline can run on top of an incomplete earlier one.
+    """
+    try:
+        return fn(args, api_token)
+    except _StepError as exc:
+        print(
+            f"\n[barrier] {name} sub-pipeline stopped after '{exc.name}' failed "
+            f"(set --continue-on-error to continue past failures)",
+            flush=True,
+        )
+        return {exc.name: False}
+
+
 def _run_shared_post_steps(args, api_token):
-    """Run the steps that depend on all sub-pipelines having finished (settle, track, accuracy)."""
+    """Run the steps that depend on all sub-pipelines having finished (settle, friendlies, track cups)."""
     py = sys.executable
     sub = {}
 
@@ -818,23 +853,24 @@ def _run_shared_post_steps(args, api_token):
                 [py, str(FILES_DIR / "Track_Cup_Results.py")],
                 continue_on_error=args.continue_on_error,
             )
-    sub["update_website_accuracy_history"] = run_step(
-        "Update website accuracy history",
-        [
-            py,
-            "-c",
-            (
-                "import importlib.util; import sys; "
-                "sys.path.insert(0, 'Beyond-the-Stats/Website'); "
-                "p=r'Beyond-the-Stats/Website/app.py'; "
-                "s=importlib.util.spec_from_file_location('webapp', p); "
-                "m=importlib.util.module_from_spec(s); "
-                "s.loader.exec_module(m); "
-                "m.update_accuracy_history_files()"
-            ),
-        ],
-        continue_on_error=args.continue_on_error,
-    )
+    return sub
+
+
+def _run_cups_last(args):
+    """Run upcoming cup predictions last, after every league sub-pipeline.
+
+    Cups depend on the league predictions finished above, so they go at the
+    very end of the run (global -> MLS -> extra -> cups). Returns a dict of
+    step results."""
+    py = sys.executable
+    sub = {}
+    if not args.skip_global:
+        sub["global_upcoming_cups"] = run_step(
+            "[global] Upcoming cup predictions (last)",
+            [py, str(FILES_DIR / "Predict_Upcoming_Cups.py"), "--window-days", str(args.cup_window_days)],
+            continue_on_error=args.continue_on_error,
+            timeout=3600,
+        )
     return sub
 
 
@@ -980,13 +1016,12 @@ def run_full_pipeline(args, api_token, results=None):
 
     Execution order:
     1. **Real standings** — build from completed CSV results (pre-pipeline)
-    2. **Sub-pipelines** (global / MLS / extra) — in parallel if ``--workers > 1``
-    3. **Post-pipeline steps** — settle, track cups, accuracy history
-
-    When ``args.workers > 1`` the three sub-pipelines (global/MLS/extra) are
-    scheduled concurrently via ``ProcessPoolExecutor``; their step order is
-    preserved within each sub-pipeline, and the post-pipeline steps (settle,
-    track, accuracy history) still run sequentially afterwards.
+    2. **Sub-pipelines** — global first, MLS next, other leagues (extra) last,
+       always sequentially. Only one training run or table projection is ever
+       active, and each heavy step gets every CPU except one (kept free for the
+       backend's live score polling and API/file serving).
+    3. **Post-pipeline steps** — settle, friendlies, track cups
+    4. **Cups last** — upcoming cup predictions, after every league sub-pipeline
 
     Args:
         args: parsed CLI args from `parse_args()`.
@@ -1015,22 +1050,19 @@ def run_full_pipeline(args, api_token, results=None):
     # ── Pre-pipeline: build real standings from completed games ──
     results["build_real_standings"] = _build_real_standings()
 
-    workers = max(1, min(int(getattr(args, "workers", 1) or 1), MAX_SUBPIPELINE_WORKERS))
-    forced_subs = os.environ.get("BTS_SUBPIPELINE_WORKERS", "").strip()
-    if forced_subs:
-        try:
-            workers = max(1, min(int(forced_subs), MAX_SUBPIPELINE_WORKERS))
-        except Exception:
-            pass
-    else:
-        ram_gb = _system_ram_gb()
-        if ram_gb and ram_gb < 16 and workers > 1:
-            print(
-                f"[WARN] host RAM ~{ram_gb:.0f}GB < 16GB: downshifting sub-pipeline "
-                f"parallelism {workers} -> 1 to avoid OOM. Set BTS_SUBPIPELINE_WORKERS "
-                "to override (or BTS_RAM_GB if total-RAM detection is wrong)."
-            )
-            workers = 1
+    # Sub-pipelines ALWAYS run sequentially: global first, MLS next, then the
+    # other leagues (extra). Only one training run or table projection is ever
+    # active, so the whole machine (minus one core held for the backend's live
+    # polling and API/file serving) works on that single build.
+    requested_workers = max(1, min(
+        int(getattr(args, "workers", 1) or 1), MAX_SUBPIPELINE_WORKERS
+    ))
+    if requested_workers > 1:
+        print(
+            f"[NOTE] --workers {requested_workers} ignored: sub-pipelines always run "
+            "sequentially (global -> MLS -> extra) so global/MLS/extra training or "
+            "table projections never run at the same time."
+        )
     sub_tasks = []
     if not args.skip_global:
         sub_tasks.append(("global", _run_global_subpipeline))
@@ -1041,55 +1073,53 @@ def run_full_pipeline(args, api_token, results=None):
 
     pipeline_start = time.monotonic()
 
-    if workers == 1 or len(sub_tasks) <= 1:
-        # Sequential: keeps the original behavior (no extra startup overhead).
-        for name, fn in sub_tasks:
-            sub_start = time.monotonic()
-            print(f"\n>>> Running {name} sub-pipeline (sequential)")
-            sub_result = fn(args, api_token)
-            results.update(sub_result)
-            elapsed = time.monotonic() - sub_start
-            if sub_result and not all(sub_result.values()):
-                failed_steps = [k for k, v in sub_result.items() if not v]
-                print(f"  [WARN] {name} sub-pipeline had {len(failed_steps)} failed step(s): {failed_steps}")
-            print(f"  [TIMING] {name} sub-pipeline: {elapsed:.1f}s")
-    else:
-        max_workers = min(workers, len(sub_tasks))
-        print(f"\n>>> Running {len(sub_tasks)} sub-pipelines in parallel (max_workers={max_workers})")
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(fn, args, api_token): name
-                for name, fn in sub_tasks
-            }
-            for fut in as_completed(futures):
-                name = futures[fut]
-                try:
-                    sub_result = fut.result()
-                except (KeyboardInterrupt, SystemExit):
-                    raise
-                except BaseException as exc:
-                    print(f"[ERROR] Sub-pipeline '{name}' failed: {exc}")
-                    sub_result = {f"{name}_failed": False}
-                results.update(sub_result)
-                print(f"  [OK] {name} sub-pipeline finished")
+    # Sequential only (no ProcessPoolExecutor across sub-pipelines).
+    for name, fn in sub_tasks:
+        sub_start = time.monotonic()
+        print(f"\n>>> Running {name} sub-pipeline (sequential)")
+        sub_result = _run_sub_pipeline(name, fn, args, api_token)
+        results.update(sub_result)
+        elapsed = time.monotonic() - sub_start
+        if sub_result and not all(sub_result.values()):
+            failed_steps = [k for k, v in sub_result.items() if not v]
+            print(f"  [WARN] {name} sub-pipeline had {len(failed_steps)} failed step(s): {failed_steps}")
+        print(f"  [TIMING] {name} sub-pipeline: {elapsed:.1f}s")
+        if sub_result and not all(sub_result.values()) and not args.continue_on_error:
+            print(
+                "\n[barrier] not starting remaining sub-pipelines: "
+                f"'{name}' failed (set --continue-on-error to continue past failures)"
+            )
+            break
 
     # Ensure tables on disk even if a sub-pipeline child died before reaching
     # its projection step (OOM / uncaught executor exception on the host).
     results.update(_ensure_projected_tables(args))
 
-    # Post-pipeline steps (depend on all sub-pipelines' outputs being on disk).
-    post_start = time.monotonic()
-    print("\n>>> Running post-pipeline steps")
-    results.update(_run_shared_post_steps(args, api_token))
-
-    # Archive completed games AFTER settle (so CSVs have actual_result filled).
-    if not _tables_only():
-        print("\n=== [past-games] Archive completed games to past_games.json ===")
-        _archive_completed_games()
+    if any(not v for v in results.values()) and not args.continue_on_error:
+        print(
+            "\n[barrier] not starting post-pipeline steps: an earlier step failed "
+            "(set --continue-on-error to continue past failures)"
+        )
     else:
-        print("\n[tables-only] Skipped settle/friendlies/cups/archive/upcoming steps")
+        # Post-pipeline steps (depend on all sub-pipelines' outputs being on disk).
+        post_start = time.monotonic()
+        print("\n>>> Running post-pipeline steps")
+        results.update(_run_shared_post_steps(args, api_token))
 
-    print(f"  [TIMING] post-pipeline steps: {time.monotonic() - post_start:.1f}s")
+        # Archive completed games AFTER settle (so CSVs have actual_result filled).
+        if not _tables_only():
+            print("\n=== [past-games] Archive completed games to past_games.json ===")
+            _archive_completed_games()
+        else:
+            print("\n[tables-only] Skipped settle/friendlies/cups/archive/upcoming steps")
+
+        # Cups last: after every league sub-pipeline and the post-pipeline steps.
+        if not _tables_only():
+            print("\n>>> Running cup predictions (last)")
+            cups_start = time.monotonic()
+            results.update(_run_cups_last(args))
+            print(f"  [TIMING] cup predictions: {time.monotonic() - cups_start:.1f}s")
+        print(f"  [TIMING] post-pipeline steps: {time.monotonic() - post_start:.1f}s")
     print(f"\n[TIMING] full pipeline: {time.monotonic() - pipeline_start:.1f}s")
     print(f"[DEBUG] pipeline wall clock done at T+{time.monotonic() - _pipeline_start_global:.0f}s")
 

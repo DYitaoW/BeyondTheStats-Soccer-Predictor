@@ -350,8 +350,9 @@ def parse_args():
         type=int,
         default=1,
         help=(
-            "Number of sub-pipelines (global/MLS/extra) to run concurrently in Run_All_Pipeline. "
-            "1 = sequential (default). Up to 3 = all sub-pipelines in parallel."
+            "Accepted for backward compatibility. Sub-pipelines always run "
+            "sequentially (global -> MLS -> extra, cups last); values above 1 "
+            "are ignored by Run_All_Pipeline."
         ),
     )
     parser.add_argument(
@@ -1593,6 +1594,33 @@ def _write_pipeline_status(results: dict) -> None:
         print(f"[WARN] Could not write pipeline_status.json: {exc}")
 
 
+BACKEND_RUN_STATUS_FILE = SP_DIR / "Data" / "backend_run_status.json"
+
+
+def _write_backend_run_status(ok: bool, trigger: str = "daily") -> None:
+    """Write Data/backend_run_status.json right as the run ends.
+
+    The server's watcher also writes this file after the subprocess exits,
+    but writing it here (at the exact end of the pipeline, before the backend
+    returns to just polling / API serving) keeps the status the API serves
+    correct even when the pipeline runs without a backend watcher.
+    """
+    try:
+        BACKEND_RUN_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        BACKEND_RUN_STATUS_FILE.write_text(
+            json.dumps({
+                "finished_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+                "return_code": 0 if ok else 1,
+                "ok": ok,
+                "trigger": trigger,
+                "log_file": str(pipeline_log.log_path()),
+            }, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        print(f"[WARN] Could not write backend_run_status.json: {exc}")
+
+
 def _sleep_with_shutdown(seconds):
     """Sleep for `seconds` in 1-second ticks; return early on shutdown signal."""
     end = time.monotonic() + seconds
@@ -1679,6 +1707,10 @@ def main():
             traceback.print_exc()
         finally:
             _write_pipeline_status(step_results)
+            _write_backend_run_status(
+                pipeline_ok,
+                trigger="backend" if os.environ.get("BTS_BACKEND_MANAGED") else "manual",
+            )
 
         # Rebuild Output/Upcoming/all_upcoming.csv (and related Output trees)
         # so /api/upcoming/global prefers a fresh merged file. Mobile feed

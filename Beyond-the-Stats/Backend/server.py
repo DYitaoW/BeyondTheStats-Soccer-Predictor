@@ -87,7 +87,7 @@ class BackendConfig:
     weekly_model_refresh_days: tuple[int, ...] = (1, 4)
     weekly_model_refresh_hour: int = DEFAULT_REFRESH_HOUR
     weekly_model_refresh_minute: int = DEFAULT_REFRESH_MINUTE
-    pipeline_workers: int = 3  # 3 = run global/MLS/extra sub-pipelines in parallel
+    pipeline_workers: int = 1  # always sequential (global->MLS->extra->cups); >1 ignored
     pipeline_competition_workers: int = 0  # 0 = auto
     pipeline_window_days: int = 365
     pipeline_national_window_days: int = 90
