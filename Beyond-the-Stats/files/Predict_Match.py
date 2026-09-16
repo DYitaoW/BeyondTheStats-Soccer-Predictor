@@ -63,7 +63,7 @@ EU_RANDOMIZER_MAX_DELTA = 0.08
 DRAW_REDUCTION_FACTOR = 0.08
 HIGH_DRAW_THRESHOLD = 0.42
 HIGH_DRAW_EXTRA_REDUCTION_MAX = 0.18
-CPU_COUNT = max(1, (os.cpu_count() or 1))
+CPU_COUNT = max(1, (os.cpu_count() or 2) - 1)
 # Outer-level parallelism (train multiple regressors at once).
 TRAIN_WORKERS = int(os.getenv("SOCCER_TRAIN_WORKERS", str(max(1, min(4, CPU_COUNT // 2)))))
 # Inner model thread count to avoid oversubscription.
