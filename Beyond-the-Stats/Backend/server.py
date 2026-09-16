@@ -389,7 +389,18 @@ class BackendServer:
         try:
             cmd = self._build_pipeline_cmd(full_retrain=full_retrain)
             LOG.info("[pipeline] starting (trigger=%s, full_retrain=%s) -> journald", trigger, full_retrain)
-            subprocess_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1", "BTS_BACKEND_MANAGED": "1"}
+            force_path_b = os.environ.get("BTS_FORCE_PATH_B", "").strip() or "England/Premier League"
+            tables_only = os.environ.get("BTS_TABLES_ONLY", "1").strip() or "1"
+            if tables_only.lower() in {"1", "true", "yes"}:
+                LOG.info("[pipeline] tables-only mode: fetching/training steps disabled")
+            subprocess_env = {
+                **os.environ,
+                "PYTHONIOENCODING": "utf-8",
+                "PYTHONUNBUFFERED": "1",
+                "BTS_BACKEND_MANAGED": "1",
+                "BTS_FORCE_PATH_B": force_path_b,
+                "BTS_TABLES_ONLY": tables_only,
+            }
             pipeline_log.start_run(trigger=trigger, reset=True)
             proc = subprocess.Popen(
                 cmd,

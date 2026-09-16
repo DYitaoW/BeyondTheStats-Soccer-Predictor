@@ -818,6 +818,48 @@ def _fetch_espn_teams(competition):
         return None
 
 
+def _forced_path_b(competition):
+    raw = os.environ.get("BTS_FORCE_PATH_B", "").strip()
+    if not raw:
+        return False
+    if raw.lower() in {"1", "all", "true", "yes"}:
+        return True
+    comp = str(competition or "").strip().lower()
+    if not comp:
+        return False
+    return any(tok.strip() and tok.strip().lower() in comp for tok in raw.split(","))
+
+
+def _fold_played_matches(raw_file, ctx, teams, table, real_matches, seen_pairs):
+    if not raw_file or not os.path.exists(raw_file):
+        return 0
+    try:
+        df = pd.read_csv(raw_file)
+    except Exception:
+        return 0
+    required = {"HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"}
+    if not required.issubset(df.columns):
+        return 0
+    folded = 0
+    for _, row in df.iterrows():
+        raw_home = str(row["HomeTeam"]).strip()
+        raw_away = str(row["AwayTeam"]).strip()
+        home = pm.resolve_team_name(raw_home, ctx["available_teams"])
+        away = pm.resolve_team_name(raw_away, ctx["available_teams"])
+        if not home or not away or home not in table or away not in table:
+            continue
+        ftr = str(row.get("FTR", "")).strip()
+        hg = pd.to_numeric(row.get("FTHG"), errors="coerce")
+        ag = pd.to_numeric(row.get("FTAG"), errors="coerce")
+        if ftr not in {"H", "D", "A"} or pd.isna(hg) or pd.isna(ag):
+            continue
+        apply_result(table, home, away, int(hg), int(ag), is_real=True)
+        real_matches.append((home, away, int(hg), int(ag)))
+        seen_pairs.add((home, away))
+        folded += 1
+    return folded
+
+
 def project_competition(ctx, competition, raw_file, sim_runs=None):
     if sim_runs is None:
         sim_runs = SIMULATION_RUNS
@@ -830,6 +872,9 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         use_path_a = _prefer_csv_path_a(competition, raw_file, csv_start_year, expected_year)
     else:
         csv_start_year = None
+        use_path_a = False
+
+    if _forced_path_b(competition):
         use_path_a = False
 
     if use_path_a:
@@ -902,71 +947,92 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         _fill_remaining_fixtures(teams, seen_pairs, future_pairs, future_dates, ctx, competition=competition, future_kickoffs=future_kickoffs)
 
     else:
-        # ── PATH B: No current-season CSV or CSV is from a past season ──
-        # Any competition with a usable roster gets a synthetic full-season
-        # Monte Carlo (position odds included). Leagues with no roster still
-        # return nothing so main() emits zeroed placeholders.
-        if not _load_any_roster(competition):
-            print(
-                f"  No current-season CSV and no roster for {competition} — "
-                f"showing zeroed/previous rows"
-            )
-            return [], []
-
-        # Roster priority: 2026-27 preseason fallback (top priority leagues) →
-        #                   current_season_teams.json → league_teams.json
-        # The fallback JSON is manually kept current for promotion/relegation;
-        # current_season_teams.json can lag during the transition window.
+        # ── PATH B: No usable current-season CSV for PATH A ─────────────
+        # Teams come from the season CSV itself when one exists (the original
+        # PATH B method); rosters are only a fallback when no CSV exists.
         sim_runs = min(int(sim_runs), PATH_B_SIMULATION_RUNS)
         teams = None
 
-        def _resolve_roster(raw_names, label):
-            resolved = set()
-            unresolved = []
-            for t in raw_names:
-                r = pm.resolve_team_name(t, ctx["available_teams"])
-                if r:
-                    resolved.add(r)
-                else:
-                    unresolved.append(t)
-            if unresolved:
-                print(f"  Unresolved {label} teams in {competition}: {sorted(set(unresolved))}")
-                _append_mapping_if_missing(
-                    competition, unresolved, ctx["available_teams"], _load_upcoming_roster(competition)
+        if raw_file and os.path.exists(raw_file):
+            try:
+                csv_df = pd.read_csv(raw_file)
+            except Exception:
+                csv_df = None
+            if csv_df is not None and {"HomeTeam", "AwayTeam"}.issubset(csv_df.columns):
+                raw_csv_teams = set(csv_df["HomeTeam"].astype(str).str.strip()) | set(
+                    csv_df["AwayTeam"].astype(str).str.strip()
                 )
-                for t in unresolved:
+                csv_resolved = {
+                    r for t in raw_csv_teams if (r := pm.resolve_team_name(t, ctx["available_teams"]))
+                }
+                if csv_resolved:
+                    teams = sorted(csv_resolved)
+                    print(f"  PATH B teams from season CSV ({len(teams)} teams)")
+
+        if not teams:
+            if not _load_any_roster(competition):
+                print(
+                    f"  No current-season CSV and no roster for {competition} — "
+                    f"showing zeroed/previous rows"
+                )
+                return [], []
+
+            # Roster priority: 2026-27 preseason fallback (top priority leagues) →
+            #                   current_season_teams.json → league_teams.json
+            # The fallback JSON is manually kept current for promotion/relegation;
+            # current_season_teams.json can lag during the transition window.
+            def _resolve_roster(raw_names, label):
+                resolved = set()
+                unresolved = []
+                for t in raw_names:
                     r = pm.resolve_team_name(t, ctx["available_teams"])
                     if r:
                         resolved.add(r)
-            return sorted(resolved) if resolved else None
+                    else:
+                        unresolved.append(t)
+                if unresolved:
+                    print(f"  Unresolved {label} teams in {competition}: {sorted(set(unresolved))}")
+                    _append_mapping_if_missing(
+                        competition, unresolved, ctx["available_teams"], _load_upcoming_roster(competition)
+                    )
+                    for t in unresolved:
+                        r = pm.resolve_team_name(t, ctx["available_teams"])
+                        if r:
+                            resolved.add(r)
+                return sorted(resolved) if resolved else None
 
-        any_roster = _load_any_roster(competition)
-        if any_roster:
-            # Prefer the manually-updated 2026-27 fallback roster for the
-            # top-5 leagues (reflects confirmed promotion/relegation). For all
-            # other leagues _load_any_roster already applied the priority.
-            label = "2026-27 fallback" if competition in TOP_FALLBACK_LEAGUES else "any_roster"
-            teams = _resolve_roster(any_roster, label)
-            if teams:
-                print(f"  PATH B roster from {label} ({len(teams)} teams)")
+            any_roster = _load_any_roster(competition)
+            if any_roster:
+                # Prefer the manually-updated 2026-27 fallback roster for the
+                # top-5 leagues (reflects confirmed promotion/relegation). For all
+                # other leagues _load_any_roster already applied the priority.
+                label = "2026-27 fallback" if competition in TOP_FALLBACK_LEAGUES else "any_roster"
+                teams = _resolve_roster(any_roster, label)
+                if teams:
+                    print(f"  PATH B roster from {label} ({len(teams)} teams)")
 
-        if not teams:
-            static_roster = _load_roster_from_json(LEAGUE_TEAMS_FILE, competition)
-            if not static_roster:
-                print(f"  No current-season file and no fallback/roster data for {competition}")
-                return [], []
-            teams = _resolve_roster(static_roster, "league_teams")
             if not teams:
-                # Final attempt: direct mapping lookup on each raw name
-                teams = sorted({r for t in static_roster if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
-            if not teams:
-                print(f"  No current-season file and no resolved fallback/roster for {competition}")
-                return [], []
-            print(f"  PATH B roster from league_teams.json ({len(teams)} teams)")
+                static_roster = _load_roster_from_json(LEAGUE_TEAMS_FILE, competition)
+                if not static_roster:
+                    print(f"  No current-season file and no fallback/roster data for {competition}")
+                    return [], []
+                teams = _resolve_roster(static_roster, "league_teams")
+                if not teams:
+                    # Final attempt: direct mapping lookup on each raw name
+                    teams = sorted({r for t in static_roster if (r := pm.resolve_team_name(t, ctx["available_teams"]))})
+                if not teams:
+                    print(f"  No current-season file and no resolved fallback/roster for {competition}")
+                    return [], []
+                print(f"  PATH B roster from league_teams.json ({len(teams)} teams)")
 
         games_each = proj_sched.expected_games_per_team(competition, len(teams))
+        source_desc = (
+            "No current-season CSV"
+            if not (raw_file and os.path.exists(raw_file))
+            else "Synthetic remaining fixtures"
+        )
         print(
-            f"  No current-season CSV — PATH B ({len(teams)} teams, "
+            f"  {source_desc} — PATH B ({len(teams)} teams, "
             f"~{games_each} games/team via format-aware round-robin)"
         )
         table = init_table(teams)
@@ -975,6 +1041,10 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
         future_dates = []
         future_kickoffs = []
         seen_pairs = set()
+
+        folded = _fold_played_matches(raw_file, ctx, teams, table, real_matches, seen_pairs)
+        if folded:
+            print(f"  PATH B folded {folded} already-played match result(s) into the base table")
 
         # Do not rely on ESPN upcoming scoreboards for PATH B — synthesize
         # the full remaining slate from the competition format.
