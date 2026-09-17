@@ -1618,6 +1618,10 @@ def _load_projected_tables(csv_path):
     if frame.empty:
         return {"leagues": [], "tables": {}}
 
+    frame = frame[~frame["competition"].map(config.is_national_team_competition)]
+    if frame.empty:
+        return {"leagues": [], "tables": {}}
+
     frame["position"] = pd.to_numeric(frame["position"], errors="coerce")
     frame = frame.sort_values(["competition", "position", "team"], na_position="last")
 

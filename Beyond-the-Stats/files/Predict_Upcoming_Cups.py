@@ -652,6 +652,15 @@ def predict_fixture(row, context):
     # Reduce draw probability
 
     probabilities = pm.reduce_draw_probability(probabilities)
+    probabilities = pm.blend_historical_prior(
+        probabilities,
+        home_team,
+        away_team,
+        context["season_teams"].get(prediction_season, {}),
+        competition=competition,
+        is_neutral=bool(row.get("is_neutral_site", False)),
+        league_strength=context.get("league_strength", {}),
+    )
     seed = pm.prediction_randomizer_seed(home_team, away_team, competition, prediction_season)
 
     # --- Randomizer delta logic by cup type ---

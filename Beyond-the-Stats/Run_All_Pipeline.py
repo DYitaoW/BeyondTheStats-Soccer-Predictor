@@ -633,6 +633,12 @@ def _run_global_subpipeline(args, api_token):
         continue_on_error=args.continue_on_error,
         timeout=3600,
     )
+    sub["global_build_historical_tables"] = run_step(
+        "[global] Build historical season tables",
+        [py, str(FILES_DIR / "Build_Historical_Tables.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=600,
+    )
     if _should_build_model_cache(args, "global", FILES_DIR / "Predict_Match.py")[0]:
         sub["global_build_model_cache"] = run_step(
             "[global] Build model cache (non-interactive)",
@@ -724,6 +730,12 @@ def _run_mls_subpipeline(args, api_token):
         continue_on_error=args.continue_on_error,
         timeout=1200,
     )
+    sub["mls_build_historical_tables"] = run_step(
+        "[mls] Build historical season tables",
+        [py, str(MLS_FILES_DIR / "Build_Historical_Tables.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=600,
+    )
     sub["mls_build_model_cache"] = run_step(
         "[mls] Build model cache (non-interactive)",
         [py, str(MLS_FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
@@ -780,6 +792,12 @@ def _run_extra_subpipeline(args, api_token):
         continue_on_error=args.continue_on_error,
         timeout=1200,
     )
+    sub["extra_build_historical_tables"] = run_step(
+        "[extra] Build historical season tables",
+        [py, str(EXTRA_FILES_DIR / "Build_Historical_Tables.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=600,
+    )
     if _should_build_model_cache(args, "extra", EXTRA_FILES_DIR / "Predict_Match.py")[0]:
         sub["extra_build_model_cache"] = run_step(
             "[extra] Build model cache (non-interactive)",
@@ -832,7 +850,12 @@ def _run_sub_pipeline(name, fn, args, api_token):
 
 
 def _run_shared_post_steps(args, api_token):
-    """Run the steps that depend on all sub-pipelines having finished (settle, friendlies, track cups)."""
+    """Run the steps that depend on all sub-pipelines having finished.
+
+    Settle/friendlies are league-dependent and still respect the fail-fast
+    barrier. Cup tracking was moved to ``_run_cups_last`` so the cup steps can
+    run even when an earlier sub-pipeline failed (see main()).
+    """
     py = sys.executable
     sub = {}
 
@@ -847,29 +870,31 @@ def _run_shared_post_steps(args, api_token):
             [py, str(FILES_DIR / "Update_Club_Friendlies.py")],
             continue_on_error=args.continue_on_error,
         )
-        if not args.skip_global:
-            sub["track_cup_results"] = run_step(
-                "Track completed cup predictions and cup projections",
-                [py, str(FILES_DIR / "Track_Cup_Results.py")],
-                continue_on_error=args.continue_on_error,
-            )
     return sub
 
 
 def _run_cups_last(args):
-    """Run upcoming cup predictions last, after every league sub-pipeline.
+    """Run the cup steps last, after every league sub-pipeline.
 
-    Cups depend on the league predictions finished above, so they go at the
-    very end of the run (global -> MLS -> extra -> cups). Returns a dict of
-    step results."""
+    Order matters: ``Predict_Upcoming_Cups.py`` refreshes the upcoming cup
+    predictions first, then ``Track_Cup_Results.py`` settles them and rebuilds
+    the projected cup tables/brackets from the freshest data. Cups depend on
+    the league predictions above, and are best-effort: their failures are
+    recorded but never abort the pipeline."""
     py = sys.executable
     sub = {}
     if not args.skip_global:
         sub["global_upcoming_cups"] = run_step(
             "[global] Upcoming cup predictions (last)",
             [py, str(FILES_DIR / "Predict_Upcoming_Cups.py"), "--window-days", str(args.cup_window_days)],
-            continue_on_error=args.continue_on_error,
+            continue_on_error=True,
             timeout=3600,
+        )
+        sub["track_cup_results"] = run_step(
+            "Track completed cup predictions and cup projections",
+            [py, str(FILES_DIR / "Track_Cup_Results.py")],
+            continue_on_error=True,
+            timeout=1800,
         )
     return sub
 
@@ -1097,9 +1122,10 @@ def run_full_pipeline(args, api_token, results=None):
 
     if any(not v for v in results.values()) and not args.continue_on_error:
         print(
-            "\n[barrier] not starting post-pipeline steps: an earlier step failed "
+            "\n[barrier] not starting league-dependent post-pipeline steps: an earlier step failed "
             "(set --continue-on-error to continue past failures)"
         )
+        print("[cups] running cup steps anyway so a league failure cannot leave cup outputs stale")
     else:
         # Post-pipeline steps (depend on all sub-pipelines' outputs being on disk).
         post_start = time.monotonic()
@@ -1111,15 +1137,17 @@ def run_full_pipeline(args, api_token, results=None):
             print("\n=== [past-games] Archive completed games to past_games.json ===")
             _archive_completed_games()
         else:
-            print("\n[tables-only] Skipped settle/friendlies/cups/archive/upcoming steps")
-
-        # Cups last: after every league sub-pipeline and the post-pipeline steps.
-        if not _tables_only():
-            print("\n>>> Running cup predictions (last)")
-            cups_start = time.monotonic()
-            results.update(_run_cups_last(args))
-            print(f"  [TIMING] cup predictions: {time.monotonic() - cups_start:.1f}s")
+            print("\n[tables-only] Skipped settle/friendlies/archive steps")
         print(f"  [TIMING] post-pipeline steps: {time.monotonic() - post_start:.1f}s")
+
+    # Cups last, and ALWAYS: after every league sub-pipeline, even when an
+    # earlier step failed. Otherwise one transient download error (e.g. the MLS
+    # source) trips the barrier and leaves cup predictions/tables stale.
+    if not _tables_only():
+        print("\n>>> Running cup predictions (last)")
+        cups_start = time.monotonic()
+        results.update(_run_cups_last(args))
+        print(f"  [TIMING] cup predictions: {time.monotonic() - cups_start:.1f}s")
     print(f"\n[TIMING] full pipeline: {time.monotonic() - pipeline_start:.1f}s")
     print(f"[DEBUG] pipeline wall clock done at T+{time.monotonic() - _pipeline_start_global:.0f}s")
 

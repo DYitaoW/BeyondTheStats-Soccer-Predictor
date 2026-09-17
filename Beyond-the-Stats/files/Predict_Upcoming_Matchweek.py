@@ -47,6 +47,10 @@ TEAM_DATA_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
 SCORERS_FILE = os.path.join(TEAM_DATA_DIR, "current_season_top_scorers.json")
 FOOTBALL_DATA_API_BASE = "https://api.football-data.org/v4"
 
+# Top scorers feed only the website's /api/scorers display page and are not
+# consumed by any prediction/model code, so skip the API call until that changes.
+FETCH_TOP_SCORERS = False
+
 
 def rebuild_model_cache_once():
     """Rebuild the global model cache in non-interactive mode."""
@@ -1423,6 +1427,15 @@ def predict_fixture(row, context):
             label = context["result_label_encoder"].inverse_transform([encoded_label])[0]
             probabilities[label] = float(proba_values[idx])
         probabilities = pm.reduce_draw_probability(probabilities)
+        probabilities = pm.blend_historical_prior(
+            probabilities,
+            local_home,
+            local_away,
+            context["season_teams"].get(prediction_season, {}),
+            competition=competition,
+            is_neutral=is_neutral_site,
+            league_strength=context.get("league_strength", {}),
+        )
         seed = pm.prediction_randomizer_seed(local_home, local_away, competition, prediction_season)
         return pm.apply_probability_randomizer(probabilities, randomizer_delta, seed=seed)
 
@@ -1801,7 +1814,7 @@ def main():
 
     # Fetch and save current season top scorers if API token is available
     scorers_saved = 0
-    if args.api_token:
+    if args.api_token and FETCH_TOP_SCORERS:
         try:
             print("\nFetching current season top scorers from API...")
             scorers_by_comp = load_top_scorers_from_api(args.api_token)

@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime
 from io import StringIO
@@ -84,9 +85,35 @@ REFRESH_RECENT_SEASONS = 2
 MMZ4281_BASE_URL = "https://www.football-data.co.uk/mmz4281/{season_code}/{league_code}.csv"
 
 
+def _urlopen_with_retry(url, timeout=30, attempts=4, backoff_base=2.0):
+    """GET a URL with bounded retries.
+
+    A single transient network error used to abort the download step, which
+    tripped the pipeline's fail-fast barrier and skipped the cup steps. Retry
+    with exponential backoff so brief outages self-heal. Permanent 4xx
+    responses still raise immediately.
+    """
+    delay = backoff_base
+    last_exc = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 and exc.code < 500:
+                raise
+            last_exc = exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            last_exc = exc
+        if attempt < attempts:
+            print(f"  [retry] {url} failed ({last_exc}); retrying in {delay:.0f}s ({attempt}/{attempts - 1})...")
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
+    raise last_exc
+
+
 def fetch_source_dataframe(url):
-    with urllib.request.urlopen(url, timeout=30) as response:
-        raw = response.read()
+    raw = _urlopen_with_retry(url, timeout=30)
     text = raw.decode("utf-8-sig", errors="replace")
     try:
         df = pd.read_csv(StringIO(text))

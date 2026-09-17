@@ -86,6 +86,47 @@ PATH_B_SKIP_COMPETITIONS = frozenset({
     "United States/MLS",
 })
 
+# Cup and national-team competitions must never be projected as league tables.
+# Cups are handled as brackets by Track_Cup_Results.py; national-team
+# competitions (World Cup qualifying, Nations League, internationals) are
+# handled by the national-team pipeline. The UEFA Champions/Europa/Conference
+# League are also not league tables here — they get a league-phase table plus a
+# bracket in the cup pipeline. Only genuine league/group tables are projected.
+NON_LEAGUE_COMPETITIONS = frozenset({
+    "England/FA Cup", "England/League Cup",
+    "Spain/Copa del Rey", "Italy/Coppa Italia",
+    "Germany/DFB-Pokal", "France/Coupe de France",
+    "United States/US Open Cup", "North America/Leagues Cup",
+    "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
+})
+
+# Confederation / national-team prefixes — never club league tables.
+_NATIONAL_TEAM_PREFIXES = frozenset({
+    "FIFA", "UEFA", "CONMEBOL", "CONCACAF", "CAF", "AFC", "OFC", "INTERNATIONAL",
+})
+
+
+def is_league_table_competition(competition):
+    """True only for genuine league/group-table competitions.
+
+    Excludes domestic cups, the UEFA club competitions, World Cup qualifying,
+    and other national-team competitions (which are handled elsewhere as
+    brackets or by the national-team pipeline).
+    """
+    comp = str(competition or "").strip()
+    if not comp:
+        return False
+    if comp in NON_LEAGUE_COMPETITIONS:
+        return False
+    if comp.endswith(" Cup"):
+        return False
+    if "World Cup Qualifying" in comp:
+        return False
+    head = comp.split("/", 1)[0].strip().upper()
+    if head in _NATIONAL_TEAM_PREFIXES:
+        return False
+    return True
+
 # Priority leagues for the manually curated 2026-27 roster JSON. PATH B now
 # runs for *any* competition with a usable roster (current_season_teams /
 # fallback / league_teams); this set only controls roster-source priority.
@@ -622,11 +663,23 @@ def run_monte_carlo(teams, base_table, future_predictions, runs, competition=Non
         stat_sums[team]
         position_counts[team]
 
+    # Early-season variation: when teams have played few real games, add extra
+    # per-simulation jitter to outcome probabilities so the projected table is
+    # not a near-deterministic echo of the prior/model. Scales with the least
+    # real games played, fading out by EARLY_SEASON_GAMES_THRESHOLD.
+    played_values = [float(table.get("P", 0.0) or 0.0) for team in teams for table in (base_table,)]
+    least_played = min(played_values) if played_values else 0.0
+    progress = min(1.0, least_played / float(pm.EARLY_SEASON_GAMES_THRESHOLD))
+    jitter_scale = 0.05 * (1.0 - progress)
+
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
         sim_matches = list(real_matches) if real_matches else []
         for fixture in future_predictions:
-            result = sample_outcome(fixture["probs"])
+            probs = fixture["probs"]
+            if jitter_scale > 0.0:
+                probs = _jitter_probs(probs, jitter_scale)
+            result = sample_outcome(probs)
             hg, ag = coerce_scoreline(result, fixture["pred_home_goals"], fixture["pred_away_goals"])
             apply_result(sim_table, fixture["home_team"], fixture["away_team"], hg, ag, is_real=False)
             sim_matches.append((fixture["home_team"], fixture["away_team"], hg, ag))
@@ -638,6 +691,15 @@ def run_monte_carlo(teams, base_table, future_predictions, runs, competition=Non
                 stat_sums[team][key] += float(value)
 
     return stat_sums, position_counts
+
+
+def _jitter_probs(probs, scale):
+    """Add a small random perturbation to outcome probabilities (kept normalized)."""
+    h = max(0.01, float(probs.get("H", 0.0)) + RNG.uniform(-scale, scale))
+    d = max(0.01, float(probs.get("D", 0.0)) + RNG.uniform(-scale * 0.6, scale * 0.6))
+    a = max(0.01, float(probs.get("A", 0.0)) + RNG.uniform(-scale, scale))
+    total = h + d + a
+    return {"H": h / total, "D": d / total, "A": a / total}
 
 
 def predict_match(ctx, home_team, away_team, competition_hint):
@@ -695,6 +757,16 @@ def _predict_matches_batch(ctx, fixture_pairs, competition_hint):
         for c_idx, lbl in enumerate(class_labels):
             probs[lbl] = float(pvals[i, c_idx])
         probs = pm.reduce_draw_probability(probs)
+
+        home_team_i, away_team_i = fixture_pairs[i]
+        probs = pm.blend_historical_prior(
+            probs,
+            home_team_i,
+            away_team_i,
+            ctx["season_teams"].get(prediction_season, {}),
+            competition=competition_key,
+            league_strength=ctx.get("league_strength", {}),
+        )
 
         labels = ["H", "D", "A"]
         weights = [max(0.0, float(probs.get(label, 0.0))) for label in labels]
@@ -1235,7 +1307,7 @@ def _merge_roster_only_competitions(latest: dict, available_teams=None) -> dict:
                     continue
                 if comp in seen:
                     continue
-                if "/MLS -" in comp or "Europe/" in comp or comp.endswith(" Cup"):
+                if "/MLS -" in comp or not is_league_table_competition(comp):
                     continue
                 # Only the top-5 European leagues get preseason fallback projections.
                 if label == "2026_27_league_team_fallback" and comp not in TOP_FALLBACK_LEAGUES:
@@ -1331,6 +1403,13 @@ def main():
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR) or {}
     latest = _merge_roster_only_competitions(latest, ctx["available_teams"])
+    # Never project cups or national-team competitions (incl. World Cup
+    # qualifying) as league tables — filters both CSV-discovered and
+    # roster-only competitions before any projection/placeholder rows are built.
+    excluded_non_league = sorted(c for c in latest if not is_league_table_competition(c))
+    for comp in excluded_non_league:
+        print(f"  [skip] not a league-table competition: {comp}")
+    latest = {c: p for c, p in latest.items() if is_league_table_competition(c)}
     if not latest:
         raise ValueError(f"No raw season files or current-season rosters found in {RAW_DIR}")
 

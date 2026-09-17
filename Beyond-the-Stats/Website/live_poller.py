@@ -16,6 +16,7 @@ import config
 from accuracy_tracker import _track_prediction_results
 from espn_api import _fetch_competition_scores, _fetch_event_summary, LIVE_SCORE_FETCH_TIMEOUT
 from espn_parser import (
+    _parse_elapsed_minutes,
     _parse_espn_boxscore_stats,
     _parse_espn_game_info,
     _parse_espn_head_to_head,
@@ -319,6 +320,105 @@ def _filter_live_games_for_competition(comp_name: str, games: list[dict]) -> lis
             cleaned.pop("live_prediction", None)
             filtered.append(cleaned)
     return filtered
+
+
+# ── Live Activity content-state (APNs) ────────────────────────────
+# The iOS app's ActivityKit ``ContentState`` expects these exact keys.
+# ``half_start_time`` / ``kickoff_date`` are ISO8601 UTC strings ("...Z").
+
+_la_prematch_index_cache: dict = {}
+_la_prematch_index_ts: float = 0.0
+
+
+def _la_prematch_record(game, comp_name):
+    """Pre-match record for a game, using a short TTL cache of the index."""
+    global _la_prematch_index_cache, _la_prematch_index_ts
+    now = time.time()
+    if not _la_prematch_index_cache or now - _la_prematch_index_ts > 120:
+        try:
+            _la_prematch_index_cache = _build_live_prematch_index()
+            _la_prematch_index_ts = now
+        except Exception:
+            pass
+    if not _la_prematch_index_cache:
+        return None
+    try:
+        return _match_prematch_record(
+            game.get("home_team", ""),
+            game.get("away_team", ""),
+            comp_name,
+            _la_prematch_index_cache,
+        )
+    except Exception:
+        return None
+
+
+def _la_kickoff_iso(game) -> str:
+    raw = game.get("kickoff_utc") or game.get("match_datetime_utc") or ""
+    try:
+        dt = pd.to_datetime(str(raw), utc=True, errors="coerce")
+        if pd.notna(dt):
+            return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        pass
+    return ""
+
+
+def _la_half_start_iso(game, kickoff_iso: str) -> str:
+    """ISO8601 UTC time the current half kicked off (drives the count-up timer)."""
+    period = str(game.get("period") or "").strip().lower()
+    now = datetime.now(timezone.utc)
+    elapsed = _parse_elapsed_minutes(game.get("clock", ""), game.get("period", ""))
+    if "extra" in period or period.startswith("et") or "overtime" in period:
+        base = 105 if "2nd" in period else 90
+        within = max(0, elapsed - base)
+        return (now - timedelta(minutes=within)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if "2nd half" in period or "second half" in period:
+        within = max(0, elapsed - 45)
+        return (now - timedelta(minutes=within)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if kickoff_iso:
+        return kickoff_iso
+    return now.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _la_probabilities(game, comp_name, live_prediction):
+    for src in (live_prediction, _la_prematch_record(game, comp_name)):
+        if not src:
+            continue
+        try:
+            ph = float(src.get("prob_home"))
+            pdraw = float(src.get("prob_draw"))
+            pa = float(src.get("prob_away"))
+        except (TypeError, ValueError):
+            continue
+        total = ph + pdraw + pa
+        if total > 0:
+            return (round(ph / total, 4), round(pdraw / total, 4), round(pa / total, 4))
+    third = round(1.0 / 3.0, 4)
+    return (third, third, third)
+
+
+def _la_content_state(game, comp_name) -> dict:
+    """Full Live Activity content-state in the iOS app's expected schema."""
+    kickoff_iso = _la_kickoff_iso(game)
+    prob_home, prob_draw, prob_away = _la_probabilities(
+        game, comp_name, game.get("live_prediction")
+    )
+    return {
+        "match_id": game.get("match_id"),
+        "competition": comp_name,
+        "home_team": game.get("home_team", ""),
+        "away_team": game.get("away_team", ""),
+        "home_score": game.get("home_score"),
+        "away_score": game.get("away_score"),
+        "status": game.get("status", ""),
+        "match_minute": _parse_elapsed_minutes(game.get("clock", ""), game.get("period", "")),
+        "prob_home": prob_home,
+        "prob_draw": prob_draw,
+        "prob_away": prob_away,
+        "half_start_time": _la_half_start_iso(game, kickoff_iso),
+        "kickoff_date": kickoff_iso,
+    }
 
 
 def _upcoming_csv_scan_paths():
@@ -1079,22 +1179,15 @@ def _live_score_poller_loop():
                             prev_home, prev_away = prev_scores.get(mid, (None, None))
                             cur_home = g.get("home_score")
                             cur_away = g.get("away_score")
-                            cur_minute = g.get("clock") or g.get("match_minute") or 0
-                            home_team = g.get("home_team", "")
-                            away_team = g.get("away_team", "")
-                            state = {
-                                "match_id": mid,
-                                "competition": comp_name,
-                                "home_team": home_team,
-                                "away_team": away_team,
-                                "home_score": cur_home,
-                                "away_score": cur_away,
-                                "status": cur_status,
-                                "match_minute": cur_minute,
-                            }
+                            state = _la_content_state(g, comp_name)
                             # Match ended — dismiss Live Activity with final score.
                             if prev and prev[1] != "post" and cur_status == "post":
-                                state["status"] = "finished"
+                                state = {
+                                    "home_score": cur_home,
+                                    "away_score": cur_away,
+                                    "status": "FT",
+                                    "match_minute": state.get("match_minute") or 90,
+                                }
                                 _la.send_live_activity_end(mid, comp_name, state)
                             # Score changed while live/finished — update LA scoreboard.
                             elif cur_status in ("in", "post") and (
@@ -1271,7 +1364,7 @@ def _live_score_poller_loop():
                                         "token": token,
                                         "title": title,
                                         "body": body,
-                                        "badge": 0,
+                                        "badge": 1,
                                         "match_id": mid,
                                         "competition": comp_name,
                                     })
@@ -1280,17 +1373,7 @@ def _live_score_poller_loop():
                             at = g.get("away_team", "")
                             hs = g.get("home_score", "-")
                             as_ = g.get("away_score", "-")
-                            minute = g.get("clock") or g.get("match_minute") or 0
-                            state_base = {
-                                "match_id": mid,
-                                "competition": comp_name,
-                                "home_team": ht,
-                                "away_team": at,
-                                "home_score": hs,
-                                "away_score": as_,
-                                "status": cur_status,
-                                "match_minute": minute,
-                            }
+                            state_base = _la_content_state(g, comp_name)
 
                             # Key events: goals (incl. own goal / penalty) + red cards.
                             # Every scoring event pushes a Live Activity content-state

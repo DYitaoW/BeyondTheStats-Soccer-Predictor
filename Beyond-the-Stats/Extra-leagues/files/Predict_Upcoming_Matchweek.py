@@ -532,6 +532,14 @@ def predict_fixture(ctx, home_raw, away_raw, competition_hint, match_date=None):
         probabilities[label] = float(proba_values[idx])
 
     probabilities = pm.reduce_draw_probability(probabilities)
+    probabilities = pm.blend_historical_prior(
+        probabilities,
+        home_team,
+        away_team,
+        ctx.get("season_teams", {}).get(prediction_season, {}),
+        competition=feature_competition,
+        league_strength=ctx.get("league_strength", {}),
+    )
     seed = pm.prediction_randomizer_seed(home_team, away_team, feature_competition, prediction_season)
     max_delta = getattr(pm, "EU_RANDOMIZER_MAX_DELTA", None)
     if max_delta is None:
