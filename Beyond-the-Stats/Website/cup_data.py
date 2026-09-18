@@ -433,10 +433,13 @@ def _build_cup_winners_odds(winner_probs: dict[str, float], position_odds: dict)
     }
     rows = []
     for team, pct in sorted(winner_probs.items(), key=lambda x: -x[1]):
-        detail = detailed.get(team) or {}
+        name = str(team or "").strip()
+        if not name or name.upper() in {"NONE", "DRAW", "TBD", "TIE"}:
+            continue
+        detail = detailed.get(name) or detailed.get(team) or {}
         odds = detail.get("odds") or {}
         rows.append({
-            "team": team,
+            "team": name,
             "win_cup_pct": round(float(pct), 2),
             # league-data alias for easier frontend reuse
             "win_league_pct": round(float(pct), 2),
@@ -448,6 +451,70 @@ def _build_cup_winners_odds(winner_probs: dict[str, float], position_odds: dict)
             "stage_odds": odds,
         })
     return rows
+
+
+def _condensed_winners_odds(winners_odds: list[dict]) -> list[dict]:
+    """League-data-style condensed winner list: team + pct only."""
+    out = []
+    for row in winners_odds or []:
+        team = str(row.get("team") or "").strip()
+        if not team or team.upper() in {"NONE", "DRAW", "TBD", "TIE"}:
+            continue
+        pct = row.get("win_cup_pct")
+        if pct is None:
+            pct = row.get("win_league_pct")
+        try:
+            pct_f = round(float(pct or 0), 2)
+        except (TypeError, ValueError):
+            pct_f = 0.0
+        if pct_f <= 0:
+            continue
+        out.append({"team": team, "pct": pct_f, "win_cup_pct": pct_f, "win_league_pct": pct_f})
+    return out
+
+
+def _load_real_cup_table_rows(comp_name: str) -> list[dict]:
+    """Load live/real phase table rows written by Track_Cup_Results."""
+    path = getattr(config, "CUP_REAL_TABLE_FILE", "") or ""
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        import pandas as pd
+        df = pd.read_csv(path)
+    except Exception:
+        return []
+    if df is None or df.empty or "competition" not in df.columns:
+        return []
+    base_comp, _ = resolve_competition_query(comp_name)
+    mask = df["competition"].astype(str).str.strip().isin({comp_name, base_comp})
+    rows = df.loc[mask].to_dict("records")
+    return rows if isinstance(rows, list) else []
+
+
+def _real_cup_standings_from_rows(comp_name: str, rows: list[dict]) -> dict | None:
+    """Shape real cup table CSV rows into league-data standings groups."""
+    if not rows:
+        return None
+    layout = standings_layout_for(comp_name)
+    if layout == STANDINGS_LAYOUT_LEAGUES_CUP:
+        from competition_rules import leagues_cup_table_side, LEAGUES_CUP_TABLE_MLS, LEAGUES_CUP_TABLE_LIGA_MX
+        groups = {LEAGUES_CUP_TABLE_MLS: [], LEAGUES_CUP_TABLE_LIGA_MX: []}
+        for row in rows:
+            side = leagues_cup_table_side(str(row.get("team") or ""))
+            if side in groups:
+                groups[side].append(row)
+        return {
+            "groups": [
+                {"name": name, "entries": sorted(entries, key=lambda r: int(r.get("position") or 999))}
+                for name, entries in groups.items() if entries
+            ]
+        }
+    return {
+        "groups": [{
+            "name": "League Phase" if layout == "league_phase" else "Overall",
+            "entries": sorted(rows, key=lambda r: int(r.get("position") or 999)),
+        }]
+    }
 
 
 def build_cup_data_payload(comp_name: str) -> dict:
@@ -480,12 +547,20 @@ def _build_cup_data_payload_uncached(comp: str) -> dict:
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         f_table = pool.submit(lambda: _load_usable_projected_table(comp) if include_table else [])
         f_standings = pool.submit(lambda: _load_real_standings(comp) if include_table else None)
+        f_real_cup = pool.submit(lambda: _load_real_cup_table_rows(comp) if include_table else [])
         f_bracket = pool.submit(_build_bracket_section, comp)
         f_fixtures = pool.submit(_load_fixtures, comp)
         comp_table = f_table.result() or []
         real_standings = f_standings.result()
+        real_cup_rows = f_real_cup.result() or []
         bracket = f_bracket.result() or {}
         fixtures = f_fixtures.result() or []
+
+    # Prefer Track_Cup_Results live phase table when present.
+    if include_table and real_cup_rows:
+        shaped = _real_cup_standings_from_rows(comp, real_cup_rows)
+        if shaped:
+            real_standings = shaped
 
     predicted_table: list[dict] = list(comp_table) if include_table else []
     if include_table and predicted_table:
@@ -519,17 +594,26 @@ def _build_cup_data_payload_uncached(comp: str) -> dict:
 
     stage_position_odds = _build_cup_stage_position_odds(comp, entry)
     winner_probs = _pct_map_to_100(entry.get("winner_probabilities") or {})
+    winner_probs = {
+        t: p for t, p in winner_probs.items()
+        if t and str(t).upper() not in {"NONE", "DRAW", "TBD", "TIE"}
+    }
     if not winner_probs:
         # Fall back to Winner column of stage odds.
         for row in stage_position_odds.get("simple", {}).get(CUP_POSITION_STAGE_WINNER, []):
-            winner_probs[str(row.get("team"))] = float(row.get("pct") or 0)
+            team = str(row.get("team") or "").strip()
+            if team and team.upper() not in {"NONE", "DRAW", "TBD", "TIE"}:
+                winner_probs[team] = float(row.get("pct") or 0)
 
     champion = entry.get("champion")
+    if champion and str(champion).upper() in {"NONE", "DRAW", "TBD", "TIE"}:
+        champion = None
     if not champion and winner_probs:
         champion = max(winner_probs, key=lambda t: winner_probs[t])
     simulations_run = entry.get("simulations_run") or 0
 
     winners_odds = _build_cup_winners_odds(winner_probs, stage_position_odds)
+    winners_odds_simple = _condensed_winners_odds(winners_odds)
 
     # For pure knockout: position_odds = stage reach odds.
     # For table/group cups: keep table position_odds under predicted.table_position_odds
@@ -543,6 +627,7 @@ def _build_cup_data_payload_uncached(comp: str) -> dict:
             "simulations_run": simulations_run,
         },
         "winners_odds": winners_odds,
+        "winners_odds_simple": winners_odds_simple,
         "position_odds": stage_position_odds,
     }
     if include_table:
@@ -569,6 +654,7 @@ def _build_cup_data_payload_uncached(comp: str) -> dict:
             "semantics": stage_position_odds.get("semantics", "reach"),
         },
         "winners_odds": winners_odds,
+        "winners_odds_simple": winners_odds_simple,
         "real_table": real_standings if include_table else None,
         "champion": champion,
         "winner_probabilities": winner_probs,
@@ -592,11 +678,33 @@ def _build_cup_data_payload_uncached(comp: str) -> dict:
             bracket[key] = enriched[key]
             payload[key] = enriched[key]
     if enriched.get("winner_probabilities") and not winner_probs:
-        payload["winner_probabilities"] = enriched["winner_probabilities"]
-        predicted["winner"]["probabilities"] = enriched["winner_probabilities"]
+        cleaned = {
+            t: p for t, p in (enriched.get("winner_probabilities") or {}).items()
+            if t and str(t).upper() not in {"NONE", "DRAW", "TBD", "TIE"}
+        }
+        payload["winner_probabilities"] = cleaned
+        predicted["winner"]["probabilities"] = cleaned
     if enriched.get("champion") and not champion:
-        payload["champion"] = enriched["champion"]
-        predicted["winner"]["champion"] = enriched["champion"]
+        champ = enriched["champion"]
+        if champ and str(champ).upper() not in {"NONE", "DRAW", "TBD", "TIE"}:
+            payload["champion"] = champ
+            predicted["winner"]["champion"] = champ
+
+    # Prefer Track-authored real_knockout / upcoming match odds when present.
+    for key in ("real_knockout", "projected_knockout", "upcoming_fixtures", "rounds"):
+        if entry.get(key) and not bracket.get(key):
+            bracket[key] = entry[key]
+    if entry.get("real_knockout"):
+        # Keep Track real bracket even when live gather also ran.
+        bracket["real_knockout"] = entry["real_knockout"]
+        payload["real_knockout"] = entry["real_knockout"]
+        predicted["real_knockout"] = entry["real_knockout"]
+    if payload.get("odds_knockout"):
+        predicted["odds_knockout"] = payload["odds_knockout"]
+    if payload.get("knockout"):
+        predicted["knockout"] = payload["knockout"]
+    if payload.get("real_knockout"):
+        predicted["real_knockout"] = payload["real_knockout"]
 
     # Ensure knockout framework topology is present.
     if not bracket.get("knockout_rounds"):
@@ -609,7 +717,10 @@ def _build_cup_data_payload_uncached(comp: str) -> dict:
             knockout, odds_knockout, real_knockout = _build_cup_knockout_payload(matches, comp)
             bracket["knockout"] = knockout
             bracket["odds_knockout"] = odds_knockout
-            bracket["real_knockout"] = real_knockout
+            bracket["real_knockout"] = bracket.get("real_knockout") or real_knockout
+            payload["knockout"] = knockout
+            payload["odds_knockout"] = odds_knockout
+            payload["real_knockout"] = bracket["real_knockout"]
 
     payload["bracket"] = bracket
     payload["predicted"] = predicted

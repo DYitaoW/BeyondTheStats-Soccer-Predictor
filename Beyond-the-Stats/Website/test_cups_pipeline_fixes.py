@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -427,6 +428,126 @@ class CupsFailFastTests(unittest.TestCase):
         self.assertIn("continue_on_error=False", text)
         self.assertNotIn("continue_on_error=True", text)
         self.assertIn("_StepError", text)
+
+
+class CupWinnerNoneAndOddsTests(unittest.TestCase):
+    def test_pick_projected_winner_never_returns_draw(self):
+        import Track_Cup_Results as track
+
+        self.assertEqual(
+            track._pick_projected_winner("TBD", "Arsenal", {}),
+            track.NO_PREDICTION,
+        )
+        self.assertEqual(
+            track._pick_projected_winner("Arsenal", "Chelsea", {}),
+            track.NO_PREDICTION,
+        )
+        idx = {("arsenal", "chelsea"): {"prob_home": 0.55, "prob_draw": 0.2, "prob_away": 0.25}}
+        self.assertEqual(
+            track._pick_projected_winner("Arsenal", "Chelsea", idx),
+            "Arsenal",
+        )
+
+    def test_match_payload_uses_none_without_odds(self):
+        import Track_Cup_Results as track
+        import pandas as pd
+
+        row = pd.Series({
+            "home_team": "Arsenal",
+            "away_team": "Chelsea",
+            "predicted_result": "D",
+            "schedule_only": "1",
+            "prob_home": 0,
+            "prob_draw": 0,
+            "prob_away": 0,
+            "pred_home_goals": None,
+            "pred_away_goals": None,
+            "actual_result": "",
+        })
+        payload = track._match_payload(row, "Upcoming", {})
+        self.assertEqual(payload["winner"], track.NO_PREDICTION)
+        self.assertEqual(payload["predicted_result"], track.NO_PREDICTION)
+
+    def test_cup_table_monte_carlo_position_odds_not_all_100(self):
+        import Track_Cup_Results as track
+        import pandas as pd
+        from unittest import mock
+
+        completed = pd.DataFrame([
+            {
+                "competition": "Europe/Champions League",
+                "home_team": "Arsenal",
+                "away_team": "Chelsea",
+                "actual_home_goals": 2,
+                "actual_away_goals": 1,
+                "actual_result": "H",
+                "match_date": "2026-09-01",
+                "round": "League Phase",
+            },
+            {
+                "competition": "Europe/Champions League",
+                "home_team": "Barcelona",
+                "away_team": "Inter",
+                "actual_home_goals": 1,
+                "actual_away_goals": 1,
+                "actual_result": "D",
+                "match_date": "2026-09-01",
+                "round": "League Phase",
+            },
+        ])
+        upcoming = pd.DataFrame([
+            {
+                "competition": "Europe/Champions League",
+                "home_team": "Arsenal",
+                "away_team": "Barcelona",
+                "prob_home": 0.4,
+                "prob_draw": 0.25,
+                "prob_away": 0.35,
+                "pred_home_goals": 1,
+                "pred_away_goals": 1,
+                "predicted_result": "H",
+                "match_date": "2026-10-01",
+                "round": "League Phase",
+            },
+            {
+                "competition": "Europe/Champions League",
+                "home_team": "Chelsea",
+                "away_team": "Inter",
+                "prob_home": 0.33,
+                "prob_draw": 0.3,
+                "prob_away": 0.37,
+                "pred_home_goals": 1,
+                "pred_away_goals": 1,
+                "predicted_result": "A",
+                "match_date": "2026-10-01",
+                "round": "League Phase",
+            },
+        ])
+        with mock.patch.object(track, "CUP_TABLE_SIMULATION_RUNS", 40):
+            projected, real = track._build_projected_cup_tables(completed, upcoming)
+        self.assertFalse(projected.empty)
+        self.assertFalse(real.empty)
+        # Real table only has completed games.
+        self.assertTrue((real["PlayedReal"] > 0).any())
+        # Projected odds should vary across positions (not all 100% on one place).
+        sample = projected.iloc[0]
+        odds = json.loads(sample["position_odds_json"])
+        self.assertGreater(len(odds), 1)
+        self.assertFalse(all(float(v) in (0.0, 100.0) for v in odds.values()))
+        self.assertGreater(int(sample["sim_runs"]), 1)
+
+
+class CupDataCondensedWinnersTests(unittest.TestCase):
+    def test_condensed_winners_odds(self):
+        import cup_data as cd
+
+        rows = cd._condensed_winners_odds([
+            {"team": "Arsenal", "win_cup_pct": 22.5, "sf_pct": 40},
+            {"team": "NONE", "win_cup_pct": 10},
+            {"team": "Chelsea", "win_cup_pct": 11},
+        ])
+        self.assertEqual([r["team"] for r in rows], ["Arsenal", "Chelsea"])
+        self.assertEqual(rows[0]["pct"], 22.5)
 
 
 if __name__ == "__main__":

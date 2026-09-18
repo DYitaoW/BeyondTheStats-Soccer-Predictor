@@ -34,6 +34,7 @@ NATIONAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcom
 FRIENDLIES_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_club_friendlies.csv")
 GLOBAL_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_league_tables.csv")
 CUP_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_tables.csv")
+CUP_REAL_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "real_cup_tables.csv")
 CUP_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_brackets.json")
 PAST_GAMES_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "past_games.json")
 MLS_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "projected_league_tables.csv")
