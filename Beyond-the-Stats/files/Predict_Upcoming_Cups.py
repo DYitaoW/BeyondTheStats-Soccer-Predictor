@@ -208,6 +208,13 @@ CUP_COMPETITIONS = {
         "api_source": "espn",
         "fixture_window_days": 180,
     },
+    "US Open Cup": {
+        "name": "United States/US Open Cup",
+        "espn_id": "usa.open",
+        "priority": 11,
+        "api_source": "espn",
+        "fixture_window_days": 180,
+    },
 }
 
 AUTO_RESOLVE_CUP_COMPETITIONS = {
@@ -215,6 +222,7 @@ AUTO_RESOLVE_CUP_COMPETITIONS = {
     "Spain/Copa del Rey",
     "Germany/DFB-Pokal",
     "France/Coupe de France",
+    "United States/US Open Cup",
     LEAGUES_CUP_COMPETITION,
 }
 

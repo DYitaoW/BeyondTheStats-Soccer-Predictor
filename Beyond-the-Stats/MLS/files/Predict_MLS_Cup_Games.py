@@ -16,7 +16,7 @@ MLS_CUP_COMPETITIONS = {
     "US Open Cup": {
         "name": "United States/US Open Cup",
         "sportsdb_id": "5199",
-        "espn_id": "usa.open_cup",
+        "espn_id": "usa.open",
         "priority": 1,
         "fixture_window_days": 7,
     },

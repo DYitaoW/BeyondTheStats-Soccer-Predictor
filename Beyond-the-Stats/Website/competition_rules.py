@@ -13,7 +13,7 @@ import config
 
 KNOCKOUT_ROUND_RE = re.compile(
     r"(round of \d+|last \d+|quarter.?final|semi.?final|third place|"
-    r"knockout|play-?off|final(?!\s+group)|\bround\b|ro\d+)",
+    r"knockout|play-?off|final(?!\s+group)|ro\d+)",
     re.IGNORECASE,
 )
 GROUP_ROUND_RE = re.compile(
@@ -1147,10 +1147,28 @@ def classify_match_stage(game: dict, comp_name: str, team_to_group: dict[str, st
         return "group"
     if GROUP_ROUND_RE.search(round_lower):
         return "group"
+
+    fmt = cup_format(comp_name)
+
+    # Leagues Cup Phase One labels often contain bare "Round N". Handle the
+    # dual-league format BEFORE the generic knockout regex so Phase One stays
+    # a group/table stage.
+    if fmt and fmt.get("format") == "dual_league_phase_then_knockout":
+        if (
+            "quarter" in round_lower
+            or "semi" in round_lower
+            or "final" in round_lower
+            or "third place" in round_lower
+            or "knockout" in round_lower
+        ):
+            return "knockout"
+        if "phase one" in round_lower or "phase 1" in round_lower:
+            return "group"
+        return "group"
+
     if KNOCKOUT_ROUND_RE.search(round_lower):
         return "knockout"
 
-    fmt = cup_format(comp_name)
     if comp_name == "International/World Cup":
         lookup = team_to_group if team_to_group is not None else {}
         home = canonical_team_name(game.get("home_team", ""), comp_name)
@@ -1168,15 +1186,6 @@ def classify_match_stage(game: dict, comp_name: str, team_to_group: dict[str, st
 
     if fmt and fmt.get("format") == "knockout":
         return "knockout"
-
-    if fmt and fmt.get("format") == "dual_league_phase_then_knockout":
-        # Phase One (MLS↔Liga MX) vs knockout rounds (QF+).
-        if KNOCKOUT_ROUND_RE.search(round_lower) or "third place" in round_lower:
-            return "knockout"
-        if "phase one" in round_lower or "phase 1" in round_lower:
-            return "group"
-        # Default unfinished / unlabeled matches to Phase One.
-        return "group"
 
     if fmt and fmt.get("format") == "group_stage_then_knockout":
         lookup = team_to_group or {}
@@ -1331,6 +1340,8 @@ STANDINGS_LAYOUT_LEAGUE_PHASE = "league_phase"
 STANDINGS_LAYOUT_CUP_GROUPS = "cup_groups"
 STANDINGS_LAYOUT_LIGA_MX = "liga_mx_tournament"
 STANDINGS_LAYOUT_LEAGUES_CUP = "leagues_cup_dual"
+# Pure knockout cups (FA Cup, domestic cups, etc.) — no league/group table.
+STANDINGS_LAYOUT_KNOCKOUT = "knockout_bracket"
 
 LEAGUES_CUP_COMPETITION = "North America/Leagues Cup"
 LEAGUES_CUP_TABLE_MLS = "MLS"
@@ -1364,9 +1375,8 @@ def standings_layout_for(comp_name: str) -> str:
         return STANDINGS_LAYOUT_SCOTTISH
     if base_comp in _UEFA_COMPETITIONS:
         return STANDINGS_LAYOUT_LEAGUE_PHASE
-    # Only whitelisted major international tournaments keep a group/league-phase
-    # table layout. All other cups return the no-table sentinel so their API
-    # payload carries no standings table at all.
+    # Club UEFA already handled. National-team majors with groups/league-phase
+    # keep tables; pure knockout cups return knockout_bracket (no table).
     fmt = cup_format(base_comp)
     if base_comp in _MAJOR_INTERNATIONAL_TABLES:
         if fmt and fmt.get("format") == "dual_league_phase_then_knockout":
@@ -1375,8 +1385,15 @@ def standings_layout_for(comp_name: str) -> str:
             return STANDINGS_LAYOUT_LEAGUE_PHASE
         if fmt and fmt.get("format") == "group_stage_then_knockout":
             return STANDINGS_LAYOUT_CUP_GROUPS
-    if fmt and not base_comp in _MAJOR_INTERNATIONAL_TABLES:
-        return STANDINGS_LAYOUT_SINGLE
+    if fmt:
+        if fmt.get("format") == "dual_league_phase_then_knockout":
+            return STANDINGS_LAYOUT_LEAGUES_CUP
+        if fmt.get("format") == "league_phase_then_knockout":
+            return STANDINGS_LAYOUT_LEAGUE_PHASE
+        if fmt.get("format") == "group_stage_then_knockout":
+            return STANDINGS_LAYOUT_CUP_GROUPS
+        # Domestic FA Cup / Copa / Pokal / Open Cup / etc.
+        return STANDINGS_LAYOUT_KNOCKOUT
     return STANDINGS_LAYOUT_SINGLE
 
 
@@ -1564,6 +1581,13 @@ def competition_format_spec(comp_name: str) -> dict:
         spec["extensions"]["phase_one_matches"] = 3
         spec["extensions"]["knockout"] = True
         spec["extensions"]["no_draws"] = True
+    elif layout == STANDINGS_LAYOUT_KNOCKOUT:
+        spec["notes"].append(
+            "Knockout bracket only — this cup has no league or group table. "
+            "Use projected winner / round-reach odds instead of table position odds."
+        )
+        spec["extensions"]["knockout"] = True
+        spec["extensions"]["has_table"] = False
 
     if cup_fmt:
         spec["format"] = cup_fmt.get("format")

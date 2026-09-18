@@ -56,12 +56,12 @@ LEAGUES = {
     "Bulgaria/First League": "bul.1",
     # Domestic cups
     "England/FA Cup": "eng.fa",
-    "England/League Cup": "eng.efl",
-    "Italy/Coppa Italia": "ita.coppa",
+    "England/League Cup": "eng.league_cup",
+    "Italy/Coppa Italia": "ita.coppa_italia",
     "Spain/Copa del Rey": "esp.copa_del_rey",
     "Germany/DFB-Pokal": "ger.dfb_pokal",
     "France/Coupe de France": "fra.coupe_de_france",
-    "United States/US Open Cup": "usa.open_cup",
+    "United States/US Open Cup": "usa.open",
     "North America/Leagues Cup": "concacaf.leagues.cup",
     # UEFA club competitions
     "Europe/Champions League": "uefa.champions",

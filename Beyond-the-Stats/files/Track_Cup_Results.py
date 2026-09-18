@@ -1,4 +1,4 @@
-﻿import json
+import json
 import os
 import random
 import sys
@@ -40,10 +40,15 @@ ESPN_CUP_NAMES_FILE = os.path.join(PREDICTIONS_DIR, "espn_cup_names_seen.json")
 
 CUP_ESPN_COMPETITION_KEYS = {
     "England/FA Cup": "eng.fa",
-    "England/League Cup": "eng.efl",
+    "England/League Cup": "eng.league_cup",
     "Europe/Champions League": "uefa.champions",
     "Europe/Europa League": "uefa.europa",
     "Europe/Conference League": "uefa.europa.conf",
+    "Italy/Coppa Italia": "ita.coppa_italia",
+    "Spain/Copa del Rey": "esp.copa_del_rey",
+    "Germany/DFB-Pokal": "ger.dfb_pokal",
+    "France/Coupe de France": "fra.coupe_de_france",
+    "United States/US Open Cup": "usa.open",
     "North America/Leagues Cup": "concacaf.leagues.cup",
 }
 UEFA_TABLE_COMPETITIONS = {
@@ -51,6 +56,12 @@ UEFA_TABLE_COMPETITIONS = {
     "Europe/Europa League",
     "Europe/Conference League",
 }
+# Cups that publish Phase One / league-phase tables (not pure knockout).
+CUP_TABLE_COMPETITIONS = UEFA_TABLE_COMPETITIONS | {
+    "North America/Leagues Cup",
+}
+LEAGUES_CUP_COMPETITION = "North America/Leagues Cup"
+LEAGUES_CUP_PHASE_MATCHES = 3
 UEFA_LEAGUE_PHASE_MATCHES = {
     "Europe/Champions League": 8,
     "Europe/Europa League": 8,
@@ -597,6 +608,44 @@ def _predicted_score(row):
     return hg, ag
 
 
+def _rank_cup_table_rows(competition, table):
+    """Turn an in-memory W/D/L table into projected_cup_tables rows."""
+    ranked = sorted(
+        table.items(),
+        key=lambda item: (-item[1]["Pts"], -item[1]["GD"], -item[1]["GF"], item[0]),
+    )
+    total_positions = len(ranked)
+    bottom_cutoff = max(1, total_positions - 2)
+    out_rows = []
+    for position, (team, stats) in enumerate(ranked, start=1):
+        position_odds = {str(pos): (100.0 if pos == position else 0.0) for pos in range(1, total_positions + 1)}
+        out_rows.append(
+            {
+                "competition": competition,
+                "position": position,
+                "team": team,
+                "P": stats["P"],
+                "W": stats["W"],
+                "D": stats["D"],
+                "L": stats["L"],
+                "GF": stats["GF"],
+                "GA": stats["GA"],
+                "GD": stats["GD"],
+                "Pts": stats["Pts"],
+                "PlayedReal": stats.get("PlayedReal", 0),
+                "PlayedPred": stats.get("PlayedPred", 0),
+                "win_league_pct": 100.0 if position == 1 else 0.0,
+                "top4_pct": 100.0 if position <= 4 else 0.0,
+                "bottom3_pct": 100.0 if position >= bottom_cutoff else 0.0,
+                "most_likely_position": position,
+                "most_likely_position_pct": 100.0,
+                "position_odds_json": json.dumps(position_odds),
+                "sim_runs": 0,
+            }
+        )
+    return out_rows
+
+
 def _build_projected_cup_tables(completed_df, upcoming_df):
     frames = []
     if completed_df is not None and not completed_df.empty:
@@ -612,14 +661,18 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
 
     combined = pd.concat(frames, ignore_index=True)
     combined["competition"] = combined["competition"].astype(str).str.strip()
-    combined = combined[combined["competition"].isin(UEFA_TABLE_COMPETITIONS)]
+    combined = combined[combined["competition"].isin(CUP_TABLE_COMPETITIONS)]
     if combined.empty:
         return _empty_frame(TABLE_COLUMNS)
 
     out_rows = []
     for competition, comp_frame in combined.groupby("competition", dropna=False):
+        competition_name = str(competition).strip()
         table = {}
-        max_phase_matches = UEFA_LEAGUE_PHASE_MATCHES.get(str(competition).strip(), 8)
+        if competition_name == LEAGUES_CUP_COMPETITION:
+            max_phase_matches = LEAGUES_CUP_PHASE_MATCHES
+        else:
+            max_phase_matches = UEFA_LEAGUE_PHASE_MATCHES.get(competition_name, 8)
         played_counts = {}
         comp_frame = comp_frame.copy()
         comp_frame["__date_sort"] = pd.to_datetime(comp_frame.get("match_date"), errors="coerce")
@@ -646,6 +699,21 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
             _apply_result(table, home, away, hg, ag, is_real=is_real)
             played_counts[home] = played_counts.get(home, 0) + 1
             played_counts[away] = played_counts.get(away, 0) + 1
+
+        if competition_name == LEAGUES_CUP_COMPETITION:
+            # Dual Phase One tables: rank MLS and Liga MX sides separately, then
+            # concatenate so bracket seeding can split on leagues_cup_table_side.
+            mls_table = {
+                team: stats for team, stats in table.items()
+                if _leagues_cup_table_side(team) == "MLS"
+            }
+            liga_table = {
+                team: stats for team, stats in table.items()
+                if _leagues_cup_table_side(team) == "Liga MX"
+            }
+            out_rows.extend(_rank_cup_table_rows(competition_name, mls_table))
+            out_rows.extend(_rank_cup_table_rows(competition_name, liga_table))
+            continue
 
         ranked = sorted(table.items(), key=lambda item: (-item[1]["Pts"], -item[1]["GD"], -item[1]["GF"], item[0]))
         total_positions = len(ranked)
@@ -899,41 +967,82 @@ def _attach_cup_simulation(competition_name, bracket, predictions_index):
     return bracket
 
 
+def _build_domestic_cup_rounds(comp_frame):
+    """Build the ``rounds`` list consumers read from projected_cup_brackets.json.
+
+    Knockout APIs and cup simulations only look at ``bracket["rounds"]``.
+    Upcoming fixtures come first when present; otherwise recent results.
+    """
+    rounds = []
+    completed_rows = comp_frame[comp_frame["__status"] == "Completed"].sort_values(
+        ["match_date", "home_team", "away_team"],
+        ascending=[False, True, True],
+        na_position="last",
+    ).head(DOMESTIC_BRACKET_MATCH_LIMIT)
+    upcoming_rows = comp_frame[comp_frame["__status"] == "Upcoming"].sort_values(
+        ["match_date", "home_team", "away_team"],
+        na_position="last",
+    ).head(DOMESTIC_BRACKET_MATCH_LIMIT)
+    if upcoming_rows.empty and completed_rows.empty:
+        return rounds
+    if upcoming_rows.empty:
+        rounds.append(
+            {
+                "name": "Recent Cup Results",
+                "matches": [_match_payload(row, "Completed") for _, row in completed_rows.iterrows()],
+            }
+        )
+        return rounds
+    rounds.append(
+        {
+            "name": "Upcoming Cup Fixtures",
+            "matches": [_match_payload(row, "Upcoming") for _, row in upcoming_rows.iterrows()],
+        }
+    )
+    if not completed_rows.empty:
+        rounds.append(
+            {
+                "name": "Recent Cup Results",
+                "matches": [_match_payload(row, "Completed") for _, row in completed_rows.iterrows()],
+            }
+        )
+    return rounds
+
+
 def _build_domestic_cup_bracket_with_draws(competition_name, comp_frame, predictions_index):
-    """Build a domestic cup bracket distinguishing real fixtures from projected rounds.
-    
-    - real_knockout: Contains only confirmed/completed matches from ESPN API
-    - projected_knockout: Contains simulated next rounds following draw rules
-    - upcoming_fixtures: Next matches to be played (confirmed from API)
+    """Build a domestic cup bracket with a consumer-facing ``rounds`` list.
+
+    Also keeps ``real_knockout`` / ``projected_knockout`` / ``upcoming_fixtures``
+    as supplemental metadata. Winner-odds simulation still requires ``rounds``.
     """
     rules = CUP_FORMAT_RULES.get(competition_name, {})
-    
-    # Separate completed vs upcoming matches
-    completed = comp_frame[comp_frame["__status"] == "Completed"] if "__status" in comp_frame.columns else pd.DataFrame()
-    upcoming = comp_frame[comp_frame["__status"] == "Upcoming"] if "__status" in comp_frame.columns else pd.DataFrame()
-    
-    # Build upcoming fixtures round
+
+    completed = (
+        comp_frame[comp_frame["__status"] == "Completed"]
+        if "__status" in comp_frame.columns
+        else pd.DataFrame()
+    )
+    upcoming = (
+        comp_frame[comp_frame["__status"] == "Upcoming"]
+        if "__status" in comp_frame.columns
+        else pd.DataFrame()
+    )
+
     upcoming_matches = []
     if not upcoming.empty:
         for _, row in upcoming.iterrows():
             upcoming_matches.append(_match_payload(row, "Upcoming"))
-    
-    # Build real knockout rounds from completed matches
+
     real_rounds = []
     if not completed.empty:
-        for status_group in ["Completed"]:
-            status_matches = completed[completed.get("__status") == status_group] if "__status" in completed.columns else completed
-            if not status_matches.empty:
-                real_rounds.append({
-                    "name": "Recent Results",
-                    "matches": [_match_payload(row, "Completed") for _, row in status_matches.iterrows()],
-                })
-    
-    # Build projected knockout rounds (TBD for future rounds)
+        real_rounds.append({
+            "name": "Recent Results",
+            "matches": [_match_payload(row, "Completed") for _, row in completed.iterrows()],
+        })
+
     num_completed = len(completed) if not completed.empty else 0
     num_upcoming = len(upcoming) if not upcoming.empty else 0
-    
-    # For now, projected rounds are marked as TBD since we don't have full bracket info
+
     projected_rounds = []
     if rules and num_upcoming > 0:
         projected_rounds.append({
@@ -943,11 +1052,14 @@ def _build_domestic_cup_bracket_with_draws(competition_name, comp_frame, predict
                 for i in range(1, min(4, num_upcoming + 2))
             ],
         })
-    
+
+    rounds = _build_domestic_cup_rounds(comp_frame)
+
     return _attach_cup_simulation(competition_name, {
         "competition": competition_name,
         "format": "domestic_knockout_with_projections",
         "format_rules": rules,
+        "rounds": rounds,
         "real_knockout": real_rounds,
         "projected_knockout": projected_rounds,
         "upcoming_fixtures": upcoming_matches,
@@ -994,43 +1106,6 @@ def _build_uefa_bracket_with_draws(competition_name, table_rows, predictions_ind
             }
     
     return bracket
-
-
-
-    rounds = []
-    completed_rows = comp_frame[comp_frame["__status"] == "Completed"].sort_values(
-        ["match_date", "home_team", "away_team"],
-        ascending=[False, True, True],
-        na_position="last",
-    ).head(DOMESTIC_BRACKET_MATCH_LIMIT)
-    upcoming_rows = comp_frame[comp_frame["__status"] == "Upcoming"].sort_values(
-        ["match_date", "home_team", "away_team"],
-        na_position="last",
-    ).head(DOMESTIC_BRACKET_MATCH_LIMIT)
-    if upcoming_rows.empty and completed_rows.empty:
-        return rounds
-    if upcoming_rows.empty:
-        rounds.append(
-            {
-                "name": "Recent Cup Results",
-                "matches": [_match_payload(row, "Completed") for _, row in completed_rows.iterrows()],
-            }
-        )
-        return rounds
-    rounds.append(
-        {
-            "name": "Upcoming Cup Fixtures",
-            "matches": [_match_payload(row, "Upcoming") for _, row in upcoming_rows.iterrows()],
-        }
-    )
-    if not completed_rows.empty:
-        rounds.append(
-            {
-                "name": "Recent Cup Results",
-                "matches": [_match_payload(row, "Completed") for _, row in completed_rows.iterrows()],
-            }
-        )
-    return rounds
 
 
 _MATCH_FIELDS = {"home_team", "away_team", "winner", "prob_home", "prob_draw", "prob_away"}

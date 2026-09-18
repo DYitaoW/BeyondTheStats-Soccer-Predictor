@@ -19,6 +19,7 @@ from competition_rules import (
     competition_format_spec,
     resolve_competition_query,
     standings_layout_for,
+    STANDINGS_LAYOUT_KNOCKOUT,
     STANDINGS_LAYOUT_LEAGUES_CUP,
     STANDINGS_LAYOUT_MLS,
 )
@@ -1146,11 +1147,14 @@ def build_league_data_payload(comp_name: str) -> dict:
 
 def _build_league_data_payload_uncached(comp: str) -> dict:
     fmt = competition_format_spec(comp)
+    layout = standings_layout_for(comp)
+    # Pure knockout cups have no league/group table — keep bracket + finish odds only.
+    omit_tables = layout == STANDINGS_LAYOUT_KNOCKOUT
 
     # Load independent data sources in parallel.
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        f_table = pool.submit(_load_usable_projected_table, comp)
-        f_standings = pool.submit(_load_real_standings, comp)
+        f_table = pool.submit(lambda: [] if omit_tables else _load_usable_projected_table(comp))
+        f_standings = pool.submit(lambda: None if omit_tables else _load_real_standings(comp))
         f_bracket = pool.submit(_build_bracket_section, comp)
         f_fixtures = pool.submit(_load_fixtures, comp)
 
@@ -1174,7 +1178,10 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
         else (_build_winner_probability_payload(comp_table, competition=comp) if comp_table else {})
     )
 
-    if not predicted_table:
+    if omit_tables:
+        predicted_table = []
+        winner_fields = {}
+    elif not predicted_table:
         predicted_table, roster_winners = _roster_predicted_table(comp)
         if predicted_table:
             winner_fields = _build_winner_probability_payload(predicted_table, competition=comp)
@@ -1200,10 +1207,14 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
             predicted_table.append(base)
         winner_fields = _build_winner_probability_payload(predicted_table, competition=comp) if predicted_table else winner_fields
 
-    position_odds = _build_position_odds(predicted_table)
-    predicted_groups = _load_predicted_groups(comp, predicted_table, real_standings=real_standings)
-    if not predicted_table and real_standings and standings_layout_for(comp) == "league_phase":
-        predicted_groups = real_standings.get("groups") or predicted_groups
+    if omit_tables:
+        position_odds = {"simple": {}, "detailed": {}}
+        predicted_groups = None
+    else:
+        position_odds = _build_position_odds(predicted_table)
+        predicted_groups = _load_predicted_groups(comp, predicted_table, real_standings=real_standings)
+        if not predicted_table and real_standings and standings_layout_for(comp) == "league_phase":
+            predicted_groups = real_standings.get("groups") or predicted_groups
 
     winners_odds = winner_fields.get("winners_odds", [])
     predicted = {

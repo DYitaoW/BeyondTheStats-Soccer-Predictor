@@ -196,11 +196,11 @@ LIVE_SCORE_COMPETITIONS = {
     "Europe/Europa League": "uefa.europa",
     "Europe/Conference League": "uefa.europa.conf",
     # Domestic cups (predictions pipeline produces these)
-    "Italy/Coppa Italia": "ita.coppa",
+    "Italy/Coppa Italia": "ita.coppa_italia",
     "Spain/Copa del Rey": "esp.copa_del_rey",
     "Germany/DFB-Pokal": "ger.dfb_pokal",
     "France/Coupe de France": "fra.coupe_de_france",
-    "United States/US Open Cup": "usa.open_cup",
+    "United States/US Open Cup": "usa.open",
     "North America/Leagues Cup": "concacaf.leagues.cup",
     CLUB_FRIENDLIES_COMPETITION: CLUB_FRIENDLIES_ESPN_ID,
     # National team & World Cup
@@ -621,9 +621,11 @@ TOURNAMENT_KEY_MAP = {
     "copa-america": "South America/Copa America",
     "fa-cup": "England/FA Cup",
     "efl-cup": "England/League Cup",
+    "league-cup": "England/League Cup",
     "dfb-pokal": "Germany/DFB-Pokal",
     "coupe-de-france": "France/Coupe de France",
     "coppa-italia": "Italy/Coppa Italia",
+    "copa-del-rey": "Spain/Copa del Rey",
     "us-open-cup": "United States/US Open Cup",
     "leagues-cup": "North America/Leagues Cup",
 }
