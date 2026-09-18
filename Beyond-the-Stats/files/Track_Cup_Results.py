@@ -43,6 +43,13 @@ ESPN_CUP_NAMES_FILE = os.path.join(PREDICTIONS_DIR, "espn_cup_names_seen.json")
 NO_PREDICTION = "NONE"
 CUP_TABLE_SIMULATION_RUNS = 500
 
+# Import season bounds for in-season table backfill (Europe = Sept+).
+try:
+    import season_calendar as _season_calendar
+except ImportError:
+    sys.path.insert(0, BASE_DIR)
+    import season_calendar as _season_calendar
+
 CUP_ESPN_COMPETITION_KEYS = {
     "England/FA Cup": "eng.fa",
     "England/League Cup": "eng.league_cup",
@@ -261,6 +268,302 @@ def _load_completed_cups():
     except Exception:
         return _empty_frame(CUP_HISTORY_COLUMNS)
     return _ensure_columns(frame, CUP_HISTORY_COLUMNS)
+
+
+def cup_table_season_bounds(competition_name, reference_date=None):
+    """Inclusive (start, end) dates for games that may seed a cup phase table.
+
+    UEFA club competitions: Sept 1 of the active European season → May 31.
+    Leagues Cup: Jul 1 → Sep 30 of the current calendar year.
+
+    Does **not** clamp to today — callers that fetch completed results should
+    use ``min(end, today)`` themselves so upcoming in-season fixtures remain.
+    """
+    today = pd.Timestamp(datetime.now(UTC).date()).normalize()
+    ref = pd.Timestamp(reference_date).normalize() if reference_date is not None else today
+    comp = str(competition_name or "").strip()
+    if comp in UEFA_TABLE_COMPETITIONS:
+        start, end = _season_calendar.european_cup_table_season_bounds(ref)
+    elif comp == LEAGUES_CUP_COMPETITION:
+        start, end = _season_calendar.leagues_cup_season_bounds(ref)
+    else:
+        start, end = _season_calendar.european_cup_table_season_bounds(ref)
+    return start.normalize(), end.normalize()
+
+
+def _filter_frame_to_cup_table_season(frame, competition_name=None):
+    """Keep only rows whose match_date falls in the competition's table season."""
+    if frame is None or frame.empty:
+        return _empty_frame(CUP_HISTORY_COLUMNS) if frame is None else frame.iloc[0:0].copy()
+    out = frame.copy()
+    out["__match_date"] = pd.to_datetime(out.get("match_date"), errors="coerce").dt.normalize()
+    if competition_name:
+        start, end = cup_table_season_bounds(competition_name)
+        mask = (
+            (out["competition"].astype(str).str.strip() == competition_name)
+            & out["__match_date"].notna()
+            & (out["__match_date"] >= start)
+            & (out["__match_date"] <= end)
+        )
+        other = out["competition"].astype(str).str.strip() != competition_name
+        kept = out[mask | other].drop(columns=["__match_date"], errors="ignore")
+        return kept
+
+    # Per-competition filter for all table cups; drop out-of-season table-cup rows.
+    keep_masks = []
+    for comp in out["competition"].astype(str).str.strip().unique():
+        comp_mask = out["competition"].astype(str).str.strip() == comp
+        if comp not in CUP_TABLE_COMPETITIONS:
+            keep_masks.append(comp_mask)
+            continue
+        start, end = cup_table_season_bounds(comp)
+        keep_masks.append(
+            comp_mask
+            & out["__match_date"].notna()
+            & (out["__match_date"] >= start)
+            & (out["__match_date"] <= end)
+        )
+    if not keep_masks:
+        return out.drop(columns=["__match_date"], errors="ignore")
+    combined_mask = keep_masks[0]
+    for m in keep_masks[1:]:
+        combined_mask = combined_mask | m
+    return out.loc[combined_mask].drop(columns=["__match_date"], errors="ignore")
+
+
+def _espn_events_to_completed_rows(competition, league_key, events, mapping_by_competition, season_start, season_end):
+    """Parse ESPN scoreboard events into completed cup history rows (in season)."""
+    rows = []
+    mapping_updates = {}
+    unresolved = set()
+    seen_names = set()
+    predicted_team_names = set()
+    # Prefer mapping canons as known names when we have no upcoming frame.
+    try:
+        for name in (mapping_by_competition.get(competition) or {}).values():
+            text = str(name or "").strip()
+            if text:
+                predicted_team_names.add(text)
+    except Exception:
+        pass
+
+    for event in events or []:
+        if not isinstance(event, dict):
+            continue
+        dt = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
+        if pd.isna(dt):
+            continue
+        try:
+            match_date = dt.tz_convert("UTC").tz_localize(None).normalize()
+        except Exception:
+            match_date = pd.Timestamp(dt).tz_localize(None).normalize() if getattr(dt, "tzinfo", None) else pd.Timestamp(dt).normalize()
+        if match_date < season_start or match_date > season_end:
+            continue
+
+        event_competitions = event.get("competitions", [])
+        if not event_competitions:
+            continue
+        comp0 = event_competitions[0] or {}
+        status_type = ((comp0.get("status") or {}).get("type") or {})
+        if not bool(status_type.get("completed")):
+            continue
+
+        # Prefer league-phase / group / phase-one notes; skip explicit knockout labels.
+        round_note = ""
+        for note in (comp0.get("notes") or []):
+            if isinstance(note, dict):
+                round_note = str(note.get("headline") or note.get("text") or "").strip()
+            else:
+                round_note = str(note or "").strip()
+            if round_note:
+                break
+        if not round_note:
+            round_note = str(
+                ((event.get("season") or {}).get("slug"))
+                or (event.get("name") or "")
+                or ""
+            )
+        lower = round_note.lower()
+        knockout_tokens = (
+            "round of", "quarter", "semi", "final", "playoff", "play-off",
+            "knockout", "last 16", "last 32",
+        )
+        phase_ok = (
+            "league phase" in lower
+            or "matchday" in lower
+            or "group" in lower
+            or "phase one" in lower
+            or "phase 1" in lower
+            or not lower
+        )
+        if any(tok in lower for tok in knockout_tokens) and not phase_ok:
+            continue
+
+        competitors = comp0.get("competitors", [])
+        home_name = ""
+        away_name = ""
+        home_score = None
+        away_score = None
+        for competitor in competitors:
+            side = str(competitor.get("homeAway", "")).strip().lower()
+            team_name = str((competitor.get("team") or {}).get("displayName") or "").strip()
+            score_val = pd.to_numeric(competitor.get("score"), errors="coerce")
+            if side == "home":
+                if team_name:
+                    seen_names.add(team_name)
+                resolved, ok = resolve_cup_team_name(
+                    team_name, competition, mapping_by_competition, predicted_team_names or {team_name}
+                )
+                home_name = resolved if ok else team_name
+                if ok and team_name and team_name != home_name:
+                    mapping_updates[team_name] = home_name
+                if not ok and team_name:
+                    unresolved.add(team_name)
+                home_score = int(score_val) if pd.notna(score_val) else None
+            elif side == "away":
+                if team_name:
+                    seen_names.add(team_name)
+                resolved, ok = resolve_cup_team_name(
+                    team_name, competition, mapping_by_competition, predicted_team_names or {team_name}
+                )
+                away_name = resolved if ok else team_name
+                if ok and team_name and team_name != away_name:
+                    mapping_updates[team_name] = away_name
+                if not ok and team_name:
+                    unresolved.add(team_name)
+                away_score = int(score_val) if pd.notna(score_val) else None
+
+        if not home_name or not away_name or home_score is None or away_score is None:
+            continue
+        if _is_unknown_team(home_name) or _is_unknown_team(away_name):
+            continue
+
+        rows.append({
+            "competition": competition,
+            "match_date": match_date.strftime("%Y-%m-%d"),
+            "home_team": home_name,
+            "away_team": away_name,
+            "actual_home_goals": home_score,
+            "actual_away_goals": away_score,
+            "actual_result": infer_result_code(home_score, away_score),
+            "predicted_result": "",
+            "round": round_note or "League Phase",
+            "settled_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+            "schedule_only": "0",
+        })
+    return rows, mapping_updates, unresolved, seen_names
+
+
+def fetch_in_season_cup_table_results(mapping_by_competition=None):
+    """Pull completed in-season league-phase games for UEFA / Leagues Cup tables.
+
+    Backfills older matchdays that never appeared in upcoming_cup_predictions.csv
+    so projected/real cup tables include the full current-season phase record.
+    European competitions only accept September+ of the active season.
+    """
+    mapping_by_competition = mapping_by_competition or {}
+    all_rows = []
+    mapping_updates = {}
+    unresolved = {}
+    seen_names = {}
+
+    for competition in sorted(CUP_TABLE_COMPETITIONS):
+        league_key = CUP_ESPN_COMPETITION_KEYS.get(competition)
+        if not league_key:
+            continue
+        season_start, season_end = cup_table_season_bounds(competition)
+        today = pd.Timestamp(datetime.now(UTC).date()).normalize()
+        fetch_end = min(season_end, today)
+        if season_start > fetch_end:
+            continue
+        print(
+            f"[cup-tables] backfilling {competition} completed phase games "
+            f"{season_start.date()} → {fetch_end.date()}"
+        )
+
+        # Prefer a single ESPN date-range pull; fall back to weekly chunks.
+        chunks = [(season_start, fetch_end)]
+        # If the span is long, split into ~45-day windows (scoreboard limit).
+        span_days = int((fetch_end - season_start).days) + 1
+        if span_days > 45:
+            chunks = []
+            cursor = season_start
+            while cursor <= fetch_end:
+                chunk_end = min(cursor + pd.Timedelta(days=44), fetch_end)
+                chunks.append((cursor, chunk_end))
+                cursor = chunk_end + pd.Timedelta(days=1)
+
+        events = []
+        for chunk_start, chunk_end in chunks:
+            date_param = f"{chunk_start.strftime('%Y%m%d')}-{chunk_end.strftime('%Y%m%d')}"
+            url = f"{ESPN_BASE}/{league_key}/scoreboard?dates={date_param}&limit=1000"
+            try:
+                data = fetch_json(url, timeout=60)
+            except Exception as error:
+                print(f"  [cup-tables] range fetch failed ({date_param}): {error}; trying daily")
+                data = None
+            chunk_events = (data or {}).get("events") if isinstance(data, dict) else None
+            if isinstance(chunk_events, list) and chunk_events:
+                events.extend(chunk_events)
+                continue
+            # Daily fallback for this chunk.
+            day = chunk_start
+            while day <= chunk_end:
+                day_url = f"{ESPN_BASE}/{league_key}/scoreboard?dates={day.strftime('%Y%m%d')}"
+                try:
+                    day_data = fetch_json(day_url, timeout=45)
+                    day_events = (day_data or {}).get("events") if isinstance(day_data, dict) else None
+                    if isinstance(day_events, list):
+                        events.extend(day_events)
+                except Exception as error:
+                    print(f"  [cup-tables] skip {competition} {day.date()}: {error}")
+                day += pd.Timedelta(days=1)
+
+        rows, maps, unresolved_names, seen = _espn_events_to_completed_rows(
+            competition, league_key, events, mapping_by_competition, season_start, fetch_end,
+        )
+        print(f"  [cup-tables] {competition}: {len(rows)} in-season completed phase rows")
+        all_rows.extend(rows)
+        if maps:
+            mapping_updates.setdefault(competition, {}).update(maps)
+        if unresolved_names:
+            unresolved[competition] = sorted(unresolved_names)
+        if seen:
+            seen_names[competition] = sorted(seen)
+
+    if not all_rows:
+        return _empty_frame(CUP_HISTORY_COLUMNS), mapping_updates, unresolved, seen_names
+    frame = _ensure_columns(pd.DataFrame(all_rows), CUP_HISTORY_COLUMNS)
+    frame = _filter_frame_to_cup_table_season(frame)
+    return frame, mapping_updates, unresolved, seen_names
+
+
+def merge_completed_cup_frames(existing, extra):
+    """Union completed cup history frames, preferring rows with actual scores."""
+    frames = []
+    for frame in (existing, extra):
+        if frame is not None and not frame.empty:
+            frames.append(_ensure_columns(frame, CUP_HISTORY_COLUMNS))
+    if not frames:
+        return _empty_frame(CUP_HISTORY_COLUMNS)
+    merged = pd.concat(frames, ignore_index=True)
+    if merged.empty:
+        return _empty_frame(CUP_HISTORY_COLUMNS)
+    merged["competition"] = merged["competition"].astype(str).str.strip()
+    merged["home_team"] = merged["home_team"].astype(str).str.strip()
+    merged["away_team"] = merged["away_team"].astype(str).str.strip()
+    merged["match_date"] = merged["match_date"].astype(str).str.strip()
+    # Prefer rows that have actual scores when deduping.
+    merged["__has_actual"] = (
+        pd.to_numeric(merged.get("actual_home_goals"), errors="coerce").notna()
+        & pd.to_numeric(merged.get("actual_away_goals"), errors="coerce").notna()
+    )
+    merged = merged.sort_values("__has_actual", ascending=False)
+    merged = merged.drop_duplicates(
+        subset=["competition", "match_date", "home_team", "away_team"],
+        keep="first",
+    )
+    return _ensure_columns(merged.drop(columns=["__has_actual"], errors="ignore"), CUP_HISTORY_COLUMNS)
 
 
 def _write_csv(path, frame, columns=None):
@@ -795,8 +1098,13 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
     Completed (real) league-phase games seed the live table. Remaining upcoming
     fixtures are sampled ``CUP_TABLE_SIMULATION_RUNS`` times so position odds
     reflect simulation mass — not a single deterministic projection.
+
+    Only in-season games are used (UEFA: September+ of the active season).
     """
     frames = []
+    # Drop prior-season history before seeding tables.
+    completed_df = _filter_frame_to_cup_table_season(completed_df)
+    upcoming_df = _filter_frame_to_cup_table_season(upcoming_df) if upcoming_df is not None else upcoming_df
     if completed_df is not None and not completed_df.empty:
         completed = completed_df.copy()
         completed["__is_real"] = True
@@ -1808,6 +2116,41 @@ def main():
         save_completed_rows_to_past_games(cup_df, today=prev_thursday)
         cup_df, removed_completed = _drop_completed_rows(cup_df, today=prev_thursday)
 
+    # Backfill older in-season league-phase results for table cups (UEFA Sept+,
+    # Leagues Cup summer) so tables are not limited to recently predicted fixtures.
+    backfill_added = 0
+    try:
+        backfill_df, backfill_maps, backfill_unresolved, backfill_seen = fetch_in_season_cup_table_results(
+            shared_mapping
+        )
+        if backfill_maps:
+            shared_mapping, bf_added, bf_drift = apply_mapping_updates(shared_mapping, backfill_maps)
+            mapping_added += bf_added
+            mapping_drift = mapping_drift or bf_drift
+            save_mapping(SHARED_MAPPING_FILE, shared_mapping)
+        if backfill_unresolved:
+            for comp, names in backfill_unresolved.items():
+                unresolved.setdefault(comp, [])
+                unresolved[comp] = sorted(set(unresolved[comp]) | set(names))
+        if backfill_seen:
+            for comp, names in backfill_seen.items():
+                existing = set(seen_names.get(comp) or [])
+                seen_names[comp] = sorted(existing | set(names))
+            save_json(
+                ESPN_CUP_NAMES_FILE,
+                {
+                    "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+                    "cups": seen_names,
+                },
+            )
+        before = len(completed_df) if completed_df is not None else 0
+        completed_df = merge_completed_cup_frames(completed_df, backfill_df)
+        # Persist only in-season table-cup history + any non-table cup rows.
+        completed_df = _filter_frame_to_cup_table_season(completed_df)
+        backfill_added = max(0, len(completed_df) - before)
+    except Exception as exc:
+        print(f"[WARN] in-season cup table backfill failed: {exc}")
+
     _write_csv(COMPLETED_CUP_PREDICTIONS_FILE, completed_df, CUP_HISTORY_COLUMNS)
     _write_csv(CUP_PREDICTIONS_FILE, cup_df, CUP_HISTORY_COLUMNS)
     table_rows, bracket_rounds = refresh_cup_projection_artifacts(completed_df, cup_df)
@@ -1817,6 +2160,7 @@ def main():
         print(f"Cup unresolved ESPN names by competition: {unresolved}")
     print(f"Cup predictions updated: {cup_updates}")
     print(f"Cup completed rows added to history: {completed_added}")
+    print(f"Cup in-season table backfill rows merged: {backfill_added}")
     print(f"Cup completed rows removed from upcoming list: {removed_completed}")
     print(f"Cup totals entries added: {totals_added}")
     print(f"Cup projected table rows written: {table_rows}")

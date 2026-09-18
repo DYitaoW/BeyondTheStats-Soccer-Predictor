@@ -550,5 +550,69 @@ class CupDataCondensedWinnersTests(unittest.TestCase):
         self.assertEqual(rows[0]["pct"], 22.5)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class CupTableSeasonBoundsTests(unittest.TestCase):
+    def test_uefa_table_season_starts_september(self):
+        import Track_Cup_Results as track
+        from datetime import date
+
+        start, end = track.cup_table_season_bounds(
+            "Europe/Champions League",
+            reference_date=date(2026, 9, 18),
+        )
+        self.assertEqual(start.month, 9)
+        self.assertEqual(start.day, 1)
+        self.assertEqual(start.year, 2026)
+        self.assertEqual(end.month, 5)
+        self.assertEqual(end.year, 2027)
+
+    def test_filter_drops_pre_september_uefa_games(self):
+        import Track_Cup_Results as track
+        import pandas as pd
+        from unittest import mock
+
+        frame = pd.DataFrame([
+            {
+                "competition": "Europe/Champions League",
+                "match_date": "2026-08-20",
+                "home_team": "Arsenal",
+                "away_team": "Chelsea",
+                "actual_home_goals": 1,
+                "actual_away_goals": 0,
+            },
+            {
+                "competition": "Europe/Champions League",
+                "match_date": "2026-09-17",
+                "home_team": "Arsenal",
+                "away_team": "Inter",
+                "actual_home_goals": 2,
+                "actual_away_goals": 1,
+            },
+            {
+                "competition": "England/FA Cup",
+                "match_date": "2026-08-20",
+                "home_team": "Arsenal",
+                "away_team": "Portsmouth",
+                "actual_home_goals": 3,
+                "actual_away_goals": 0,
+            },
+        ])
+        with mock.patch.object(
+            track._season_calendar,
+            "european_cup_table_season_bounds",
+            return_value=(pd.Timestamp("2026-09-01"), pd.Timestamp("2027-05-31")),
+        ):
+            filtered = track._filter_frame_to_cup_table_season(frame)
+        ucl_dates = set(
+            filtered.loc[
+                filtered["competition"] == "Europe/Champions League", "match_date"
+            ].astype(str)
+        )
+        self.assertNotIn("2026-08-20", ucl_dates)
+        self.assertIn("2026-09-17", ucl_dates)
+        # Domestic cups are not table cups — August row kept.
+        self.assertTrue(
+            (
+                (filtered["competition"] == "England/FA Cup")
+                & (filtered["match_date"].astype(str) == "2026-08-20")
+            ).any()
+        )
