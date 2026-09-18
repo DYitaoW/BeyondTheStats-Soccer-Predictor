@@ -149,6 +149,26 @@ LEAGUE_API_EXCLUDED_COMPETITIONS = {
     "Bulgaria/First League",
 }
 
+# National-team competitions (World Cup qualifying, Nations League, continental
+# federations) are never domestic league tables. They are handled by the
+# national-team pipeline and must not leak into league-facing APIs even when a
+# stale projected-tables CSV still contains rows for them.
+NATIONAL_TEAM_COMPETITION_PREFIXES = frozenset({
+    "FIFA", "UEFA", "CONMEBOL", "CONCACAF", "CAF", "AFC", "OFC",
+})
+
+
+def is_national_team_competition(competition) -> bool:
+    """Return True for national-team/qualifier competitions (not club leagues)."""
+    name = str(competition or "").strip()
+    if not name:
+        return False
+    if "World Cup Qualifying" in name or "Nations League" in name:
+        return True
+    head = name.split("/", 1)[0].strip().upper()
+    return head in NATIONAL_TEAM_COMPETITION_PREFIXES
+
+
 LIVE_SCORE_COMPETITIONS = {
     # Club leagues (top European + MLS)
     "England/Premier League": "eng.1",
@@ -635,7 +655,7 @@ MUTATION_API_TOKEN = os.environ.get("MUTATION_API_TOKEN", "").strip()
 APNS_KEY_ID = os.environ.get("APNS_KEY_ID", "").strip()
 APNS_TEAM_ID = os.environ.get("APNS_TEAM_ID", "").strip()
 APNS_AUTH_KEY_PATH = os.environ.get("APNS_AUTH_KEY_PATH", "").strip()
-APNS_TOPIC = os.environ.get("APNS_TOPIC", "com.beyondthestats.app").strip()
+APNS_TOPIC = os.environ.get("APNS_TOPIC", "Yitao.BeyondTheStatsApp").strip()
 APNS_LIVE_ACTIVITY_TOPIC = os.environ.get("APNS_LIVE_ACTIVITY_TOPIC", f"{APNS_TOPIC}.push-type.liveactivity").strip()
 APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "0").strip().lower() in {"1", "true", "yes"}
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]

@@ -11,6 +11,7 @@ import sys
 import time
 from datetime import datetime
 from io import StringIO
+import urllib.error
 import urllib.request
 import re
 
@@ -55,10 +56,35 @@ def season_file_name(start_year):
     return f"{FILE_PREFIX}{season_label(start_year)}.csv"
 
 
-def fetch_source_dataframe():
-    with urllib.request.urlopen(MLS_SOURCE_URL, timeout=30) as response:
-        raw = response.read()
+def _urlopen_with_retry(url, timeout=30, attempts=4, backoff_base=2.0):
+    """GET a URL with bounded retries.
 
+    A single transient network error used to abort this step, which tripped the
+    pipeline's fail-fast barrier and skipped the cup steps. Retry with
+    exponential backoff so brief outages self-heal. Permanent 4xx responses
+    (e.g. 404) still raise immediately.
+    """
+    delay = backoff_base
+    last_exc = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 and exc.code < 500:
+                raise
+            last_exc = exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            last_exc = exc
+        if attempt < attempts:
+            print(f"  [retry] {url} failed ({last_exc}); retrying in {delay:.0f}s ({attempt}/{attempts - 1})...")
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
+    raise last_exc
+
+
+def fetch_source_dataframe():
+    raw = _urlopen_with_retry(MLS_SOURCE_URL, timeout=30)
     text = raw.decode("utf-8-sig", errors="replace")
     try:
         df = pd.read_csv(StringIO(text))
@@ -82,24 +108,40 @@ def main():
     current_year = datetime.now().year
 
     print(f"\nDownloading MLS source: {MLS_SOURCE_URL}")
-    source = fetch_source_dataframe()
-    if any(col not in source.columns for col in RAW_REQUIRED_COLUMNS):
-        raise ValueError("MLS source CSV does not contain expected columns.")
+    source = None
+    try:
+        source = fetch_source_dataframe()
+    except Exception as exc:
+        existing_raw = [
+            f for f in os.listdir(TARGET_DIR)
+            if f.lower().startswith(FILE_PREFIX.lower())
+        ]
+        if not existing_raw:
+            raise
+        print(
+            f"[warn] MLS download failed ({exc}); falling back to "
+            f"{len(existing_raw)} existing raw file(s) in {TARGET_DIR}"
+        )
 
-    source = source.copy()
-    source["SeasonInt"] = source["Season"].map(normalize_season)
-    source = source[source["SeasonInt"].notna()]
-
-    valid_years = sorted(
-        {
-            int(year)
-            for year in source["SeasonInt"].unique().tolist()
-            if MIN_START_YEAR <= int(year) <= current_year
-        }
-    )
-
+    valid_years = []
     updated_count = 0
     skipped_existing_count = 0
+    if source is not None:
+        if any(col not in source.columns for col in RAW_REQUIRED_COLUMNS):
+            raise ValueError("MLS source CSV does not contain expected columns.")
+
+        source = source.copy()
+        source["SeasonInt"] = source["Season"].map(normalize_season)
+        source = source[source["SeasonInt"].notna()]
+
+        valid_years = sorted(
+            {
+                int(year)
+                for year in source["SeasonInt"].unique().tolist()
+                if MIN_START_YEAR <= int(year) <= current_year
+            }
+        )
+
     for start_year in valid_years:
         season_rows = source[source["SeasonInt"] == start_year].copy()
         if season_rows.empty:
@@ -140,8 +182,11 @@ def main():
 
     _t1 = time.monotonic()
     print("\nDownloading Liga MX source data...")
-    download_mexico.main()
-    print(f"Liga MX download done. ({time.monotonic() - _t1:.1f}s)")
+    try:
+        download_mexico.main()
+        print(f"Liga MX download done. ({time.monotonic() - _t1:.1f}s)")
+    except Exception as exc:
+        print(f"[warn] Liga MX download failed ({exc}); continuing with existing raw data.")
 
     _t2 = time.monotonic()
     print("\nProcessing MLS + Liga MX files...")

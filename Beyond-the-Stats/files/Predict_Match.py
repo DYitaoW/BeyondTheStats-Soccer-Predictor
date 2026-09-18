@@ -28,6 +28,7 @@ import sys
 import hashlib
 import random
 import time
+import subprocess
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
@@ -68,6 +69,297 @@ CPU_COUNT = max(1, (os.cpu_count() or 2) - 1)
 TRAIN_WORKERS = int(os.getenv("SOCCER_TRAIN_WORKERS", str(max(1, min(4, CPU_COUNT // 2)))))
 # Inner model thread count to avoid oversubscription.
 MODEL_THREADS = int(os.getenv("SOCCER_MODEL_THREADS", str(max(1, CPU_COUNT // TRAIN_WORKERS))))
+
+# Early-season prior blending: blend prior-season position/standings into
+# predictions so sparse current-season data does not produce overconfident
+# (and tie-heavy) predictions. The prior runs at full strength for the first
+# EARLY_SEASON_FULL_PRIOR_GAMES gameweeks, then linearly fades to zero by
+# EARLY_SEASON_FADE_END_GAMES. The same schedule scales every past-season
+# datapoint used for corrections (league strength, interleague position,
+# boundary bonuses) so older data never lingers once a real table exists.
+EARLY_SEASON_GAMES_THRESHOLD = 19
+EARLY_SEASON_FULL_PRIOR_GAMES = 7
+EARLY_SEASON_FADE_END_GAMES = 19
+PRIOR_BLEND_STRENGTH_AT_ZERO = 0.85
+# Promotion/relegation re-anchoring for the prior blend: a relegated side is
+# projected to finish upper-half of the weaker division (strength floor), and a
+# promoted side is projected to finish lower-half of the stronger division
+# (strength cap), so last season's position no longer transfers at face value.
+PROMOTED_TEAM_STRENGTH_CAP = 0.58
+RELEGATED_TEAM_STRENGTH_FLOOR = 0.62
+
+
+def early_season_prior_weight(games_played):
+    """Blend weight for prior-season data given *games_played*.
+
+    Full strength (PRIOR_BLEND_STRENGTH_AT_ZERO) for the first 7 gameweeks,
+    then it linearly decreases to 0 by game 19.
+    """
+    games = max(0.0, float(games_played))
+    if games <= EARLY_SEASON_FULL_PRIOR_GAMES:
+        return PRIOR_BLEND_STRENGTH_AT_ZERO
+    if games >= EARLY_SEASON_FADE_END_GAMES:
+        return 0.0
+    span = float(EARLY_SEASON_FADE_END_GAMES - EARLY_SEASON_FULL_PRIOR_GAMES)
+    fraction = (games - EARLY_SEASON_FULL_PRIOR_GAMES) / span
+    return PRIOR_BLEND_STRENGTH_AT_ZERO * (1.0 - fraction)
+
+
+def early_season_prior_factor(games_played):
+    """Multiplicative scale (0..1) for past-season-derived corrections.
+
+    1.0 for the first 7 gameweeks, then linearly decreasing to 0 by game 19.
+    """
+    games = max(0.0, float(games_played))
+    if games <= EARLY_SEASON_FULL_PRIOR_GAMES:
+        return 1.0
+    if games >= EARLY_SEASON_FADE_END_GAMES:
+        return 0.0
+    span = float(EARLY_SEASON_FADE_END_GAMES - EARLY_SEASON_FULL_PRIOR_GAMES)
+    return 1.0 - (games - EARLY_SEASON_FULL_PRIOR_GAMES) / span
+
+
+def _season_teams_signature():
+    """Fingerprint season_teams.json's season keys.
+
+    The built historical tables store the input signature under
+    ``generated_season_signature``; when they differ (a new season or league
+    was added), the stored prior history is stale and must be rebuilt. Returns
+    None when the input file cannot be read.
+    """
+    path = os.path.join(TEAM_DATA_DIR, "season_teams.json")
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            season_teams = json.load(fh)
+    except Exception:
+        return None
+    if not isinstance(season_teams, dict):
+        return None
+    digest = hashlib.sha1()
+    for key in sorted(season_teams):
+        digest.update(str(key).encode("utf-8", errors="replace"))
+        digest.update(b"\x00")
+    return digest.hexdigest()
+
+
+def _load_historical_tables():
+    """Load historical_tables.json (team priors) once and cache it.
+
+    If the file is missing, or ``season_teams.json`` has gained a season since
+    the file was generated, it is rebuilt from ``Build_Historical_Tables.py``
+    so callers never silently keep stale prior history when a new season
+    starts. The per-country 3-season history lives under the ``team_history``
+    key (see ``team_division_history``).
+    """
+    if not hasattr(_load_historical_tables, "_cache"):
+        path = os.path.join(TEAM_DATA_DIR, "historical_tables.json")
+        current = _season_teams_signature()
+        cached = load_json_if_exists(path) or {}
+        if not cached or (current and cached.get("generated_season_signature") != current):
+            builder = os.path.join(BASE_DIR, "files", "Build_Historical_Tables.py")
+            if os.path.exists(builder):
+                try:
+                    subprocess.run(
+                        [sys.executable, builder],
+                        cwd=BASE_DIR,
+                        capture_output=True,
+                        text=True,
+                        timeout=600,
+                    )
+                except Exception:
+                    pass
+            cached = load_json_if_exists(path) or {}
+        _load_historical_tables._cache = cached
+    return _load_historical_tables._cache
+
+
+def team_division_history(team, competition=None, historical=None):
+    """Three-season (tier, position) history for *team* within its country's pyramid.
+
+    Returns ``(country, seed_season, seasons)``; ``seasons`` is a list of dicts
+    with ``start_year`` plus the record for that year (``competition``, ``tier``,
+    ``position``, ``points``, ``games``). A season slot with ``tier: -1`` means
+    the team played a league this program does not track that year (promoted
+    from / relegated to an unlisted division). Unknown team or country yields
+    ``(None, None, [])``.
+    """
+    if historical is None:
+        historical = _load_historical_tables()
+    country = str(competition or "").replace("\\", "/").split("/", 1)[0]
+    bucket = (historical.get("team_history") or {}).get(country)
+    if not bucket:
+        return None, None, []
+    seasons = []
+    for season in bucket.get("seasons") or []:
+        rec = (season.get("records") or {}).get(team)
+        entry = {"start_year": season.get("start_year", 0)}
+        entry.update(rec or {})
+        seasons.append(entry)
+    return country, bucket.get("seed_season"), seasons
+
+
+def _season_games_played(team, season_lookup):
+    """Return games played by *team* in the given season lookup (0 if missing)."""
+    stats = clean_stats_dict(season_lookup.get(team, {})) if isinstance(season_lookup, dict) else {}
+    if not stats:
+        return 0
+    try:
+        return int(float(stats.get("games", 0.0) or 0.0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _prior_team_strength(team, team_prior):
+    """Compute a [0,1] strength from a team's most recent completed-season position.
+
+    Returns (strength, found). Position 1 → ~1.0; mid-table → ~0.5;
+    bottom → ~0.0. A promoted/new team (no prior in this competition) gets a
+    slightly-below-average neutral value so we don't pretend to know them.
+    """
+    entry = team_prior.get(team)
+    if not entry:
+        return 0.45, False
+    position = float(entry.get("position", 0.0) or 0.0)
+    games = float(entry.get("games", 0.0) or 0.0)
+    if position <= 0 or games <= 0:
+        return 0.45, False
+    # Soft rank transform: pos 1 → ~1.0, pos ~10 → ~0.55, pos 20 → ~0.28.
+    strength = 1.0 / (1.0 + (position - 1.0) * 0.08)
+    strength = max(0.05, min(1.0, strength))
+    return strength, True
+
+
+def _prior_distribution(home_team, away_team, team_prior, current_competition=None, is_neutral=False, league_strength=None):
+    """Build a (H, D, A) prior from historical standings alone.
+
+    Cross-division matchups (e.g. cup ties) use the prior strongly since there
+    is rarely any head-to-head data. Gaps smaller than ~6 positions are treated
+    as close games with a modest draw prior; big gaps behave like the league
+    strength correction already used for interleague matches. When the two teams
+    come from different leagues (champions-league style ties), each side's
+    prior strength is scaled by its league quality so a mid-table side of a
+    top league outranks a champion of a much weaker one.
+
+    When *current_competition* points to a tracked league and a team's prior
+    was earned in a *different* league (promotion/relegation), the prior
+    strength is re-anchored to the new division: relegated sides get floored
+    toward upper-half quality of the weaker division, promoted sides get capped
+    toward lower-half quality of the stronger division.
+    """
+    home_entry = team_prior.get(home_team)
+    away_entry = team_prior.get(away_team)
+
+    home_strength, home_found = _prior_team_strength(home_team, team_prior)
+    away_strength, away_found = _prior_team_strength(away_team, team_prior)
+    if not home_found and not away_found:
+        return None
+
+    if not home_found:
+        home_strength = 0.45
+    if not away_found:
+        away_strength = 0.45
+
+    # League-quality scaling for cross-division ties. Each team's prior gets
+    # weighted by the strength of the league it finished in; absent mappings
+    # default to a mid-tier league so we never exaggerate a weak division.
+    # When the prior was earned in a *different* league than the one being
+    # predicted (promotion/relegation) and the current competition is a tracked
+    # league, re-anchor the strength to the new division: relegated sides get a
+    # floor (they are expected to bounce back in the weaker division), promoted
+    # sides get a cap (they are expected to struggle in the stronger division).
+    # Cup/tournament fixtures (current competition absent from league_strength)
+    # keep the old plain cross-division scaling.
+    if isinstance(league_strength, dict):
+        current_key = str(current_competition or "").replace("\\", "/")
+        current_ls = float(league_strength.get(current_key, 0.0))
+
+        def _ls_lookup(competition):
+            key = str(competition or "").replace("\\", "/")
+            return float(league_strength.get(key, 0.60))
+
+        def _scaled_strength(strength, entry):
+            prior_ls = _ls_lookup(entry.get("competition")) if entry else 0.60
+            if entry and current_ls > 0:
+                prior_key = str(entry.get("competition") or "").replace("\\", "/")
+                if prior_key and prior_key != current_key:
+                    ratio = prior_ls / current_ls
+                    if prior_ls > current_ls:  # relegated to a weaker division
+                        strength = max(strength * ratio, RELEGATED_TEAM_STRENGTH_FLOOR)
+                    elif prior_ls < current_ls:  # promoted to a stronger division
+                        strength = min(strength * ratio, PROMOTED_TEAM_STRENGTH_CAP)
+                    else:
+                        strength = strength * ratio
+                    return max(0.05, min(1.0, strength))
+            return max(0.05, min(1.0, strength * prior_ls))
+
+        home_strength = _scaled_strength(home_strength, home_entry)
+        away_strength = _scaled_strength(away_strength, away_entry)
+
+    if is_neutral:
+        # No home advantage in the prior at a neutral venue.
+        pass
+    else:
+        home_strength += 0.06  # small historical home edge
+
+    strength_gap = abs(home_strength - away_strength)
+    # Draw prior: close games are draw-ish, big gaps are not.
+    draw_prior = max(0.24, min(0.34, 0.34 - 0.5 * strength_gap))
+    if home_strength >= away_strength:
+        home_share = 0.5 + 0.5 * strength_gap
+    else:
+        home_share = 0.5 - 0.5 * strength_gap
+    home_share = max(0.15, min(0.85, home_share))
+
+    away_share = 1.0 - home_share
+    home_prob = (1.0 - draw_prior) * home_share
+    away_prob = (1.0 - draw_prior) * away_share
+    total = home_prob + draw_prior + away_prob
+    return {
+        "H": home_prob / total,
+        "D": draw_prior / total,
+        "A": away_prob / total,
+    }
+
+
+def blend_historical_prior(probabilities, home_team, away_team, season_lookup, competition=None, is_neutral=False, league_strength=None):
+    """Blend early-season *current-model* probabilities with prior-season standings.
+
+    Returns a new dict with the same keys. When the current season has enough
+    games for both teams (>= EARLY_SEASON_GAMES_THRESHOLD) the input is
+    returned unchanged. Otherwise the blend weight goes from
+    PRIOR_BLEND_STRENGTH_AT_ZERO (0 games) down to 0 at the threshold. The
+    competition key is only used to match the prior table; for cup ties where no
+    prior exists for both teams the distribution returns to the model output.
+    """
+    if not isinstance(probabilities, dict):
+        return probabilities
+    home_games = _season_games_played(home_team, season_lookup)
+    away_games = _season_games_played(away_team, season_lookup)
+    if min(home_games, away_games) >= EARLY_SEASON_FADE_END_GAMES:
+        return dict(probabilities)
+
+    historical = _load_historical_tables()
+    team_prior = historical.get("team_prior") or {}
+    prior = _prior_distribution(home_team, away_team, team_prior, current_competition=competition, is_neutral=is_neutral, league_strength=league_strength)
+    if not prior:
+        return dict(probabilities)
+
+    least_played = min(home_games, away_games)
+    prior_weight = early_season_prior_weight(least_played)
+    if prior_weight <= 0.0:
+        return dict(probabilities)
+
+    blended = {}
+    for key in ("H", "D", "A"):
+        current = float(probabilities.get(key, 0.0))
+        prior_val = float(prior.get(key, 0.0))
+        blended[key] = prior_weight * prior_val + (1.0 - prior_weight) * current
+    total = blended["H"] + blended["D"] + blended["A"]
+    if total > 0:
+        blended["H"] /= total
+        blended["D"] /= total
+        blended["A"] /= total
+    return blended
 
 
 def sample_score_from_probs(prob_home: float, prob_draw: float, prob_away: float,
@@ -1512,6 +1804,18 @@ def main():
                 probabilities["A"] /= total_prob
         after_league_probabilities = dict(probabilities)
 
+        # Early-season prior blend: anchor sparse current-season predictions
+        # with prior-season standings before the form/table corrections run.
+        early_season_lookup = season_teams.get(prediction_season, {})
+        probabilities = blend_historical_prior(
+            probabilities,
+            home_team,
+            away_team,
+            early_season_lookup,
+            competition=competition_key,
+            league_strength=league_strength,
+        )
+
         # Second-priority correction: 10-game form delta shifts H/A probabilities.
         home_ppg10, home_form_idx, _, _ = team_form(home_team, current_form)
         away_ppg10, away_form_idx, _, _ = team_form(away_team, current_form)
@@ -1528,12 +1832,21 @@ def main():
         after_form_probabilities = dict(probabilities)
 
         # Third-priority correction: current-season home/away performance delta.
-        home_stats = clean_stats_dict(season_teams.get(prediction_season, {}).get(home_team, {})) or clean_stats_dict(find_latest_team_season_stats(
+        home_cur_stats = clean_stats_dict(season_teams.get(prediction_season, {}).get(home_team, {}))
+        away_cur_stats = clean_stats_dict(season_teams.get(prediction_season, {}).get(away_team, {}))
+        home_stats = home_cur_stats or clean_stats_dict(find_latest_team_season_stats(
             home_team, season_teams
         ))
-        away_stats = clean_stats_dict(season_teams.get(prediction_season, {}).get(away_team, {})) or clean_stats_dict(find_latest_team_season_stats(
+        away_stats = away_cur_stats or clean_stats_dict(find_latest_team_season_stats(
             away_team, season_teams
         ))
+        fallback_past_season_used = bool(home_stats) and (not home_cur_stats or not away_cur_stats)
+        early_past_factor = early_season_prior_factor(
+            min(
+                _season_games_played(home_team, early_season_lookup),
+                _season_games_played(away_team, early_season_lookup),
+            )
+        )
         home_season_strength = (
             float(home_stats.get("avg_home_goals_scored", 0.0))
             - float(home_stats.get("avg_home_goals_conceded", 0.0))
@@ -1554,6 +1867,8 @@ def main():
         )
         season_delta = home_season_strength - away_season_strength
         season_shift = max(-0.07, min(0.07, 0.04 * season_delta * prediction_season_coeff))
+        if fallback_past_season_used:
+            season_shift *= early_past_factor
         if season_shift != 0.0:
             probabilities["H"] = max(0.0, probabilities.get("H", 0.0) + season_shift)
             probabilities["A"] = max(0.0, probabilities.get("A", 0.0) - season_shift)
@@ -1569,6 +1884,9 @@ def main():
         season_positions = build_season_position_map(season_lookup_for_pred)
         home_table = clean_stats_dict(season_lookup_for_pred.get(home_team, {})) or clean_stats_dict(find_latest_team_season_stats(home_team, season_teams))
         away_table = clean_stats_dict(season_lookup_for_pred.get(away_team, {})) or clean_stats_dict(find_latest_team_season_stats(away_team, season_teams))
+        home_table_cur = clean_stats_dict(season_lookup_for_pred.get(home_team, {}))
+        away_table_cur = clean_stats_dict(season_lookup_for_pred.get(away_team, {}))
+        table_used_past_fallback = bool(home_table) and (not home_table_cur or not away_table_cur)
         home_points = float(home_table.get("points", 0.0) or 0.0)
         away_points = float(away_table.get("points", 0.0) or 0.0)
         home_pos = float(season_positions.get(home_team, home_table.get("league_position", 0.0) or 0.0))
@@ -1576,6 +1894,8 @@ def main():
         table_delta = ((home_points - away_points) / 30.0) + ((away_pos - home_pos) / 20.0)
         division_weight = 0.5 + 0.5 * abs(strength_delta)
         table_shift = max(-0.08, min(0.08, 0.05 * table_delta * division_weight))
+        if table_used_past_fallback:
+            table_shift *= early_past_factor
 
         # Interleague absolute-position correction:
         # ranks competitions by league strength, then places each team in one global ladder.

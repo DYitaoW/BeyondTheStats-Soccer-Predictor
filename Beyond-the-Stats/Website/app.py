@@ -399,20 +399,26 @@ def _is_league_api_competition(comp_name):
         return False
     if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
         return False
+    if config.is_national_team_competition(comp):
+        return False
     return True
 
 
 def _filter_league_tables_payload(data):
     """Remove fallback-only / upcoming-only leagues from table API payloads."""
-    excluded = config.LEAGUE_API_EXCLUDED_COMPETITIONS
-    leagues = [c for c in (data.get("leagues") or []) if c not in excluded]
+    excluded = config.LEAGUE_API_EXCLUDED_COMPETITIONS | config.UPCOMING_ONLY_COMPETITIONS
+
+    def _keep(name):
+        return name not in excluded and not config.is_national_team_competition(name)
+
+    leagues = [c for c in (data.get("leagues") or []) if _keep(c)]
     tables = {
         k: v for k, v in (data.get("tables") or {}).items()
-        if k not in excluded
+        if _keep(k)
     }
     fixtures = data.get("fixtures")
     if isinstance(fixtures, dict):
-        fixtures = {k: v for k, v in fixtures.items() if k not in excluded}
+        fixtures = {k: v for k, v in fixtures.items() if _keep(k)}
     return {**data, "leagues": leagues, "tables": tables, "fixtures": fixtures}
 
 
@@ -1021,6 +1027,8 @@ def api_help():
         ("/api/live-activities/unregister", "POST", "Remove a Live Activity registration"),
         ("/api/live-activities/update", "POST", "Push a content-state update to Live Activities for a match"),
         ("/api/live-activities/end", "POST", "End/dismiss Live Activities for a match"),
+        ("/live-activities/register", "POST", "Register a Live Activity push token for a match (app alias)"),
+        ("/live-activities/unregister", "POST", "Remove a Live Activity registration (app alias)"),
         ("/api/redeem", "GET/POST", "Redeem a promo code (?code= or JSON body)"),
         ("/api/info/changes", "GET", "App changes changelog entries"),
         ("/api/info/roadmap", "GET", "App planned features/roadmap"),
@@ -2259,6 +2267,7 @@ def api_unsubscribe_match_notifications():
 # ── Live Activity endpoints (iOS 16.1+) ────────────────────────────
 
 
+@app.post("/live-activities/register")
 @app.post("/api/live-activities/register")
 def api_register_live_activity():
     """Register a Live Activity push token for a specific match.
@@ -2286,6 +2295,7 @@ def api_register_live_activity():
     return jsonify({"ok": True, "registered": ok, "total": len(live_activities.all_activities())})
 
 
+@app.post("/live-activities/unregister")
 @app.post("/api/live-activities/unregister")
 def api_unregister_live_activity():
     """Remove a Live Activity registration."""
@@ -3007,38 +3017,47 @@ def api_league_leaders():
     mls_east = {}
     mls_west = {}
 
+    # Competitions can legitimately appear in more than one projected-table CSV
+    # (e.g. England/Premier League exists in both the global and extra-leagues
+    # files). Sources are ordered by authority, so keep the first occurrence and
+    # ignore later duplicates instead of listing the league twice.
+    seen_league_comps: set[str] = set()
+    seen_cup_comps: set[str] = set()
+
     for source_mode, csv_path in table_sources:
         proj = _load_projected_tables(csv_path)
         comp_list = proj.get("leagues") or []
         for comp_name in comp_list:
             if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
                 continue
+            if config.is_national_team_competition(comp_name):
+                continue
             # MLS sub-competitions — collect separately
             if comp_name.startswith("United States/MLS"):
                 comp_tbl = proj.get("tables", {}).get(comp_name, [])
-                pos1 = next((r for r in comp_tbl if r.get("position") == 1), None)
-                if pos1:
+                winner_row = _pick_league_winner_row(comp_tbl)
+                if winner_row:
                     if "Supporters Shield" in comp_name:
-                        mls_supporters = pos1
+                        mls_supporters = winner_row
                     elif "Eastern Conference" in comp_name:
-                        mls_east = pos1
+                        mls_east = winner_row
                     elif "Western Conference" in comp_name:
-                        mls_west = pos1
+                        mls_west = winner_row
                 continue
             if comp_name in _COMPETITION_ALIASES:
                 continue
             comp_tbl = proj.get("tables", {}).get(comp_name, [])
+            winner_row = _pick_league_winner_row(comp_tbl)
             predicted = None
-            for row in comp_tbl:
-                if row.get("position") == 1:
-                    predicted = {
-                        "winner": row.get("team", ""),
-                        "odds": row.get("win_league_pct"),
-                    }
-                    break
+            if winner_row:
+                predicted = {
+                    "winner": winner_row.get("team", ""),
+                    "odds": winner_row.get("win_league_pct"),
+                }
+            is_cup_comp = comp_name in config._CUP_FORMATS or comp_name == "International/World Cup"
             if not predicted:
                 if source_mode == "cups":
-                    if comp_name not in config._CUP_FORMATS and comp_name != "International/World Cup":
+                    if not is_cup_comp:
                         continue
                 else:
                     continue
@@ -3047,9 +3066,15 @@ def api_league_leaders():
                 "predicted_winner": predicted["winner"] if predicted else "—",
                 "predicted_winner_odds": round(predicted["odds"], 1) if predicted and predicted["odds"] is not None else None,
             }
-            if source_mode == "cups":
+            if source_mode == "cups" or is_cup_comp:
+                if comp_name in seen_cup_comps:
+                    continue
+                seen_cup_comps.add(comp_name)
                 cups.append(entry)
             else:
+                if comp_name in seen_league_comps:
+                    continue
+                seen_league_comps.add(comp_name)
                 leagues.append(entry)
 
     # Add unified MLS entry
@@ -3078,6 +3103,8 @@ def api_league_leaders():
                 if not isinstance(comp_entry, dict):
                     continue
                 if comp_name in _COMPETITION_ALIASES:
+                    continue
+                if config.is_national_team_competition(comp_name):
                     continue
                 champion = comp_entry.get("champion")
                 winner_probs = comp_entry.get("winner_probabilities") or {}
@@ -3126,6 +3153,8 @@ def api_league_leaders():
         if comp_name in _COMPETITION_ALIASES:
             continue
         if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+            continue
+        if config.is_national_team_competition(comp_name):
             continue
         if comp_name in config._CUP_FORMATS:
             cups.append({

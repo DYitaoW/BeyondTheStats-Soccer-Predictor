@@ -1199,6 +1199,14 @@ def predict_fixture(row, context):
             probabilities["A"] /= total_prob
     probabilities = pm.apply_home_advantage_boost(probabilities)
     probabilities = pm.reduce_draw_probability(probabilities)
+    probabilities = pm.blend_historical_prior(
+        probabilities,
+        home_team,
+        away_team,
+        context.get("season_teams", {}).get(prediction_season, {}),
+        competition=competition,
+        league_strength=context.get("league_strength", {}),
+    )
     seed = pm.prediction_randomizer_seed(home_team, away_team, competition, prediction_season)
     probabilities = pm.apply_probability_randomizer(
         probabilities,

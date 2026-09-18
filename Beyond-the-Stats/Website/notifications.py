@@ -230,7 +230,7 @@ def _generate_apns_jwt() -> str | None:
 # ── APNs HTTP/2 request ──────────────────────────────────────────
 
 _APNS_PRODUCTION = "https://api.push.apple.com"
-_APNS_SANDBOX = "https://api.sandbox.push.apple.com"
+_APNS_SANDBOX = "https://api.development.push.apple.com"
 
 
 def _apns_send(push_token: str, payload: dict, topic: str, live_activity: bool = False) -> bool:
@@ -252,6 +252,8 @@ def _apns_send(push_token: str, payload: dict, topic: str, live_activity: bool =
         "apns-priority": "10",
         "authorization": f"bearer {jwt_token}",
     }
+    if live_activity:
+        headers["apns-expiration"] = "0"
 
     try:
         with httpx.Client(http2=True) as client:
@@ -304,13 +306,15 @@ def _drain_queue() -> None:
 
         if is_la:
             topic = config.APNS_LIVE_ACTIVITY_TOPIC or ""
-            payload = {
-                "aps": {
-                    "content-state": entry.get("content_state", {}),
-                    "timestamp": int(time.time()),
-                    "event": entry.get("event", "update"),
-                }
+            event = entry.get("event", "update")
+            aps = {
+                "content-state": entry.get("content_state", {}),
+                "timestamp": int(time.time()),
+                "event": event,
             }
+            if event == "end":
+                aps["dismissal-date"] = int(entry.get("dismissal_date") or time.time())
+            payload = {"aps": aps}
         else:
             topic = config.APNS_TOPIC or ""
             payload = {
@@ -319,12 +323,10 @@ def _drain_queue() -> None:
                         "title": entry.get("title", ""),
                         "body": entry.get("body", ""),
                     },
-                    "badge": entry.get("badge", 0),
                     "sound": "default",
-                    "content-available": 1,
+                    "badge": entry.get("badge", 1),
                 },
                 "match_id": entry.get("match_id", ""),
-                "competition": entry.get("competition", ""),
             }
 
         ok = _apns_send(push_token, payload, topic, live_activity=is_la)
@@ -370,9 +372,7 @@ def send_live_activity_end(match_id: str, competition: str, content_state: dict 
         unregister_by_match(match_id, competition)
         return 0
     state = dict(content_state or {})
-    state.setdefault("match_id", match_id)
-    state.setdefault("competition", normalize_live_competition(competition))
-    state.setdefault("status", "finished")
+    state.setdefault("status", "FT")
     for entry in activities:
         _apns_notification_queue.append({
             "type": "liveactivity",

@@ -68,6 +68,9 @@ Beyond-the-Stats/Website/static/tesmp
 # Generated prediction outputs
 **/Data/Predictions/**
 
+# Player event stats (goals/assists/cards per competition, accumulated each run)
+**/Data/PlayerStats/**
+
 # ESPN scoreboard response cache
 **/Data/National_Team_Data/espn_scoreboard_cache/**
 
@@ -104,6 +107,7 @@ Beyond-the-Stats/Website/static/tesmp
 **/Data/prediction_tracking.json
 **/Data/live_score_history.json
 **/Data/live_score_history.json.lock
+**/Data/backend_run_status.json
 
 # Regenerated national-team output data (downloaded/processed each run)
 **/Data/National_Team_Data/national_team_matches_processed.csv

@@ -1084,6 +1084,10 @@ def _enrich_mls_data(payload, mls_bracket, mls_table_path):
 # ---------------------------------------------------------------------------
 
 _PLAYER_STATS_DIR = SP_DIR / "Data" / "PlayerStats"
+# Player event/leader stats (goals/assists/cards) feed only the website's
+# leaders display and are not used by any prediction/model code, so skip the
+# ESPN fetches and per-competition writes until they start feeding predictions.
+FETCH_PLAYER_LEADERS = False
 _ESPN_STATS_IDS = {
     "England/Premier League": "eng.1",
     "England/Championship": "eng.2",
@@ -1333,6 +1337,8 @@ def build_player_standings():
 
     Returns dict of {comp_name: leaders_categories} for enrichment.
     """
+    if not FETCH_PLAYER_LEADERS:
+        return {}
     # ── 1. Load live history ──
     hist_file = SP_DIR / "Data" / "live_score_history.json"
     live_history = _load_json(hist_file) if hist_file.exists() else []

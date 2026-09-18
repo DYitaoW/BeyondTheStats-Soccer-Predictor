@@ -583,6 +583,15 @@ def sample_outcome(probs):
     return RNG.choices(labels, weights=weights, k=1)[0]
 
 
+def _jitter_probs(probs, scale):
+    """Add a small random perturbation to outcome probabilities (kept normalized)."""
+    h = max(0.01, float(probs.get("H", 0.0)) + RNG.uniform(-scale, scale))
+    d = max(0.01, float(probs.get("D", 0.0)) + RNG.uniform(-scale * 0.6, scale * 0.6))
+    a = max(0.01, float(probs.get("A", 0.0)) + RNG.uniform(-scale, scale))
+    total = h + d + a
+    return {"H": h / total, "D": d / total, "A": a / total}
+
+
 def coerce_scoreline(pred_result, base_hg, base_ag):
     hg = int(round(float(base_hg)))
     ag = int(round(float(base_ag)))
@@ -615,10 +624,18 @@ def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, confere
     if ctx is not None and canonical_teams:
         matchup_cache = precompute_mls_matchup_probs(ctx, canonical_teams, "United States/MLS")
 
+    played_values = [float(base_table.get(team, {}).get("P", 0.0) or 0.0) for team in canonical_teams]
+    least_played = min(played_values) if played_values else 0.0
+    progress = min(1.0, least_played / float(pm.EARLY_SEASON_GAMES_THRESHOLD))
+    jitter_scale = 0.05 * (1.0 - progress)
+
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
         for fixture in future_predictions:
-            result = sample_outcome(fixture["probs"])
+            probs = fixture["probs"]
+            if jitter_scale > 0.0:
+                probs = _jitter_probs(probs, jitter_scale)
+            result = sample_outcome(probs)
             hg, ag = coerce_scoreline(result, fixture["pred_home_goals"], fixture["pred_away_goals"])
             apply_result(sim_table, fixture["home_team"], fixture["away_team"], hg, ag, is_real=False)
 
@@ -787,16 +804,23 @@ def nested_counts_to_probability_maps(nested_counts, total_runs):
 
 
 def build_cup_probability_columns(cup_win_counts, team, total_runs):
+    runs = max(1, int(total_runs))
     wins = int(cup_win_counts.get(team, 0))
-    pct = round((wins / max(1, int(total_runs))) * 100.0, 2)
+    pct = round((wins / runs) * 100.0, 2)
+    # A knockout cup has no league position, so only the projected champion
+    # (the team that wins the cup most often) reports position 1. Previously
+    # every team with a single simulated win was labelled position 1, which made
+    # the positioning columns look broken.
+    projected_champion = max(cup_win_counts.items(), key=lambda kv: kv[1], default=(None, 0))[0]
+    is_champion = team == projected_champion and wins > 0
     return {
         "win_league_pct": pct,
         "top4_pct": 0.0,
         "bottom3_pct": 0.0,
-        "most_likely_position": 1 if wins > 0 else 0,
-        "most_likely_position_pct": pct,
+        "most_likely_position": 1 if is_champion else 0,
+        "most_likely_position_pct": pct if is_champion else 0.0,
         "position_odds_json": json.dumps({"1": pct}, separators=(",", ":"), sort_keys=True),
-        "sim_runs": int(total_runs),
+        "sim_runs": runs,
     }
 
 
@@ -873,6 +897,14 @@ def predict_match(ctx, home_team, away_team, competition_hint):
     probs["A"] = max(0.0, probs.get("A", 0.0) - transfer)
     probs = pm.apply_home_advantage_boost(probs)
     probs = pm.reduce_draw_probability(probs)
+    probs = pm.blend_historical_prior(
+        probs,
+        home_team,
+        away_team,
+        ctx["season_teams"].get(prediction_season, {}),
+        competition=competition_key,
+        league_strength=ctx.get("league_strength", {}),
+    )
 
     labels = ["H", "D", "A"]
     weights = [max(0.0, float(probs.get(label, 0.0))) for label in labels]
@@ -1160,10 +1192,18 @@ def run_monte_carlo_standard(teams, base_table, future_predictions, runs):
     stat_sums = defaultdict(lambda: defaultdict(float))
     position_counts = defaultdict(lambda: defaultdict(int))
 
+    played_values = [float(base_table.get(team, {}).get("P", 0.0) or 0.0) for team in teams]
+    least_played = min(played_values) if played_values else 0.0
+    progress = min(1.0, least_played / float(pm.EARLY_SEASON_GAMES_THRESHOLD))
+    jitter_scale = 0.05 * (1.0 - progress)
+
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
         for fixture in future_predictions:
-            result = sample_outcome(fixture["probs"])
+            probs = fixture["probs"]
+            if jitter_scale > 0.0:
+                probs = _jitter_probs(probs, jitter_scale)
+            result = sample_outcome(probs)
             hg, ag = coerce_scoreline(result, fixture["pred_home_goals"], fixture["pred_away_goals"])
             apply_result(sim_table, fixture["home_team"], fixture["away_team"], hg, ag, is_real=False)
 
@@ -1670,30 +1710,9 @@ def project_competition(ctx, competition, raw_file):
     if west_ranked:
         out_rows.extend(emit_rows("United States/MLS - Western Conference", west_ranked, west_pos_counts))
 
-    cup_ranked = sorted(
-        [(team, averaged[team]) for team in canonical_teams],
-        key=lambda kv: (
-            -cup_win_counts.get(kv[0], 0),
-            -kv[1]["Pts"],
-            -kv[1]["GD"],
-            -kv[1]["GF"],
-            kv[0],
-        ),
-    )
-    cup_pos_counts = {team: {1: cup_win_counts.get(team, 0)} for team in canonical_teams}
-    cup_rows = []
-    for pos, (team, stats) in enumerate(cup_ranked, start=1):
-        cup_rows.append(
-            {
-                "competition": "United States/MLS - MLS Cup",
-                "position": pos,
-                "team": team,
-                **stats,
-                **build_cup_probability_columns(cup_win_counts, team, SIMULATION_RUNS),
-            }
-        )
-    out_rows.extend(cup_rows)
-
+    # MLS Cup is a knockout bracket, not a league table — it is emitted solely
+    # through the playoff bracket payload below (with winner/round-reach odds
+    # accumulated per regular-season simulation). No table rows are written.
     bracket_payload = None
     if len(east_ranked) >= 9 and len(west_ranked) >= 9:
         bracket_payload = build_mls_playoff_bracket_prediction(ctx, east_ranked, west_ranked)
