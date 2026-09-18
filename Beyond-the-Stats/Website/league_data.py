@@ -1278,3 +1278,96 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
     _write_league_data_cache(comp, payload)
 
     return payload
+
+
+def clear_league_data_caches() -> int:
+    """Drop in-memory and on-disk LeagueData caches (sticky empty payloads).
+
+    Returns the number of disk cache files removed.
+    """
+    with _LEAGUE_DATA_MEM_LOCK:
+        _LEAGUE_DATA_MEM.clear()
+    with _LEAGUE_DATA_CSV_CACHE_LOCK:
+        _LEAGUE_DATA_CSV_CACHE.clear()
+
+    removed = 0
+    cache_dir = getattr(config, "LEAGUE_DATA_DIR", "") or ""
+    if cache_dir and os.path.isdir(cache_dir):
+        for name in os.listdir(cache_dir):
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(cache_dir, name)
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
+def league_data_rebuild_competitions() -> list[str]:
+    """Competitions to eagerly rebuild after a pipeline publish."""
+    comps: set[str] = set()
+    comps.update(getattr(config, "LIVE_SCORE_COMPETITIONS", {}) or {})
+    comps.update(getattr(config, "_CUP_FORMATS", {}) or {})
+    comps.update(getattr(config, "MLS_TABLE_VIEW_ALIASES", set()) or set())
+    comps.update(getattr(config, "RESULT_ONLY_COMPETITIONS", set()) or set())
+    # Drop friendlies — they are not league-data table targets.
+    comps.discard(getattr(config, "CLUB_FRIENDLIES_COMPETITION", ""))
+    comps.discard("International/Friendly")
+    return sorted(c for c in comps if c)
+
+
+def rebuild_league_data_caches(
+    competitions: list[str] | None = None,
+    *,
+    clear_first: bool = True,
+    max_workers: int = 4,
+) -> dict[str, bool]:
+    """Clear (optional) and rebuild LeagueData caches after pipeline output lands.
+
+    Forces a fresh competition-games index so standings pick up newly ingested
+    season CSVs, then rebuilds each payload so clients do not wait on the
+    ~10 minute sticky TTL for empty/stale caches (#14).
+    """
+    if clear_first:
+        removed = clear_league_data_caches()
+        print(f"[league-data] cleared caches ({removed} disk files)")
+
+    try:
+        from competition_rules import warm_competition_games_cache
+
+        warm_competition_games_cache(force=True)
+    except Exception as exc:
+        print(f"[league-data] games-cache warm failed: {exc}")
+
+    try:
+        from standings import _clear_all_real_data_caches
+
+        _clear_all_real_data_caches()
+    except Exception:
+        pass
+
+    comps = list(competitions) if competitions is not None else league_data_rebuild_competitions()
+    if not comps:
+        return {}
+
+    results: dict[str, bool] = {}
+    workers = max(1, min(int(max_workers or 1), 8))
+
+    def _one(comp: str) -> tuple[str, bool]:
+        try:
+            _build_league_data_payload_uncached(comp)
+            return comp, True
+        except Exception as exc:
+            print(f"[league-data] rebuild failed for {comp}: {exc}")
+            return comp, False
+
+    print(f"[league-data] rebuilding {len(comps)} competition cache(s) (workers={workers})")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        for comp, ok in pool.map(_one, comps):
+            results[comp] = ok
+
+    passed = sum(1 for ok in results.values() if ok)
+    print(f"[league-data] rebuild done: {passed}/{len(results)} ok")
+    return results

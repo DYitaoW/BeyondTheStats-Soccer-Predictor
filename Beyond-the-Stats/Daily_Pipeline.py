@@ -1725,6 +1725,19 @@ def main():
             publish_to_output()
         except Exception as exc:
             print(f"[WARN] publish_to_output failed: {exc}")
+
+        # Rebuild LeagueData caches so sticky empty/stale payloads (~10 min TTL)
+        # cannot outlive the pipeline write (audit #14).
+        try:
+            website_dir = Path(__file__).resolve().parent / "Website"
+            if str(website_dir) not in sys.path:
+                sys.path.insert(0, str(website_dir))
+            from league_data import rebuild_league_data_caches
+
+            rebuild_league_data_caches(clear_first=True)
+        except Exception as exc:
+            print(f"[WARN] league-data cache rebuild failed: {exc}")
+
         if tee is not None:
             pipeline_log.deactivate_stdout_tee()
 
@@ -1733,6 +1746,9 @@ def main():
         print(f"[DEBUG] Daily_Pipeline iteration #{iteration} took {_iter_elapsed:.0f}s total")
 
         if args.once:
+            if not pipeline_ok:
+                print("[ERROR] Pipeline finished with failed steps; exiting non-zero.")
+                sys.exit(1)
             break
         if args.max_iterations and iteration >= args.max_iterations:
             print(f"[INFO] Reached max-iterations={args.max_iterations}; exiting.")

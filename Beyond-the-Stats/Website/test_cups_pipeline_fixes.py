@@ -157,5 +157,147 @@ class BundesligaRosterTests(unittest.TestCase):
         self.assertNotIn("Bayer Leverkusen", bl)
 
 
+class EuropeanSeasonCsvStandingsTests(unittest.TestCase):
+    def test_competition_from_processed_path(self):
+        import competition_rules as cr
+
+        root = "/data/Processed_Data"
+        path = f"{root}/England/Premier League/premstat2026-27.csv"
+        self.assertEqual(
+            cr._competition_from_processed_season_path(path, root),
+            "England/Premier League",
+        )
+
+    def test_iter_current_season_skips_prior_and_dedicated(self):
+        import tempfile
+        import competition_rules as cr
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "Processed_Data"
+            pl = root / "England" / "Premier League"
+            pl.mkdir(parents=True)
+            (pl / "premstat2025-26.csv").write_text(
+                "Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n"
+                "2026-05-01,Arsenal,Chelsea,1,0,H\n",
+                encoding="utf-8",
+            )
+            (pl / "premstat2026-27.csv").write_text(
+                "Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n"
+                "2026-08-15,Arsenal,Chelsea,2,1,H\n",
+                encoding="utf-8",
+            )
+            mls = root / "United States" / "MLS"
+            mls.mkdir(parents=True)
+            (mls / "mlsstat2026.csv").write_text(
+                "Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n"
+                "2026-03-01,Inter Miami,Atlanta Utd,1,0,H\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(cr, "_club_season_processed_roots", return_value=[str(root)]):
+                pairs = cr._iter_current_club_season_csv_files()
+        comps = {c for c, _ in pairs}
+        self.assertIn("England/Premier League", comps)
+        self.assertNotIn("United States/MLS", comps)
+        pl_paths = [p for c, p in pairs if c == "England/Premier League"]
+        self.assertEqual(len(pl_paths), 1)
+        self.assertTrue(pl_paths[0].endswith("premstat2026-27.csv"))
+
+    def test_batch_load_includes_season_csv_without_duplicating_live(self):
+        import tempfile
+        import competition_rules as cr
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "Processed_Data"
+            pl = root / "England" / "Premier League"
+            pl.mkdir(parents=True)
+            (pl / "premstat2026-27.csv").write_text(
+                "Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n"
+                "2026-08-15,Arsenal,Chelsea,2,1,H\n"
+                "2026-08-22,Liverpool,Everton,3,0,H\n",
+                encoding="utf-8",
+            )
+            live = [
+                {
+                    "competition": "England/Premier League",
+                    "home_team": "Arsenal",
+                    "away_team": "Chelsea",
+                    "home_score": 2,
+                    "away_score": 1,
+                    "status": "post",
+                    "match_date": "2026-08-15",
+                }
+            ]
+            with mock.patch.object(cr, "_club_season_processed_roots", return_value=[str(root)]):
+                with mock.patch.object(cr, "_find_latest_mls_season_file", return_value=None):
+                    with mock.patch.object(cr, "_find_latest_liga_mx_season_file", return_value=None):
+                        with mock.patch.object(cr.config, "LIVE_SCORE_HISTORY_FILE", "/no/such/history.json"):
+                            with mock.patch.object(cr.config, "PAST_GAMES_FILE", "/no/such/past.json"):
+                                with mock.patch.object(cr, "NATIONAL_MATCHES_CSV", "/no/nat.csv"):
+                                    with mock.patch.object(cr, "WORLD_CUP_PROJECTION_FILE", "/no/wc.json"):
+                                        # Avoid reading real upcoming CSVs
+                                        with mock.patch("os.path.exists", side_effect=lambda p: str(p).endswith(".csv") and "premstat" in str(p)):
+                                            by_comp = {"England/Premier League": []}
+                                            seen = {"England/Premier League": set()}
+                                            for g in live:
+                                                cr._append_game(by_comp["England/Premier League"], seen["England/Premier League"], g)
+                                            for comp, path in cr._iter_current_club_season_csv_files():
+                                                cr._batch_mls_or_liga_mx(by_comp, seen, comp, path)
+        games = by_comp["England/Premier League"]
+        # Arsenal-Chelsea from live kept once; Liverpool-Everton added from CSV.
+        pairs = {(g["home_team"], g["away_team"]) for g in games}
+        self.assertEqual(len(games), 2)
+        self.assertIn(("Arsenal", "Chelsea"), pairs)
+        self.assertIn(("Liverpool", "Everton"), pairs)
+
+
+class LeagueDataCacheRebuildTests(unittest.TestCase):
+    def test_clear_and_rebuild_helpers_exist(self):
+        import league_data as ld
+
+        self.assertTrue(callable(ld.clear_league_data_caches))
+        self.assertTrue(callable(ld.rebuild_league_data_caches))
+        comps = ld.league_data_rebuild_competitions()
+        self.assertIn("England/Premier League", comps)
+        self.assertIn("England/FA Cup", comps)
+
+    def test_clear_removes_disk_and_mem(self):
+        import json
+        import tempfile
+        import league_data as ld
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "england_premier_league.json"
+            path.write_text(json.dumps({"ok": True}), encoding="utf-8")
+            with mock.patch.object(ld.config, "LEAGUE_DATA_DIR", tmp):
+                with ld._LEAGUE_DATA_MEM_LOCK:
+                    ld._LEAGUE_DATA_MEM["England/Premier League"] = (9999999999.0, {"ok": True})
+                removed = ld.clear_league_data_caches()
+            self.assertEqual(removed, 1)
+            self.assertFalse(path.exists())
+            with ld._LEAGUE_DATA_MEM_LOCK:
+                self.assertNotIn("England/Premier League", ld._LEAGUE_DATA_MEM)
+
+
+class CupsFailFastTests(unittest.TestCase):
+    def test_cups_last_uses_fail_fast(self):
+        import ast
+
+        src = (ROOT_DIR / "Run_All_Pipeline.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        fn = None
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef) and node.name == "_run_cups_last":
+                fn = node
+                break
+        self.assertIsNotNone(fn)
+        text = ast.get_source_segment(src, fn) or ""
+        self.assertIn("continue_on_error=False", text)
+        self.assertNotIn("continue_on_error=True", text)
+        self.assertIn("_StepError", text)
+
+
 if __name__ == "__main__":
     unittest.main()

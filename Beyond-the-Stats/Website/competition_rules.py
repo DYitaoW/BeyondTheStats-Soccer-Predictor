@@ -43,6 +43,13 @@ MLS_WESTERN_CONFERENCE_TEAMS = frozenset({
 
 MLS_SEASON_FILE_RE = re.compile(r"^mlsstat(\d{4})\.csv$", re.IGNORECASE)
 LIGA_MX_SEASON_FILE_RE = re.compile(r"^mexstat(\d{4})\.csv$", re.IGNORECASE)
+# football-data Processed_Data season files: premstat2026-27.csv / norstat2026.csv
+CLUB_SEASON_FILE_RE = re.compile(
+    r"^(.+stat)(\d{4})(?:-(\d{2}))?\.csv$",
+    re.IGNORECASE,
+)
+# Dedicated MLS / Liga MX loaders already cover these prefixes.
+_DEDICATED_SEASON_PREFIXES = ("mlsstat", "mexstat")
 
 # Non-regular-season markers that sometimes land in the MLS games bucket
 # (US Open Cup, Leagues Cup, friendlies, MLS Cup playoffs, etc.).
@@ -296,7 +303,16 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
     _batch_mls_or_liga_mx(by_comp, seen_by_comp, config.LIGA_MX_COMPETITION,
                           _find_latest_liga_mx_season_file(), resolve_liga_mx_team_name)
 
-    # ── 9. MLS / Liga MX name resolution (all sources, not just CSV) ──
+    # ── 9. European / Extra club season CSVs (current season only) ─
+    # Live history + settled CSVs above win on duplicates via _append_game.
+    # Only the in-progress season file is loaded; standings also apply
+    # filter_games_to_active_season so prior-season rows cannot leak in.
+    for comp_name, season_path in _iter_current_club_season_csv_files():
+        if comp_name in {"United States/MLS", config.LIGA_MX_COMPETITION}:
+            continue
+        _batch_mls_or_liga_mx(by_comp, seen_by_comp, comp_name, season_path)
+
+    # ── 10. MLS / Liga MX name resolution (all sources, not just CSV) ──
     for g in by_comp.get("United States/MLS", []):
         g["home_team"] = resolve_mls_team_name(g.get("home_team", ""))
         g["away_team"] = resolve_mls_team_name(g.get("away_team", ""))
@@ -387,7 +403,15 @@ def _batch_mls_or_liga_mx(
         date_raw = str(row.get("Date", "")).strip()
         match_date = ""
         if date_raw:
+            # Processed football-data files are usually ISO after Process_Data, but
+            # European raw leftovers are DD/MM/YYYY. Try the primary convention
+            # first, then the other, so standings never drop finished games for
+            # a date-format miss.
             match_date = _parse_season_csv_date(date_raw, dayfirst=(not processed))
+            if not match_date:
+                match_date = _parse_season_csv_date(date_raw, dayfirst=processed)
+            if not match_date and " " in date_raw:
+                match_date = _parse_season_csv_date(date_raw.split(" ")[0], dayfirst=True)
 
         _append_game(by_comp[comp_name], seen_by_comp[comp_name], {
             "competition": comp_name,
@@ -679,6 +703,80 @@ def resolve_liga_mx_team_name(raw_name: str) -> str:
 
 _find_latest_mls_season_cache: str | None = None
 _find_latest_liga_mx_cache: str | None = None
+
+
+def _club_season_processed_roots() -> list[str]:
+    """Processed_Data trees that hold European / Extra club season CSVs."""
+    return [
+        os.path.join(config.PROJECT_DIR, "Data", "Processed_Data"),
+        os.path.join(config.PROJECT_DIR, "Extra-leagues", "Data", "Processed_Data"),
+    ]
+
+
+def _competition_from_processed_season_path(path: str, root: str) -> str | None:
+    """Map ``.../Processed_Data/England/Premier League/premstat2026-27.csv`` → competition."""
+    try:
+        rel = os.path.relpath(path, root)
+    except ValueError:
+        return None
+    parts = [p for p in rel.replace("\\", "/").split("/") if p]
+    if len(parts) < 2:
+        return None
+    # Country/League/file.csv
+    if len(parts) >= 3:
+        return f"{parts[0]}/{parts[1]}"
+    return None
+
+
+def _iter_current_club_season_csv_files() -> list[tuple[str, str]]:
+    """Return ``(competition, path)`` for in-progress club season CSVs only.
+
+    Accuracy rules:
+    - Skip ``mlsstat`` / ``mexstat`` (dedicated loaders already ingest those).
+    - Only load the *current* season file per ``season_calendar.is_in_progress_season``.
+    - One file per competition (prefer the newest matching path if duplicates).
+    """
+    try:
+        import sys as _sys
+
+        _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        import season_calendar as sc
+    except Exception:
+        return []
+
+    found: dict[str, tuple[int, str]] = {}
+    for root in _club_season_processed_roots():
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _, files in os.walk(root):
+            for name in files:
+                match = CLUB_SEASON_FILE_RE.match(name)
+                if not match:
+                    continue
+                lower = name.lower()
+                if lower.startswith(_DEDICATED_SEASON_PREFIXES):
+                    continue
+                try:
+                    start_year = int(match.group(2))
+                except (TypeError, ValueError):
+                    continue
+                if not sc.is_in_progress_season(start_year, name):
+                    continue
+                path = os.path.join(dirpath, name)
+                comp = _competition_from_processed_season_path(path, root)
+                if not comp:
+                    continue
+                # Prefer newer mtime when the same competition appears in multiple trees.
+                try:
+                    mtime = int(os.path.getmtime(path))
+                except OSError:
+                    mtime = 0
+                prev = found.get(comp)
+                if prev is None or mtime >= prev[0]:
+                    found[comp] = (mtime, path)
+    return [(comp, path) for comp, (_mtime, path) in sorted(found.items())]
 
 
 def _find_latest_mls_season_file() -> str | None:
