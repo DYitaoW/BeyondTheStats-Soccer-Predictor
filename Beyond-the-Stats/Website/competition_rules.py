@@ -63,6 +63,17 @@ _UEFA_COMPETITIONS = frozenset({
     "Europe/Champions League", "Europe/Europa League", "Europe/Conference League",
 })
 
+# International "majors" that legitimately run group/league-phase tables (World Cup,
+# continental championships, majors with group stages). Other cups are stripped of
+# standings tables entirely (non-whitelisted cups → no table layout).
+_MAJOR_INTERNATIONAL_TABLES = frozenset({
+    "International/World Cup",
+    "Europe/European Championship", "Europe/Euros", "Europe/Euro",
+    "South America/Copa America", "South America/Copa América",
+    "Africa/Africa Cup of Nations", "Africa/AFCON",
+    "North America/Gold Cup", "North America/CONCACAF Gold Cup",
+})
+
 NATIONAL_MATCHES_CSV = os.path.join(
     config.PROJECT_DIR, "Data", "National_Team_Data", "national_team_recent_matches_raw.csv"
 )
@@ -1353,13 +1364,19 @@ def standings_layout_for(comp_name: str) -> str:
         return STANDINGS_LAYOUT_SCOTTISH
     if base_comp in _UEFA_COMPETITIONS:
         return STANDINGS_LAYOUT_LEAGUE_PHASE
+    # Only whitelisted major international tournaments keep a group/league-phase
+    # table layout. All other cups return the no-table sentinel so their API
+    # payload carries no standings table at all.
     fmt = cup_format(base_comp)
-    if fmt and fmt.get("format") == "dual_league_phase_then_knockout":
-        return STANDINGS_LAYOUT_LEAGUES_CUP
-    if fmt and fmt.get("format") == "league_phase_then_knockout":
-        return STANDINGS_LAYOUT_LEAGUE_PHASE
-    if fmt and fmt.get("format") == "group_stage_then_knockout":
-        return STANDINGS_LAYOUT_CUP_GROUPS
+    if base_comp in _MAJOR_INTERNATIONAL_TABLES:
+        if fmt and fmt.get("format") == "dual_league_phase_then_knockout":
+            return STANDINGS_LAYOUT_LEAGUES_CUP
+        if fmt and fmt.get("format") == "league_phase_then_knockout":
+            return STANDINGS_LAYOUT_LEAGUE_PHASE
+        if fmt and fmt.get("format") == "group_stage_then_knockout":
+            return STANDINGS_LAYOUT_CUP_GROUPS
+    if fmt and not base_comp in _MAJOR_INTERNATIONAL_TABLES:
+        return STANDINGS_LAYOUT_SINGLE
     return STANDINGS_LAYOUT_SINGLE
 
 
