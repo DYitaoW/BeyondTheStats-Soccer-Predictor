@@ -19,6 +19,7 @@ from competition_rules import (
     competition_format_spec,
     resolve_competition_query,
     standings_layout_for,
+    STANDINGS_LAYOUT_KNOCKOUT,
     STANDINGS_LAYOUT_LEAGUES_CUP,
     STANDINGS_LAYOUT_MLS,
 )
@@ -1146,11 +1147,14 @@ def build_league_data_payload(comp_name: str) -> dict:
 
 def _build_league_data_payload_uncached(comp: str) -> dict:
     fmt = competition_format_spec(comp)
+    layout = standings_layout_for(comp)
+    # Pure knockout cups have no league/group table — keep bracket + finish odds only.
+    omit_tables = layout == STANDINGS_LAYOUT_KNOCKOUT
 
     # Load independent data sources in parallel.
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        f_table = pool.submit(_load_usable_projected_table, comp)
-        f_standings = pool.submit(_load_real_standings, comp)
+        f_table = pool.submit(lambda: [] if omit_tables else _load_usable_projected_table(comp))
+        f_standings = pool.submit(lambda: None if omit_tables else _load_real_standings(comp))
         f_bracket = pool.submit(_build_bracket_section, comp)
         f_fixtures = pool.submit(_load_fixtures, comp)
 
@@ -1174,7 +1178,10 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
         else (_build_winner_probability_payload(comp_table, competition=comp) if comp_table else {})
     )
 
-    if not predicted_table:
+    if omit_tables:
+        predicted_table = []
+        winner_fields = {}
+    elif not predicted_table:
         predicted_table, roster_winners = _roster_predicted_table(comp)
         if predicted_table:
             winner_fields = _build_winner_probability_payload(predicted_table, competition=comp)
@@ -1200,10 +1207,14 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
             predicted_table.append(base)
         winner_fields = _build_winner_probability_payload(predicted_table, competition=comp) if predicted_table else winner_fields
 
-    position_odds = _build_position_odds(predicted_table)
-    predicted_groups = _load_predicted_groups(comp, predicted_table, real_standings=real_standings)
-    if not predicted_table and real_standings and standings_layout_for(comp) == "league_phase":
-        predicted_groups = real_standings.get("groups") or predicted_groups
+    if omit_tables:
+        position_odds = {"simple": {}, "detailed": {}}
+        predicted_groups = None
+    else:
+        position_odds = _build_position_odds(predicted_table)
+        predicted_groups = _load_predicted_groups(comp, predicted_table, real_standings=real_standings)
+        if not predicted_table and real_standings and standings_layout_for(comp) == "league_phase":
+            predicted_groups = real_standings.get("groups") or predicted_groups
 
     winners_odds = winner_fields.get("winners_odds", [])
     predicted = {
@@ -1267,3 +1278,96 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
     _write_league_data_cache(comp, payload)
 
     return payload
+
+
+def clear_league_data_caches() -> int:
+    """Drop in-memory and on-disk LeagueData caches (sticky empty payloads).
+
+    Returns the number of disk cache files removed.
+    """
+    with _LEAGUE_DATA_MEM_LOCK:
+        _LEAGUE_DATA_MEM.clear()
+    with _LEAGUE_DATA_CSV_CACHE_LOCK:
+        _LEAGUE_DATA_CSV_CACHE.clear()
+
+    removed = 0
+    cache_dir = getattr(config, "LEAGUE_DATA_DIR", "") or ""
+    if cache_dir and os.path.isdir(cache_dir):
+        for name in os.listdir(cache_dir):
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(cache_dir, name)
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
+def league_data_rebuild_competitions() -> list[str]:
+    """Competitions to eagerly rebuild after a pipeline publish."""
+    comps: set[str] = set()
+    comps.update(getattr(config, "LIVE_SCORE_COMPETITIONS", {}) or {})
+    comps.update(getattr(config, "_CUP_FORMATS", {}) or {})
+    comps.update(getattr(config, "MLS_TABLE_VIEW_ALIASES", set()) or set())
+    comps.update(getattr(config, "RESULT_ONLY_COMPETITIONS", set()) or set())
+    # Drop friendlies — they are not league-data table targets.
+    comps.discard(getattr(config, "CLUB_FRIENDLIES_COMPETITION", ""))
+    comps.discard("International/Friendly")
+    return sorted(c for c in comps if c)
+
+
+def rebuild_league_data_caches(
+    competitions: list[str] | None = None,
+    *,
+    clear_first: bool = True,
+    max_workers: int = 4,
+) -> dict[str, bool]:
+    """Clear (optional) and rebuild LeagueData caches after pipeline output lands.
+
+    Forces a fresh competition-games index so standings pick up newly ingested
+    season CSVs, then rebuilds each payload so clients do not wait on the
+    ~10 minute sticky TTL for empty/stale caches (#14).
+    """
+    if clear_first:
+        removed = clear_league_data_caches()
+        print(f"[league-data] cleared caches ({removed} disk files)")
+
+    try:
+        from competition_rules import warm_competition_games_cache
+
+        warm_competition_games_cache(force=True)
+    except Exception as exc:
+        print(f"[league-data] games-cache warm failed: {exc}")
+
+    try:
+        from standings import _clear_all_real_data_caches
+
+        _clear_all_real_data_caches()
+    except Exception:
+        pass
+
+    comps = list(competitions) if competitions is not None else league_data_rebuild_competitions()
+    if not comps:
+        return {}
+
+    results: dict[str, bool] = {}
+    workers = max(1, min(int(max_workers or 1), 8))
+
+    def _one(comp: str) -> tuple[str, bool]:
+        try:
+            _build_league_data_payload_uncached(comp)
+            return comp, True
+        except Exception as exc:
+            print(f"[league-data] rebuild failed for {comp}: {exc}")
+            return comp, False
+
+    print(f"[league-data] rebuilding {len(comps)} competition cache(s) (workers={workers})")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        for comp, ok in pool.map(_one, comps):
+            results[comp] = ok
+
+    passed = sum(1 for ok in results.values() if ok)
+    print(f"[league-data] rebuild done: {passed}/{len(results)} ok")
+    return results

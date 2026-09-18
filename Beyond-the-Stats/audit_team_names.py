@@ -82,12 +82,12 @@ ESPN_IDS = {
     "Brazil/Brasileirão": "bra.1",
     "Japan/J1 League": "jpn.1",
     "England/FA Cup": "eng.fa",
-    "England/League Cup": "eng.efl",
+    "England/League Cup": "eng.league_cup",
     "Spain/Copa del Rey": "esp.copa_del_rey",
     "Germany/DFB-Pokal": "ger.dfb_pokal",
     "France/Coupe de France": "fra.coupe_de_france",
-    "Italy/Coppa Italia": "ita.coppa",
-    "United States/US Open Cup": "usa.open_cup",
+    "Italy/Coppa Italia": "ita.coppa_italia",
+    "United States/US Open Cup": "usa.open",
     "North America/Leagues Cup": "concacaf.leagues.cup",
     "Europe/Champions League": "uefa.champions",
     "Europe/Europa League": "uefa.europa",
@@ -98,8 +98,8 @@ ESPN_IDS = {
 }
 
 CUP_SCOREBOARD_IDS = {
-    "eng.fa", "eng.efl", "ita.coppa", "esp.copa_del_rey",
-    "ger.dfb_pokal", "fra.coupe_de_france", "usa.open_cup",
+    "eng.fa", "eng.league_cup", "ita.coppa_italia", "esp.copa_del_rey",
+    "ger.dfb_pokal", "fra.coupe_de_france", "usa.open",
     "concacaf.leagues.cup", "uefa.champions", "uefa.europa",
     "uefa.europa.conf", "fifa.world", "fifa.friendly", "club.friendly",
 }

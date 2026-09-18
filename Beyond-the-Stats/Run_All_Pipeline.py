@@ -878,25 +878,47 @@ def _run_cups_last(args):
 
     Order matters: ``Predict_Upcoming_Cups.py`` refreshes the upcoming cup
     predictions first, then ``Track_Cup_Results.py`` settles them and rebuilds
-    the projected cup tables/brackets from the freshest data. Cups depend on
-    the league predictions above, and are best-effort: their failures are
-    recorded but never abort the pipeline."""
+    the projected cup tables/brackets from the freshest data.
+
+    Cups still run after league failures so outputs do not go stale, but cup
+    step failures are never swallowed (audit #15): they always use fail-fast
+    so a broken Predict/Track stops the cup sequence and marks the pipeline.
+    """
     py = sys.executable
     sub = {}
-    if not args.skip_global:
-        sub["global_upcoming_cups"] = run_step(
-            "[global] Upcoming cup predictions (last)",
-            [py, str(FILES_DIR / "Predict_Upcoming_Cups.py"), "--window-days", str(args.cup_window_days)],
-            continue_on_error=True,
-            timeout=3600,
+
+    def _inner():
+        out = {}
+        if not args.skip_global:
+            # Always fail-fast for cups — do not inherit league continue_on_error.
+            out["global_upcoming_cups"] = run_step(
+                "[global] Upcoming cup predictions (last)",
+                [py, str(FILES_DIR / "Predict_Upcoming_Cups.py"), "--window-days", str(args.cup_window_days)],
+                continue_on_error=False,
+                timeout=3600,
+            )
+            out["track_cup_results"] = run_step(
+                "Track completed cup predictions and cup projections",
+                [py, str(FILES_DIR / "Track_Cup_Results.py")],
+                continue_on_error=False,
+                timeout=1800,
+            )
+        return out
+
+    try:
+        return _inner()
+    except _StepError as exc:
+        print(
+            f"\n[barrier] cup steps stopped after '{exc.name}' failed "
+            f"(cup failures are never ignored)",
+            flush=True,
         )
-        sub["track_cup_results"] = run_step(
-            "Track completed cup predictions and cup projections",
-            [py, str(FILES_DIR / "Track_Cup_Results.py")],
-            continue_on_error=True,
-            timeout=1800,
-        )
-    return sub
+        key = "global_upcoming_cups"
+        lowered = str(exc.name or "").lower()
+        if "track" in lowered:
+            key = "track_cup_results"
+        sub[key] = False
+        return sub
 
 
 def _check_dependencies():
@@ -1213,6 +1235,36 @@ def _write_pipeline_status(results: dict) -> None:
         print(f"[WARN] Could not write {PIPELINE_STATUS_FILE}: {exc}")
 
 
+def _rebuild_league_data_caches_after_pipeline():
+    """Clear sticky LeagueData caches and rebuild from fresh pipeline outputs."""
+    website_dir = SP_DIR / "Website"
+    if str(website_dir) not in sys.path:
+        sys.path.insert(0, str(website_dir))
+    try:
+        from league_data import rebuild_league_data_caches
+
+        rebuild_league_data_caches(clear_first=True)
+    except Exception as exc:
+        print(f"[WARN] league-data cache rebuild failed: {exc}")
+        import traceback
+        traceback.print_exc()
+
+
+def _rebuild_cup_data_caches_after_pipeline():
+    """Clear sticky CupData caches and rebuild from fresh cup projections."""
+    website_dir = SP_DIR / "Website"
+    if str(website_dir) not in sys.path:
+        sys.path.insert(0, str(website_dir))
+    try:
+        from cup_data import rebuild_cup_data_caches
+
+        rebuild_cup_data_caches(clear_first=True)
+    except Exception as exc:
+        print(f"[WARN] cup-data cache rebuild failed: {exc}")
+        import traceback
+        traceback.print_exc()
+
+
 def main():
     args = parse_args()
     api_token = load_api_token()
@@ -1229,6 +1281,8 @@ def main():
             publish_to_output()
         except Exception as exc:
             print(f"[WARN] publish_to_output failed: {exc}")
+        _rebuild_league_data_caches_after_pipeline()
+        _rebuild_cup_data_caches_after_pipeline()
         print("\nPipeline complete.")
     finally:
         pipeline_log.deactivate_stdout_tee()

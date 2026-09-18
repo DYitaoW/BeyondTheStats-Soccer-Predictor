@@ -13,7 +13,7 @@ import config
 
 KNOCKOUT_ROUND_RE = re.compile(
     r"(round of \d+|last \d+|quarter.?final|semi.?final|third place|"
-    r"knockout|play-?off|final(?!\s+group)|\bround\b|ro\d+)",
+    r"knockout|play-?off|final(?!\s+group)|ro\d+)",
     re.IGNORECASE,
 )
 GROUP_ROUND_RE = re.compile(
@@ -43,6 +43,13 @@ MLS_WESTERN_CONFERENCE_TEAMS = frozenset({
 
 MLS_SEASON_FILE_RE = re.compile(r"^mlsstat(\d{4})\.csv$", re.IGNORECASE)
 LIGA_MX_SEASON_FILE_RE = re.compile(r"^mexstat(\d{4})\.csv$", re.IGNORECASE)
+# football-data Processed_Data season files: premstat2026-27.csv / norstat2026.csv
+CLUB_SEASON_FILE_RE = re.compile(
+    r"^(.+stat)(\d{4})(?:-(\d{2}))?\.csv$",
+    re.IGNORECASE,
+)
+# Dedicated MLS / Liga MX loaders already cover these prefixes.
+_DEDICATED_SEASON_PREFIXES = ("mlsstat", "mexstat")
 
 # Non-regular-season markers that sometimes land in the MLS games bucket
 # (US Open Cup, Leagues Cup, friendlies, MLS Cup playoffs, etc.).
@@ -296,7 +303,16 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
     _batch_mls_or_liga_mx(by_comp, seen_by_comp, config.LIGA_MX_COMPETITION,
                           _find_latest_liga_mx_season_file(), resolve_liga_mx_team_name)
 
-    # ── 9. MLS / Liga MX name resolution (all sources, not just CSV) ──
+    # ── 9. European / Extra club season CSVs (current season only) ─
+    # Live history + settled CSVs above win on duplicates via _append_game.
+    # Only the in-progress season file is loaded; standings also apply
+    # filter_games_to_active_season so prior-season rows cannot leak in.
+    for comp_name, season_path in _iter_current_club_season_csv_files():
+        if comp_name in {"United States/MLS", config.LIGA_MX_COMPETITION}:
+            continue
+        _batch_mls_or_liga_mx(by_comp, seen_by_comp, comp_name, season_path)
+
+    # ── 10. MLS / Liga MX name resolution (all sources, not just CSV) ──
     for g in by_comp.get("United States/MLS", []):
         g["home_team"] = resolve_mls_team_name(g.get("home_team", ""))
         g["away_team"] = resolve_mls_team_name(g.get("away_team", ""))
@@ -387,7 +403,15 @@ def _batch_mls_or_liga_mx(
         date_raw = str(row.get("Date", "")).strip()
         match_date = ""
         if date_raw:
+            # Processed football-data files are usually ISO after Process_Data, but
+            # European raw leftovers are DD/MM/YYYY. Try the primary convention
+            # first, then the other, so standings never drop finished games for
+            # a date-format miss.
             match_date = _parse_season_csv_date(date_raw, dayfirst=(not processed))
+            if not match_date:
+                match_date = _parse_season_csv_date(date_raw, dayfirst=processed)
+            if not match_date and " " in date_raw:
+                match_date = _parse_season_csv_date(date_raw.split(" ")[0], dayfirst=True)
 
         _append_game(by_comp[comp_name], seen_by_comp[comp_name], {
             "competition": comp_name,
@@ -679,6 +703,80 @@ def resolve_liga_mx_team_name(raw_name: str) -> str:
 
 _find_latest_mls_season_cache: str | None = None
 _find_latest_liga_mx_cache: str | None = None
+
+
+def _club_season_processed_roots() -> list[str]:
+    """Processed_Data trees that hold European / Extra club season CSVs."""
+    return [
+        os.path.join(config.PROJECT_DIR, "Data", "Processed_Data"),
+        os.path.join(config.PROJECT_DIR, "Extra-leagues", "Data", "Processed_Data"),
+    ]
+
+
+def _competition_from_processed_season_path(path: str, root: str) -> str | None:
+    """Map ``.../Processed_Data/England/Premier League/premstat2026-27.csv`` → competition."""
+    try:
+        rel = os.path.relpath(path, root)
+    except ValueError:
+        return None
+    parts = [p for p in rel.replace("\\", "/").split("/") if p]
+    if len(parts) < 2:
+        return None
+    # Country/League/file.csv
+    if len(parts) >= 3:
+        return f"{parts[0]}/{parts[1]}"
+    return None
+
+
+def _iter_current_club_season_csv_files() -> list[tuple[str, str]]:
+    """Return ``(competition, path)`` for in-progress club season CSVs only.
+
+    Accuracy rules:
+    - Skip ``mlsstat`` / ``mexstat`` (dedicated loaders already ingest those).
+    - Only load the *current* season file per ``season_calendar.is_in_progress_season``.
+    - One file per competition (prefer the newest matching path if duplicates).
+    """
+    try:
+        import sys as _sys
+
+        _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        import season_calendar as sc
+    except Exception:
+        return []
+
+    found: dict[str, tuple[int, str]] = {}
+    for root in _club_season_processed_roots():
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _, files in os.walk(root):
+            for name in files:
+                match = CLUB_SEASON_FILE_RE.match(name)
+                if not match:
+                    continue
+                lower = name.lower()
+                if lower.startswith(_DEDICATED_SEASON_PREFIXES):
+                    continue
+                try:
+                    start_year = int(match.group(2))
+                except (TypeError, ValueError):
+                    continue
+                if not sc.is_in_progress_season(start_year, name):
+                    continue
+                path = os.path.join(dirpath, name)
+                comp = _competition_from_processed_season_path(path, root)
+                if not comp:
+                    continue
+                # Prefer newer mtime when the same competition appears in multiple trees.
+                try:
+                    mtime = int(os.path.getmtime(path))
+                except OSError:
+                    mtime = 0
+                prev = found.get(comp)
+                if prev is None or mtime >= prev[0]:
+                    found[comp] = (mtime, path)
+    return [(comp, path) for comp, (_mtime, path) in sorted(found.items())]
 
 
 def _find_latest_mls_season_file() -> str | None:
@@ -1147,10 +1245,28 @@ def classify_match_stage(game: dict, comp_name: str, team_to_group: dict[str, st
         return "group"
     if GROUP_ROUND_RE.search(round_lower):
         return "group"
+
+    fmt = cup_format(comp_name)
+
+    # Leagues Cup Phase One labels often contain bare "Round N". Handle the
+    # dual-league format BEFORE the generic knockout regex so Phase One stays
+    # a group/table stage.
+    if fmt and fmt.get("format") == "dual_league_phase_then_knockout":
+        if (
+            "quarter" in round_lower
+            or "semi" in round_lower
+            or "final" in round_lower
+            or "third place" in round_lower
+            or "knockout" in round_lower
+        ):
+            return "knockout"
+        if "phase one" in round_lower or "phase 1" in round_lower:
+            return "group"
+        return "group"
+
     if KNOCKOUT_ROUND_RE.search(round_lower):
         return "knockout"
 
-    fmt = cup_format(comp_name)
     if comp_name == "International/World Cup":
         lookup = team_to_group if team_to_group is not None else {}
         home = canonical_team_name(game.get("home_team", ""), comp_name)
@@ -1168,15 +1284,6 @@ def classify_match_stage(game: dict, comp_name: str, team_to_group: dict[str, st
 
     if fmt and fmt.get("format") == "knockout":
         return "knockout"
-
-    if fmt and fmt.get("format") == "dual_league_phase_then_knockout":
-        # Phase One (MLS↔Liga MX) vs knockout rounds (QF+).
-        if KNOCKOUT_ROUND_RE.search(round_lower) or "third place" in round_lower:
-            return "knockout"
-        if "phase one" in round_lower or "phase 1" in round_lower:
-            return "group"
-        # Default unfinished / unlabeled matches to Phase One.
-        return "group"
 
     if fmt and fmt.get("format") == "group_stage_then_knockout":
         lookup = team_to_group or {}
@@ -1331,6 +1438,23 @@ STANDINGS_LAYOUT_LEAGUE_PHASE = "league_phase"
 STANDINGS_LAYOUT_CUP_GROUPS = "cup_groups"
 STANDINGS_LAYOUT_LIGA_MX = "liga_mx_tournament"
 STANDINGS_LAYOUT_LEAGUES_CUP = "leagues_cup_dual"
+# Pure knockout cups (FA Cup, domestic cups, etc.) — no league/group table.
+STANDINGS_LAYOUT_KNOCKOUT = "knockout_bracket"
+
+# Cup API format styles for /api/cup-data (three main product shapes).
+CUP_FORMAT_STYLE_KNOCKOUT = "knockout"
+CUP_FORMAT_STYLE_TABLE_KNOCKOUT = "table_knockout"
+CUP_FORMAT_STYLE_GROUP_KNOCKOUT = "group_knockout"
+
+# Stable position-odds stage keys for cup finish depth (league-data analog).
+CUP_POSITION_STAGE_WINNER = "Winner"
+CUP_POSITION_STAGE_FINAL = "Final"
+CUP_POSITION_STAGE_SF = "SF"
+CUP_POSITION_STAGE_QF = "QF"
+CUP_POSITION_STAGE_RO16 = "RO16"
+CUP_POSITION_STAGE_RO32 = "RO32"
+CUP_POSITION_STAGE_RO64 = "RO64"
+CUP_POSITION_STAGE_PLAYOFF = "Playoff"
 
 LEAGUES_CUP_COMPETITION = "North America/Leagues Cup"
 LEAGUES_CUP_TABLE_MLS = "MLS"
@@ -1364,9 +1488,8 @@ def standings_layout_for(comp_name: str) -> str:
         return STANDINGS_LAYOUT_SCOTTISH
     if base_comp in _UEFA_COMPETITIONS:
         return STANDINGS_LAYOUT_LEAGUE_PHASE
-    # Only whitelisted major international tournaments keep a group/league-phase
-    # table layout. All other cups return the no-table sentinel so their API
-    # payload carries no standings table at all.
+    # Club UEFA already handled. National-team majors with groups/league-phase
+    # keep tables; pure knockout cups return knockout_bracket (no table).
     fmt = cup_format(base_comp)
     if base_comp in _MAJOR_INTERNATIONAL_TABLES:
         if fmt and fmt.get("format") == "dual_league_phase_then_knockout":
@@ -1375,9 +1498,110 @@ def standings_layout_for(comp_name: str) -> str:
             return STANDINGS_LAYOUT_LEAGUE_PHASE
         if fmt and fmt.get("format") == "group_stage_then_knockout":
             return STANDINGS_LAYOUT_CUP_GROUPS
-    if fmt and not base_comp in _MAJOR_INTERNATIONAL_TABLES:
-        return STANDINGS_LAYOUT_SINGLE
+    if fmt:
+        if fmt.get("format") == "dual_league_phase_then_knockout":
+            return STANDINGS_LAYOUT_LEAGUES_CUP
+        if fmt.get("format") == "league_phase_then_knockout":
+            return STANDINGS_LAYOUT_LEAGUE_PHASE
+        if fmt.get("format") == "group_stage_then_knockout":
+            return STANDINGS_LAYOUT_CUP_GROUPS
+        # Domestic FA Cup / Copa / Pokal / Open Cup / etc.
+        return STANDINGS_LAYOUT_KNOCKOUT
     return STANDINGS_LAYOUT_SINGLE
+
+
+def cup_format_style_for(comp_name: str) -> str | None:
+    """Return one of the three cup-data format styles, or None if not a cup.
+
+    Styles:
+      - ``knockout`` — pure bracket (FA Cup, Copa, …)
+      - ``table_knockout`` — league/dual phase table then knockout (UEFA, Leagues Cup)
+      - ``group_knockout`` — group stage then knockout (WC, continental majors)
+    """
+    base_comp, _view = resolve_competition_query(comp_name)
+    fmt = cup_format(base_comp)
+    if not fmt and base_comp not in getattr(config, "CUP_COMPETITIONS", set()):
+        if base_comp not in _MAJOR_INTERNATIONAL_TABLES and base_comp not in _UEFA_COMPETITIONS:
+            return None
+    raw = str((fmt or {}).get("format") or "").strip().lower()
+    if raw in {"group_stage_then_knockout"}:
+        return CUP_FORMAT_STYLE_GROUP_KNOCKOUT
+    if raw in {
+        "league_phase_then_knockout",
+        "dual_league_phase_then_knockout",
+    } or base_comp in _UEFA_COMPETITIONS or base_comp == LEAGUES_CUP_COMPETITION:
+        return CUP_FORMAT_STYLE_TABLE_KNOCKOUT
+    if raw in {"knockout", "domestic_knockout"} or fmt or base_comp in getattr(config, "CUP_COMPETITIONS", set()):
+        return CUP_FORMAT_STYLE_KNOCKOUT
+    if base_comp in _MAJOR_INTERNATIONAL_TABLES:
+        return CUP_FORMAT_STYLE_GROUP_KNOCKOUT
+    return None
+
+
+def _normalize_cup_stage_key(round_name: str) -> str | None:
+    """Map free-text round labels onto stable cup position-odds keys."""
+    text = str(round_name or "").strip().lower()
+    if not text:
+        return None
+    if text in {"champion", "winner", "win"}:
+        return CUP_POSITION_STAGE_WINNER
+    if "playoff" in text or "play-off" in text:
+        return CUP_POSITION_STAGE_PLAYOFF
+    if "final" in text and "semi" not in text and "quarter" not in text and "third" not in text:
+        return CUP_POSITION_STAGE_FINAL
+    if "semi" in text:
+        return CUP_POSITION_STAGE_SF
+    if "quarter" in text:
+        return CUP_POSITION_STAGE_QF
+    if "round of 16" in text or text in {"r16", "ro16", "last 16"}:
+        return CUP_POSITION_STAGE_RO16
+    if "round of 32" in text or text in {"r32", "ro32", "last 32"}:
+        return CUP_POSITION_STAGE_RO32
+    if "round of 64" in text or text in {"r64", "ro64", "last 64"}:
+        return CUP_POSITION_STAGE_RO64
+    return None
+
+
+def cup_position_stages_for(comp_name: str) -> list[str]:
+    """Ordered finish-depth stages for cup position_odds (Winner → deepest listed)."""
+    base_comp, _view = resolve_competition_query(comp_name)
+    fmt = cup_format(base_comp) or {}
+    stages = list(fmt.get("knockout_rounds") or fmt.get("stages") or [])
+    keys: list[str] = [CUP_POSITION_STAGE_WINNER]
+    seen = {CUP_POSITION_STAGE_WINNER}
+    # Always expose Final after Winner when any KO stages exist.
+    ordered_defaults = [
+        CUP_POSITION_STAGE_FINAL,
+        CUP_POSITION_STAGE_SF,
+        CUP_POSITION_STAGE_QF,
+        CUP_POSITION_STAGE_RO16,
+        CUP_POSITION_STAGE_RO32,
+        CUP_POSITION_STAGE_RO64,
+        CUP_POSITION_STAGE_PLAYOFF,
+    ]
+    found: set[str] = set()
+    for stage in stages:
+        key = _normalize_cup_stage_key(stage)
+        if key and key != CUP_POSITION_STAGE_WINNER:
+            found.add(key)
+    # If format metadata is thin, still advertise the standard late KO ladder.
+    if not found:
+        found.update({
+            CUP_POSITION_STAGE_FINAL,
+            CUP_POSITION_STAGE_SF,
+            CUP_POSITION_STAGE_QF,
+            CUP_POSITION_STAGE_RO16,
+        })
+    for key in ordered_defaults:
+        if key in found and key not in seen:
+            keys.append(key)
+            seen.add(key)
+    return keys
+
+
+def is_cup_competition(comp_name: str) -> bool:
+    """True when competition should be served by /api/cup-data."""
+    return cup_format_style_for(comp_name) is not None
 
 
 def _liga_mx_roster_keys() -> set[str]:
@@ -1564,10 +1788,29 @@ def competition_format_spec(comp_name: str) -> dict:
         spec["extensions"]["phase_one_matches"] = 3
         spec["extensions"]["knockout"] = True
         spec["extensions"]["no_draws"] = True
+    elif layout == STANDINGS_LAYOUT_KNOCKOUT:
+        spec["notes"].append(
+            "Knockout bracket only — this cup has no league or group table. "
+            "Use projected winner / round-reach odds instead of table position odds."
+        )
+        spec["extensions"]["knockout"] = True
+        spec["extensions"]["has_table"] = False
 
     if cup_fmt:
         spec["format"] = cup_fmt.get("format")
         spec["cup_format"] = cup_fmt
+        style = cup_format_style_for(base_comp)
+        if style:
+            spec["format_style"] = style
+            spec["has_table"] = style in {
+                CUP_FORMAT_STYLE_TABLE_KNOCKOUT,
+                CUP_FORMAT_STYLE_GROUP_KNOCKOUT,
+            }
+            spec["has_groups"] = style == CUP_FORMAT_STYLE_GROUP_KNOCKOUT or (
+                style == CUP_FORMAT_STYLE_TABLE_KNOCKOUT
+                and layout == STANDINGS_LAYOUT_LEAGUES_CUP
+            )
+            spec["position_stages"] = cup_position_stages_for(base_comp)
 
     if tiebreaker == "h2h":
         spec["notes"].append("Among tied teams: head-to-head points before overall goal difference.")
