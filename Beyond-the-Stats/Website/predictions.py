@@ -2671,6 +2671,26 @@ def archive_todays_games_to_past_games_file() -> int:
             stored["match_date_iso"] = date_iso
             all_rows.append(stored)
 
+    # Second, authoritative source: completed rows from live_history.json so
+    # standalone competitions (UCL/UEL/Conference League, national-team
+    # friendlies) that never appear in the upcoming CSVs are never lost.
+    for row in _collect_live_past_game_rows(cutoff_str):
+        date_iso = _past_row_date_iso(row)
+        if not date_iso or date_iso < cutoff_str or date_iso > today_str:
+            continue
+        actual = str(row.get("actual_result", "")).strip().upper()
+        if actual not in {"H", "D", "A"}:
+            continue
+        if _is_placeholder_game(row):
+            continue
+        ck = _past_game_storage_key(row)
+        if not ck or ck in seen:
+            continue
+        seen.add(ck)
+        stored = _json_safe_row(dict(row))
+        stored["match_date_iso"] = date_iso
+        all_rows.append(stored)
+
     if not all_rows:
         return 0
 
