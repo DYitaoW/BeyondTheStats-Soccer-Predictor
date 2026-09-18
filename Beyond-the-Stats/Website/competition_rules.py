@@ -1441,6 +1441,21 @@ STANDINGS_LAYOUT_LEAGUES_CUP = "leagues_cup_dual"
 # Pure knockout cups (FA Cup, domestic cups, etc.) — no league/group table.
 STANDINGS_LAYOUT_KNOCKOUT = "knockout_bracket"
 
+# Cup API format styles for /api/cup-data (three main product shapes).
+CUP_FORMAT_STYLE_KNOCKOUT = "knockout"
+CUP_FORMAT_STYLE_TABLE_KNOCKOUT = "table_knockout"
+CUP_FORMAT_STYLE_GROUP_KNOCKOUT = "group_knockout"
+
+# Stable position-odds stage keys for cup finish depth (league-data analog).
+CUP_POSITION_STAGE_WINNER = "Winner"
+CUP_POSITION_STAGE_FINAL = "Final"
+CUP_POSITION_STAGE_SF = "SF"
+CUP_POSITION_STAGE_QF = "QF"
+CUP_POSITION_STAGE_RO16 = "RO16"
+CUP_POSITION_STAGE_RO32 = "RO32"
+CUP_POSITION_STAGE_RO64 = "RO64"
+CUP_POSITION_STAGE_PLAYOFF = "Playoff"
+
 LEAGUES_CUP_COMPETITION = "North America/Leagues Cup"
 LEAGUES_CUP_TABLE_MLS = "MLS"
 LEAGUES_CUP_TABLE_LIGA_MX = "Liga MX"
@@ -1493,6 +1508,100 @@ def standings_layout_for(comp_name: str) -> str:
         # Domestic FA Cup / Copa / Pokal / Open Cup / etc.
         return STANDINGS_LAYOUT_KNOCKOUT
     return STANDINGS_LAYOUT_SINGLE
+
+
+def cup_format_style_for(comp_name: str) -> str | None:
+    """Return one of the three cup-data format styles, or None if not a cup.
+
+    Styles:
+      - ``knockout`` — pure bracket (FA Cup, Copa, …)
+      - ``table_knockout`` — league/dual phase table then knockout (UEFA, Leagues Cup)
+      - ``group_knockout`` — group stage then knockout (WC, continental majors)
+    """
+    base_comp, _view = resolve_competition_query(comp_name)
+    fmt = cup_format(base_comp)
+    if not fmt and base_comp not in getattr(config, "CUP_COMPETITIONS", set()):
+        if base_comp not in _MAJOR_INTERNATIONAL_TABLES and base_comp not in _UEFA_COMPETITIONS:
+            return None
+    raw = str((fmt or {}).get("format") or "").strip().lower()
+    if raw in {"group_stage_then_knockout"}:
+        return CUP_FORMAT_STYLE_GROUP_KNOCKOUT
+    if raw in {
+        "league_phase_then_knockout",
+        "dual_league_phase_then_knockout",
+    } or base_comp in _UEFA_COMPETITIONS or base_comp == LEAGUES_CUP_COMPETITION:
+        return CUP_FORMAT_STYLE_TABLE_KNOCKOUT
+    if raw in {"knockout", "domestic_knockout"} or fmt or base_comp in getattr(config, "CUP_COMPETITIONS", set()):
+        return CUP_FORMAT_STYLE_KNOCKOUT
+    if base_comp in _MAJOR_INTERNATIONAL_TABLES:
+        return CUP_FORMAT_STYLE_GROUP_KNOCKOUT
+    return None
+
+
+def _normalize_cup_stage_key(round_name: str) -> str | None:
+    """Map free-text round labels onto stable cup position-odds keys."""
+    text = str(round_name or "").strip().lower()
+    if not text:
+        return None
+    if text in {"champion", "winner", "win"}:
+        return CUP_POSITION_STAGE_WINNER
+    if "playoff" in text or "play-off" in text:
+        return CUP_POSITION_STAGE_PLAYOFF
+    if "final" in text and "semi" not in text and "quarter" not in text and "third" not in text:
+        return CUP_POSITION_STAGE_FINAL
+    if "semi" in text:
+        return CUP_POSITION_STAGE_SF
+    if "quarter" in text:
+        return CUP_POSITION_STAGE_QF
+    if "round of 16" in text or text in {"r16", "ro16", "last 16"}:
+        return CUP_POSITION_STAGE_RO16
+    if "round of 32" in text or text in {"r32", "ro32", "last 32"}:
+        return CUP_POSITION_STAGE_RO32
+    if "round of 64" in text or text in {"r64", "ro64", "last 64"}:
+        return CUP_POSITION_STAGE_RO64
+    return None
+
+
+def cup_position_stages_for(comp_name: str) -> list[str]:
+    """Ordered finish-depth stages for cup position_odds (Winner → deepest listed)."""
+    base_comp, _view = resolve_competition_query(comp_name)
+    fmt = cup_format(base_comp) or {}
+    stages = list(fmt.get("knockout_rounds") or fmt.get("stages") or [])
+    keys: list[str] = [CUP_POSITION_STAGE_WINNER]
+    seen = {CUP_POSITION_STAGE_WINNER}
+    # Always expose Final after Winner when any KO stages exist.
+    ordered_defaults = [
+        CUP_POSITION_STAGE_FINAL,
+        CUP_POSITION_STAGE_SF,
+        CUP_POSITION_STAGE_QF,
+        CUP_POSITION_STAGE_RO16,
+        CUP_POSITION_STAGE_RO32,
+        CUP_POSITION_STAGE_RO64,
+        CUP_POSITION_STAGE_PLAYOFF,
+    ]
+    found: set[str] = set()
+    for stage in stages:
+        key = _normalize_cup_stage_key(stage)
+        if key and key != CUP_POSITION_STAGE_WINNER:
+            found.add(key)
+    # If format metadata is thin, still advertise the standard late KO ladder.
+    if not found:
+        found.update({
+            CUP_POSITION_STAGE_FINAL,
+            CUP_POSITION_STAGE_SF,
+            CUP_POSITION_STAGE_QF,
+            CUP_POSITION_STAGE_RO16,
+        })
+    for key in ordered_defaults:
+        if key in found and key not in seen:
+            keys.append(key)
+            seen.add(key)
+    return keys
+
+
+def is_cup_competition(comp_name: str) -> bool:
+    """True when competition should be served by /api/cup-data."""
+    return cup_format_style_for(comp_name) is not None
 
 
 def _liga_mx_roster_keys() -> set[str]:
@@ -1690,6 +1799,18 @@ def competition_format_spec(comp_name: str) -> dict:
     if cup_fmt:
         spec["format"] = cup_fmt.get("format")
         spec["cup_format"] = cup_fmt
+        style = cup_format_style_for(base_comp)
+        if style:
+            spec["format_style"] = style
+            spec["has_table"] = style in {
+                CUP_FORMAT_STYLE_TABLE_KNOCKOUT,
+                CUP_FORMAT_STYLE_GROUP_KNOCKOUT,
+            }
+            spec["has_groups"] = style == CUP_FORMAT_STYLE_GROUP_KNOCKOUT or (
+                style == CUP_FORMAT_STYLE_TABLE_KNOCKOUT
+                and layout == STANDINGS_LAYOUT_LEAGUES_CUP
+            )
+            spec["position_stages"] = cup_position_stages_for(base_comp)
 
     if tiebreaker == "h2h":
         spec["notes"].append("Among tied teams: head-to-head points before overall goal difference.")

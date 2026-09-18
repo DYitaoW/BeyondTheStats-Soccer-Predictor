@@ -70,6 +70,7 @@ WORLD_CUP_PROJECTION_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "wo
 # ── League-Data Cache (pre-computed at pipeline / cached on read) ──
 
 LEAGUE_DATA_DIR = os.path.join(PROJECT_DIR, "Output", "LeagueData")
+CUP_DATA_DIR = os.path.join(PROJECT_DIR, "Output", "CupData")
 
 # ── Info Pages (changes / roadmap / upcoming) ───────────────────────
 

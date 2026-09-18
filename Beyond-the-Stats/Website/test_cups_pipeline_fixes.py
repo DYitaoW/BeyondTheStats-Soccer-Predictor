@@ -281,6 +281,136 @@ class LeagueDataCacheRebuildTests(unittest.TestCase):
                 self.assertNotIn("England/Premier League", ld._LEAGUE_DATA_MEM)
 
 
+class CupFormatStyleTests(unittest.TestCase):
+    def test_knockout_style_for_domestic_cups(self):
+        import competition_rules as cr
+
+        for comp in (
+            "England/FA Cup",
+            "England/League Cup",
+            "Spain/Copa del Rey",
+            "Germany/DFB-Pokal",
+            "France/Coupe de France",
+            "Italy/Coppa Italia",
+            "United States/US Open Cup",
+        ):
+            self.assertEqual(cr.cup_format_style_for(comp), cr.CUP_FORMAT_STYLE_KNOCKOUT, comp)
+            self.assertTrue(cr.is_cup_competition(comp), comp)
+            stages = cr.cup_position_stages_for(comp)
+            self.assertEqual(stages[0], cr.CUP_POSITION_STAGE_WINNER, comp)
+            self.assertIn(cr.CUP_POSITION_STAGE_FINAL, stages, comp)
+            self.assertIn(cr.CUP_POSITION_STAGE_SF, stages, comp)
+
+    def test_table_knockout_for_uefa_and_leagues_cup(self):
+        import competition_rules as cr
+
+        self.assertEqual(
+            cr.cup_format_style_for("Europe/Champions League"),
+            cr.CUP_FORMAT_STYLE_TABLE_KNOCKOUT,
+        )
+        self.assertEqual(
+            cr.cup_format_style_for("North America/Leagues Cup"),
+            cr.CUP_FORMAT_STYLE_TABLE_KNOCKOUT,
+        )
+
+    def test_league_is_not_a_cup(self):
+        import competition_rules as cr
+
+        self.assertIsNone(cr.cup_format_style_for("England/Premier League"))
+        self.assertFalse(cr.is_cup_competition("England/Premier League"))
+
+    def test_normalize_cup_stage_keys(self):
+        import competition_rules as cr
+
+        self.assertEqual(cr._normalize_cup_stage_key("Semi-finals"), cr.CUP_POSITION_STAGE_SF)
+        self.assertEqual(cr._normalize_cup_stage_key("Quarter-finals"), cr.CUP_POSITION_STAGE_QF)
+        self.assertEqual(cr._normalize_cup_stage_key("Round of 16"), cr.CUP_POSITION_STAGE_RO16)
+        self.assertEqual(cr._normalize_cup_stage_key("Final"), cr.CUP_POSITION_STAGE_FINAL)
+        self.assertEqual(cr._normalize_cup_stage_key("Champion"), cr.CUP_POSITION_STAGE_WINNER)
+
+
+class CupDataPayloadTests(unittest.TestCase):
+    def test_rebuild_helpers_exist_and_list_cups(self):
+        import cup_data as cd
+
+        self.assertTrue(callable(cd.clear_cup_data_caches))
+        self.assertTrue(callable(cd.rebuild_cup_data_caches))
+        comps = cd.cup_data_competitions()
+        self.assertIn("England/FA Cup", comps)
+        self.assertIn("Europe/Champions League", comps)
+        self.assertNotIn("England/Premier League", comps)
+
+    def test_clear_removes_disk_and_mem(self):
+        import json
+        import tempfile
+        import cup_data as cd
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "england_fa_cup.json"
+            path.write_text(json.dumps({"ok": True}), encoding="utf-8")
+            with mock.patch.object(cd.config, "CUP_DATA_DIR", tmp):
+                with cd._CUP_DATA_MEM_LOCK:
+                    cd._CUP_DATA_MEM["England/FA Cup"] = (9999999999.0, {"ok": True})
+                removed = cd.clear_cup_data_caches()
+            self.assertEqual(removed, 1)
+            self.assertFalse(path.exists())
+            with cd._CUP_DATA_MEM_LOCK:
+                self.assertNotIn("England/FA Cup", cd._CUP_DATA_MEM)
+
+    def test_stage_position_odds_from_sim_entry(self):
+        import cup_data as cd
+
+        entry = {
+            "winner_probabilities": {"Arsenal": 0.20, "Chelsea": 0.10},
+            "round_reach_probabilities": {
+                "Final": {"Arsenal": 0.35, "Chelsea": 0.25},
+                "Semi-finals": {"Arsenal": 0.50, "Chelsea": 0.40},
+                "Quarter-finals": {"Arsenal": 0.70, "Chelsea": 0.55},
+            },
+            "elimination_round_probabilities": {
+                "Arsenal": {"Quarter-finals": 0.20, "Semi-finals": 0.15, "Final": 0.15, "Champion": 0.20},
+                "Chelsea": {"Quarter-finals": 0.30, "Semi-finals": 0.15, "Final": 0.15, "Champion": 0.10},
+            },
+            "simulations_run": 100,
+            "champion": "Arsenal",
+        }
+        odds = cd._build_cup_stage_position_odds("England/FA Cup", entry)
+        self.assertEqual(odds["semantics"], "reach")
+        self.assertIn("Winner", odds["stages"])
+        self.assertIn("SF", odds["stages"])
+        simple_winner = {r["team"]: r["pct"] for r in odds["simple"]["Winner"]}
+        self.assertAlmostEqual(simple_winner["Arsenal"], 66.67, delta=1.0)  # renormalized 20/30
+        detailed = {r["team"]: r for r in odds["detailed"]}
+        self.assertIn("Arsenal", detailed)
+        self.assertIn("Winner", detailed["Arsenal"]["odds"])
+        # most_likely uses elimination mass (Chelsea QF 30% highest)
+        self.assertEqual(detailed["Chelsea"]["most_likely_position"], "QF")
+
+    def test_knockout_format_block_has_no_table(self):
+        import cup_data as cd
+
+        fmt = cd._cup_format_block("England/FA Cup")
+        self.assertEqual(fmt["format_style"], "knockout")
+        self.assertFalse(fmt["has_table"])
+        self.assertEqual(fmt["competition_type"], "cup")
+        self.assertTrue(fmt["position_stages"])
+
+    def test_table_knockout_format_block_has_table(self):
+        import cup_data as cd
+
+        fmt = cd._cup_format_block("Europe/Champions League")
+        self.assertEqual(fmt["format_style"], "table_knockout")
+        self.assertTrue(fmt["has_table"])
+
+    def test_pipeline_wires_cup_data_rebuild(self):
+        src = (ROOT_DIR / "Daily_Pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("rebuild_cup_data_caches", src)
+        src2 = (ROOT_DIR / "Run_All_Pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("rebuild_cup_data_caches", src2)
+        self.assertIn("_rebuild_cup_data_caches_after_pipeline", src2)
+
+
 class CupsFailFastTests(unittest.TestCase):
     def test_cups_last_uses_fail_fast(self):
         import ast

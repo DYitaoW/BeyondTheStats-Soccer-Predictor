@@ -1726,8 +1726,8 @@ def main():
         except Exception as exc:
             print(f"[WARN] publish_to_output failed: {exc}")
 
-        # Rebuild LeagueData caches so sticky empty/stale payloads (~10 min TTL)
-        # cannot outlive the pipeline write (audit #14).
+        # Rebuild LeagueData + CupData caches so sticky empty/stale payloads
+        # (~10 min TTL) cannot outlive the pipeline write (audit #14).
         try:
             website_dir = Path(__file__).resolve().parent / "Website"
             if str(website_dir) not in sys.path:
@@ -1737,6 +1737,16 @@ def main():
             rebuild_league_data_caches(clear_first=True)
         except Exception as exc:
             print(f"[WARN] league-data cache rebuild failed: {exc}")
+
+        try:
+            website_dir = Path(__file__).resolve().parent / "Website"
+            if str(website_dir) not in sys.path:
+                sys.path.insert(0, str(website_dir))
+            from cup_data import rebuild_cup_data_caches
+
+            rebuild_cup_data_caches(clear_first=True)
+        except Exception as exc:
+            print(f"[WARN] cup-data cache rebuild failed: {exc}")
 
         if tee is not None:
             pipeline_log.deactivate_stdout_tee()

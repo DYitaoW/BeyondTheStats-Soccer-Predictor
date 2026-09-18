@@ -1250,6 +1250,21 @@ def _rebuild_league_data_caches_after_pipeline():
         traceback.print_exc()
 
 
+def _rebuild_cup_data_caches_after_pipeline():
+    """Clear sticky CupData caches and rebuild from fresh cup projections."""
+    website_dir = SP_DIR / "Website"
+    if str(website_dir) not in sys.path:
+        sys.path.insert(0, str(website_dir))
+    try:
+        from cup_data import rebuild_cup_data_caches
+
+        rebuild_cup_data_caches(clear_first=True)
+    except Exception as exc:
+        print(f"[WARN] cup-data cache rebuild failed: {exc}")
+        import traceback
+        traceback.print_exc()
+
+
 def main():
     args = parse_args()
     api_token = load_api_token()
@@ -1267,6 +1282,7 @@ def main():
         except Exception as exc:
             print(f"[WARN] publish_to_output failed: {exc}")
         _rebuild_league_data_caches_after_pipeline()
+        _rebuild_cup_data_caches_after_pipeline()
         print("\nPipeline complete.")
     finally:
         pipeline_log.deactivate_stdout_tee()
