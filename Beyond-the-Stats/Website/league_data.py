@@ -1291,6 +1291,18 @@ def _load_usable_projected_table(comp_name: str) -> list[dict]:
     rows = _load_projected_competition_table(comp_name) or []
     if rows and _projected_table_looks_like_completed_prior_season(comp_name, rows):
         return []
+    # Cup table sims that never got pending fixtures land as sim_runs=0/1
+    # live-only placeholders — treat as missing so /api/cup-data rebuilds.
+    if rows:
+        try:
+            from competition_rules import is_cup_competition
+
+            if is_cup_competition(comp_name) and all(
+                float(r.get("sim_runs") or 0) <= 1 for r in rows
+            ):
+                return []
+        except Exception:
+            pass
     return rows
 
 

@@ -939,9 +939,10 @@ def _run_shared_post_steps(args, api_token):
             continue_on_error=args.continue_on_error,
         )
         sub["sync_club_friendlies"] = run_step(
-            "Sync club friendlies schedule and Chelsea predictions",
+            "Sync club + international friendlies schedule",
             [py, str(FILES_DIR / "Update_Club_Friendlies.py")],
             continue_on_error=args.continue_on_error,
+            timeout=1800,
         )
     return sub
 
