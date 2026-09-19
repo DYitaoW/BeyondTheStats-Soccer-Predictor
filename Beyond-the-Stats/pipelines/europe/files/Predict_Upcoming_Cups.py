@@ -1800,76 +1800,88 @@ def load_upcoming_matchweek_fixtures_from_espn(window_days, competition_name, es
     rows = []
     seen = set()
 
-    print(f"Attempting to load fixtures for competition: {competition_name} (espn_id: {espn_id}) from ESPN...")
+    print(
+        f"Attempting to load fixtures for competition: {competition_name} "
+        f"(espn_id: {espn_id}) from ESPN...",
+        flush=True,
+    )
 
-    for offset in range(0, max(1, lookahead_days + 1)):
-        day = today + pd.Timedelta(days=offset)
-        try:
-            data = espn_api_cache.fetch_scoreboard(espn_id, day.strftime("%Y%m%d"))
-        except Exception as e:
-            print(f"ESPN API Error for {day.date()}: {e}")
+    # Smart crawl: UEFA rejects multi-day dates= ranges (HTTP 400). Walking every
+    # calendar day for 180+ days × many cups previously hung the pipeline for an
+    # hour before any cup Monte Carlo could start. Use Tue/Wed-only for UEFA and
+    # merge the default scoreboard slate.
+    end = today + pd.Timedelta(days=max(1, int(lookahead_days)))
+    try:
+        events = espn_api_cache.fetch_scoreboard_range(
+            espn_id,
+            today.date(),
+            end.date(),
+            include_default=True,
+            progress_label=competition_name,
+        )
+    except Exception as e:
+        print(f"ESPN API Error for {competition_name}: {e}", flush=True)
+        events = []
+
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
+        if pd.isna(event_date):
+            continue
+        event_dt_et = event_date.tz_convert(EASTERN_TZ)
+        match_date = event_dt_et.tz_localize(None).normalize()
+        if match_date < today:
             continue
 
-        events = data.get("events", [])
-        if not isinstance(events, list):
+        competitions = event.get("competitions", [])
+        if not competitions:
             continue
 
-        for event in events:
-            event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
-            if pd.isna(event_date):
-                continue
-            event_dt_et = event_date.tz_convert(EASTERN_TZ)
-            match_date = event_dt_et.tz_localize(None).normalize()
-            if match_date < today:
-                continue
+        comp0 = competitions[0] or {}
 
-            competitions = event.get("competitions", [])
-            if not competitions:
-                continue
+        status_state = (
+            ((comp0.get("status") or {}).get("type") or {}).get("state", "")
+        ).strip().lower()
+        # Keep only not-started/scheduled matches.
+        if status_state and status_state not in {"pre"}:
+            continue
 
-            comp0 = competitions[0] or {}
+        competitors = comp0.get("competitors", [])
+        home_team = ""
+        away_team = ""
+        for c in competitors:
+            team_name = ((c.get("team") or {}).get("displayName") or "").strip()
+            side = str(c.get("homeAway", "")).strip().lower()
+            if side == "home":
+                home_team = team_name
+            elif side == "away":
+                away_team = team_name
+        if not home_team or not away_team:
+            continue
 
-            status_state = (
-                ((comp0.get("status") or {}).get("type") or {}).get("state", "")
-            ).strip().lower()
-            # Keep only not-started/scheduled matches.
-            if status_state and status_state not in {"pre"}:
-                continue
-
-            competitors = comp0.get("competitors", [])
-            home_team = ""
-            away_team = ""
-            for c in competitors:
-                team_name = ((c.get("team") or {}).get("displayName") or "").strip()
-                side = str(c.get("homeAway", "")).strip().lower()
-                if side == "home":
-                    home_team = team_name
-                elif side == "away":
-                    away_team = team_name
-            if not home_team or not away_team:
-                continue
-
-            key = (match_date.strftime("%Y-%m-%d"), home_team, away_team)
-            if key in seen:
-                continue
-            seen.add(key)
-            rows.append(
-                {
-                    "match_date": match_date,
-                    "match_datetime_et": event_dt_et.isoformat(),
-                    "competition": competition_name, # Use the requested competition name
-                    "home_team": home_team,
-                    "away_team": away_team,
-                }
-            )
+        key = (match_date.strftime("%Y-%m-%d"), home_team, away_team)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            {
+                "match_date": match_date,
+                "match_datetime_et": event_dt_et.isoformat(),
+                "competition": competition_name, # Use the requested competition name
+                "home_team": home_team,
+                "away_team": away_team,
+            }
+        )
 
     fixtures = pd.DataFrame(rows)
     if fixtures.empty:
+        print(f"ESPN Loader: no upcoming fixtures for {competition_name}.", flush=True)
         return fixtures
 
     fixtures = fixtures.sort_values(["match_date", "home_team", "away_team"]).reset_index(drop=True)
     fixtures = filter_to_next_fixture_window(fixtures, window_days, f"ESPN {competition_name}")
-    print(f"ESPN Loader: Successfully filtered down to {len(fixtures)} fixtures.")
+    print(f"ESPN Loader: Successfully filtered down to {len(fixtures)} fixtures.", flush=True)
     return fixtures
 
 

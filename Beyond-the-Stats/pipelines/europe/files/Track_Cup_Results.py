@@ -483,6 +483,11 @@ def fetch_in_season_cup_table_results(mapping_by_competition=None):
     unresolved = {}
     seen_names = {}
 
+    try:
+        import espn_api_cache
+    except ImportError:
+        espn_api_cache = None
+
     for competition in sorted(CUP_TABLE_COMPETITIONS):
         league_key = CUP_ESPN_COMPETITION_KEYS.get(competition)
         if not league_key:
@@ -494,51 +499,59 @@ def fetch_in_season_cup_table_results(mapping_by_competition=None):
             continue
         print(
             f"[cup-tables] backfilling {competition} completed phase games "
-            f"{season_start.date()} → {fetch_end.date()}"
+            f"{season_start.date()} → {fetch_end.date()}",
+            flush=True,
         )
 
-        # Prefer a single ESPN date-range pull; fall back to weekly chunks.
-        chunks = [(season_start, fetch_end)]
-        # If the span is long, split into ~45-day windows (scoreboard limit).
-        span_days = int((fetch_end - season_start).days) + 1
-        if span_days > 45:
-            chunks = []
-            cursor = season_start
-            while cursor <= fetch_end:
-                chunk_end = min(cursor + pd.Timedelta(days=44), fetch_end)
-                chunks.append((cursor, chunk_end))
-                cursor = chunk_end + pd.Timedelta(days=1)
-
         events = []
-        for chunk_start, chunk_end in chunks:
-            date_param = f"{chunk_start.strftime('%Y%m%d')}-{chunk_end.strftime('%Y%m%d')}"
-            url = f"{ESPN_BASE}/{league_key}/scoreboard?dates={date_param}&limit=1000"
-            try:
-                data = fetch_json(url, timeout=60)
-            except Exception as error:
-                print(f"  [cup-tables] range fetch failed ({date_param}): {error}; trying daily")
-                data = None
-            chunk_events = (data or {}).get("events") if isinstance(data, dict) else None
-            if isinstance(chunk_events, list) and chunk_events:
-                events.extend(chunk_events)
-                continue
-            # Daily fallback for this chunk.
-            day = chunk_start
-            while day <= chunk_end:
-                day_url = f"{ESPN_BASE}/{league_key}/scoreboard?dates={day.strftime('%Y%m%d')}"
+        if espn_api_cache is not None:
+            # UEFA rejects multi-day dates= (HTTP 400); smart walk uses Tue/Wed only.
+            events = espn_api_cache.fetch_scoreboard_range(
+                league_key,
+                season_start.date(),
+                fetch_end.date(),
+                include_default=True,
+                progress_label=f"backfill {competition}",
+            ) or []
+        else:
+            # Legacy fallback when shared cache module is unavailable.
+            chunks = [(season_start, fetch_end)]
+            span_days = int((fetch_end - season_start).days) + 1
+            if span_days > 45:
+                chunks = []
+                cursor = season_start
+                while cursor <= fetch_end:
+                    chunk_end = min(cursor + pd.Timedelta(days=44), fetch_end)
+                    chunks.append((cursor, chunk_end))
+                    cursor = chunk_end + pd.Timedelta(days=1)
+            for chunk_start, chunk_end in chunks:
+                date_param = f"{chunk_start.strftime('%Y%m%d')}-{chunk_end.strftime('%Y%m%d')}"
+                url = f"{ESPN_BASE}/{league_key}/scoreboard?dates={date_param}&limit=1000"
                 try:
-                    day_data = fetch_json(day_url, timeout=45)
-                    day_events = (day_data or {}).get("events") if isinstance(day_data, dict) else None
-                    if isinstance(day_events, list):
-                        events.extend(day_events)
+                    data = fetch_json(url, timeout=60)
                 except Exception as error:
-                    print(f"  [cup-tables] skip {competition} {day.date()}: {error}")
-                day += pd.Timedelta(days=1)
+                    print(f"  [cup-tables] range fetch failed ({date_param}): {error}; trying daily", flush=True)
+                    data = None
+                chunk_events = (data or {}).get("events") if isinstance(data, dict) else None
+                if isinstance(chunk_events, list) and chunk_events:
+                    events.extend(chunk_events)
+                    continue
+                day = chunk_start
+                while day <= chunk_end:
+                    day_url = f"{ESPN_BASE}/{league_key}/scoreboard?dates={day.strftime('%Y%m%d')}"
+                    try:
+                        day_data = fetch_json(day_url, timeout=45)
+                        day_events = (day_data or {}).get("events") if isinstance(day_data, dict) else None
+                        if isinstance(day_events, list):
+                            events.extend(day_events)
+                    except Exception as error:
+                        print(f"  [cup-tables] skip {competition} {day.date()}: {error}", flush=True)
+                    day += pd.Timedelta(days=1)
 
         rows, maps, unresolved_names, seen = _espn_events_to_completed_rows(
             competition, league_key, events, mapping_by_competition, season_start, fetch_end,
         )
-        print(f"  [cup-tables] {competition}: {len(rows)} in-season completed phase rows")
+        print(f"  [cup-tables] {competition}: {len(rows)} in-season completed phase rows", flush=True)
         all_rows.extend(rows)
         if maps:
             mapping_updates.setdefault(competition, {}).update(maps)
@@ -553,6 +566,164 @@ def fetch_in_season_cup_table_results(mapping_by_competition=None):
     frame = _filter_frame_to_cup_table_season(frame)
     return frame, mapping_updates, unresolved, seen_names
 
+
+def _espn_events_to_upcoming_phase_rows(competition, events, season_start, season_end, today):
+    """Parse ESPN events into upcoming (pre) league-phase rows for table Monte Carlo."""
+    rows = []
+    for event in events or []:
+        if not isinstance(event, dict):
+            continue
+        dt = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
+        if pd.isna(dt):
+            continue
+        try:
+            match_date = dt.tz_convert("UTC").tz_localize(None).normalize()
+        except Exception:
+            match_date = pd.Timestamp(dt).tz_localize(None).normalize() if getattr(dt, "tzinfo", None) else pd.Timestamp(dt).normalize()
+        if match_date < today or match_date < season_start or match_date > season_end:
+            continue
+        event_competitions = event.get("competitions", [])
+        if not event_competitions:
+            continue
+        comp0 = event_competitions[0] or {}
+        status_type = ((comp0.get("status") or {}).get("type") or {})
+        state = str(status_type.get("state") or "").strip().lower()
+        if state and state not in {"pre"}:
+            continue
+        if bool(status_type.get("completed")):
+            continue
+
+        round_note = ""
+        for note in (comp0.get("notes") or []):
+            if isinstance(note, dict):
+                round_note = str(note.get("headline") or note.get("text") or "").strip()
+            else:
+                round_note = str(note or "").strip()
+            if round_note:
+                break
+        lower = round_note.lower()
+        knockout_tokens = (
+            "round of", "quarter", "semi", "final", "playoff", "play-off",
+            "knockout", "last 16", "last 32",
+        )
+        phase_ok = (
+            "league phase" in lower
+            or "matchday" in lower
+            or "group" in lower
+            or "phase one" in lower
+            or "phase 1" in lower
+            or not lower
+        )
+        if any(tok in lower for tok in knockout_tokens) and not phase_ok:
+            continue
+
+        competitors = comp0.get("competitors", [])
+        home_name = ""
+        away_name = ""
+        for competitor in competitors:
+            side = str(competitor.get("homeAway", "")).strip().lower()
+            team_name = str((competitor.get("team") or {}).get("displayName") or "").strip()
+            if side == "home":
+                home_name = team_name
+            elif side == "away":
+                away_name = team_name
+        if not home_name or not away_name:
+            continue
+        if not _is_known_team(home_name) or not _is_known_team(away_name):
+            continue
+        rows.append(
+            {
+                "prediction_key": f"{match_date.strftime('%Y-%m-%d')}|{competition}|{home_name}|{away_name}",
+                "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+                "match_date": match_date.strftime("%Y-%m-%d"),
+                "match_datetime_utc": str(event.get("date") or ""),
+                "match_datetime_et": "",
+                "competition": competition,
+                "home_team": home_name,
+                "away_team": away_name,
+                "predicted_result": "",
+                "probability_reasoning": "espn-table-pending",
+                "prob_home": None,
+                "prob_draw": None,
+                "prob_away": None,
+                "pred_home_goals": None,
+                "pred_away_goals": None,
+                "pred_home_shots": None,
+                "pred_away_shots": None,
+                "pred_home_sot": None,
+                "pred_away_sot": None,
+                "actual_home_goals": None,
+                "actual_away_goals": None,
+                "actual_result": "",
+                "is_correct": None,
+                "settled_at_utc": "",
+                "schedule_only": 1,
+                "round": round_note or "League Phase",
+            }
+        )
+    return rows
+
+
+def fetch_upcoming_cup_table_fixtures(mapping_by_competition=None):
+    """Fetch remaining in-season league-phase fixtures for table Monte Carlo.
+
+    When ``upcoming_cup_predictions.csv`` is empty (Predict hung or filtered
+    everything out), table sims otherwise run with ``sim_runs=0``. Pull ESPN
+    ``pre`` fixtures through season end so CL/EL/ECL still get position odds.
+    """
+    mapping_by_competition = mapping_by_competition or {}
+    try:
+        import espn_api_cache
+    except ImportError:
+        print("[cup-tables] espn_api_cache unavailable — cannot seed pending fixtures", flush=True)
+        return _empty_frame(CUP_HISTORY_COLUMNS)
+
+    today = pd.Timestamp(datetime.now(UTC).date()).normalize()
+    all_rows = []
+    for competition in sorted(CUP_TABLE_COMPETITIONS):
+        league_key = CUP_ESPN_COMPETITION_KEYS.get(competition)
+        if not league_key:
+            continue
+        season_start, season_end = cup_table_season_bounds(competition)
+        fetch_start = max(season_start, today)
+        if fetch_start > season_end:
+            continue
+        print(
+            f"[cup-tables] START pending fixtures {competition} "
+            f"{fetch_start.date()} → {season_end.date()}",
+            flush=True,
+        )
+        events = espn_api_cache.fetch_scoreboard_range(
+            league_key,
+            fetch_start.date(),
+            season_end.date(),
+            include_default=True,
+            progress_label=f"pending {competition}",
+        ) or []
+        # Map ESPN display names through shared mapping when available.
+        mapped_events = events
+        rows = _espn_events_to_upcoming_phase_rows(
+            competition, mapped_events, season_start, season_end, today,
+        )
+        # Apply competition mapping to resolve ESPN → canonical names.
+        if mapping_by_competition and rows:
+            mapping = mapping_by_competition.get(competition) or {}
+            for row in rows:
+                for side in ("home_team", "away_team"):
+                    raw = str(row.get(side) or "").strip()
+                    canon = mapping.get(raw) or mapping.get(raw.lower())
+                    if canon:
+                        row[side] = str(canon).strip()
+        print(
+            f"[cup-tables] DONE  pending fixtures {competition} — {len(rows)} rows",
+            flush=True,
+        )
+        all_rows.extend(rows)
+
+    if not all_rows:
+        return _empty_frame(CUP_HISTORY_COLUMNS)
+    frame = _ensure_columns(pd.DataFrame(all_rows), CUP_HISTORY_COLUMNS)
+    return _filter_frame_to_cup_table_season(frame)
 
 def merge_completed_cup_frames(existing, extra):
     """Union completed cup history frames, preferring rows with actual scores."""
@@ -971,8 +1142,14 @@ def _sample_fixture_outcome(row, rng, predictions_index=None):
         pa = _safe_float(row.get("prob_away"), 0)
     total = ph + pd_ + pa
     if total <= 0:
+        # Schedule-only ESPN seeds have no model odds. Use a mild home-leaning
+        # prior so Monte Carlo still runs (skipping every fixture left sim_runs=0
+        # / 100% sticky live tables for CL/EL/ECL).
         score = _predicted_score(row, predictions_index)
-        return score
+        if score is not None:
+            return score
+        ph, pd_, pa = 0.46, 0.26, 0.28
+        total = 1.0
     pick = rng.random() * total
     if pick < ph:
         result = "H"
@@ -1253,6 +1430,11 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
             )
             continue
 
+        print(
+            f"[cups] running {runs} table sims for {competition_name} "
+            f"({len(pending_rows)} pending, {len(real_table)} teams)",
+            flush=True,
+        )
         pos_counts = defaultdict(lambda: defaultdict(int))
         stat_sums = defaultdict(lambda: defaultdict(float))
         for _ in range(runs):
@@ -2288,7 +2470,13 @@ def main():
 
     _write_csv(COMPLETED_CUP_PREDICTIONS_FILE, completed_df, CUP_HISTORY_COLUMNS)
     _write_csv(CUP_PREDICTIONS_FILE, cup_df, CUP_HISTORY_COLUMNS)
+    print(
+        f"[cups] START projection rebuild "
+        f"(table_sims={CUP_TABLE_SIMULATION_RUNS}, bracket_sims={CUP_SIMULATION_RUNS})",
+        flush=True,
+    )
     table_rows, bracket_rounds = refresh_cup_projection_artifacts(completed_df, cup_df)
+    print(f"[cups] DONE projection rebuild", flush=True)
 
     _progress(f"Cup mapping auto-added: {mapping_added} (drift detected: {mapping_drift})")
     if unresolved:
