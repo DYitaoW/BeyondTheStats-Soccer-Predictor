@@ -2195,6 +2195,14 @@ def _invalidate_prediction_caches(*, reload_contexts: bool = False) -> None:
         _clear_all_real_data_caches()
     except Exception:
         pass
+    # Drop sticky LeagueData mem/disk entries; full rebuild happens in the
+    # pipeline process after publish_to_output. Here we only clear so the
+    # website worker does not serve pre-pipeline empties from memory.
+    try:
+        from league_data import clear_league_data_caches
+        clear_league_data_caches()
+    except Exception:
+        pass
     if reload_contexts and not config.STATIC_PREDICTIONS:
         try:
             get_context("global")

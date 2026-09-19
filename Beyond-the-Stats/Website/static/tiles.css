@@ -1,0 +1,58 @@
+/* ─────────────────────────────────────────────────────────────
+   Beyond The Stats — tile layout engine (Step 2)
+   Pure-CSS tile grid + tile primitives. Empty; every class is
+   defined in tokens (styles.css) and this sheet. No JS, no build.
+   ───────────────────────────────────────────────────────────── */
+
+.tile-grid {
+  display: grid;
+  gap: var(--bts-s-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  align-items: start;
+}
+
+.tile {
+  container-type: inline-size;
+  container-name: tile;
+  min-width: 0;
+  background: var(--bts-surface);
+  border: 1px solid var(--bts-border);
+  border-radius: var(--bts-radius);
+  box-shadow: var(--bts-shadow-sm);
+  padding: var(--bts-s-4);
+  min-height: var(--bts-s-5);
+}
+
+.tile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--bts-s-3);
+  margin-bottom: var(--bts-s-3);
+}
+
+.tile-title {
+  font: 600 var(--bts-fs-lg) / 1.25 var(--bts-font);
+  margin: 0;
+  color: var(--bts-text);
+}
+
+.tile-body {
+  color: var(--bts-text);
+}
+
+/* Width modifiers — editorial control. */
+.tile-wide { grid-column: span 2; }
+.tile-full { grid-column: 1 / -1; }
+.tile-hero { grid-column: 1 / -1; }
+
+/* Container-query driven density: a tile reflows on its own width. */
+@container tile (min-width: 520px) {
+  .tile-body { font-size: var(--bts-fs-md); }
+}
+
+/* Theme parity: tiles follow the token layer automatically. */
+body.dark-mode .tile {
+  background: var(--bts-surface);
+  border-color: var(--bts-border);
+}

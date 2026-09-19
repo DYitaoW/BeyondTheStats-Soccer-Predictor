@@ -1,0 +1,23 @@
+{# ─────────────────────────────────────────────────────────────
+   Beyond The Stats — tile macro (Step 2)
+   {{ tile('League Tables', width='wide') }}...</br>. . .
+   Usage:
+     {% from "macros/tiles.html" import tile %}
+     <div class="tile-grid">
+       {{ tile('Live Scores') }}...</br>...
+       {{ tile('Today', width='wide') }}...</br>...
+     </div>
+   The macro does NOT own layout, data, or content inside a tile —
+   it only renders the structural <section> wrapper so every page
+   composes from the same primitive. Content is passed via caller().
+   ───────────────────────────────────────────────────────────── #}
+{% macro tile(title, width='auto') -%}
+  <section class="tile{% if width != 'auto' %} tile-{{ width }}{% endif %}">
+    {% if title %}
+    <header class="tile-head">
+      <h2 class="tile-title">{{ title }}</h2>
+    </header>
+    {% endif %}
+    <div class="tile-body">{{ caller() }}</div>
+  </section>
+{%- endmacro %}

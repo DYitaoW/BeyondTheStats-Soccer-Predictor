@@ -1,7 +1,92 @@
+/* ─────────────────────────────────────────────────────────────
+   Beyond The Stats — design tokens (loaded first)
+   Single source of truth for color/type/space/shape/motion.
+   Light theme values are the default; body[data-theme="dark"]
+   redefines only the color tokens.
+   ───────────────────────────────────────────────────────────── */
 :root {
-  --bg: #dfe3e8;
-  --bg-soft: #cfd5dc;
-  --card: #f0f2f4;
+  /* Color · light theme defaults */
+  --bts-bg: #eef1f5;
+  --bts-bg-soft: #e4e8ee;
+  --bts-surface: #ffffff;
+  --bts-surface-2: #f5f7f9;
+  --bts-text: #161b22;
+  --bts-muted: #5c6873;
+  --bts-border: #d5dbe3;
+  --bts-accent: #2f8f4e;
+  --bts-accent-2: #b8943b;
+  --bts-danger: #c94f4b;
+  --bts-ok: #287a49;
+
+  /* Type scale */
+  --bts-fs-xs: 0.75rem;
+  --bts-fs-sm: 0.8125rem;
+  --bts-fs-md: 0.9375rem;
+  --bts-fs-lg: 1.125rem;
+  --bts-fs-xl: 1.375rem;
+  --bts-fs-2xl: 1.75rem;
+  --bts-fs-3xl: 2.25rem;
+
+  /* Space scale */
+  --bts-s-1: 4px;
+  --bts-s-2: 8px;
+  --bts-s-3: 12px;
+  --bts-s-4: 16px;
+  --bts-s-5: 24px;
+  --bts-s-6: 32px;
+  --bts-s-7: 48px;
+
+  /* Shape & depth */
+  --bts-radius: 14px;
+  --bts-radius-sm: 8px;
+  --bts-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --bts-shadow-md: 0 6px 16px rgba(16, 24, 40, 0.10);
+  --bts-shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.16);
+
+  /* Motion */
+  --bts-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --bts-dur: 160ms;
+}
+
+/* Mapping store’s legacy theme vars onto tokens (no page/filename regressions) */
+:root {
+  --bg: #eef1f5;
+  --bg-soft: #e4e8ee;
+  --card: #ffffff;
+  --text: #161b22;
+  --muted: #5c6873;
+  --border: #d5dbe3;
+  --primary: #2f8f4e;
+  --primary-strong: #267a42;
+  --accent-warm: #b8943b;
+  --danger: #c94f4b;
+  --green-pct: #287a49;
+  --today-btn: #2f8f4e;
+  --today-btn-hover: #267a42;
+  --card-bg: var(--card);
+  --card-border: var(--border);
+  --text-color: var(--text);
+  --accent-color: var(--primary);
+  --btn-bg: var(--primary);
+  --btn-text: #ffffff;
+  --btn-border: transparent;
+  --btn-hover-bg: var(--primary-strong);
+  --btn-hover-text: #ffffff;
+  --btn-secondary-bg: rgba(240, 242, 244, 0.95);
+  --btn-secondary-text: var(--muted);
+  --btn-secondary-border: var(--border);
+  --btn-secondary-hover-bg: var(--primary);
+  --btn-secondary-hover-text: #ffffff;
+  --input-bg: #ffffff;
+  --input-text: var(--text);
+  --input-border: var(--border);
+  --topbar-bg: #eceff2;
+  --topbar-border: var(--border);
+  --table-header-bg: #d4d9df;
+  --table-header-text: var(--text);
+  --sidebar-bg: #e4e8ec;
+  --hero-accent: rgba(255, 255, 255, 0.0);
+}
   --text: #11161c;
   --muted: #5c6873;
   --border: #b0b8c0;
@@ -38,6 +123,19 @@
 }
 
 body.dark-mode {
+  /* Re-map design tokens for dark-first default (only color tokens change). */
+  --bts-bg: #0f1115;
+  --bts-bg-soft: #181b21;
+  --bts-surface: #1d2128;
+  --bts-surface-2: #14171d;
+  --bts-text: #e3e7ed;
+  --bts-muted: #8f9aa8;
+  --bts-border: #2d333c;
+  --bts-accent: #8f9aa8;
+  --bts-accent-2: #c9a345;
+  --bts-danger: #f07575;
+  --bts-ok: #48b065;
+
   --bg: #0f1115;
   --bg-soft: #181b21;
   --card: #1d2128;
@@ -611,9 +709,10 @@ h1 {
   position: static;
   z-index: 40;
   padding: 0;
-  margin: 0;
+  margin: 0 0 0 auto;
   background: transparent;
-  width: 100%;
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .site-header .tabs {

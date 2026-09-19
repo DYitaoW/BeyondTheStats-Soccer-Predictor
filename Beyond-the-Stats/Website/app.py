@@ -66,6 +66,7 @@ from live_poller import (
     start_live_score_poller,
 )
 from league_data import build_league_data_payload
+from cup_data import build_cup_data_payload, cup_data_competitions
 from team_mappings import (
     build_app_teams_catalog_payload,
     build_predictor_teams_payload,
@@ -996,6 +997,9 @@ def api_help():
         ("/api/world-cup", "GET", "World Cup standings + knockout brackets (odds + real)"),
         ("/api/cup-bracket", "GET", "Domestic cup projected brackets (?competition=)"),
         ("/api/real-cup-data", "GET", "Domestic cup real-life brackets (?competition=)"),
+        ("/api/cup-data", "GET", "List cup competitions for /api/cup-data/<competition>"),
+        ("/api/cup-data/<competition>", "GET", "Unified cup payload (format_style + stage-reach position odds)"),
+        ("/api/league-data/<competition>", "GET", "Unified league payload (tables + position odds); prefer cup-data for cups"),
         ("/api/competition-data", "GET", "Unified WC-format data for any competition (?competition=)"),
         ("/api/league-tables", "GET", "Projected league tables for all competitions"),
         ("/api/real-tables", "GET", "Live/recent real league standings"),
@@ -1056,11 +1060,14 @@ def api_help_all():
             "is_cup": is_cup,
         }
 
+        enc = comp_name.replace("/", "%2F").replace(" ", "+")
         # ── Predicted data ──────────────────────────────────────
         predicted = {
             "upcoming": f"/api/upcoming/{'world-cup' if 'World Cup' in comp_name else 'cups' if is_cup else 'global'}",
             "league_table": f"/api/league-tables?mode={'cups' if is_cup else 'global'}",
-            "cup_bracket": f"/api/cup-bracket?competition={comp_name.replace('/', '%2F').replace(' ', '+')}" if is_cup else None,
+            "cup_bracket": f"/api/cup-bracket?competition={enc}" if is_cup else None,
+            "cup_data": f"/api/cup-data/{comp_name}" if is_cup else None,
+            "league_data": None if is_cup else f"/api/league-data/{comp_name}",
         }
         # Predicted winner / league leader
         predicted["leader"] = f"/api/league-leaders"
@@ -1068,10 +1075,10 @@ def api_help_all():
 
         # ── Real data ───────────────────────────────────────────
         real = {
-            "real_table": f"/api/real-tables?competition={comp_name.replace('/', '%2F').replace(' ', '+')}",
-            "real_cup_data": f"/api/real-cup-data?competition={comp_name.replace('/', '%2F').replace(' ', '+')}" if is_cup else None,
+            "real_table": f"/api/real-tables?competition={enc}",
+            "real_cup_data": f"/api/real-cup-data?competition={enc}" if is_cup else None,
         }
-        real["competition_data"] = f"/api/competition-data?competition={comp_name.replace('/', '%2F').replace(' ', '+')}"
+        real["competition_data"] = f"/api/competition-data?competition={enc}"
         base["real"] = {k: v for k, v in real.items() if v is not None}
 
         # ── Past games ──────────────────────────────────────────
@@ -2945,6 +2952,9 @@ def api_league_data(competition):
     For ``United States/MLS``, ``bracket.projected`` is the full MLS Cup playoff
     bracket JSON when available, and ``mls_winners_odds.mls_cup`` carries Cup
     winner probabilities (also mirrored under ``predicted.mls_cup``).
+
+    Prefer ``/api/cup-data/<competition>`` for cup competitions — that endpoint
+    exposes ``format.format_style`` and stage-reach ``position_odds``.
     """
     comp = competition.strip()
 
@@ -2960,6 +2970,84 @@ def api_league_data(competition):
         return jsonify(cached)
 
     return jsonify(build_league_data_payload(comp))
+
+
+@app.get("/api/cup-data")
+@_cached_response(ttl=config.CACHE_TTL_LONG)
+def api_cup_data_index():
+    """List cup competitions available via ``/api/cup-data/<competition>``."""
+    from competition_rules import cup_format_style_for, cup_position_stages_for
+
+    cups = []
+    for comp in cup_data_competitions():
+        cups.append({
+            "competition": comp,
+            "format_style": cup_format_style_for(comp),
+            "position_stages": cup_position_stages_for(comp),
+            "path": f"/api/cup-data/{comp}",
+        })
+    return jsonify({"ok": True, "cups": cups, "count": len(cups)})
+
+
+@app.get("/api/cup-data/<path:competition>")
+@_cached_response(ttl=config.CACHE_TTL_LONG)
+def api_cup_data(competition):
+    """Return consolidated cup data (league-data twin for cup competitions).
+
+    ``format.format_style`` is one of:
+
+    - ``knockout`` — pure bracket (FA Cup, Copa, …); no table
+    - ``table_knockout`` — league/dual phase table then KO (UEFA, Leagues Cup)
+    - ``group_knockout`` — group stage then KO
+
+    Response shape mirrors ``/api/league-data``:
+
+    .. code-block:: json
+
+        {"ok": true, "competition": "...",
+         "format": {
+           "format_style": "knockout|table_knockout|group_knockout",
+           "has_table": false,
+           "position_stages": ["Winner", "Final", "SF", "QF", ...],
+           "draw_rules": {...},
+           ...
+         },
+         "predicted": {
+           "table": [],
+           "groups": null,
+           "winner": {"champion": "...", "probabilities": {...}, "simulations_run": N},
+           "winners_odds": [{"team": "...", "win_cup_pct": 12.5, ...}],
+           "position_odds": {
+             "semantics": "reach",
+             "stages": ["Winner", "Final", "SF", ...],
+             "simple": {"Winner": [{"team": "...", "pct": 12.5}], ...},
+             "detailed": [{"team": "...", "odds": {"Winner": 12.5, "SF": 40.0}, ...}]
+           }
+         },
+         "real": {"standings": null},
+         "bracket": {"projected": {...}, "knockout": {...}, ...},
+         "fixtures": [...]}
+
+    For knockout cups, ``predicted.position_odds`` are **stage-reach** odds
+    (likelihood of reaching that round; ``Winner`` = champion), not league
+    table places. Table/group cups also include phase tables when available.
+    """
+    comp = competition.strip()
+    from competition_rules import is_cup_competition
+
+    if not is_cup_competition(comp):
+        return jsonify({
+            "ok": False,
+            "error": f"Not a cup competition (use /api/league-data): {comp}",
+            "hint": "/api/cup-data",
+        }), 404
+
+    from cup_data import _load_cup_data_from_cache
+    cached = _load_cup_data_from_cache(comp)
+    if cached is not None:
+        return jsonify(cached)
+
+    return jsonify(build_cup_data_payload(comp))
 
 
 @app.get("/api/stats")

@@ -18,21 +18,18 @@
           <img class="brand-mark" src="{{ url_for('serve_graphic', filename='BeyondTheStatsLogo.png') }}" alt="Beyond The Stats logo">
           <div>
             <div class="brand-name">Beyond The Stats</div>
-            <div class="brand-sub">Matchday Predictor</div>
           </div>
         </a>
-        <div class="header-actions">
-          <a id="header-about" class="theme-toggle header-link {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
-        </div>
-      </div>
 
-      <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
-        <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
-        <a id="tab-leagues" class="tab-btn {{ 'active' if active_page == 'leagues' else '' }}" href="/leagues">Leagues</a>
-        <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
-        <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
-        <a id="tab-draftit" class="tab-btn tab-draftit" href="https://apps.apple.com/pk/app/draft-it-38-0-soccer-game/id6797634589" target="_blank" rel="noopener noreferrer">Play Draft It</a>
-      </nav>
+        <nav id="main-tabs" class="tabs main-tabs" aria-label="Primary navigation">
+          <a id="tab-home" class="tab-btn {{ 'active' if active_page == 'home' else '' }}" href="/">Home</a>
+          <a id="tab-leagues" class="tab-btn {{ 'active' if active_page == 'leagues' else '' }}" href="/leagues">Leagues</a>
+          <a id="tab-h2h" class="tab-btn {{ 'active' if active_page == 'h2h' else '' }}" href="/head-to-head">Compare Teams</a>
+          <a id="tab-tactics" class="tab-btn {{ 'active' if active_page == 'tactics' else '' }}" href="/tactics">Tactics Board</a>
+          <a id="tab-draftit" class="tab-btn tab-draftit" href="https://apps.apple.com/pk/app/draft-it-38-0-soccer-game/id6797634589" target="_blank" rel="noopener noreferrer">Play Draft It</a>
+          <a id="header-about" class="theme-toggle tab-btn {{ 'active' if active_page == 'about' else '' }}" href="/about">About</a>
+        </nav>
+      </div>
     </header>
 
     <section class="card app-promo-card app-promo-card-primary">
@@ -58,8 +55,8 @@
       </div>
     </section>
 
-    <div class="home-layout">
-      <section id="panel-home" class="content-panel home-main">
+    <div class="tile-grid">
+      <section id="panel-home" class="content-panel home-main tile tile-wide">
         <div class="card home-upcoming-card">
           <div class="section-header-row">
             <div>
