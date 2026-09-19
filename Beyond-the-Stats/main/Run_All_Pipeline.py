@@ -450,17 +450,68 @@ def _system_ram_gb():
     return 0.0
 
 
+def _cgroup_memory_limit_gb():
+    """Read container/systemd MemoryMax from cgroup v2/v1 when present."""
+    candidates = (
+        "/sys/fs/cgroup/memory.max",  # cgroup v2
+        "/sys/fs/cgroup/memory/memory.limit_in_bytes",  # cgroup v1
+    )
+    for path in candidates:
+        try:
+            raw = open(path, "r", encoding="utf-8").read().strip()
+        except OSError:
+            continue
+        if not raw or raw.lower() == "max":
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            continue
+        # Ignore absurd "unlimited" sentinels from older kernels.
+        if value <= 0 or value >= (1 << 60):
+            continue
+        return float(value) / (1024 ** 3)
+    return 0.0
+
+
+def _effective_memory_budget_gb():
+    """RAM available to this process for sizing competition workers.
+
+    Prefer the backend/systemd ceiling over bare-metal total RAM. A host with
+    64 GB physical but ``MemoryMax=14G`` / ``--memory-limit-gb 14`` must size
+    workers for 14 GB, not 64 — otherwise league-table pools stack model copies
+    until the memory monitor kills the pipeline (~36 GB observed).
+    """
+    candidates = []
+    for env_key in ("BTS_MEMORY_LIMIT_GB", "BTS_RAM_GB"):
+        raw = os.environ.get(env_key, "").strip()
+        if not raw:
+            continue
+        try:
+            value = float(raw)
+        except ValueError:
+            continue
+        if value > 0:
+            candidates.append(value)
+    cgroup = _cgroup_memory_limit_gb()
+    if cgroup > 0:
+        candidates.append(cgroup)
+    physical = _system_ram_gb()
+    if physical > 0:
+        candidates.append(physical)
+    return min(candidates) if candidates else 0.0
+
+
 def _resolve_competition_workers(args):
     """Choose per-competition projection workers for a single active build.
 
     Sub-pipelines always run sequentially, so only one training or table
-    projection is ever active at a time. The auto value therefore lends every
-    CPU *except one* to that build: the core that is saved for the backend's
-    live score polling and API/file serving, which must keep running while the
-    pipeline is active. Projection workers load their own copy of the multi-GB
-    model cache (model_cache.pkl is ~4.3 GB), so the count is still downshifted
-    when the host's RAM cannot back N parallel cache loads. Override with
-    ``BTS_COMPETITION_WORKERS`` or ``--competition-workers N``.
+    projection is ever active at a time. Projection workers historically
+    re-pickled the multi-GB model cache into every child; even with fork CoW
+    they still dirty large scratch pages during Monte Carlo. Cap workers from
+    the *effective* memory budget (cgroup / ``BTS_MEMORY_LIMIT_GB`` / RAM),
+    not just physical RAM. Override with ``BTS_COMPETITION_WORKERS`` or
+    ``--competition-workers N``.
     """
     requested = int(getattr(args, "competition_workers", 0) or 0)
     override = os.environ.get("BTS_COMPETITION_WORKERS", "").strip()
@@ -471,28 +522,25 @@ def _resolve_competition_workers(args):
         except Exception:
             pass
     cpu = os.cpu_count() or 1
-    ram_gb = _system_ram_gb()
+    budget_gb = _effective_memory_budget_gb()
     if requested <= 0:
-        # Reserve cores for the backend (live polling / API / gunicorn) so the
-        # pipeline never starves request handling. On small hosts keep 1 free;
-        # on larger hosts keep 2 free.
+        # Reserve cores for the backend (live polling / API / gunicorn).
         reserve = 2 if cpu >= 4 else 1
         auto = max(1, cpu - reserve)
     else:
         auto = max(1, int(requested))
-    # With fork CoW shared model caches, workers no longer each need a full
-    # ~4GB private copy. Still cap so RSS stays near the ~12GB host budget
-    # (OS + API + one shared model + modest per-worker scratch).
-    if ram_gb:
-        if ram_gb < 10:
+    # Europe model_cache.pkl is multi-GB. Under a 14 GB MemoryMax the only safe
+    # default is sequential (1). Slightly larger budgets may run 2–3 workers
+    # once CoW inheritance is used without re-pickling initargs.
+    if budget_gb:
+        if budget_gb < 16:
             auto = min(auto, 1)
-        elif ram_gb < 14:
+        elif budget_gb < 24:
+            auto = min(auto, 2)
+        elif budget_gb < 32:
             auto = min(auto, 3)
-        elif ram_gb < 24:
-            auto = min(auto, 5)
         else:
-            auto = min(auto, 8)
-    # Never schedule more workers than free cores after the API reserve.
+            auto = min(auto, 4)
     reserve = 2 if cpu >= 4 else 1
     auto = min(auto, max(1, cpu - reserve))
     return auto

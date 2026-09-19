@@ -261,6 +261,43 @@ class PipelineStepTimeoutTests(unittest.TestCase):
             self.assertNotIn("PROJECT_DIR = os.path.dirname(MLS_DIR)", source)
             self.assertNotIn("PROJECT_DIR = os.path.dirname(EXTRA_DIR)", source)
 
+    def test_league_table_pool_does_not_pickle_ctx_via_initargs(self):
+        for region in ("europe", "extra"):
+            source = (
+                ROOT / "pipelines" / region / "files" / "Project_League_Table.py"
+            ).read_text(encoding="utf-8")
+            self.assertNotIn("initargs=(ctx,)", source)
+            self.assertIn("_WORKER_CTX = ctx", source)
+
+    def test_competition_workers_respect_memory_limit_budget(self):
+        import argparse
+        import importlib
+        import os
+
+        # Import from the module path used by the pipeline entrypoint.
+        sys.path.insert(0, str(ROOT / "main"))
+        import Run_All_Pipeline as rap
+
+        importlib.reload(rap)
+        saved = os.environ.get("BTS_MEMORY_LIMIT_GB")
+        saved_workers = os.environ.get("BTS_COMPETITION_WORKERS")
+        try:
+            os.environ.pop("BTS_COMPETITION_WORKERS", None)
+            os.environ["BTS_MEMORY_LIMIT_GB"] = "14"
+            args = argparse.Namespace(competition_workers=8)
+            self.assertEqual(rap._resolve_competition_workers(args), 1)
+            os.environ["BTS_MEMORY_LIMIT_GB"] = "20"
+            self.assertLessEqual(rap._resolve_competition_workers(args), 2)
+        finally:
+            if saved is None:
+                os.environ.pop("BTS_MEMORY_LIMIT_GB", None)
+            else:
+                os.environ["BTS_MEMORY_LIMIT_GB"] = saved
+            if saved_workers is None:
+                os.environ.pop("BTS_COMPETITION_WORKERS", None)
+            else:
+                os.environ["BTS_COMPETITION_WORKERS"] = saved_workers
+
 
 class LegacyRuntimeMigrationTests(unittest.TestCase):
     def test_migrate_copies_legacy_backend_status(self):

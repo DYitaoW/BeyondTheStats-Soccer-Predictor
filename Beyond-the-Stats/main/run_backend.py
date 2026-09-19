@@ -213,15 +213,11 @@ def main() -> int:
             return 2
 
     workers = max(1, min(int(args.workers), 3))  # kept for CLI compat (pipeline always runs sequentially)
-    cpu_count = os.cpu_count() or 1
-    # During a pipeline run one core must stay free for the backend's live
-    # score polling and API/file serving; everything else goes to the single
-    # active pipeline step (projection/training). When the pipeline is idle the
-    # whole CPU is available to the API again — no permanent reservation.
-    if args.competition_workers <= 0:
-        competition_workers = max(1, cpu_count - 1)
-    else:
-        competition_workers = max(1, int(args.competition_workers))
+    # 0 = let Run_All_Pipeline auto-size from the effective memory budget
+    # (cgroup MemoryMax / BTS_MEMORY_LIMIT_GB / RAM). Do NOT pre-expand to
+    # cpu-1 here — that ignored the 14 GB backend ceiling and stacked
+    # multi-GB model copies during league-table builds.
+    competition_workers = max(0, int(args.competition_workers))
 
     config = BackendConfig(
         serve_website=not args.no_website,
