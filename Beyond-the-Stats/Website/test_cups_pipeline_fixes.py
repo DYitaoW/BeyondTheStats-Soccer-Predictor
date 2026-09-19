@@ -359,6 +359,47 @@ class CupDataPayloadTests(unittest.TestCase):
             with cd._CUP_DATA_MEM_LOCK:
                 self.assertNotIn("England/FA Cup", cd._CUP_DATA_MEM)
 
+    def test_warm_cup_data_mem_from_disk(self):
+        import json
+        import tempfile
+        import time
+        import cup_data as cd
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = {"ok": True, "competition": "England/FA Cup", "fixtures": []}
+            path = Path(tmp) / "england_fa_cup.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(cd.config, "CUP_DATA_DIR", tmp):
+                with cd._CUP_DATA_MEM_LOCK:
+                    cd._CUP_DATA_MEM.clear()
+                loaded = cd.warm_cup_data_mem_from_disk()
+                self.assertEqual(loaded, 1)
+                cached = cd._load_cup_data_from_cache("England/FA Cup")
+            self.assertIsNotNone(cached)
+            self.assertEqual(cached.get("competition"), "England/FA Cup")
+
+    def test_json_payload_mtime_cache(self):
+        import json
+        import tempfile
+        from predictions import _load_json_payload, clear_json_payload_cache
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "brackets.json"
+            path.write_text(json.dumps({"competitions": {"X": {"champion": "A"}}}), encoding="utf-8")
+            clear_json_payload_cache()
+            first = _load_json_payload(str(path))
+            second = _load_json_payload(str(path))
+            self.assertIs(first, second)
+            clear_json_payload_cache()
+            third = _load_json_payload(str(path))
+            self.assertIsNot(first, third)
+            self.assertEqual(third["competitions"]["X"]["champion"], "A")
+
+    def test_gunicorn_warms_cup_data_mem(self):
+        src = Path(__file__).resolve().parents[0].joinpath("gunicorn_config.py").read_text(encoding="utf-8")
+        self.assertIn("warm_cup_data_mem_from_disk", src)
+
     def test_stage_position_odds_from_sim_entry(self):
         import cup_data as cd
 
