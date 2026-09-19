@@ -221,10 +221,6 @@ class UefaCupApiDeferralTests(unittest.TestCase):
 
 
 class EuropeDataDirAliasTests(unittest.TestCase):
-    def test_europe_data_dir_is_project_data(self):
-        self.assertEqual(self.paths.EUROPE_DATA_DIR, self.paths.DATA_DIR)
-        self.assertEqual(str(self.config.EUROPE_DATA_DIR), str(self.paths.DATA_DIR))
-
     def setUp(self):
         import importlib
         import shared.paths as paths_mod
@@ -234,6 +230,36 @@ class EuropeDataDirAliasTests(unittest.TestCase):
         importlib.reload(config_mod)
         self.paths = paths_mod
         self.config = config_mod
+
+    def test_europe_data_dir_is_project_data(self):
+        self.assertEqual(self.paths.EUROPE_DATA_DIR, self.paths.DATA_DIR)
+        self.assertEqual(str(self.config.EUROPE_DATA_DIR), str(self.paths.DATA_DIR))
+
+
+class PipelineStepTimeoutTests(unittest.TestCase):
+    def test_global_tables_and_regional_upcoming_have_timeouts(self):
+        source = (ROOT / "main" / "Run_All_Pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("UPCOMING_MATCHWEEK_TIMEOUT_S", source)
+        self.assertIn('timeout=PROJECTED_TABLE_TIMEOUT_S["global"]', source)
+        self.assertIn("timeout=UPCOMING_MATCHWEEK_TIMEOUT_S", source)
+        # Global tables must not be the only unbounded Project_League_Table call.
+        self.assertGreaterEqual(source.count('timeout=PROJECTED_TABLE_TIMEOUT_S["global"]'), 2)
+
+    def test_extra_espn_uses_scoreboard_cache_not_day_walk(self):
+        source = (
+            ROOT / "pipelines" / "extra" / "files" / "Predict_Upcoming_Matchweek.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("espn_api_cache.fetch_scoreboard_range", source)
+        self.assertNotIn("for offset in range(0, max(1, int(lookahead_days) + 1))", source)
+
+    def test_process_data_does_not_overwrite_project_dir_to_pipelines(self):
+        for region in ("mls", "extra"):
+            source = (
+                ROOT / "pipelines" / region / "files" / "Process_Data.py"
+            ).read_text(encoding="utf-8")
+            self.assertIn("PROJECT_DIR = str(_bts_paths.SP_DIR)", source)
+            self.assertNotIn("PROJECT_DIR = os.path.dirname(MLS_DIR)", source)
+            self.assertNotIn("PROJECT_DIR = os.path.dirname(EXTRA_DIR)", source)
 
 
 class LegacyRuntimeMigrationTests(unittest.TestCase):

@@ -661,6 +661,12 @@ def fetch_json(url, timeout=30):
 
 
 def upcoming_fixtures_from_espn(competition, window_days, lookahead_days=None):
+    """Load upcoming Extra fixtures via cached ESPN scoreboard range (not day-walk).
+
+    A naive per-day loop with ``window_days=365`` burned thousands of HTTP calls
+    and could pin the pipeline until the backend's 6h kill. ``fetch_scoreboard_range``
+    prefers a single multi-day query and falls back to a smart walk with disk cache.
+    """
     espn_id = EXTRA_ESPN_COMPETITIONS.get(competition)
     if not espn_id:
         return pd.DataFrame()
@@ -670,62 +676,69 @@ def upcoming_fixtures_from_espn(competition, window_days, lookahead_days=None):
         lookahead_days = season_calendar.espn_scan_day_count(competition, reference_date=today)
     lookahead_days = min(int(lookahead_days), int(window_days))
     cutoff_end = season_calendar.fixture_search_bounds(competition, reference_date=today)[1]
+    range_end = min(today + pd.Timedelta(days=max(1, lookahead_days)), cutoff_end)
+
+    try:
+        import espn_api_cache
+
+        events = espn_api_cache.fetch_scoreboard_range(
+            espn_id,
+            today.date(),
+            range_end.date(),
+            timeout=30,
+            include_default=True,
+            force_all_days=True,
+            progress_label=competition,
+        )
+    except Exception as exc:
+        print(f"[extra] ESPN range fetch failed for {competition}: {exc}")
+        return pd.DataFrame()
+
     rows = []
     seen = set()
-
-    for offset in range(0, max(1, int(lookahead_days) + 1)):
-        day = today + pd.Timedelta(days=offset)
-        if day > cutoff_end:
-            break
-        url = ESPN_SCOREBOARD_API.format(espn_id=espn_id) + f"?dates={day.strftime('%Y%m%d')}"
-        try:
-            data = fetch_json(url, timeout=30)
-        except Exception:
+    for event in events or []:
+        event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
+        if pd.isna(event_date):
+            continue
+        event_dt_et = event_date.tz_convert(EASTERN_TZ)
+        match_date = event_dt_et.tz_localize(None).normalize()
+        if match_date < today or match_date > cutoff_end:
             continue
 
-        for event in data.get("events", []) or []:
-            event_date = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
-            if pd.isna(event_date):
-                continue
-            event_dt_et = event_date.tz_convert(EASTERN_TZ)
-            match_date = event_dt_et.tz_localize(None).normalize()
-            if match_date < today or match_date > cutoff_end:
-                continue
+        competitions = event.get("competitions", [])
+        if not competitions:
+            continue
+        comp0 = competitions[0] or {}
+        status_state = (
+            ((comp0.get("status") or {}).get("type") or {}).get("state", "")
+        ).strip().lower()
+        if status_state and status_state not in {"pre"}:
+            continue
 
-            competitions = event.get("competitions", [])
-            if not competitions:
-                continue
-            comp0 = competitions[0] or {}
-            status_state = (
-                ((comp0.get("status") or {}).get("type") or {}).get("state", "")
-            ).strip().lower()
-            if status_state and status_state not in {"pre"}:
-                continue
+        home_team = ""
+        away_team = ""
+        for competitor in comp0.get("competitors", []) or []:
+            team_name = ((competitor.get("team") or {}).get("displayName") or "").strip()
+            side = str(competitor.get("homeAway", "")).strip().lower()
+            if side == "home":
+                home_team = team_name
+            elif side == "away":
+                away_team = team_name
+        if not home_team or not away_team:
+            continue
 
-            home_team = ""
-            away_team = ""
-            for competitor in comp0.get("competitors", []) or []:
-                team_name = ((competitor.get("team") or {}).get("displayName") or "").strip()
-                side = str(competitor.get("homeAway", "")).strip().lower()
-                if side == "home":
-                    home_team = team_name
-                elif side == "away":
-                    away_team = team_name
-            if not home_team or not away_team:
-                continue
-
-            key = (match_date.strftime("%Y-%m-%d"), home_team, away_team)
-            if key in seen:
-                continue
-            seen.add(key)
-            rows.append(
-                {
-                    "DateParsed": match_date,
-                    "Kickoff": event_date,
-                    "Home": home_team,
-                    "Away": away_team,
-                }
-            )
+        key = (match_date.strftime("%Y-%m-%d"), home_team, away_team)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            {
+                "DateParsed": match_date,
+                "Kickoff": event_date,
+                "Home": home_team,
+                "Away": away_team,
+            }
+        )
 
     if not rows:
         return pd.DataFrame()

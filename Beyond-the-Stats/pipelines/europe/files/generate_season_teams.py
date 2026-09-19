@@ -22,8 +22,6 @@ Usage:  python files/generate_season_teams.py
 """
 import json, os
 
-PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
 LEAGUES = [
     # ── Global (Aug–May) ──────────────────────────────────────
     "England/Premier League", "England/Championship",

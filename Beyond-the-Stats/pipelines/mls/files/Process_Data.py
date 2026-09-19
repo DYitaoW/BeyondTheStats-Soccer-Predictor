@@ -21,8 +21,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 
-MLS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PROJECT_DIR = os.path.dirname(MLS_DIR)
+# Keep PROJECT_DIR as Beyond-the-Stats/ (from shared.paths). Do not overwrite to
+# pipelines/ — that breaks season_calendar and other shared imports on some hosts.
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
