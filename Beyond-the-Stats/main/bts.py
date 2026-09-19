@@ -97,9 +97,9 @@ def cmd_predict(args):
 
 
 def cmd_status(args):
-    predicted_file = SP_DIR / "Data" / "Predictions" / "upcoming_matchweek_predictions.csv"
+    predicted_file = _paths.GLOBAL_UPCOMING_FILE
     mobile_feed = SP_DIR / "Output" / "mobile_app_feed.json"
-    run_status = SP_DIR / "Data" / "backend_run_status.json"
+    run_status = _paths.BACKEND_RUN_STATUS_FILE
 
     print(f"  {'Project Root:':<25} {PROJECT_ROOT}")
     print(f"  {'Predictions File:':<25} {'exists' if predicted_file.exists() else 'missing'}")

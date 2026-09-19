@@ -552,7 +552,7 @@ def _probe_projected_tables(csv_path):
 def _write_tables_diagnostics(diagnostics):
     """Persist a compact health report so the tables state is visible on the host.
 
-    Written to ``Data/Predictions/projected_tables_diagnostics.json`` after
+    Written to ``Output/Predictions/shared/projected_tables_diagnostics.json`` after
     every pipeline run. Shows per-pipeline path, mtime, row counts, zeroed
     rows, and the reason a CSV was unusable.
     """
@@ -1235,7 +1235,7 @@ def _write_pipeline_timestamp() -> None:
 
 
 def _write_pipeline_status(results: dict) -> None:
-    """Write pipeline step results to Data/pipeline_status.json for the API."""
+    """Write pipeline step results to Output/Status/pipeline_status.json for the API."""
     try:
         now = datetime.now(UTC).replace(microsecond=0)
         passed = sum(1 for v in results.values() if v)
@@ -1305,7 +1305,7 @@ def main():
         # Refresh Output/ Europe/LeagueResult (and other published trees) so the
         # website backends and artifacts pick up fresh projections. Daily_Pipeline
         # does this itself after each loop; the standalone CLI would otherwise
-        # leave Output/ stale relative to Data/Predictions/*.csv.
+        # leave Output/ stale relative to Output/Predictions/*.csv.
         try:
             if str(MAIN_DIR) not in sys.path:
                 sys.path.insert(0, str(MAIN_DIR))

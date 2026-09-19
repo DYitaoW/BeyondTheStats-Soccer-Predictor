@@ -14,11 +14,11 @@ PREDICTIONS_DIR = str(_bts_paths.OUTPUT_PRED_EUROPE)
 PROJECT_DIR = str(_bts_paths.SP_DIR)
 """One-time fetch: persist team rosters per league from ESPN.
 
-Saves to Data/Predictions/league_teams.json so the predictor can know
+Saves to Data/Seeds/league_teams.json so the predictor can know
 which teams belong to each league even during the offseason when no
 scheduled games exist.
 
-Usage:  python files/fetch_league_teams.py
+Usage:  python pipelines/europe/files/fetch_league_teams.py
 """
 import json, os, sys, time, urllib.request, urllib.error
 

@@ -165,6 +165,54 @@ def ensure_output_dirs() -> None:
         EXTRA_DATA_DIR / "Predictions",
     ):
         os.makedirs(path, exist_ok=True)
+    migrate_legacy_runtime_files()
+
+
+def migrate_legacy_runtime_files() -> None:
+    """Copy pre-reorg ``Data/*.json`` status files into ``Output/Status/``.
+
+    Hosts that ran before the folder reorg may still have
+    ``Data/backend_run_status.json``, ``Data/standings_cache.json``, etc.
+    New code only reads ``Output/Status/``. Copy (not move) when the new
+    path is missing so a partial deploy cannot lose the only copy.
+    """
+    legacy_pairs = (
+        (DATA_DIR / "backend_run_status.json", BACKEND_RUN_STATUS_FILE),
+        (DATA_DIR / "standings_cache.json", STANDINGS_CACHE_FILE),
+        (DATA_DIR / "live_score_history.json", LIVE_SCORE_HISTORY_FILE),
+        (DATA_DIR / "pipeline_status.json", PIPELINE_STATUS_FILE),
+        (DATA_DIR / "last_refresh.json", LAST_REFRESH_FILE),
+        (DATA_DIR / "last_data_refresh.json", LAST_DATA_REFRESH_FILE),
+        (DATA_DIR / "prediction_tracking.json", PREDICTION_TRACKING_FILE),
+        (
+            DATA_DIR / "Predictions" / "world_cup_projection.json",
+            WORLD_CUP_PROJECTION_FILE,
+        ),
+        (
+            DATA_DIR / "Predictions" / "upcoming_matchweek_predictions.csv",
+            GLOBAL_UPCOMING_FILE,
+        ),
+        (
+            DATA_DIR / "Predictions" / "projected_league_tables.csv",
+            GLOBAL_PROJECTED_TABLE_FILE,
+        ),
+        (
+            DATA_DIR / "Predictions" / "past_games.json",
+            PAST_GAMES_FILE,
+        ),
+    )
+    import shutil
+
+    for src, dst in legacy_pairs:
+        try:
+            if not src.is_file():
+                continue
+            if dst.is_file():
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+        except OSError:
+            continue
 
 
 def as_str(path: Path | str) -> str:

@@ -435,25 +435,29 @@ def latest_raw_file_per_competition(raw_root):
 
 def load_context():
     matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
-    if not os.path.exists(pm.MODEL_CACHE):
+    team_data_dir = pm.resolve_team_data_dir()
+    model_cache_path = pm.resolve_model_cache_path()
+    if not os.path.exists(model_cache_path):
         print("[model-cache] cache missing; rebuilding model cache...")
         rebuild_model_cache_once()
+        model_cache_path = pm.resolve_model_cache_path()
 
     try:
-        bundle = joblib.load(pm.MODEL_CACHE)
+        bundle = joblib.load(model_cache_path)
     except Exception as exc:
         print(f"[model-cache] failed to load MLS cache ({exc.__class__.__name__}); rebuilding...")
         rebuild_model_cache_once()
-        bundle = joblib.load(pm.MODEL_CACHE)
+        model_cache_path = pm.resolve_model_cache_path()
+        bundle = joblib.load(model_cache_path)
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
         print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
 
-    overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
-    season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))
-    head_to_head = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "head_to_head.json"))
-    current_form = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "current_form.json"))
-    league_strength = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "league_strength.json")) or {}
-    market_value_data = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "mls_squad_values.json")) or {}
+    overall_teams = pm.load_json_if_exists(os.path.join(team_data_dir, "overall_teams.json"))
+    season_teams = pm.load_json_if_exists(os.path.join(team_data_dir, "season_teams.json"))
+    head_to_head = pm.load_json_if_exists(os.path.join(team_data_dir, "head_to_head.json"))
+    current_form = pm.load_json_if_exists(os.path.join(team_data_dir, "current_form.json"))
+    league_strength = pm.load_json_if_exists(os.path.join(team_data_dir, "league_strength.json")) or {}
+    market_value_data = pm.load_json_if_exists(os.path.join(team_data_dir, "mls_squad_values.json")) or {}
     dynamic_form = pm.build_dynamic_form_from_matches(matches)
 
     if (

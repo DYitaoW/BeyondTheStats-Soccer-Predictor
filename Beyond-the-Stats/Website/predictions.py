@@ -237,9 +237,9 @@ def _build_last5_form_index(mode):
 
     # Map mode to processed data directory
     mode_dirs = {
-        "global": os.path.join(config.FILES_DIR, "Processed_Data"),
-        "mls": os.path.join(config.MLS_DATA_DIR, "Processed_Data"),
-        "extra": os.path.join(config.EXTRA_DATA_DIR, "Processed_Data"),
+        "global": config.EUROPE_PROCESSED_DIR,
+        "mls": config.MLS_PROCESSED_DIR,
+        "extra": config.EXTRA_PROCESSED_DIR,
     }
     processed_dir = mode_dirs.get(mode)
     if not processed_dir or not os.path.exists(processed_dir):

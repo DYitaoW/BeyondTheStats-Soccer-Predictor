@@ -46,14 +46,12 @@ from Update_Live_Prediction_Results import (
 )
 
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PREDICTIONS_DIR = PREDICTIONS_DIR
 CUP_PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_cup_predictions.csv")
 COMPLETED_CUP_PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "completed_cup_predictions.csv")
 PROJECTED_CUP_TABLES_FILE = os.path.join(PREDICTIONS_DIR, "projected_cup_tables.csv")
 REAL_CUP_TABLES_FILE = os.path.join(PREDICTIONS_DIR, "real_cup_tables.csv")
 PROJECTED_CUP_BRACKETS_FILE = os.path.join(PREDICTIONS_DIR, "projected_cup_brackets.json")
-ESPN_CUP_NAMES_FILE = os.path.join(PREDICTIONS_DIR, "espn_cup_names_seen.json")
+ESPN_CUP_NAMES_FILE = str(_bts_paths.ESPN_CUP_NAMES_FILE)
 
 # Sentinel when a projected knockout winner cannot be decided yet (TBD side or no odds).
 NO_PREDICTION = "NONE"

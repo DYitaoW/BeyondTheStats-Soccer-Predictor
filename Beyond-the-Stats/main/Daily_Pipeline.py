@@ -514,7 +514,7 @@ def _condense_real_league_tables():
     comp_names = list(website_config.LIVE_SCORE_COMPETITIONS) + sorted(
         website_config.MLS_TABLE_VIEW_ALIASES
     )
-    standings_file = SP_DIR / "Data" / "standings_cache.json"
+    standings_file = _paths.STANDINGS_CACHE_FILE
     if standings_file.exists():
         try:
             cache = json.loads(standings_file.read_text(encoding="utf-8"))
@@ -1096,7 +1096,7 @@ def _enrich_mls_data(payload, mls_bracket, mls_table_path):
 # Player event tracking — goals, assists, yellow/red cards per comp per season
 # ---------------------------------------------------------------------------
 
-_PLAYER_STATS_DIR = SP_DIR / "Data" / "PlayerStats"
+_PLAYER_STATS_DIR = _paths.OUTPUT_CACHE_DIR / "PlayerStats"
 # Player event/leader stats (goals/assists/cards) feed only the website's
 # leaders display and are not used by any prediction/model code, so skip the
 # ESPN fetches and per-competition writes until they start feeding predictions.
@@ -1353,7 +1353,7 @@ def build_player_standings():
     if not FETCH_PLAYER_LEADERS:
         return {}
     # ── 1. Load live history ──
-    hist_file = SP_DIR / "Data" / "live_score_history.json"
+    hist_file = _paths.LIVE_SCORE_HISTORY_FILE
     live_history = _load_json(hist_file) if hist_file.exists() else []
     live_history = live_history if isinstance(live_history, list) else []
 
@@ -1404,7 +1404,7 @@ def _publish_enriched_competition_data(output_dir, cup_brackets_path, mls_bracke
     mls_bracket = _load_json(mls_bracket_path) if mls_bracket_path and mls_bracket_path.exists() else {}
 
     # Sources for real knockout brackets and cup team discovery
-    live_history_file = SP_DIR / "Data" / "live_score_history.json"
+    live_history_file = _paths.LIVE_SCORE_HISTORY_FILE
     live_history = _load_json(live_history_file) if live_history_file.exists() else []
     live_history = live_history if isinstance(live_history, list) else []
     cup_upcoming = _read_csv(CUP_PREDICTIONS_DIR / "upcoming_cup_predictions.csv")
@@ -1628,11 +1628,11 @@ def _write_pipeline_status(results: dict) -> None:
         print(f"[WARN] Could not write pipeline_status.json: {exc}")
 
 
-BACKEND_RUN_STATUS_FILE = SP_DIR / "Data" / "backend_run_status.json"
+BACKEND_RUN_STATUS_FILE = _paths.BACKEND_RUN_STATUS_FILE
 
 
 def _write_backend_run_status(ok: bool, trigger: str = "daily") -> None:
-    """Write Data/backend_run_status.json right as the run ends.
+    """Write Output/Status/backend_run_status.json right as the run ends.
 
     The server's watcher also writes this file after the subprocess exits,
     but writing it here (at the exact end of the pipeline, before the backend
