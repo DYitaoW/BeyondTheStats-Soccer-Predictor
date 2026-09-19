@@ -56,6 +56,9 @@ class AveragedProbaClassifier:
 # BASE_DIR set by shared.paths bootstrap above
 FILES_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
+# European Extra leagues (NED/BEL/SCO/…) are downloaded by the global pipeline into
+# shared Data/Raw_Data — same merge Predict_Upcoming_Matchweek already uses.
+GLOBAL_RAW_DIR = str(_bts_paths.DATA_DIR / "Raw_Data")
 OUT_DIR = PREDICTIONS_DIR
 OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
 OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
@@ -73,6 +76,24 @@ SHARED_MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
 LEAGUE_TEAMS_FILE = str(_bts_paths.LEAGUE_TEAMS_FILE)
 CURRENT_SEASON_TEAMS_FILE = str(_bts_paths.CURRENT_SEASON_TEAMS_FILE)
 FALLBACK_TEAMS_FILE = str(_bts_paths.EUROPE_FILES_DIR / "preseason" / "2026_27_league_team_fallback.json")
+
+# Competitions owned by the Extra pipeline. ARG/BRA/JPN live under Extra Raw_Data;
+# the European names below may only exist under shared Data/Raw_Data.
+EXTRA_COMPETITIONS = frozenset({
+    "Argentina/Primera Division",
+    "Brazil/Brasileirão",
+    "Japan/J1 League",
+    "Netherlands/Eredivisie",
+    "Austria/Bundesliga",
+    "Greece/Super League",
+    "Norway/Eliteserien",
+    "Romania/Liga I",
+    "Sweden/Allsvenskan",
+    "Belgium/First Division A",
+    "Turkey/Super Lig",
+    "Scotland/Premiership",
+    "Poland/Ekstraklasa",
+})
 
 # Only the top-5 European leagues get preseason fallback projections.
 # Other leagues wait until their CSV appears and passes the month/team-count gates.
@@ -478,10 +499,16 @@ def _project_competition_worker(competition, raw_file, sim_runs=None):
 
 
 def load_context():
+    # Extra Processed_Data may be empty when download failed or tables-only mode
+    # runs before Extra data exists; fall back to shared Europe Processed_Data so
+    # we still write projected_league_tables.csv instead of UNUSABLE / file missing.
     matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
-    if not os.path.exists(pm.MODEL_CACHE):
+    team_data_dir = pm.resolve_team_data_dir()
+    model_cache_path = pm.resolve_model_cache_path()
+    if not os.path.exists(model_cache_path):
         print("[model-cache] cache missing; rebuilding model cache...")
         rebuild_model_cache_once()
+        model_cache_path = pm.resolve_model_cache_path()
 
     try:
         # Caches pickled from Predict_Match.py as __main__ need this alias.
@@ -490,7 +517,7 @@ def load_context():
         pass
 
     try:
-        bundle = joblib.load(pm.MODEL_CACHE)
+        bundle = joblib.load(model_cache_path)
     except Exception as exc:
         print(f"[model-cache] failed to load cache ({exc.__class__.__name__}: {exc}); rebuilding...")
         try:
@@ -504,7 +531,8 @@ def load_context():
             setattr(sys.modules.get("__main__"), "AveragedProbaClassifier", pm.AveragedProbaClassifier)
         except Exception:
             pass
-        bundle = joblib.load(pm.MODEL_CACHE)
+        model_cache_path = pm.resolve_model_cache_path()
+        bundle = joblib.load(model_cache_path)
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
         print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
 
@@ -526,13 +554,14 @@ def load_context():
         if os.path.exists(pm.MODEL_CACHE):
             os.remove(pm.MODEL_CACHE)
         rebuild_model_cache_once()
-        bundle = joblib.load(pm.MODEL_CACHE)
+        model_cache_path = pm.resolve_model_cache_path()
+        bundle = joblib.load(model_cache_path)
 
-    overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
-    season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))
-    head_to_head = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "head_to_head.json"))
-    current_form = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "current_form.json"))
-    league_strength = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "league_strength.json")) or {}
+    overall_teams = pm.load_json_if_exists(os.path.join(team_data_dir, "overall_teams.json"))
+    season_teams = pm.load_json_if_exists(os.path.join(team_data_dir, "season_teams.json"))
+    head_to_head = pm.load_json_if_exists(os.path.join(team_data_dir, "head_to_head.json"))
+    current_form = pm.load_json_if_exists(os.path.join(team_data_dir, "current_form.json"))
+    league_strength = pm.load_json_if_exists(os.path.join(team_data_dir, "league_strength.json")) or {}
     dynamic_form = pm.build_dynamic_form_from_matches(matches)
 
     if (
@@ -1290,7 +1319,15 @@ def main():
     _t0 = time.monotonic()
     _progress("[league-tables] START — loading models / discovering Extra competitions")
     ctx = load_context()
-    latest = latest_raw_file_per_competition(RAW_DIR) or {}
+    # Merge Extra Raw_Data with shared Europe Raw_Data (European Extra leagues
+    # moved to the global downloader still need to be projected here).
+    latest = {}
+    for raw_root in (RAW_DIR, GLOBAL_RAW_DIR):
+        discovered = latest_raw_file_per_competition(raw_root) or {}
+        for comp, path in discovered.items():
+            # Keep anything under Extra Raw_Data; from shared only Extra competitions.
+            if raw_root == RAW_DIR or comp in EXTRA_COMPETITIONS:
+                latest[comp] = path
     latest = _merge_roster_only_competitions(latest, ctx["available_teams"])
     # Never project cups or national-team competitions (incl. World Cup
     # qualifying) as league tables — filters both CSV-discovered and
@@ -1300,7 +1337,10 @@ def main():
         _progress(f"  [skip] not a league-table competition: {comp}")
     latest = {c: p for c, p in latest.items() if is_league_table_competition(c)}
     if not latest:
-        raise ValueError(f"No raw season files or current-season rosters found for Extra leagues")
+        raise ValueError(
+            "No raw season files or current-season rosters found for Extra leagues "
+            f"(searched {RAW_DIR} and {GLOBAL_RAW_DIR})"
+        )
 
     # Track all competitions before any skip so we can fill zeroed placeholders
     # for skipped ones and prevent stale data from persisting in output CSVs.

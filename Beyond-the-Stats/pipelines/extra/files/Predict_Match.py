@@ -53,12 +53,76 @@ if _ROOT_DIR not in sys.path:
     sys.path.insert(0, _ROOT_DIR)
 import team_mapping_groups as tmg  # noqa: E402
 PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
+# Extra download writes here; European Extra leagues (NED/BEL/SCO/…) live in the
+# shared Europe tree. Project / train fall back so an empty Extra Processed_Data
+# does not crash the daily pipeline with UNUSABLE projected tables.
+SHARED_PROCESSED_DIR = str(_bts_paths.DATA_DIR / "Processed_Data")
+SHARED_TEAM_DATA_DIR = str(_bts_paths.DATA_DIR / "Team_Data")
 TEAM_DATA_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
 MODEL_CACHE = os.path.join(TEAM_DATA_DIR, "model_cache.pkl")
+SHARED_MODEL_CACHE = os.path.join(SHARED_TEAM_DATA_DIR, "model_cache.pkl")
 SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})(?:-(\d{2}))?\.csv$", re.IGNORECASE)
 MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
 _name_mapping_cache = None
 MIN_START_YEAR = 2002
+
+
+def processed_dir_has_season_csvs(processed_dir):
+    """True when ``processed_dir`` contains at least one parseable season CSV."""
+    if not processed_dir or not os.path.isdir(processed_dir):
+        return False
+    for root, _, files in os.walk(processed_dir):
+        for name in files:
+            if name.endswith(".csv") and SEASON_PATTERN.match(name):
+                return True
+    return False
+
+
+def resolve_processed_dir(preferred=None):
+    """Prefer Extra Processed_Data; fall back to shared Europe when Extra is empty."""
+    preferred = preferred or PROCESSED_DIR
+    if processed_dir_has_season_csvs(preferred):
+        return preferred
+    if preferred != SHARED_PROCESSED_DIR and processed_dir_has_season_csvs(SHARED_PROCESSED_DIR):
+        print(
+            f"[extra] Processed_Data empty at {preferred}; "
+            f"falling back to shared {SHARED_PROCESSED_DIR}",
+            flush=True,
+        )
+        return SHARED_PROCESSED_DIR
+    return preferred
+
+
+def resolve_team_data_dir(preferred=None):
+    """Prefer Extra Team_Data when it has roster JSON; else shared Europe Team_Data."""
+    preferred = preferred or TEAM_DATA_DIR
+    marker = os.path.join(preferred, "overall_teams.json")
+    if os.path.isfile(marker):
+        return preferred
+    shared_marker = os.path.join(SHARED_TEAM_DATA_DIR, "overall_teams.json")
+    if preferred != SHARED_TEAM_DATA_DIR and os.path.isfile(shared_marker):
+        print(
+            f"[extra] Team_Data missing at {preferred}; "
+            f"falling back to shared {SHARED_TEAM_DATA_DIR}",
+            flush=True,
+        )
+        return SHARED_TEAM_DATA_DIR
+    return preferred
+
+
+def resolve_model_cache_path(preferred=None):
+    """Prefer Extra model cache; else shared Europe cache when Extra has none."""
+    preferred = preferred or MODEL_CACHE
+    if os.path.isfile(preferred):
+        return preferred
+    if preferred != SHARED_MODEL_CACHE and os.path.isfile(SHARED_MODEL_CACHE):
+        print(
+            f"[extra] model cache missing at {preferred}; "
+            f"falling back to shared {SHARED_MODEL_CACHE}",
+            flush=True,
+        )
+        return SHARED_MODEL_CACHE
+    return preferred
 
 # MLS tuning: higher parity than major European leagues with a meaningful home edge.
 MLS_HOME_EDGE_SHIFT = 0.045
@@ -603,7 +667,9 @@ def coerce_feature_value(value, default=0.0):
     return float(value)
 
 
-def data_fingerprint(season_files, processed_dir=PROCESSED_DIR):
+def data_fingerprint(season_files, processed_dir=None):
+    if processed_dir is None:
+        processed_dir = resolve_processed_dir()
     digest = hashlib.sha256()
     for rel_path in season_files:
         digest.update(rel_path.encode("utf-8"))
@@ -1088,7 +1154,9 @@ def build_features(
     return pd.DataFrame(rows)
 
 
-def load_training_matches(processed_dir):
+def load_training_matches(processed_dir=None):
+    """Load training frames from Extra Processed_Data, with shared Europe fallback."""
+    processed_dir = resolve_processed_dir(processed_dir)
     frames = []
     valid_files = []
 
@@ -1146,7 +1214,10 @@ def load_training_matches(processed_dir):
         frames.append(df)
 
     if not frames:
-        raise ValueError("No season CSV files found in Data/Processed_Data.")
+        raise ValueError(
+            "No season CSV files found in Extra or shared Data/Processed_Data "
+            f"(tried {PROCESSED_DIR} and {SHARED_PROCESSED_DIR})."
+        )
 
     return pd.concat(frames, ignore_index=True), season_files
 
