@@ -7,12 +7,12 @@ then writes a condensed JSON feed to the `Output/` directory for a future
 mobile app.
 
 Usage:
-    python Daily_Pipeline.py                       # run once, then sleep 24h, repeat
-    python Daily_Pipeline.py --once                # run once and exit
-    python Daily_Pipeline.py --interval-hours 12   # custom cycle
-    python Daily_Pipeline.py --max-iterations 3     # stop after N runs (testing)
-    python Daily_Pipeline.py --skip-mls --skip-extra
-    python Daily_Pipeline.py --output-file path/to/feed.json
+    python main/Daily_Pipeline.py                       # run once, then sleep 24h, repeat
+    python main/Daily_Pipeline.py --once                # run once and exit
+    python main/Daily_Pipeline.py --interval-hours 12   # custom cycle
+    python main/Daily_Pipeline.py --max-iterations 3     # stop after N runs (testing)
+    python main/Daily_Pipeline.py --skip-mls --skip-extra
+    python main/Daily_Pipeline.py --output-file path/to/feed.json
 
 The pipeline step list mirrors `Run_All_Pipeline.py`; this script is just the
 scheduler + mobile-feed writer on top of it.

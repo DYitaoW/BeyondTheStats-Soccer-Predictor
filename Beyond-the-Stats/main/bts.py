@@ -1,8 +1,8 @@
 """Beyond The Stats CLI — predict and status commands.
 
 Usage:
-    python bts.py predict <home_team> <away_team> [--mode global|mls|extra]
-    python bts.py status
+    python main/bts.py predict <home_team> <away_team> [--mode global|mls|extra]
+    python main/bts.py status
 """
 import argparse
 import json

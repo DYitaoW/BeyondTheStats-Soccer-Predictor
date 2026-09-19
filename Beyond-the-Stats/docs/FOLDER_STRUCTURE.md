@@ -32,9 +32,9 @@ Beyond-the-Stats/
 
 | Task | Command |
 |------|---------|
-| Full pipeline | `python main/Run_All_Pipeline.py` |
+| Full pipeline | `python main/Run_All_Pipeline.py` (root shim: `python Run_All_Pipeline.py`) |
 | Daily loop / feed | `python main/Daily_Pipeline.py --once` |
-| Persistent backend | `python main/run_backend.py` |
+| Persistent backend | `python main/run_backend.py` (root shim: `python run_backend.py`) |
 | Website only | `gunicorn --chdir Website -c gunicorn_config.py app:app` |
 
 ## Output layout

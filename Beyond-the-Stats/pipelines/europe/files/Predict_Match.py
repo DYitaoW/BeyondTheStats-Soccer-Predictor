@@ -2,9 +2,9 @@
 ML model training + prediction for European club matches.
 
 This is the core model file — three nearly-identical copies exist:
-- ``files/Predict_Match.py`` (global / European)
-- ``MLS/files/Predict_Match.py``
-- ``Extra-leagues/files/Predict_Match.py``
+- ``pipelines/europe/files/Predict_Match.py`` (global / European)
+- ``pipelines/mls/files/Predict_Match.py``
+- ``pipelines/extra/files/Predict_Match.py``
 
 Responsibilities
 ----------------
@@ -170,7 +170,7 @@ def _load_historical_tables():
         current = _season_teams_signature()
         cached = load_json_if_exists(path) or {}
         if not cached or (current and cached.get("generated_season_signature") != current):
-            builder = os.path.join(BASE_DIR, "files", "Build_Historical_Tables.py")
+            builder = os.path.join(_FILES_DIR, "Build_Historical_Tables.py")
             if os.path.exists(builder):
                 try:
                     subprocess.run(

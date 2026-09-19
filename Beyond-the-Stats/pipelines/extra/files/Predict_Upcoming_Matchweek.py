@@ -99,7 +99,7 @@ def rebuild_model_cache_once():
 
 
 # Allow import of global pipeline modules (UEFA_Data_Manager, team mapping sync, etc.)
-_GLOBAL_FILES_DIR = os.path.join(os.path.dirname(BASE_DIR), "files")
+_GLOBAL_FILES_DIR = str(_bts_paths.EUROPE_FILES_DIR)
 if _GLOBAL_FILES_DIR not in sys.path:
     sys.path.insert(0, _GLOBAL_FILES_DIR)
 
