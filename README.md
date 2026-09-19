@@ -13,6 +13,7 @@ Rather than relying solely on league position or basic recent results, the predi
 Key code lives under `Beyond-the-Stats/`:
 
 - `main/` — pipeline + backend entry points (`Run_All_Pipeline.py`, `Daily_Pipeline.py`, `run_backend.py`)
+  - Root shims also exist (`Beyond-the-Stats/run_backend.py`, etc.) so old launch commands still work.
 - `pipelines/{europe,mls,extra}/` — region scripts and working `Data/`
 - `shared/` — shared libraries including `paths.py` (canonical filesystem roots)
 - `Website/` — Flask API
