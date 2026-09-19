@@ -1,50 +1,68 @@
-﻿"""Configuration constants for the Beyond the Stats Flask application.
+"""Configuration constants for the Beyond the Stats Flask application.
 
 File paths, ESPN competition IDs, cache TTLs, and environment variables.
 """
 import os
+import sys
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-# ── Directory Structure ────────────────────────────────────────────
+# ── Directory Structure (via shared.paths) ─────────────────────────
 
 WEBSITE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(WEBSITE_DIR)
-LAST_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_refresh.json")
-FILES_DIR = os.path.join(PROJECT_DIR, "files")
-MLS_FILES_DIR = os.path.join(PROJECT_DIR, "MLS", "files")
-EXTRA_FILES_DIR = os.path.join(PROJECT_DIR, "Extra-leagues", "files")
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+_SHARED_DIR = os.path.join(PROJECT_DIR, "shared")
+if _SHARED_DIR not in sys.path:
+    sys.path.insert(0, _SHARED_DIR)
+from shared import paths as _paths  # noqa: E402
+
+_paths.ensure_output_dirs()
+
+LAST_REFRESH_FILE = str(_paths.LAST_REFRESH_FILE)
+FILES_DIR = str(_paths.EUROPE_FILES_DIR)
+MLS_FILES_DIR = str(_paths.MLS_FILES_DIR)
+EXTRA_FILES_DIR = str(_paths.EXTRA_FILES_DIR)
 WEBSITE_FILES_DIR = os.path.join(WEBSITE_DIR, "files")
 GRAPHICS_DIR = os.path.join(WEBSITE_DIR, "graphics")
 ACCURACY_TOTALS_FILE = os.path.join(WEBSITE_FILES_DIR, "accuracy_totals.json")
 ACCURACY_HISTORY_DIR = os.path.join(WEBSITE_FILES_DIR, "accuracy_history")
 
-# ── Prediction Files ──────────────────────────────────────────────
+# Working / processed data roots (per region)
+EUROPE_DATA_DIR = str(_paths.DATA_DIR)  # europe still uses project-level Data/
+MLS_DATA_DIR = str(_paths.MLS_DATA_DIR)
+EXTRA_DATA_DIR = str(_paths.EXTRA_DATA_DIR)
+EUROPE_PROCESSED_DIR = os.path.join(EUROPE_DATA_DIR, "Processed_Data")
+MLS_PROCESSED_DIR = os.path.join(MLS_DATA_DIR, "Processed_Data")
+EXTRA_PROCESSED_DIR = os.path.join(EXTRA_DATA_DIR, "Processed_Data")
 
-GLOBAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_matchweek_predictions.csv")
-GLOBAL_PROJECTED_MATCHES_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_future_matches.csv")
-ALL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv")
-FOUR_WEEK_WINDOW_FILE = os.path.join(PROJECT_DIR, "Output", "Upcoming", "four_week_window.csv")
-CUP_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_cup_predictions.csv")
-CUP_COMPLETED_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "completed_cup_predictions.csv")
-MLS_UPCOMING_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
-EXTRA_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Extra-leagues", "Data", "Predictions", "upcoming_matchweek_predictions.csv")
-EXTRA_PROJECTED_MATCHES_FILE = os.path.join(PROJECT_DIR, "Extra-leagues", "Data", "Predictions", "projected_future_matches.csv")
-NATIONAL_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_national_team_predictions.csv")
-FRIENDLIES_UPCOMING_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "upcoming_club_friendlies.csv")
-GLOBAL_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_league_tables.csv")
-CUP_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_tables.csv")
-CUP_REAL_TABLE_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "real_cup_tables.csv")
-CUP_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "projected_cup_brackets.json")
-PAST_GAMES_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "past_games.json")
-MLS_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "projected_league_tables.csv")
-EXTRA_PROJECTED_TABLE_FILE = os.path.join(PROJECT_DIR, "Extra-leagues", "Data", "Predictions", "projected_league_tables.csv")
-MLS_PROJECTED_BRACKET_FILE = os.path.join(PROJECT_DIR, "MLS", "Data", "Predictions", "projected_mls_playoff_bracket.json")
+# ── Prediction Files (all under Output/) ───────────────────────────
+
+GLOBAL_UPCOMING_FILE = str(_paths.GLOBAL_UPCOMING_FILE)
+GLOBAL_PROJECTED_MATCHES_FILE = str(_paths.GLOBAL_PROJECTED_MATCHES_FILE)
+ALL_UPCOMING_FILE = str(_paths.ALL_UPCOMING_FILE)
+FOUR_WEEK_WINDOW_FILE = str(_paths.FOUR_WEEK_WINDOW_FILE)
+CUP_UPCOMING_FILE = str(_paths.CUP_UPCOMING_FILE)
+CUP_COMPLETED_FILE = str(_paths.CUP_COMPLETED_FILE)
+MLS_UPCOMING_FILE = str(_paths.MLS_UPCOMING_FILE)
+EXTRA_UPCOMING_FILE = str(_paths.EXTRA_UPCOMING_FILE)
+EXTRA_PROJECTED_MATCHES_FILE = str(_paths.EXTRA_PROJECTED_MATCHES_FILE)
+NATIONAL_UPCOMING_FILE = str(_paths.NATIONAL_UPCOMING_FILE)
+FRIENDLIES_UPCOMING_FILE = str(_paths.FRIENDLIES_UPCOMING_FILE)
+GLOBAL_PROJECTED_TABLE_FILE = str(_paths.GLOBAL_PROJECTED_TABLE_FILE)
+CUP_PROJECTED_TABLE_FILE = str(_paths.CUP_PROJECTED_TABLE_FILE)
+CUP_REAL_TABLE_FILE = str(_paths.CUP_REAL_TABLE_FILE)
+CUP_PROJECTED_BRACKET_FILE = str(_paths.CUP_PROJECTED_BRACKET_FILE)
+PAST_GAMES_FILE = str(_paths.PAST_GAMES_FILE)
+MLS_PROJECTED_TABLE_FILE = str(_paths.MLS_PROJECTED_TABLE_FILE)
+EXTRA_PROJECTED_TABLE_FILE = str(_paths.EXTRA_PROJECTED_TABLE_FILE)
+MLS_PROJECTED_BRACKET_FILE = str(_paths.MLS_PROJECTED_BRACKET_FILE)
 
 # ── Pipeline & Data Files ─────────────────────────────────────────
 
-LIVE_RESULTS_UPDATER = os.path.join(FILES_DIR, "Update_Live_Prediction_Results.py")
-RUN_ALL_PIPELINE = os.path.join(PROJECT_DIR, "Run_All_Pipeline.py")
+LIVE_RESULTS_UPDATER = str(_paths.LIVE_RESULTS_UPDATER)
+RUN_ALL_PIPELINE = str(_paths.RUN_ALL_PIPELINE)
 
 # Set to "0" / "false" to disable pipeline execution entirely.
 # Useful during development/debugging so /api/refresh and /api/retrain
@@ -55,27 +73,27 @@ PIPELINE_ENABLED = os.environ.get("PIPELINE_ENABLED", "1").strip().lower() in {"
 # will map canonical names through the display-mapping file.
 USE_DISPLAY_NAME_MAPPING = False
 
-LAST_DATA_REFRESH_FILE = os.path.join(PROJECT_DIR, "Data", "last_data_refresh.json")
-PIPELINE_STATUS_FILE = os.path.join(PROJECT_DIR, "Data", "pipeline_status.json")
-BACKEND_RUN_STATUS_FILE = os.path.join(PROJECT_DIR, "Data", "backend_run_status.json")
-PIPELINE_LOG_FILE = os.path.join(PROJECT_DIR, "Data", "pipeline_latest.log")
-TEAM_NAME_DISPLAY_MAPPING_FILE = os.path.join(PROJECT_DIR, "..", "Data", "team_name_mapping_master.json")
-TOP_SCORERS_FILE = os.path.join(PROJECT_DIR, "Data", "Team_Data", "current_season_top_scorers.json")
-LIVE_SCORE_HISTORY_FILE = os.path.join(PROJECT_DIR, "Data", "live_score_history.json")
-PREDICTION_TRACKING_FILE = os.path.join(PROJECT_DIR, "Data", "prediction_tracking.json")
-REAL_TABLES_PERSIST_FILE = os.path.join(PROJECT_DIR, "Data", "standings_cache.json")
-LEAGUE_TEAMS_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "league_teams.json")
-CURRENT_SEASON_TEAMS_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "current_season_teams.json")
-WORLD_CUP_PROJECTION_FILE = os.path.join(PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+LAST_DATA_REFRESH_FILE = str(_paths.LAST_DATA_REFRESH_FILE)
+PIPELINE_STATUS_FILE = str(_paths.PIPELINE_STATUS_FILE)
+BACKEND_RUN_STATUS_FILE = str(_paths.BACKEND_RUN_STATUS_FILE)
+PIPELINE_LOG_FILE = str(_paths.PIPELINE_LOG_FILE)
+TEAM_NAME_DISPLAY_MAPPING_FILE = str(_paths.TEAM_NAME_MAPPING_MASTER)
+TOP_SCORERS_FILE = os.path.join(EUROPE_DATA_DIR, "Team_Data", "current_season_top_scorers.json")
+LIVE_SCORE_HISTORY_FILE = str(_paths.LIVE_SCORE_HISTORY_FILE)
+PREDICTION_TRACKING_FILE = str(_paths.PREDICTION_TRACKING_FILE)
+REAL_TABLES_PERSIST_FILE = str(_paths.STANDINGS_CACHE_FILE)
+LEAGUE_TEAMS_FILE = str(_paths.LEAGUE_TEAMS_FILE)
+CURRENT_SEASON_TEAMS_FILE = str(_paths.CURRENT_SEASON_TEAMS_FILE)
+WORLD_CUP_PROJECTION_FILE = str(_paths.WORLD_CUP_PROJECTION_FILE)
 
-# ── League-Data Cache (pre-computed at pipeline / cached on read) ──
+# ── League-Data / Cup-Data Cache (pre-computed under Output/) ──────
 
-LEAGUE_DATA_DIR = os.path.join(PROJECT_DIR, "Output", "LeagueData")
-CUP_DATA_DIR = os.path.join(PROJECT_DIR, "Output", "CupData")
+LEAGUE_DATA_DIR = str(_paths.OUTPUT_LEAGUE_DATA_DIR)
+CUP_DATA_DIR = str(_paths.OUTPUT_CUP_DATA_DIR)
 
 # ── Info Pages (changes / roadmap / upcoming) ───────────────────────
 
-INFO_DIR = os.path.join(PROJECT_DIR, "Data", "Info")
+INFO_DIR = str(_paths.DATA_INFO_DIR)
 INFO_CHANGES_FILE = os.path.join(INFO_DIR, "changes.json")
 INFO_ROADMAP_FILE = os.path.join(INFO_DIR, "roadmap.json")
 INFO_UPCOMING_FILE = os.path.join(INFO_DIR, "upcoming.json")
@@ -670,8 +688,8 @@ ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").spli
 # Codes are case-sensitive; letters and digits only (no special characters).
 # See redeem_codes.example.json.
 
-REDEEM_CODES_FILE = os.path.join(PROJECT_DIR, "..", "Data", "redeem_codes.json")
-REDEEM_CODES_EXAMPLE_FILE = os.path.join(PROJECT_DIR, "..", "Data", "redeem_codes.example.json")
+REDEEM_CODES_FILE = str(_paths.REDEEM_CODES_FILE)
+REDEEM_CODES_EXAMPLE_FILE = str(_paths.REDEEM_CODES_EXAMPLE_FILE)
 
 
 def get_live_score_tier(competition: str) -> str:

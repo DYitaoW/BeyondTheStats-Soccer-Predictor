@@ -1,4 +1,4 @@
-﻿"""League tables and standings computation from live scores."""
+"""League tables and standings computation from live scores."""
 import json
 import os
 import re

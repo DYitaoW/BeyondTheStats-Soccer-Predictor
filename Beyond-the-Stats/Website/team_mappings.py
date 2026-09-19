@@ -1,4 +1,4 @@
-﻿"""Team mapping diagnostics for manual ESPN / API → predictor name alignment."""
+"""Team mapping diagnostics for manual ESPN / API → predictor name alignment."""
 from __future__ import annotations
 
 import csv

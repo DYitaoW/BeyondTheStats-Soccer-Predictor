@@ -10,7 +10,7 @@ from pathlib import Path
 
 WEBSITE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = WEBSITE_DIR.parent
-FILES_DIR = ROOT_DIR / "files"
+FILES_DIR = ROOT_DIR / "pipelines" / "europe" / "files"
 for path in (WEBSITE_DIR, FILES_DIR, ROOT_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
@@ -145,7 +145,7 @@ class BundesligaRosterTests(unittest.TestCase):
     def test_league_teams_bundesliga_26_27_short_names(self):
         import json
 
-        path = ROOT_DIR / "Data" / "Predictions" / "league_teams.json"
+        path = ROOT_DIR / "Data" / "Seeds" / "league_teams.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         bl = set(data["Germany/Bundesliga"])
         self.assertEqual(len(bl), 18)
@@ -405,9 +405,9 @@ class CupDataPayloadTests(unittest.TestCase):
         self.assertTrue(fmt["has_table"])
 
     def test_pipeline_wires_cup_data_rebuild(self):
-        src = (ROOT_DIR / "Daily_Pipeline.py").read_text(encoding="utf-8")
+        src = (ROOT_DIR / "main" / "Daily_Pipeline.py").read_text(encoding="utf-8")
         self.assertIn("rebuild_cup_data_caches", src)
-        src2 = (ROOT_DIR / "Run_All_Pipeline.py").read_text(encoding="utf-8")
+        src2 = (ROOT_DIR / "main" / "Run_All_Pipeline.py").read_text(encoding="utf-8")
         self.assertIn("rebuild_cup_data_caches", src2)
         self.assertIn("_rebuild_cup_data_caches_after_pipeline", src2)
 
@@ -416,7 +416,7 @@ class CupsFailFastTests(unittest.TestCase):
     def test_cups_last_uses_fail_fast(self):
         import ast
 
-        src = (ROOT_DIR / "Run_All_Pipeline.py").read_text(encoding="utf-8")
+        src = (ROOT_DIR / "main" / "Run_All_Pipeline.py").read_text(encoding="utf-8")
         tree = ast.parse(src)
         fn = None
         for node in tree.body:

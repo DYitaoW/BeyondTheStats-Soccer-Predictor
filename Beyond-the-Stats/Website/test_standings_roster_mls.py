@@ -126,18 +126,20 @@ class MlsRegularSeasonFilterTests(unittest.TestCase):
 
 class MlsCupWinCountBugTests(unittest.TestCase):
     def test_cup_win_counts_uses_truthy_winner_not_membership(self):
-        source = (WEBSITE_DIR.parent / "MLS" / "files" / "Project_League_Table.py").read_text(
+        source = (WEBSITE_DIR.parent / "pipelines" / "mls" / "files" / "Project_League_Table.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn("if cup_winner:", source)
+        self.assertIn("cup_win_counts[cup_winner]", source)
         self.assertNotIn("if cup_winner in cup_win_counts:", source)
+        # Cups PR: reject NONE/TBD/Draw placeholders before counting a champion.
+        self.assertIn("NONE", source)
         self.assertIn("accumulate_mls_playoff_outcome_counts", source)
         self.assertIn("make_playoffs_probabilities", source)
         self.assertIn("round_reach_probabilities", source)
 
     def test_accumulate_playoff_outcomes_counts_champion_and_rounds(self):
         # Load only the pure helper without sklearn/joblib module deps.
-        path = WEBSITE_DIR.parent / "MLS" / "files" / "Project_League_Table.py"
+        path = WEBSITE_DIR.parent / "pipelines" / "mls" / "files" / "Project_League_Table.py"
         source = path.read_text(encoding="utf-8")
         start = source.index("def _series_participants(")
         end = source.index("\ndef counts_to_probability_map(")

@@ -8,6 +8,19 @@ Beyond the Stats Predictor uses historical soccer data and machine learning to p
 
 Rather than relying solely on league position or basic recent results, the predictor analyzes how teams have performed over time and converts that performance into features that can be used to identify patterns and make predictions on future matchups and full seasons.
 
+## Repository layout
+
+Key code lives under `Beyond-the-Stats/`:
+
+- `main/` — pipeline + backend entry points (`Run_All_Pipeline.py`, `Daily_Pipeline.py`, `run_backend.py`)
+- `pipelines/{europe,mls,extra}/` — region scripts and working `Data/`
+- `shared/` — shared libraries including `paths.py` (canonical filesystem roots)
+- `Website/` — Flask API
+- `Output/` — all generated prediction/status artifacts
+- `Data/Seeds/` — tracked roster / ESPN name seeds
+
+See `Beyond-the-Stats/docs/FOLDER_STRUCTURE.md` for details.
+
 ## Why I Built It
 
 Beyond the Stats combines two areas I'm interested in: soccer and machine learning. Especially after the website FiveThirtyEight stopped providing their season odds, I wanted to create my own version of their simulations, but with week by week matchup predictions rather than just a seasonlong simulation.

@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
 
 class StartupFullRetrainTests(unittest.TestCase):
     def test_startup_requests_full_retrain_by_default(self):
-        source = (ROOT / "Backend" / "server.py").read_text(encoding="utf-8")
+        source = (ROOT / "main" / "Backend" / "server.py").read_text(encoding="utf-8")
         self.assertIn('PIPELINE_FULL_RETRAIN_ON_START", "1"', source)
         self.assertIn("full_retrain=full_on_start", source)
         self.assertNotIn(
@@ -27,7 +27,7 @@ class StartupFullRetrainTests(unittest.TestCase):
 
 class PathBRosterGateTests(unittest.TestCase):
     def test_global_path_b_uses_roster_not_hardcoded_league_set(self):
-        source = (ROOT / "files" / "Project_League_Table.py").read_text(encoding="utf-8")
+        source = (ROOT / "pipelines" / "europe" / "files" / "Project_League_Table.py").read_text(encoding="utf-8")
         self.assertIn("if not _load_any_roster(competition):", source)
         self.assertNotIn(
             "if competition not in PRESEASON_FALLBACK_LEAGUES:",
@@ -35,7 +35,7 @@ class PathBRosterGateTests(unittest.TestCase):
         )
 
     def test_extra_path_b_uses_roster_not_hardcoded_league_set(self):
-        source = (ROOT / "Extra-leagues" / "files" / "Project_League_Table.py").read_text(
+        source = (ROOT / "pipelines" / "extra" / "files" / "Project_League_Table.py").read_text(
             encoding="utf-8"
         )
         self.assertIn("if not _load_any_roster(competition):", source)
