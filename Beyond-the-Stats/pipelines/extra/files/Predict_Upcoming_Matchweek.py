@@ -785,13 +785,39 @@ def main():
         all_latest.update(latest_raw_file_per_competition(root))
     latest = {comp: p for comp, p in all_latest.items() if comp in EXTRA_COMPETITIONS}
     if not latest:
-        raise ValueError(f"No raw season files found for extra-league competitions in {RAW_DATA_DIR} or {GLOBAL_RAW_DATA_DIR}")
+        # No Raw CSVs (download empty / tables-only host). Still try ESPN scoreboards
+        # for Extra competitions that have coverage so we do not fail-fast the
+        # Extra sub-pipeline and leave upcoming CSV missing.
+        espn_only = {
+            comp: None
+            for comp in EXTRA_COMPETITIONS
+            if comp in EXTRA_ESPN_COMPETITIONS
+        }
+        if espn_only:
+            print(
+                f"[extra] No raw season files in {RAW_DATA_DIR} or {GLOBAL_RAW_DATA_DIR}; "
+                f"falling back to ESPN-only for {len(espn_only)} competition(s)"
+            )
+            latest = espn_only
+        else:
+            print(
+                f"[extra] No raw season files and no ESPN Extra competitions; "
+                f"writing empty upcoming CSV"
+            )
+            os.makedirs(PREDICTIONS_DIR, exist_ok=True)
+            pd.DataFrame(columns=RESULT_COLUMNS).to_csv(PREDICTIONS_FILE, index=False)
+            print(f"Saved empty predictions to {PREDICTIONS_FILE}")
+            return
 
     ctx = build_context()
     mapping_ctx = _mapping_context(ctx)
     fixture_frames = []
     for competition, path in sorted(latest.items()):
-        raw_fixtures = upcoming_fixtures_from_raw(path, args.window_days, competition)
+        raw_fixtures = (
+            upcoming_fixtures_from_raw(path, args.window_days, competition)
+            if path
+            else pd.DataFrame()
+        )
         espn_fixtures = upcoming_fixtures_from_espn(competition, args.window_days)
         merged = merge_fixture_frames(raw_fixtures, espn_fixtures)
         if merged.empty:
@@ -808,6 +834,9 @@ def main():
 
     if not fixture_frames:
         print("No upcoming extra-league fixtures found.")
+        os.makedirs(PREDICTIONS_DIR, exist_ok=True)
+        pd.DataFrame(columns=RESULT_COLUMNS).to_csv(PREDICTIONS_FILE, index=False)
+        print(f"Saved empty predictions to {PREDICTIONS_FILE}")
         return
 
     fixtures = pd.concat(fixture_frames, ignore_index=True)

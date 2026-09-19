@@ -1721,13 +1721,15 @@ def predict_goal_probabilities(X_match, goal_prob_models):
 
 def main():
     matches, season_files = load_training_matches(PROCESSED_DIR)
+    team_data_dir = resolve_team_data_dir()
+    model_cache_path = resolve_model_cache_path()
 
-    overall_teams = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "overall_teams.json"))
-    season_teams = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "season_teams.json"))
-    head_to_head = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "head_to_head.json"))
-    current_form = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "current_form.json"))
-    league_strength = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "league_strength.json")) or {}
-    market_value_data = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "team_top_market_value_players.json")) or {}
+    overall_teams = load_json_if_exists(os.path.join(team_data_dir, "overall_teams.json"))
+    season_teams = load_json_if_exists(os.path.join(team_data_dir, "season_teams.json"))
+    head_to_head = load_json_if_exists(os.path.join(team_data_dir, "head_to_head.json"))
+    current_form = load_json_if_exists(os.path.join(team_data_dir, "current_form.json"))
+    league_strength = load_json_if_exists(os.path.join(team_data_dir, "league_strength.json")) or {}
+    market_value_data = load_json_if_exists(os.path.join(team_data_dir, "team_top_market_value_players.json")) or {}
     dynamic_form = build_dynamic_form_from_matches(matches)
 
     if (
@@ -1793,9 +1795,9 @@ def main():
     fingerprint = data_fingerprint(season_files)
     cache_bundle = None
     cache_valid = False
-    if os.path.exists(MODEL_CACHE):
+    if os.path.exists(model_cache_path):
         try:
-            cache_bundle = joblib.load(MODEL_CACHE)
+            cache_bundle = joblib.load(model_cache_path)
             cache_valid = cache_bundle.get("fingerprint") == fingerprint
             if not cache_valid:
                 bt = cache_bundle.get("build_time")
@@ -1845,6 +1847,7 @@ def main():
         goal_prob_models = train_all_goal_prob_models(X, matches)
         import traceback
         try:
+            os.makedirs(os.path.dirname(MODEL_CACHE), exist_ok=True)
             joblib.dump(
                 {
                     "fingerprint": fingerprint,
@@ -1863,6 +1866,7 @@ def main():
                 },
                 MODEL_CACHE,
             )
+            model_cache_path = MODEL_CACHE
         except Exception:
             traceback.print_exc()
 
@@ -1870,7 +1874,7 @@ def main():
 
     import sys
     if "--build-cache-only" in sys.argv:
-        print(f"Model cache ready: {MODEL_CACHE} (backend={backend})")
+        print(f"Model cache ready: {model_cache_path} (backend={backend})")
         return
 
     print("\nMatch Predictor\n")

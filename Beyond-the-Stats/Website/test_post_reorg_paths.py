@@ -117,10 +117,58 @@ class PostReorgPathConstantsTests(unittest.TestCase):
         )
         self.assertIn("ESPN_CUP_NAMES_FILE = str(_bts_paths.ESPN_CUP_NAMES_FILE)", source)
 
+    def test_world_cup_pipeline_verifies_output_predictions_path(self):
+        source = (ROOT / "pipelines" / "europe" / "files" / "Run_World_Cup_Pipeline.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("WORLD_CUP_PROJECTION_FILE", source)
+        self.assertNotIn(
+            'os.path.join(DATA_DIR, "world_cup_projection.json")',
+            source,
+        )
+        self.assertNotIn(
+            'os.path.join(DATA_DIR, "projected_cup_brackets.json")',
+            source,
+        )
+
+    def test_europe_test_train_uses_sp_dir_base(self):
+        source = (ROOT / "pipelines" / "europe" / "files" / "Test_train.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("project_root = BASE_DIR", source)
+        self.assertNotIn(
+            "project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))",
+            source,
+        )
+
     def test_predictions_form_cache_uses_europe_processed_dir(self):
         source = (ROOT / "Website" / "predictions.py").read_text(encoding="utf-8")
         self.assertIn('"global": config.EUROPE_PROCESSED_DIR', source)
         self.assertNotIn('os.path.join(config.FILES_DIR, "Processed_Data")', source)
+
+
+class ExtraEmptyDataSoftFailTests(unittest.TestCase):
+    def test_extra_sort_and_process_soft_skip_empty(self):
+        sort_src = (ROOT / "pipelines" / "extra" / "files" / "Sort_Data.py").read_text(
+            encoding="utf-8"
+        )
+        proc_src = (ROOT / "pipelines" / "extra" / "files" / "Process_Data.py").read_text(
+            encoding="utf-8"
+        )
+        upcoming_src = (
+            ROOT / "pipelines" / "extra" / "files" / "Predict_Upcoming_Matchweek.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("skipping Sort_Data", sort_src)
+        self.assertIn("skipping Process_Data", proc_src)
+        self.assertNotIn(
+            'raise ValueError("No valid extra-league season files were found in Raw_Data.")',
+            proc_src,
+        )
+        self.assertIn("falling back to ESPN-only", upcoming_src)
+        self.assertNotIn(
+            "No raw season files found for extra-league competitions",
+            upcoming_src,
+        )
 
 
 class MlsProcessedFallbackPresenceTests(unittest.TestCase):
