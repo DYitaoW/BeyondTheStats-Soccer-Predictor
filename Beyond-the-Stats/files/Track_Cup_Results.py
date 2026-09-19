@@ -35,8 +35,20 @@ PREDICTIONS_DIR = os.path.join(BASE_DIR, "Data", "Predictions")
 CUP_PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_cup_predictions.csv")
 COMPLETED_CUP_PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "completed_cup_predictions.csv")
 PROJECTED_CUP_TABLES_FILE = os.path.join(PREDICTIONS_DIR, "projected_cup_tables.csv")
+REAL_CUP_TABLES_FILE = os.path.join(PREDICTIONS_DIR, "real_cup_tables.csv")
 PROJECTED_CUP_BRACKETS_FILE = os.path.join(PREDICTIONS_DIR, "projected_cup_brackets.json")
 ESPN_CUP_NAMES_FILE = os.path.join(PREDICTIONS_DIR, "espn_cup_names_seen.json")
+
+# Sentinel when a projected knockout winner cannot be decided yet (TBD side or no odds).
+NO_PREDICTION = "NONE"
+CUP_TABLE_SIMULATION_RUNS = 500
+
+# Import season bounds for in-season table backfill (Europe = Sept+).
+try:
+    import season_calendar as _season_calendar
+except ImportError:
+    sys.path.insert(0, BASE_DIR)
+    import season_calendar as _season_calendar
 
 CUP_ESPN_COMPETITION_KEYS = {
     "England/FA Cup": "eng.fa",
@@ -256,6 +268,302 @@ def _load_completed_cups():
     except Exception:
         return _empty_frame(CUP_HISTORY_COLUMNS)
     return _ensure_columns(frame, CUP_HISTORY_COLUMNS)
+
+
+def cup_table_season_bounds(competition_name, reference_date=None):
+    """Inclusive (start, end) dates for games that may seed a cup phase table.
+
+    UEFA club competitions: Sept 1 of the active European season → May 31.
+    Leagues Cup: Jul 1 → Sep 30 of the current calendar year.
+
+    Does **not** clamp to today — callers that fetch completed results should
+    use ``min(end, today)`` themselves so upcoming in-season fixtures remain.
+    """
+    today = pd.Timestamp(datetime.now(UTC).date()).normalize()
+    ref = pd.Timestamp(reference_date).normalize() if reference_date is not None else today
+    comp = str(competition_name or "").strip()
+    if comp in UEFA_TABLE_COMPETITIONS:
+        start, end = _season_calendar.european_cup_table_season_bounds(ref)
+    elif comp == LEAGUES_CUP_COMPETITION:
+        start, end = _season_calendar.leagues_cup_season_bounds(ref)
+    else:
+        start, end = _season_calendar.european_cup_table_season_bounds(ref)
+    return start.normalize(), end.normalize()
+
+
+def _filter_frame_to_cup_table_season(frame, competition_name=None):
+    """Keep only rows whose match_date falls in the competition's table season."""
+    if frame is None or frame.empty:
+        return _empty_frame(CUP_HISTORY_COLUMNS) if frame is None else frame.iloc[0:0].copy()
+    out = frame.copy()
+    out["__match_date"] = pd.to_datetime(out.get("match_date"), errors="coerce").dt.normalize()
+    if competition_name:
+        start, end = cup_table_season_bounds(competition_name)
+        mask = (
+            (out["competition"].astype(str).str.strip() == competition_name)
+            & out["__match_date"].notna()
+            & (out["__match_date"] >= start)
+            & (out["__match_date"] <= end)
+        )
+        other = out["competition"].astype(str).str.strip() != competition_name
+        kept = out[mask | other].drop(columns=["__match_date"], errors="ignore")
+        return kept
+
+    # Per-competition filter for all table cups; drop out-of-season table-cup rows.
+    keep_masks = []
+    for comp in out["competition"].astype(str).str.strip().unique():
+        comp_mask = out["competition"].astype(str).str.strip() == comp
+        if comp not in CUP_TABLE_COMPETITIONS:
+            keep_masks.append(comp_mask)
+            continue
+        start, end = cup_table_season_bounds(comp)
+        keep_masks.append(
+            comp_mask
+            & out["__match_date"].notna()
+            & (out["__match_date"] >= start)
+            & (out["__match_date"] <= end)
+        )
+    if not keep_masks:
+        return out.drop(columns=["__match_date"], errors="ignore")
+    combined_mask = keep_masks[0]
+    for m in keep_masks[1:]:
+        combined_mask = combined_mask | m
+    return out.loc[combined_mask].drop(columns=["__match_date"], errors="ignore")
+
+
+def _espn_events_to_completed_rows(competition, league_key, events, mapping_by_competition, season_start, season_end):
+    """Parse ESPN scoreboard events into completed cup history rows (in season)."""
+    rows = []
+    mapping_updates = {}
+    unresolved = set()
+    seen_names = set()
+    predicted_team_names = set()
+    # Prefer mapping canons as known names when we have no upcoming frame.
+    try:
+        for name in (mapping_by_competition.get(competition) or {}).values():
+            text = str(name or "").strip()
+            if text:
+                predicted_team_names.add(text)
+    except Exception:
+        pass
+
+    for event in events or []:
+        if not isinstance(event, dict):
+            continue
+        dt = pd.to_datetime(event.get("date"), utc=True, errors="coerce")
+        if pd.isna(dt):
+            continue
+        try:
+            match_date = dt.tz_convert("UTC").tz_localize(None).normalize()
+        except Exception:
+            match_date = pd.Timestamp(dt).tz_localize(None).normalize() if getattr(dt, "tzinfo", None) else pd.Timestamp(dt).normalize()
+        if match_date < season_start or match_date > season_end:
+            continue
+
+        event_competitions = event.get("competitions", [])
+        if not event_competitions:
+            continue
+        comp0 = event_competitions[0] or {}
+        status_type = ((comp0.get("status") or {}).get("type") or {})
+        if not bool(status_type.get("completed")):
+            continue
+
+        # Prefer league-phase / group / phase-one notes; skip explicit knockout labels.
+        round_note = ""
+        for note in (comp0.get("notes") or []):
+            if isinstance(note, dict):
+                round_note = str(note.get("headline") or note.get("text") or "").strip()
+            else:
+                round_note = str(note or "").strip()
+            if round_note:
+                break
+        if not round_note:
+            round_note = str(
+                ((event.get("season") or {}).get("slug"))
+                or (event.get("name") or "")
+                or ""
+            )
+        lower = round_note.lower()
+        knockout_tokens = (
+            "round of", "quarter", "semi", "final", "playoff", "play-off",
+            "knockout", "last 16", "last 32",
+        )
+        phase_ok = (
+            "league phase" in lower
+            or "matchday" in lower
+            or "group" in lower
+            or "phase one" in lower
+            or "phase 1" in lower
+            or not lower
+        )
+        if any(tok in lower for tok in knockout_tokens) and not phase_ok:
+            continue
+
+        competitors = comp0.get("competitors", [])
+        home_name = ""
+        away_name = ""
+        home_score = None
+        away_score = None
+        for competitor in competitors:
+            side = str(competitor.get("homeAway", "")).strip().lower()
+            team_name = str((competitor.get("team") or {}).get("displayName") or "").strip()
+            score_val = pd.to_numeric(competitor.get("score"), errors="coerce")
+            if side == "home":
+                if team_name:
+                    seen_names.add(team_name)
+                resolved, ok = resolve_cup_team_name(
+                    team_name, competition, mapping_by_competition, predicted_team_names or {team_name}
+                )
+                home_name = resolved if ok else team_name
+                if ok and team_name and team_name != home_name:
+                    mapping_updates[team_name] = home_name
+                if not ok and team_name:
+                    unresolved.add(team_name)
+                home_score = int(score_val) if pd.notna(score_val) else None
+            elif side == "away":
+                if team_name:
+                    seen_names.add(team_name)
+                resolved, ok = resolve_cup_team_name(
+                    team_name, competition, mapping_by_competition, predicted_team_names or {team_name}
+                )
+                away_name = resolved if ok else team_name
+                if ok and team_name and team_name != away_name:
+                    mapping_updates[team_name] = away_name
+                if not ok and team_name:
+                    unresolved.add(team_name)
+                away_score = int(score_val) if pd.notna(score_val) else None
+
+        if not home_name or not away_name or home_score is None or away_score is None:
+            continue
+        if _is_unknown_team(home_name) or _is_unknown_team(away_name):
+            continue
+
+        rows.append({
+            "competition": competition,
+            "match_date": match_date.strftime("%Y-%m-%d"),
+            "home_team": home_name,
+            "away_team": away_name,
+            "actual_home_goals": home_score,
+            "actual_away_goals": away_score,
+            "actual_result": infer_result_code(home_score, away_score),
+            "predicted_result": "",
+            "round": round_note or "League Phase",
+            "settled_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+            "schedule_only": "0",
+        })
+    return rows, mapping_updates, unresolved, seen_names
+
+
+def fetch_in_season_cup_table_results(mapping_by_competition=None):
+    """Pull completed in-season league-phase games for UEFA / Leagues Cup tables.
+
+    Backfills older matchdays that never appeared in upcoming_cup_predictions.csv
+    so projected/real cup tables include the full current-season phase record.
+    European competitions only accept September+ of the active season.
+    """
+    mapping_by_competition = mapping_by_competition or {}
+    all_rows = []
+    mapping_updates = {}
+    unresolved = {}
+    seen_names = {}
+
+    for competition in sorted(CUP_TABLE_COMPETITIONS):
+        league_key = CUP_ESPN_COMPETITION_KEYS.get(competition)
+        if not league_key:
+            continue
+        season_start, season_end = cup_table_season_bounds(competition)
+        today = pd.Timestamp(datetime.now(UTC).date()).normalize()
+        fetch_end = min(season_end, today)
+        if season_start > fetch_end:
+            continue
+        print(
+            f"[cup-tables] backfilling {competition} completed phase games "
+            f"{season_start.date()} → {fetch_end.date()}"
+        )
+
+        # Prefer a single ESPN date-range pull; fall back to weekly chunks.
+        chunks = [(season_start, fetch_end)]
+        # If the span is long, split into ~45-day windows (scoreboard limit).
+        span_days = int((fetch_end - season_start).days) + 1
+        if span_days > 45:
+            chunks = []
+            cursor = season_start
+            while cursor <= fetch_end:
+                chunk_end = min(cursor + pd.Timedelta(days=44), fetch_end)
+                chunks.append((cursor, chunk_end))
+                cursor = chunk_end + pd.Timedelta(days=1)
+
+        events = []
+        for chunk_start, chunk_end in chunks:
+            date_param = f"{chunk_start.strftime('%Y%m%d')}-{chunk_end.strftime('%Y%m%d')}"
+            url = f"{ESPN_BASE}/{league_key}/scoreboard?dates={date_param}&limit=1000"
+            try:
+                data = fetch_json(url, timeout=60)
+            except Exception as error:
+                print(f"  [cup-tables] range fetch failed ({date_param}): {error}; trying daily")
+                data = None
+            chunk_events = (data or {}).get("events") if isinstance(data, dict) else None
+            if isinstance(chunk_events, list) and chunk_events:
+                events.extend(chunk_events)
+                continue
+            # Daily fallback for this chunk.
+            day = chunk_start
+            while day <= chunk_end:
+                day_url = f"{ESPN_BASE}/{league_key}/scoreboard?dates={day.strftime('%Y%m%d')}"
+                try:
+                    day_data = fetch_json(day_url, timeout=45)
+                    day_events = (day_data or {}).get("events") if isinstance(day_data, dict) else None
+                    if isinstance(day_events, list):
+                        events.extend(day_events)
+                except Exception as error:
+                    print(f"  [cup-tables] skip {competition} {day.date()}: {error}")
+                day += pd.Timedelta(days=1)
+
+        rows, maps, unresolved_names, seen = _espn_events_to_completed_rows(
+            competition, league_key, events, mapping_by_competition, season_start, fetch_end,
+        )
+        print(f"  [cup-tables] {competition}: {len(rows)} in-season completed phase rows")
+        all_rows.extend(rows)
+        if maps:
+            mapping_updates.setdefault(competition, {}).update(maps)
+        if unresolved_names:
+            unresolved[competition] = sorted(unresolved_names)
+        if seen:
+            seen_names[competition] = sorted(seen)
+
+    if not all_rows:
+        return _empty_frame(CUP_HISTORY_COLUMNS), mapping_updates, unresolved, seen_names
+    frame = _ensure_columns(pd.DataFrame(all_rows), CUP_HISTORY_COLUMNS)
+    frame = _filter_frame_to_cup_table_season(frame)
+    return frame, mapping_updates, unresolved, seen_names
+
+
+def merge_completed_cup_frames(existing, extra):
+    """Union completed cup history frames, preferring rows with actual scores."""
+    frames = []
+    for frame in (existing, extra):
+        if frame is not None and not frame.empty:
+            frames.append(_ensure_columns(frame, CUP_HISTORY_COLUMNS))
+    if not frames:
+        return _empty_frame(CUP_HISTORY_COLUMNS)
+    merged = pd.concat(frames, ignore_index=True)
+    if merged.empty:
+        return _empty_frame(CUP_HISTORY_COLUMNS)
+    merged["competition"] = merged["competition"].astype(str).str.strip()
+    merged["home_team"] = merged["home_team"].astype(str).str.strip()
+    merged["away_team"] = merged["away_team"].astype(str).str.strip()
+    merged["match_date"] = merged["match_date"].astype(str).str.strip()
+    # Prefer rows that have actual scores when deduping.
+    merged["__has_actual"] = (
+        pd.to_numeric(merged.get("actual_home_goals"), errors="coerce").notna()
+        & pd.to_numeric(merged.get("actual_away_goals"), errors="coerce").notna()
+    )
+    merged = merged.sort_values("__has_actual", ascending=False)
+    merged = merged.drop_duplicates(
+        subset=["competition", "match_date", "home_team", "away_team"],
+        keep="first",
+    )
+    return _ensure_columns(merged.drop(columns=["__has_actual"], errors="ignore"), CUP_HISTORY_COLUMNS)
 
 
 def _write_csv(path, frame, columns=None):
@@ -513,7 +821,7 @@ def _is_unknown_team(name):
     if not text:
         return True
     lower = text.lower()
-    if lower in {"tbd", "draw", "tie", "unknown"}:
+    if lower in {"tbd", "draw", "tie", "unknown", "none", NO_PREDICTION.lower()}:
         return True
     if lower.startswith("seed "):
         return True
@@ -538,57 +846,71 @@ def _is_known_team(name):
     return not _is_unknown_team(name)
 
 
-def _fallback_winner_when_prediction_missing(home_team, away_team):
-    """When odds/data fail: known team beats unknown; both unknown (or both known) → tie."""
+def _is_no_prediction(name):
+    text = str(name or "").strip()
+    return (not text) or text.upper() == NO_PREDICTION or text.lower() in {"draw", "tie"}
+
+
+def _lookup_match_probs(predictions_index, home_team, away_team):
+    """Return (prob_home, prob_draw, prob_away) from index, trying both orientations."""
+    if not predictions_index:
+        return 0.0, 0.0, 0.0
+    hm = str(home_team or "").strip().lower()
+    aw = str(away_team or "").strip().lower()
+    entry = predictions_index.get((hm, aw), {}) or {}
+    ph = _safe_float(entry.get("prob_home"), 0)
+    pd_ = _safe_float(entry.get("prob_draw"), 0)
+    pa = _safe_float(entry.get("prob_away"), 0)
+    if ph == 0 and pa == 0 and pd_ == 0:
+        rev = predictions_index.get((aw, hm), {}) or {}
+        ph = _safe_float(rev.get("prob_away"), 0)
+        pd_ = _safe_float(rev.get("prob_draw"), 0)
+        pa = _safe_float(rev.get("prob_home"), 0)
+    return ph, pd_, pa
+
+
+def _lookup_match_probs_ha(predictions_index, home_team, away_team):
+    """Return (prob_home, prob_away) — draw mass ignored for knockout winner picks."""
+    ph, _pd, pa = _lookup_match_probs(predictions_index, home_team, away_team)
+    return ph, pa
+
+
+def _pick_projected_winner(home_team, away_team, predictions_index=None):
+    """Pick knockout winner from odds only. Never invent 'Draw' as a team.
+
+    - Either side TBD / placeholder → ``NONE``
+    - Both known with home/away odds → higher win probability
+    - Both known but no usable odds → ``NONE``
+    """
     home = str(home_team or "").strip()
     away = str(away_team or "").strip()
-    home_known = _is_known_team(home)
-    away_known = _is_known_team(away)
-    if home_known and not away_known:
-        return home
-    if away_known and not home_known:
-        return away
-    return "Draw"
+    if not _is_known_team(home) or not _is_known_team(away):
+        return NO_PREDICTION
+    ph, pa = _lookup_match_probs_ha(predictions_index, home, away)
+    if ph + pa <= 0:
+        return NO_PREDICTION
+    return home if ph >= pa else away
 
 
-def _fallback_predicted_score(home_team, away_team):
-    """Scoreline matching ``_fallback_winner_when_prediction_missing`` (1-0 / 0-1 / 0-0)."""
-    winner = _fallback_winner_when_prediction_missing(home_team, away_team)
+def _fallback_winner_when_prediction_missing(home_team, away_team):
+    """Legacy name — always prefer NONE over inventing Draw/known-team bias."""
+    return _pick_projected_winner(home_team, away_team, predictions_index=None)
+
+
+def _fallback_predicted_score(home_team, away_team, predictions_index=None):
+    """Scoreline for table sims when goals missing: odds winner 1-0, else skip (None)."""
+    winner = _pick_projected_winner(home_team, away_team, predictions_index)
     home = str(home_team or "").strip()
     away = str(away_team or "").strip()
     if winner == home:
         return 1, 0
     if winner == away:
         return 0, 1
-    return 0, 0
+    return None
 
 
-def _lookup_match_probs(predictions_index, home_team, away_team):
-    """Return (prob_home, prob_away) from index, trying both orientations."""
-    if not predictions_index:
-        return 0.0, 0.0
-    hm = str(home_team or "").strip().lower()
-    aw = str(away_team or "").strip().lower()
-    entry = predictions_index.get((hm, aw), {})
-    ph = _safe_float(entry.get("prob_home"), 0)
-    pa = _safe_float(entry.get("prob_away"), 0)
-    if ph == 0 and pa == 0:
-        rev = predictions_index.get((aw, hm), {})
-        ph = _safe_float(rev.get("prob_away"), 0)
-        pa = _safe_float(rev.get("prob_home"), 0)
-    return ph, pa
-
-
-def _pick_projected_winner(home_team, away_team, predictions_index=None):
-    """Prefer model probs; else known-team / tie fallback."""
-    ph, pa = _lookup_match_probs(predictions_index, home_team, away_team)
-    total = ph + pa
-    if total > 0:
-        return home_team if ph >= pa else away_team
-    return _fallback_winner_when_prediction_missing(home_team, away_team)
-
-
-def _predicted_score(row):
+def _predicted_score(row, predictions_index=None):
+    """Return (hg, ag) for projecting a pending fixture, or None if undecidable."""
     home = str(row.get("home_team", "")).strip()
     away = str(row.get("away_team", "")).strip()
     schedule_only = str(row.get("schedule_only", "")).strip().lower() in {"1", "true", "yes"}
@@ -596,29 +918,139 @@ def _predicted_score(row):
     hg = _numeric_int(row.get("pred_home_goals"), None)
     ag = _numeric_int(row.get("pred_away_goals"), None)
 
-    if schedule_only or predicted not in {"H", "D", "A"} or hg is None or ag is None:
-        return _fallback_predicted_score(home, away)
+    # Prefer odds over a hard H/D/A label — cups should not invent Draw winners.
+    ph, pa = _lookup_match_probs_ha(predictions_index, home, away)
+    if ph + pa > 0:
+        if ph >= pa:
+            if hg is not None and ag is not None and hg > ag:
+                return int(hg), int(ag)
+            return 1, 0
+        if hg is not None and ag is not None and ag > hg:
+            return int(hg), int(ag)
+        return 0, 1
 
-    if predicted == "H" and hg <= ag:
+    if schedule_only or predicted not in {"H", "A"} or hg is None or ag is None:
+        return _fallback_predicted_score(home, away, predictions_index)
+
+    if predicted == "H":
+        if hg <= ag:
+            hg = ag + 1
+        return hg, ag
+    if predicted == "A":
+        if ag <= hg:
+            ag = hg + 1
+        return hg, ag
+    return _fallback_predicted_score(home, away, predictions_index)
+
+
+def _sample_fixture_outcome(row, rng, predictions_index=None):
+    """Sample H/D/A from model probs for league-phase Monte Carlo."""
+    home = str(row.get("home_team", "")).strip()
+    away = str(row.get("away_team", "")).strip()
+    ph, pd_, pa = _lookup_match_probs(predictions_index, home, away)
+    # Fall back to row-stored probs when index miss.
+    if ph + pd_ + pa <= 0:
+        ph = _safe_float(row.get("prob_home"), 0)
+        pd_ = _safe_float(row.get("prob_draw"), 0)
+        pa = _safe_float(row.get("prob_away"), 0)
+    total = ph + pd_ + pa
+    if total <= 0:
+        score = _predicted_score(row, predictions_index)
+        return score
+    pick = rng.random() * total
+    if pick < ph:
+        result = "H"
+    elif pick < ph + pd_:
+        result = "D"
+    else:
+        result = "A"
+    base_hg = _numeric_int(row.get("pred_home_goals"), 1)
+    base_ag = _numeric_int(row.get("pred_away_goals"), 1)
+    hg = max(0, base_hg if base_hg is not None else 1)
+    ag = max(0, base_ag if base_ag is not None else 1)
+    if result == "H" and hg <= ag:
         hg = ag + 1
-    elif predicted == "A" and ag <= hg:
+    elif result == "A" and ag <= hg:
         ag = hg + 1
-    elif predicted == "D":
+    elif result == "D":
         ag = hg
     return hg, ag
 
 
-def _rank_cup_table_rows(competition, table):
-    """Turn an in-memory W/D/L table into projected_cup_tables rows."""
-    ranked = sorted(
+def _is_league_phase_cup_row(row, competition_name):
+    """True when a fixture belongs on the phase table (not knockout)."""
+    rnd = str(row.get("round") or row.get("matchday") or row.get("stage") or "").strip().lower()
+    if not rnd:
+        # UEFA / Leagues Cup upcoming rows often omit round — treat as phase.
+        return competition_name in CUP_TABLE_COMPETITIONS
+    knockout_tokens = (
+        "knockout", "playoff", "play-off", "round of", "quarter", "semi",
+        "final", "third place", "3rd place",
+    )
+    if any(tok in rnd for tok in knockout_tokens):
+        # "Final" in "group stage final matchday" is rare; allow league/phase labels.
+        if "league phase" in rnd or "group" in rnd or "phase one" in rnd or "matchday" in rnd:
+            return True
+        return False
+    return True
+
+
+def _rank_table_items(table):
+    return sorted(
         table.items(),
         key=lambda item: (-item[1]["Pts"], -item[1]["GD"], -item[1]["GF"], item[0]),
     )
-    total_positions = len(ranked)
+
+
+def _probability_columns_from_counts(pos_counts, team, total_positions, runs):
+    runs = max(1, int(runs))
+    counts = pos_counts.get(team) or {}
+    position_odds = {
+        str(pos): round((counts.get(pos, 0) / runs) * 100.0, 2)
+        for pos in range(1, total_positions + 1)
+    }
+    win_league_pct = round((counts.get(1, 0) / runs) * 100.0, 2)
+    top4_pct = round(sum(counts.get(pos, 0) for pos in range(1, min(4, total_positions) + 1)) / runs * 100.0, 2)
     bottom_cutoff = max(1, total_positions - 2)
+    bottom3_pct = round(
+        sum(counts.get(pos, 0) for pos in range(bottom_cutoff, total_positions + 1)) / runs * 100.0,
+        2,
+    )
+    if counts:
+        most_pos = max(counts.items(), key=lambda kv: (kv[1], -kv[0]))[0]
+        most_pct = round((counts[most_pos] / runs) * 100.0, 2)
+    else:
+        most_pos, most_pct = 1, 0.0
+    return {
+        "win_league_pct": win_league_pct,
+        "top4_pct": top4_pct,
+        "bottom3_pct": bottom3_pct,
+        "most_likely_position": most_pos,
+        "most_likely_position_pct": most_pct,
+        "position_odds_json": json.dumps(position_odds, separators=(",", ":"), sort_keys=True),
+        "sim_runs": int(runs),
+    }
+
+
+def _rank_cup_table_rows(competition, table, pos_counts=None, runs=0):
+    """Turn an in-memory W/D/L table into projected_cup_tables rows."""
+    ranked = _rank_table_items(table)
+    total_positions = len(ranked)
     out_rows = []
     for position, (team, stats) in enumerate(ranked, start=1):
-        position_odds = {str(pos): (100.0 if pos == position else 0.0) for pos in range(1, total_positions + 1)}
+        if pos_counts and runs > 0:
+            odds = _probability_columns_from_counts(pos_counts, team, total_positions, runs)
+        else:
+            # Real/live table only — no invented 100% odds.
+            odds = {
+                "win_league_pct": None,
+                "top4_pct": None,
+                "bottom3_pct": None,
+                "most_likely_position": position,
+                "most_likely_position_pct": None,
+                "position_odds_json": json.dumps({}, separators=(",", ":")),
+                "sim_runs": 0,
+            }
         out_rows.append(
             {
                 "competition": competition,
@@ -634,20 +1066,45 @@ def _rank_cup_table_rows(competition, table):
                 "Pts": stats["Pts"],
                 "PlayedReal": stats.get("PlayedReal", 0),
                 "PlayedPred": stats.get("PlayedPred", 0),
-                "win_league_pct": 100.0 if position == 1 else 0.0,
-                "top4_pct": 100.0 if position <= 4 else 0.0,
-                "bottom3_pct": 100.0 if position >= bottom_cutoff else 0.0,
-                "most_likely_position": position,
-                "most_likely_position_pct": 100.0,
-                "position_odds_json": json.dumps(position_odds),
-                "sim_runs": 0,
+                **odds,
             }
         )
     return out_rows
 
 
+def _clone_table(table):
+    return {team: dict(stats) for team, stats in table.items()}
+
+
+def _build_predictions_index(upcoming_df):
+    predictions_index = {}
+    if upcoming_df is None or upcoming_df.empty:
+        return predictions_index
+    for _, row in upcoming_df.iterrows():
+        hm = str(row.get("home_team", "")).strip().lower()
+        aw = str(row.get("away_team", "")).strip().lower()
+        if hm and aw:
+            predictions_index[(hm, aw)] = {
+                "prob_home": _safe_float(row.get("prob_home"), 0),
+                "prob_draw": _safe_float(row.get("prob_draw"), 0),
+                "prob_away": _safe_float(row.get("prob_away"), 0),
+            }
+    return predictions_index
+
+
 def _build_projected_cup_tables(completed_df, upcoming_df):
+    """Build projected phase tables with Monte Carlo position odds + real base.
+
+    Completed (real) league-phase games seed the live table. Remaining upcoming
+    fixtures are sampled ``CUP_TABLE_SIMULATION_RUNS`` times so position odds
+    reflect simulation mass — not a single deterministic projection.
+
+    Only in-season games are used (UEFA: September+ of the active season).
+    """
     frames = []
+    # Drop prior-season history before seeding tables.
+    completed_df = _filter_frame_to_cup_table_season(completed_df)
+    upcoming_df = _filter_frame_to_cup_table_season(upcoming_df) if upcoming_df is not None else upcoming_df
     if completed_df is not None and not completed_df.empty:
         completed = completed_df.copy()
         completed["__is_real"] = True
@@ -657,122 +1114,224 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
         pending["__is_real"] = False
         frames.append(pending)
     if not frames:
-        return _empty_frame(TABLE_COLUMNS)
+        return _empty_frame(TABLE_COLUMNS), _empty_frame(TABLE_COLUMNS)
 
     combined = pd.concat(frames, ignore_index=True)
     combined["competition"] = combined["competition"].astype(str).str.strip()
     combined = combined[combined["competition"].isin(CUP_TABLE_COMPETITIONS)]
     if combined.empty:
-        return _empty_frame(TABLE_COLUMNS)
+        return _empty_frame(TABLE_COLUMNS), _empty_frame(TABLE_COLUMNS)
 
-    out_rows = []
+    predictions_index = _build_predictions_index(upcoming_df)
+    rng = np.random.default_rng(20260612)
+    projected_rows = []
+    real_rows = []
+
     for competition, comp_frame in combined.groupby("competition", dropna=False):
         competition_name = str(competition).strip()
-        table = {}
         if competition_name == LEAGUES_CUP_COMPETITION:
             max_phase_matches = LEAGUES_CUP_PHASE_MATCHES
         else:
             max_phase_matches = UEFA_LEAGUE_PHASE_MATCHES.get(competition_name, 8)
-        played_counts = {}
-        comp_frame = comp_frame.copy()
-        comp_frame["__date_sort"] = pd.to_datetime(comp_frame.get("match_date"), errors="coerce")
-        comp_frame = comp_frame.sort_values(
+
+        phase = comp_frame[comp_frame.apply(
+            lambda r: _is_league_phase_cup_row(r, competition_name), axis=1
+        )].copy()
+        if phase.empty:
+            continue
+
+        phase["__date_sort"] = pd.to_datetime(phase.get("match_date"), errors="coerce")
+        phase = phase.sort_values(
             ["__date_sort", "__is_real", "home_team", "away_team"],
             ascending=[True, False, True, True],
             na_position="last",
         )
-        for _, row in comp_frame.iterrows():
+
+        # --- Real / live table from completed phase games only ---
+        real_table = {}
+        played_real = {}
+        for _, row in phase.iterrows():
+            if not bool(row.get("__is_real")):
+                continue
             home = str(row.get("home_team", "")).strip()
             away = str(row.get("away_team", "")).strip()
-            if not home or not away:
+            if not _is_known_team(home) or not _is_known_team(away):
                 continue
-            if played_counts.get(home, 0) >= max_phase_matches or played_counts.get(away, 0) >= max_phase_matches:
+            if played_real.get(home, 0) >= max_phase_matches or played_real.get(away, 0) >= max_phase_matches:
                 continue
-            is_real = bool(row.get("__is_real"))
-            if is_real:
-                hg = _numeric_int(row.get("actual_home_goals"), None)
-                ag = _numeric_int(row.get("actual_away_goals"), None)
-                if hg is None or ag is None:
-                    continue
-            else:
-                hg, ag = _predicted_score(row)
-            _apply_result(table, home, away, hg, ag, is_real=is_real)
-            played_counts[home] = played_counts.get(home, 0) + 1
-            played_counts[away] = played_counts.get(away, 0) + 1
+            hg = _numeric_int(row.get("actual_home_goals"), None)
+            ag = _numeric_int(row.get("actual_away_goals"), None)
+            if hg is None or ag is None:
+                continue
+            _apply_result(real_table, home, away, hg, ag, is_real=True)
+            played_real[home] = played_real.get(home, 0) + 1
+            played_real[away] = played_real.get(away, 0) + 1
 
-        if competition_name == LEAGUES_CUP_COMPETITION:
-            # Dual Phase One tables: rank MLS and Liga MX sides separately, then
-            # concatenate so bracket seeding can split on leagues_cup_table_side.
-            mls_table = {
-                team: stats for team, stats in table.items()
-                if _leagues_cup_table_side(team) == "MLS"
-            }
-            liga_table = {
-                team: stats for team, stats in table.items()
-                if _leagues_cup_table_side(team) == "Liga MX"
-            }
-            out_rows.extend(_rank_cup_table_rows(competition_name, mls_table))
-            out_rows.extend(_rank_cup_table_rows(competition_name, liga_table))
+        # Pending fixtures for Monte Carlo (known teams, under phase-match cap).
+        pending_rows = []
+        played_base = dict(played_real)
+        for _, row in phase.iterrows():
+            if bool(row.get("__is_real")):
+                continue
+            home = str(row.get("home_team", "")).strip()
+            away = str(row.get("away_team", "")).strip()
+            if not _is_known_team(home) or not _is_known_team(away):
+                continue
+            if played_base.get(home, 0) >= max_phase_matches or played_base.get(away, 0) >= max_phase_matches:
+                continue
+            pending_rows.append(row)
+            played_base[home] = played_base.get(home, 0) + 1
+            played_base[away] = played_base.get(away, 0) + 1
+
+        def _emit_sides(table, pos_counts, runs, into_projected=True):
+            if competition_name == LEAGUES_CUP_COMPETITION:
+                mls_table = {
+                    team: stats for team, stats in table.items()
+                    if _leagues_cup_table_side(team) == "MLS"
+                }
+                liga_table = {
+                    team: stats for team, stats in table.items()
+                    if _leagues_cup_table_side(team) == "Liga MX"
+                }
+                chunks = []
+                for side_table in (mls_table, liga_table):
+                    if not side_table:
+                        continue
+                    side_counts = {
+                        t: (pos_counts or {}).get(t, {}) for t in side_table
+                    } if pos_counts else None
+                    chunks.extend(_rank_cup_table_rows(
+                        competition_name, side_table, side_counts, runs,
+                    ))
+                return chunks
+            return _rank_cup_table_rows(competition_name, table, pos_counts, runs)
+
+        real_rows.extend(_emit_sides(real_table, None, 0, into_projected=False))
+
+        runs = CUP_TABLE_SIMULATION_RUNS if pending_rows else 0
+        if runs <= 0:
+            # No remaining fixtures — projected == real live table, odds unknown.
+            projected_rows.extend(_emit_sides(real_table, None, 0))
             continue
 
-        ranked = sorted(table.items(), key=lambda item: (-item[1]["Pts"], -item[1]["GD"], -item[1]["GF"], item[0]))
-        total_positions = len(ranked)
-        bottom_cutoff = max(1, total_positions - 2)
-        for position, (team, stats) in enumerate(ranked, start=1):
-            position_odds = {str(pos): (100.0 if pos == position else 0.0) for pos in range(1, total_positions + 1)}
-            out_rows.append(
-                {
-                    "competition": competition,
-                    "position": position,
-                    "team": team,
-                    **stats,
-                    "win_league_pct": 100.0 if position == 1 else 0.0,
-                    "top4_pct": 100.0 if position <= min(4, total_positions) else 0.0,
-                    "bottom3_pct": 100.0 if position >= bottom_cutoff else 0.0,
-                    "most_likely_position": position,
-                    "most_likely_position_pct": 100.0,
-                    "position_odds_json": json.dumps(position_odds, separators=(",", ":"), sort_keys=True),
-                    "sim_runs": 1,
-                }
-            )
+        pos_counts = defaultdict(lambda: defaultdict(int))
+        stat_sums = defaultdict(lambda: defaultdict(float))
+        for _ in range(runs):
+            sim_table = _clone_table(real_table)
+            played = dict(played_real)
+            for row in pending_rows:
+                home = str(row.get("home_team", "")).strip()
+                away = str(row.get("away_team", "")).strip()
+                if played.get(home, 0) >= max_phase_matches or played.get(away, 0) >= max_phase_matches:
+                    continue
+                score = _sample_fixture_outcome(row, rng, predictions_index)
+                if score is None:
+                    continue
+                hg, ag = score
+                _apply_result(sim_table, home, away, hg, ag, is_real=False)
+                played[home] = played.get(home, 0) + 1
+                played[away] = played.get(away, 0) + 1
 
-    return _ensure_columns(pd.DataFrame(out_rows), TABLE_COLUMNS)
+            if competition_name == LEAGUES_CUP_COMPETITION:
+                for side in ("MLS", "Liga MX"):
+                    side_table = {
+                        t: s for t, s in sim_table.items()
+                        if _leagues_cup_table_side(t) == side
+                    }
+                    for pos, (team, stats) in enumerate(_rank_table_items(side_table), start=1):
+                        pos_counts[team][pos] += 1
+                        for key, value in stats.items():
+                            try:
+                                stat_sums[team][key] += float(value)
+                            except (TypeError, ValueError):
+                                pass
+            else:
+                for pos, (team, stats) in enumerate(_rank_table_items(sim_table), start=1):
+                    pos_counts[team][pos] += 1
+                    for key, value in stats.items():
+                        try:
+                            stat_sums[team][key] += float(value)
+                        except (TypeError, ValueError):
+                            pass
+
+        # Averaged projected stats + sim position odds.
+        avg_table = {}
+        for team, sums in stat_sums.items():
+            avg_table[team] = {
+                key: int(round(val / runs)) for key, val in sums.items()
+            }
+            # Preserve real played counts from base when present.
+            if team in real_table:
+                avg_table[team]["PlayedReal"] = real_table[team].get("PlayedReal", 0)
+        projected_rows.extend(_emit_sides(avg_table, pos_counts, runs))
+
+    return (
+        _ensure_columns(pd.DataFrame(projected_rows), TABLE_COLUMNS),
+        _ensure_columns(pd.DataFrame(real_rows), TABLE_COLUMNS),
+    )
 
 
-def _winner_label(row):
+def _winner_label(row, predictions_index=None):
+    """Resolved match winner for bracket display.
+
+    Completed: actual H/A team (completed D → NONE — no advancing side).
+    Upcoming: odds-based pick; otherwise NONE (never invent a team named Draw).
+    """
     actual = str(row.get("actual_result", "")).strip().upper()
-    predicted = str(row.get("predicted_result", "")).strip().upper()
     home = str(row.get("home_team", "")).strip()
     away = str(row.get("away_team", "")).strip()
-    schedule_only = str(row.get("schedule_only", "")).strip().lower() in {"1", "true", "yes"}
-    result = actual if actual in {"H", "D", "A"} else predicted
-    if result == "H":
-        return home
-    if result == "A":
-        return away
-    if result == "D":
-        return "Draw"
-    if schedule_only or result not in {"H", "D", "A"}:
-        return _fallback_winner_when_prediction_missing(home, away)
-    return "Draw"
+    if actual == "H":
+        return home or NO_PREDICTION
+    if actual == "A":
+        return away or NO_PREDICTION
+    if actual == "D":
+        return NO_PREDICTION
+    return _pick_projected_winner(home, away, predictions_index)
 
 
-def _match_payload(row, status):
+def _match_payload(row, status, predictions_index=None):
     actual_hg = pd.to_numeric(row.get("actual_home_goals"), errors="coerce")
     actual_ag = pd.to_numeric(row.get("actual_away_goals"), errors="coerce")
     pred_hg = pd.to_numeric(row.get("pred_home_goals"), errors="coerce")
     pred_ag = pd.to_numeric(row.get("pred_away_goals"), errors="coerce")
+    winner = _winner_label(row, predictions_index)
+    predicted = str(row.get("predicted_result", "")).strip().upper()
+    ph, pa = _lookup_match_probs_ha(predictions_index, row.get("home_team"), row.get("away_team"))
+    if ph + pa <= 0:
+        ph = _safe_float(row.get("prob_home"), 0)
+        pa = _safe_float(row.get("prob_away"), 0)
+    # Expose NONE when we cannot pick a side yet (TBD or no odds).
+    if _is_no_prediction(winner):
+        predicted_out = NO_PREDICTION
+    elif predicted in {"H", "A"} and status != "Completed":
+        # Prefer odds-aligned code when available.
+        home = str(row.get("home_team", "")).strip()
+        away = str(row.get("away_team", "")).strip()
+        if winner == home:
+            predicted_out = "H"
+        elif winner == away:
+            predicted_out = "A"
+        else:
+            predicted_out = NO_PREDICTION
+    elif status == "Completed" and str(row.get("actual_result", "")).strip().upper() in {"H", "D", "A"}:
+        predicted_out = predicted if predicted in {"H", "D", "A"} else str(row.get("actual_result", "")).strip().upper()
+    else:
+        predicted_out = NO_PREDICTION if _is_no_prediction(winner) else predicted
+
     return {
         "match_date": str(row.get("match_date", "")).strip(),
         "home_team": str(row.get("home_team", "")).strip(),
         "away_team": str(row.get("away_team", "")).strip(),
         "status": status,
-        "winner": _winner_label(row),
+        "winner": winner,
         "actual_home_goals": int(actual_hg) if pd.notna(actual_hg) else None,
         "actual_away_goals": int(actual_ag) if pd.notna(actual_ag) else None,
         "pred_home_goals": int(round(float(pred_hg))) if pd.notna(pred_hg) else None,
         "pred_away_goals": int(round(float(pred_ag))) if pd.notna(pred_ag) else None,
-        "predicted_result": str(row.get("predicted_result", "")).strip().upper(),
+        "predicted_result": predicted_out,
+        "prob_home": round(ph, 4) if ph else _safe_float(row.get("prob_home"), None),
+        "prob_draw": _safe_float(row.get("prob_draw"), None),
+        "prob_away": round(pa, 4) if pa else _safe_float(row.get("prob_away"), None),
     }
 
 
@@ -967,7 +1526,7 @@ def _attach_cup_simulation(competition_name, bracket, predictions_index):
     return bracket
 
 
-def _build_domestic_cup_rounds(comp_frame):
+def _build_domestic_cup_rounds(comp_frame, predictions_index=None):
     """Build the ``rounds`` list consumers read from projected_cup_brackets.json.
 
     Knockout APIs and cup simulations only look at ``bracket["rounds"]``.
@@ -989,21 +1548,30 @@ def _build_domestic_cup_rounds(comp_frame):
         rounds.append(
             {
                 "name": "Recent Cup Results",
-                "matches": [_match_payload(row, "Completed") for _, row in completed_rows.iterrows()],
+                "matches": [
+                    _match_payload(row, "Completed", predictions_index)
+                    for _, row in completed_rows.iterrows()
+                ],
             }
         )
         return rounds
     rounds.append(
         {
             "name": "Upcoming Cup Fixtures",
-            "matches": [_match_payload(row, "Upcoming") for _, row in upcoming_rows.iterrows()],
+            "matches": [
+                _match_payload(row, "Upcoming", predictions_index)
+                for _, row in upcoming_rows.iterrows()
+            ],
         }
     )
     if not completed_rows.empty:
         rounds.append(
             {
                 "name": "Recent Cup Results",
-                "matches": [_match_payload(row, "Completed") for _, row in completed_rows.iterrows()],
+                "matches": [
+                    _match_payload(row, "Completed", predictions_index)
+                    for _, row in completed_rows.iterrows()
+                ],
             }
         )
     return rounds
@@ -1031,13 +1599,16 @@ def _build_domestic_cup_bracket_with_draws(competition_name, comp_frame, predict
     upcoming_matches = []
     if not upcoming.empty:
         for _, row in upcoming.iterrows():
-            upcoming_matches.append(_match_payload(row, "Upcoming"))
+            upcoming_matches.append(_match_payload(row, "Upcoming", predictions_index))
 
     real_rounds = []
     if not completed.empty:
         real_rounds.append({
             "name": "Recent Results",
-            "matches": [_match_payload(row, "Completed") for _, row in completed.iterrows()],
+            "matches": [
+                _match_payload(row, "Completed", predictions_index)
+                for _, row in completed.iterrows()
+            ],
         })
 
     num_completed = len(completed) if not completed.empty else 0
@@ -1053,7 +1624,7 @@ def _build_domestic_cup_bracket_with_draws(competition_name, comp_frame, predict
             ],
         })
 
-    rounds = _build_domestic_cup_rounds(comp_frame)
+    rounds = _build_domestic_cup_rounds(comp_frame, predictions_index)
 
     return _attach_cup_simulation(competition_name, {
         "competition": competition_name,
@@ -1199,6 +1770,8 @@ def _create_tbd_matchup(round_name, slot, possible_opponents=None, draw_rules=No
         "status": "TBD",
         "home_team": "TBD",
         "away_team": "TBD",
+        "winner": NO_PREDICTION,
+        "predicted_result": NO_PREDICTION,
         "is_placeholder": True,
     }
     
@@ -1353,13 +1926,19 @@ def _simulate_cup_tournament(competition_name, rounds_data, predictions_index, n
                     sim_participants.add(aw)
                     round_reach_counts[rnd_name][aw] += 1
 
-                ph, pa = _lookup_match_probs(predictions_index, hm, aw)
+                ph, pa = _lookup_match_probs_ha(predictions_index, hm, aw)
                 total = ph + pa
                 if total > 0:
                     p_home = ph / total
                     winner = hm if rng.random() < p_home else aw
                 else:
-                    winner = _fallback_winner_when_prediction_missing(hm, aw)
+                    winner = _pick_projected_winner(hm, aw, predictions_index)
+
+                if _is_no_prediction(winner) or _is_placeholder_team(winner):
+                    # Cannot resolve this tie — leave slot unresolved; do not
+                    # credit Draw/NONE as a champion or elimination.
+                    winners.append({"slot": slot, "winner": NO_PREDICTION, "home_team": hm, "away_team": aw})
+                    continue
 
                 losers = [t for t in (hm, aw) if t and not _is_placeholder_team(t) and t != winner]
                 for loser in losers:
@@ -1372,7 +1951,7 @@ def _simulate_cup_tournament(competition_name, rounds_data, predictions_index, n
         final_winners = sim_templates.get("Final", [])
         if final_winners:
             champion = str(final_winners[0].get("winner", "")).strip()
-            if champion and not _is_placeholder_team(champion):
+            if champion and not _is_placeholder_team(champion) and not _is_no_prediction(champion):
                 champion_counts[champion] += 1
                 elimination_counts[champion]["Champion"] += 1
                 round_reach_counts["Final"][champion] += 1
@@ -1494,9 +2073,10 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
 
 
 def refresh_cup_projection_artifacts(completed_df, upcoming_df):
-    tables = _build_projected_cup_tables(completed_df, upcoming_df)
+    tables, real_tables = _build_projected_cup_tables(completed_df, upcoming_df)
     brackets = _build_projected_cup_brackets(completed_df, upcoming_df, tables)
     _write_csv(PROJECTED_CUP_TABLES_FILE, tables, TABLE_COLUMNS)
+    _write_csv(REAL_CUP_TABLES_FILE, real_tables, TABLE_COLUMNS)
     save_json(PROJECTED_CUP_BRACKETS_FILE, brackets)
     return len(tables), sum(len(comp.get("rounds", [])) for comp in brackets.get("competitions", {}).values())
 
@@ -1536,6 +2116,41 @@ def main():
         save_completed_rows_to_past_games(cup_df, today=prev_thursday)
         cup_df, removed_completed = _drop_completed_rows(cup_df, today=prev_thursday)
 
+    # Backfill older in-season league-phase results for table cups (UEFA Sept+,
+    # Leagues Cup summer) so tables are not limited to recently predicted fixtures.
+    backfill_added = 0
+    try:
+        backfill_df, backfill_maps, backfill_unresolved, backfill_seen = fetch_in_season_cup_table_results(
+            shared_mapping
+        )
+        if backfill_maps:
+            shared_mapping, bf_added, bf_drift = apply_mapping_updates(shared_mapping, backfill_maps)
+            mapping_added += bf_added
+            mapping_drift = mapping_drift or bf_drift
+            save_mapping(SHARED_MAPPING_FILE, shared_mapping)
+        if backfill_unresolved:
+            for comp, names in backfill_unresolved.items():
+                unresolved.setdefault(comp, [])
+                unresolved[comp] = sorted(set(unresolved[comp]) | set(names))
+        if backfill_seen:
+            for comp, names in backfill_seen.items():
+                existing = set(seen_names.get(comp) or [])
+                seen_names[comp] = sorted(existing | set(names))
+            save_json(
+                ESPN_CUP_NAMES_FILE,
+                {
+                    "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
+                    "cups": seen_names,
+                },
+            )
+        before = len(completed_df) if completed_df is not None else 0
+        completed_df = merge_completed_cup_frames(completed_df, backfill_df)
+        # Persist only in-season table-cup history + any non-table cup rows.
+        completed_df = _filter_frame_to_cup_table_season(completed_df)
+        backfill_added = max(0, len(completed_df) - before)
+    except Exception as exc:
+        print(f"[WARN] in-season cup table backfill failed: {exc}")
+
     _write_csv(COMPLETED_CUP_PREDICTIONS_FILE, completed_df, CUP_HISTORY_COLUMNS)
     _write_csv(CUP_PREDICTIONS_FILE, cup_df, CUP_HISTORY_COLUMNS)
     table_rows, bracket_rounds = refresh_cup_projection_artifacts(completed_df, cup_df)
@@ -1545,12 +2160,14 @@ def main():
         print(f"Cup unresolved ESPN names by competition: {unresolved}")
     print(f"Cup predictions updated: {cup_updates}")
     print(f"Cup completed rows added to history: {completed_added}")
+    print(f"Cup in-season table backfill rows merged: {backfill_added}")
     print(f"Cup completed rows removed from upcoming list: {removed_completed}")
     print(f"Cup totals entries added: {totals_added}")
     print(f"Cup projected table rows written: {table_rows}")
     print(f"Cup bracket sections written: {bracket_rounds}")
     print(f"Cup completed predictions file: {COMPLETED_CUP_PREDICTIONS_FILE}")
     print(f"Cup projected tables file: {PROJECTED_CUP_TABLES_FILE}")
+    print(f"Cup real/live tables file: {REAL_CUP_TABLES_FILE}")
     print(f"Cup projected brackets file: {PROJECTED_CUP_BRACKETS_FILE}")
     print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
     print("Done.")

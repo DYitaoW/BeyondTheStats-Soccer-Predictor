@@ -243,6 +243,27 @@ def european_season_bounds(reference_date=None) -> tuple[pd.Timestamp, pd.Timest
     return start, end
 
 
+def european_cup_table_season_bounds(reference_date=None) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """UEFA club cup league-phase window: Sept 1 → May 31 of the active season.
+
+    Domestic leagues may start in August, but Champions/Europa/Conference
+    league-phase matchdays begin in September — earlier dates are prior season
+    or friendlies and must not seed cup tables.
+    """
+    start_year = european_season_start_year(reference_date)
+    start = pd.Timestamp(year=start_year, month=9, day=1)
+    end = pd.Timestamp(year=start_year + 1, month=5, day=31)
+    return start, end
+
+
+def leagues_cup_season_bounds(reference_date=None) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """Leagues Cup (summer) window for the active calendar year: Jul 1 → Sep 30."""
+    ref = _as_timestamp(reference_date)
+    start = pd.Timestamp(year=ref.year, month=7, day=1)
+    end = pd.Timestamp(year=ref.year, month=9, day=30)
+    return start, end
+
+
 def calendar_year_bounds(reference_date=None) -> tuple[pd.Timestamp, pd.Timestamp]:
     """Jan 1 through Dec 31 of the reference calendar year."""
     ref = _as_timestamp(reference_date)

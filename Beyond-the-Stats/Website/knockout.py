@@ -744,10 +744,17 @@ def _build_knockout_wc_format(matches):
             pa = _safe_float(prob_away, 0)
             hm = str(base["home_team"]).strip()
             aw = str(base["away_team"]).strip()
-            if ph > pa and hm:
+            hm_ok = hm and hm.upper() not in {"TBD", "NONE", "DRAW", "TIE"}
+            aw_ok = aw and aw.upper() not in {"TBD", "NONE", "DRAW", "TIE"}
+            if ph > pa and hm_ok:
                 odds_entry["winner"] = hm
-            elif pa > ph and aw:
+                odds_entry["predicted_result"] = "H"
+            elif pa > ph and aw_ok:
                 odds_entry["winner"] = aw
+                odds_entry["predicted_result"] = "A"
+            else:
+                odds_entry["winner"] = "NONE"
+                odds_entry["predicted_result"] = "NONE"
             odds_entry["odds_weighted"] = True
             odds_list.append(odds_entry)
 

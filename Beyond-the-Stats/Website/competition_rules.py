@@ -1519,6 +1519,11 @@ def cup_format_style_for(comp_name: str) -> str | None:
       - ``group_knockout`` — group stage then knockout (WC, continental majors)
     """
     base_comp, _view = resolve_competition_query(comp_name)
+    # MLS Cup is a pure knockout playoff attached to the MLS regular season.
+    if base_comp == getattr(config, "MLS_CUP_COMPETITION", "United States/MLS - MLS Cup") or (
+        str(comp_name or "").strip() == getattr(config, "MLS_CUP_COMPETITION", "")
+    ):
+        return CUP_FORMAT_STYLE_KNOCKOUT
     fmt = cup_format(base_comp)
     if not fmt and base_comp not in getattr(config, "CUP_COMPETITIONS", set()):
         if base_comp not in _MAJOR_INTERNATIONAL_TABLES and base_comp not in _UEFA_COMPETITIONS:

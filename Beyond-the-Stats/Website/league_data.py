@@ -862,13 +862,134 @@ def _roster_predicted_table(comp_name: str) -> tuple[list[dict], list[dict]]:
     return predicted_table, winners_odds
 
 
-def _empty_mls_cup_odds() -> dict:
+def _mls_match_entry(home, away, winner=None, label="", stage="", extras=None):
+    home_t = str(home or "").strip()
+    away_t = str(away or "").strip()
+    win = str(winner or "").strip()
+    if win.lower().startswith("seed ") or win.lower() in {"tbd", "draw", "tie", ""}:
+        win = "NONE"
+    if home_t.lower().startswith("seed ") or home_t.lower() in {"tbd", ""}:
+        home_t = home_t or "TBD"
+    if away_t.lower().startswith("seed ") or away_t.lower() in {"tbd", ""}:
+        away_t = away_t or "TBD"
+    predicted = "NONE"
+    if win == home_t and home_t and home_t.upper() != "NONE":
+        predicted = "H"
+    elif win == away_t and away_t and away_t.upper() != "NONE":
+        predicted = "A"
+    entry = {
+        "label": label,
+        "stage": stage,
+        "home_team": home_t,
+        "away_team": away_t,
+        "winner": win if win else "NONE",
+        "predicted_result": predicted,
+        "status": "Projected",
+        "prob_home": None,
+        "prob_draw": 0.0,
+        "prob_away": None,
+    }
+    if isinstance(extras, dict):
+        entry.update(extras)
+    return entry
+
+
+def _mls_bracket_to_cup_knockout(projected: dict) -> dict:
+    """Normalize MLS playoff JSON into cup-style knockout / odds / real maps."""
+    if not isinstance(projected, dict):
+        return {}
+
+    knockout = {}
+    odds_knockout = {}
+
+    # Wildcard
+    wc = projected.get("wildcard") or {}
+    wc_list = []
+    for conf in ("east", "west"):
+        m = wc.get(conf) or {}
+        if not m:
+            continue
+        wc_list.append(_mls_match_entry(
+            m.get("home_team"), m.get("away_team"), m.get("winner"),
+            label=f"Wildcard {conf.title()}", stage="wildcard",
+            extras={"conference": conf},
+        ))
+    if wc_list:
+        knockout["wildcard"] = wc_list
+        odds_knockout["wildcard"] = [dict(x, odds_weighted=True) for x in wc_list]
+
+    # Round One (Bo3 payloads)
+    r1 = projected.get("round_one") or {}
+    r1_list = []
+    for conf in ("east", "west"):
+        conf_block = r1.get(conf) or {}
+        for slot, series in sorted(conf_block.items()):
+            if not isinstance(series, dict):
+                continue
+            home = series.get("high_seed_team") or series.get("home_team")
+            away = series.get("low_seed_team") or series.get("away_team")
+            r1_list.append(_mls_match_entry(
+                home, away, series.get("winner"),
+                label=f"Round One {conf.title()} {slot}",
+                stage="round_one",
+                extras={"conference": conf, "series": series.get("games")},
+            ))
+    if r1_list:
+        knockout["round_one"] = r1_list
+        odds_knockout["round_one"] = [dict(x, odds_weighted=True) for x in r1_list]
+
+    for stage_key, src_key in (
+        ("conference_semifinals", "conference_semifinals"),
+        ("conference_finals", "conference_finals"),
+    ):
+        block = projected.get(src_key) or {}
+        rows = []
+        for conf in ("east", "west"):
+            conf_val = block.get(conf)
+            matches = conf_val if isinstance(conf_val, list) else ([conf_val] if isinstance(conf_val, dict) else [])
+            for idx, m in enumerate(matches, start=1):
+                if not isinstance(m, dict):
+                    continue
+                rows.append(_mls_match_entry(
+                    m.get("home_team"), m.get("away_team"), m.get("winner"),
+                    label=f"{stage_key.replace('_', ' ').title()} {conf.title()} {idx}",
+                    stage=stage_key,
+                    extras={"conference": conf},
+                ))
+        if rows:
+            knockout[stage_key] = rows
+            odds_knockout[stage_key] = [dict(x, odds_weighted=True) for x in rows]
+
+    cup = projected.get("mls_cup") or {}
+    if cup:
+        cup_row = _mls_match_entry(
+            cup.get("home_team"), cup.get("away_team"), cup.get("winner"),
+            label="MLS Cup", stage="mls_cup",
+        )
+        knockout["mls_cup"] = [cup_row]
+        odds_knockout["mls_cup"] = [dict(cup_row, odds_weighted=True)]
+
+    # Real bracket: same topology, winners cleared until live results land.
+    real_knockout = {}
+    for stage, matches in knockout.items():
+        real_knockout[stage] = [
+            {**dict(m), "winner": None, "predicted_result": "NONE", "status": "pre", "from_live": False}
+            for m in matches
+        ]
+
+    stages = list(knockout.keys())
     return {
-        "competition": config.MLS_CUP_COMPETITION,
-        "winner_probabilities": {},
-        "winners_odds": [],
-        "champion": None,
-        "simulations_run": None,
+        "format_style": "knockout",
+        "no_draws": True,
+        "knockout": knockout,
+        "odds_knockout": odds_knockout,
+        "real_knockout": real_knockout,
+        "position_stages": ["Winner", "Final", "SF", "QF", "Playoff"],
+        "round_reach_probabilities": projected.get("round_reach_probabilities") or {},
+        "elimination_round_probabilities": projected.get("elimination_round_probabilities") or {},
+        "winner_probabilities": projected.get("mls_cup_winner_probabilities") or {},
+        "simulations_run": projected.get("simulations_run"),
+        "stages": stages,
     }
 
 
@@ -926,6 +1047,26 @@ def _enrich_mls_payload(comp: str, payload: dict) -> dict:
 
         cup_data = projected.get("mls_cup") or {}
         cup_probs = projected.get("mls_cup_winner_probabilities") or {}
+        # Cup-style knockout maps (same shape as /api/cup-data brackets).
+        cup_ko = _mls_bracket_to_cup_knockout(projected)
+        if cup_ko:
+            bracket_section["knockout"] = cup_ko.get("knockout")
+            bracket_section["odds_knockout"] = cup_ko.get("odds_knockout")
+            bracket_section["real_knockout"] = cup_ko.get("real_knockout")
+            payload["bracket"] = bracket_section
+            payload["knockout"] = cup_ko.get("knockout")
+            payload["odds_knockout"] = cup_ko.get("odds_knockout")
+            payload["real_knockout"] = cup_ko.get("real_knockout")
+            predicted = payload.setdefault("predicted", {})
+            predicted["knockout"] = cup_ko.get("knockout")
+            predicted["odds_knockout"] = cup_ko.get("odds_knockout")
+            predicted["real_knockout"] = cup_ko.get("real_knockout")
+            if cup_ko.get("round_reach_probabilities"):
+                payload["round_reach_probabilities"] = cup_ko["round_reach_probabilities"]
+                predicted["round_reach_probabilities"] = cup_ko["round_reach_probabilities"]
+            if cup_ko.get("elimination_round_probabilities"):
+                payload["elimination_round_odds"] = cup_ko["elimination_round_probabilities"]
+                predicted["elimination_round_odds"] = cup_ko["elimination_round_probabilities"]
         if cup_data.get("winner"):
             payload["mls_cup_winner"] = cup_data.get("winner")
         # Convenience mirrors for clients that expect Cup fields beside the bracket.

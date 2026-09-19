@@ -1,4 +1,4 @@
-﻿import os
+import os
 import json
 import re
 import random
@@ -659,8 +659,9 @@ def run_monte_carlo_mls(canonical_teams, base_table, future_predictions, confere
             cup_winner = (bracket.get("mls_cup") or {}).get("winner")
             # defaultdict membership is always True for existing keys only after
             # insert; ``in`` on a missing key previously skipped every winner.
-            if cup_winner:
-                cup_win_counts[cup_winner] += 1
+            if cup_winner and str(cup_winner).strip().upper() not in {"NONE", "TBD", "DRAW", "TIE"}:
+                if not str(cup_winner).strip().lower().startswith("seed "):
+                    cup_win_counts[cup_winner] += 1
             accumulate_mls_playoff_outcome_counts(
                 bracket,
                 make_playoffs_counts,
@@ -929,18 +930,33 @@ def predict_match(ctx, home_team, away_team, competition_hint):
 
 
 def predict_single_winner_no_draw(ctx, home_team, away_team, competition_hint, fallback_winner, matchup_cache=None):
+    """Resolve a no-draw knockout winner from odds.
+
+    Returns ``NONE`` when either side is a placeholder / seed TBD and no real
+    clubs are available to simulate.
+    """
+    home = str(home_team or "").strip()
+    away = str(away_team or "").strip()
+    def _placeholder(name: str) -> bool:
+        lower = name.lower()
+        return (not name) or lower.startswith("seed ") or lower in {"tbd", "none", "draw", "tie"}
+
+    if _placeholder(home) or _placeholder(away):
+        return "NONE"
     if matchup_cache is not None:
-        p_home = matchup_home_win_prob(ctx, home_team, away_team, competition_hint, matchup_cache)
+        p_home = matchup_home_win_prob(ctx, home, away, competition_hint, matchup_cache)
         if p_home is None:
-            return fallback_winner
-        return home_team if RNG.random() < p_home else away_team
-    _, _, _, probs = predict_match(ctx, home_team, away_team, competition_hint)
+            fb = str(fallback_winner or "").strip()
+            return fb if fb and not _placeholder(fb) else "NONE"
+        return home if RNG.random() < p_home else away
+    _, _, _, probs = predict_match(ctx, home, away, competition_hint)
     p_home = max(0.0, float(probs.get("H", 0.0)))
     p_away = max(0.0, float(probs.get("A", 0.0)))
     total = p_home + p_away
     if total <= 0:
-        return fallback_winner
-    return home_team if RNG.random() < (p_home / total) else away_team
+        fb = str(fallback_winner or "").strip()
+        return fb if fb and not _placeholder(fb) else "NONE"
+    return home if RNG.random() < (p_home / total) else away
 
 
 def matchup_home_win_prob(ctx, home_team, away_team, competition_hint, matchup_cache):
