@@ -1,8 +1,7 @@
-"""Sync club preseason friendlies from ESPN into the upcoming friendlies CSV.
+"""Sync club and international friendlies from ESPN into the friendlies CSV.
 
-All friendlies appear on the upcoming schedule as schedule-only entries
-(no model predictions -- most friendlies pair teams that never normally play
-each other). Settled results are still tracked for display.
+Friendlies appear on the upcoming schedule as schedule-only entries
+(no model predictions). Settled results are still tracked for display.
 """
 
 import os as _os_paths_setup
@@ -39,6 +38,11 @@ PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_club_friendlies.csv")
 TEAM_MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
 
 CLUB_FRIENDLIES_COMPETITION = "Club Friendlies"
+INTERNATIONAL_FRIENDLIES_COMPETITION = "International/Friendly"
+FRIENDLY_ESPN_SOURCES = (
+    (CLUB_FRIENDLIES_COMPETITION, "club.friendly"),
+    (INTERNATIONAL_FRIENDLIES_COMPETITION, "fifa.friendly"),
+)
 EASTERN_TZ = ZoneInfo("America/New_York")
 LOOKAHEAD_DAYS = 365
 
@@ -171,40 +175,48 @@ def parse_event(event):
 
 
 def load_fixtures_from_espn(lookahead_days=LOOKAHEAD_DAYS):
+    """Load club + international friendly fixtures from ESPN scoreboards."""
     today = pd.Timestamp(datetime.now(UTC).date())
     rows = []
     seen = set()
-    for offset in range(0, max(1, int(lookahead_days) + 1)):
-        day = today + pd.Timedelta(days=offset)
-        try:
-            data = espn_api_cache.fetch_scoreboard("club.friendly", day.strftime("%Y%m%d"))
-        except Exception:
-            continue
-        for event in data.get("events", []) or []:
-            parsed = parse_event(event)
-            if parsed is None:
+    for competition, espn_id in FRIENDLY_ESPN_SOURCES:
+        for offset in range(0, max(1, int(lookahead_days) + 1)):
+            day = today + pd.Timedelta(days=offset)
+            try:
+                data = espn_api_cache.fetch_scoreboard(espn_id, day.strftime("%Y%m%d"))
+            except Exception:
                 continue
-            if parsed["match_date"] < today:
-                continue
-            key = (
-                parsed["match_date"].strftime("%Y-%m-%d"),
-                parsed["home_team"],
-                parsed["away_team"],
-            )
-            if key in seen:
-                continue
-            seen.add(key)
-            rows.append(parsed)
+            for event in data.get("events", []) or []:
+                parsed = parse_event(event)
+                if parsed is None:
+                    continue
+                if parsed["match_date"] < today:
+                    continue
+                key = (
+                    competition,
+                    parsed["match_date"].strftime("%Y-%m-%d"),
+                    parsed["home_team"],
+                    parsed["away_team"],
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                parsed = dict(parsed)
+                parsed["competition"] = competition
+                rows.append(parsed)
     if not rows:
         return pd.DataFrame()
-    return pd.DataFrame(rows).sort_values(["match_date", "home_team", "away_team"]).reset_index(drop=True)
+    return pd.DataFrame(rows).sort_values(
+        ["match_date", "competition", "home_team", "away_team"]
+    ).reset_index(drop=True)
 
 
-def make_prediction_key(match_date, home_team, away_team):
+def make_prediction_key(match_date, competition, home_team, away_team):
     home_key = normalize_team_key(home_team) or str(home_team).strip().lower()
     away_key = normalize_team_key(away_team) or str(away_team).strip().lower()
     team_pair = sorted([home_key, away_key])
-    return f"{match_date.strftime('%Y-%m-%d')}|{CLUB_FRIENDLIES_COMPETITION}|{team_pair[0]}|{team_pair[1]}"
+    competition = str(competition or CLUB_FRIENDLIES_COMPETITION).strip()
+    return f"{match_date.strftime('%Y-%m-%d')}|{competition}|{team_pair[0]}|{team_pair[1]}"
 
 
 def load_existing():
@@ -221,7 +233,7 @@ def sync_friendlies():
     _t0 = time.monotonic()
     fixtures = load_fixtures_from_espn()
     if fixtures.empty:
-        print("No club friendlies returned by ESPN.")
+        print("No club/international friendlies returned by ESPN.")
         existing = load_existing()
         if not existing.empty:
             os.makedirs(PREDICTIONS_DIR, exist_ok=True)
@@ -247,7 +259,8 @@ def sync_friendlies():
         home_team = resolve_team_name(raw_home, mapping, available_teams)
         away_team = resolve_team_name(raw_away, mapping, available_teams)
         match_date = pd.Timestamp(fixture["match_date"]).normalize()
-        prediction_key = make_prediction_key(match_date, home_team, away_team)
+        competition = str(fixture.get("competition") or CLUB_FRIENDLIES_COMPETITION).strip()
+        prediction_key = make_prediction_key(match_date, competition, home_team, away_team)
         prior = existing_by_key.get(prediction_key, {})
 
         row = {col: "" for col in RESULT_COLUMNS}
@@ -258,7 +271,7 @@ def sync_friendlies():
                 "match_date": match_date.strftime("%Y-%m-%d"),
                 "match_datetime_utc": str(fixture.get("match_datetime_utc", "")),
                 "match_datetime_et": str(fixture.get("match_datetime_et", "")),
-                "competition": CLUB_FRIENDLIES_COMPETITION,
+                "competition": competition,
                 "home_team": home_team,
                 "away_team": away_team,
                 "display_home_team": raw_home,
@@ -286,8 +299,12 @@ def sync_friendlies():
     out = pd.DataFrame(rows, columns=RESULT_COLUMNS).astype("object")
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
     out.to_csv(PREDICTIONS_FILE, index=False)
-    print(f"Saved club friendlies: {PREDICTIONS_FILE}")
-    print(f"Fixtures: {len(out)} | schedule-only (no predictions)")
+    club_n = int((out["competition"] == CLUB_FRIENDLIES_COMPETITION).sum())
+    intl_n = int((out["competition"] == INTERNATIONAL_FRIENDLIES_COMPETITION).sum())
+    print(f"Saved friendlies: {PREDICTIONS_FILE}")
+    print(
+        f"Fixtures: {len(out)} | club={club_n} international={intl_n} | schedule-only (no predictions)"
+    )
     print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
 
 

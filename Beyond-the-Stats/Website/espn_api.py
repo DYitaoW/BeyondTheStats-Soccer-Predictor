@@ -182,22 +182,50 @@ def _parse_espn_team_record(team):
     }
 
 def _fetch_competition_schedule(comp_name, espn_id, days_forward=90):
-    """Fetch full schedule for a competition from today to *days_forward* out."""
+    """Fetch full schedule for a competition from today to *days_forward* out.
+
+    ESPN rejects multi-day ``dates=START-END`` for several soccer leagues
+    (MLS, Liga MX, UEFA) with HTTP 400. Prefer ``espn_api_cache`` range/day
+    walk; fall back to the default single scoreboard only.
+    """
     cache_key = f"sched_{comp_name}"
     now = time.time()
     cached = _SCHEDULE_CACHE.get(cache_key)
     if cached and (now - cached[0]) < _ESPN_CACHE_TTL:
         return cached[1]
-    today_str = date.today().strftime("%Y%m%d")
-    end = (date.today() + timedelta(days=days_forward)).strftime("%Y%m%d")
-    data = _fetch_espn_json(
-        f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard"
-        f"?dates={today_str}-{end}&limit=1000"
-    )
-    if data is None:
-        return None
+
+    events = []
+    try:
+        import sys
+        from pathlib import Path
+
+        shared_dir = str(Path(__file__).resolve().parents[1] / "shared")
+        if shared_dir not in sys.path:
+            sys.path.insert(0, shared_dir)
+        import espn_api_cache
+
+        start = date.today()
+        end = start + timedelta(days=max(1, int(days_forward)))
+        events = espn_api_cache.fetch_scoreboard_range(
+            espn_id,
+            start,
+            end,
+            timeout=LIVE_SCORE_FETCH_TIMEOUT,
+            include_default=True,
+            force_all_days=True,
+            progress_label=comp_name,
+        ) or []
+    except Exception:
+        events = []
+
+    if not events:
+        data = _fetch_espn_json(
+            f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard"
+        )
+        events = (data or {}).get("events") or []
+
     games = []
-    for ev in (data.get("events") or []):
+    for ev in events:
         parsed = _parse_espn_live_event(ev)
         if parsed:
             parsed["competition"] = comp_name
