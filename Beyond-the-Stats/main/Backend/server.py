@@ -408,12 +408,16 @@ class BackendServer:
             # league uses the normal PATH A/B gates (current-season CSV → full
             # sim counts; PATH B only when no usable CSV).
             force_path_b = os.environ.get("BTS_FORCE_PATH_B", "").strip()
-            tables_only = os.environ.get("BTS_TABLES_ONLY", "1").strip() or "1"
+            # Full pipeline by default (download + train + upcoming + tables + cups).
+            # Set BTS_TABLES_ONLY=1 only when intentionally shortening a backend run.
+            tables_only = os.environ.get("BTS_TABLES_ONLY", "0").strip() or "0"
             if tables_only.lower() in {"1", "true", "yes"}:
                 LOG.info(
                     "[pipeline] tables-only / shortened backend: "
                     "league download/train skipped; cup upcoming + Track_Cup_Results still run"
                 )
+            else:
+                LOG.info("[pipeline] full pipeline (BTS_TABLES_ONLY=%r)", tables_only)
             if force_path_b:
                 LOG.info("[pipeline] BTS_FORCE_PATH_B=%r (PATH B override)", force_path_b)
             subprocess_env = {

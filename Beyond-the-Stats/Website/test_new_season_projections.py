@@ -24,6 +24,13 @@ class StartupFullRetrainTests(unittest.TestCase):
             source,
         )
 
+    def test_backend_defaults_to_full_pipeline_not_tables_only(self):
+        source = (ROOT / "main" / "Backend" / "server.py").read_text(encoding="utf-8")
+        self.assertIn('BTS_TABLES_ONLY", "0"', source)
+        self.assertNotIn('BTS_TABLES_ONLY", "1"', source)
+        service = (ROOT / "deploy" / "beyond-the-stats.service").read_text(encoding="utf-8")
+        self.assertIn('Environment="BTS_TABLES_ONLY=0"', service)
+
 
 class PathBRosterGateTests(unittest.TestCase):
     def test_global_path_b_uses_roster_not_hardcoded_league_set(self):
