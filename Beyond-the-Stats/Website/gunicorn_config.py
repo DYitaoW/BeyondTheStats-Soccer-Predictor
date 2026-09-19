@@ -23,3 +23,13 @@ def post_worker_init(worker):
         warm_competition_games_cache(force=True)
     except Exception as exc:
         worker.log.warning("games cache warm failed: %s", exc)
+
+    # Mirror league-data: hoist fresh CupData disk caches into process memory so
+    # the first /api/cup-data hit after worker start is a mem lookup.
+    try:
+        from cup_data import warm_cup_data_mem_from_disk
+
+        loaded = warm_cup_data_mem_from_disk()
+        worker.log.info("cup-data mem warm: %s competition(s)", loaded)
+    except Exception as exc:
+        worker.log.warning("cup-data mem warm failed: %s", exc)

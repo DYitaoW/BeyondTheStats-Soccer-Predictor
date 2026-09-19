@@ -624,14 +624,39 @@ def _load_fixtures(comp_name: str) -> list[dict]:
     if base_comp == config.LIGA_MX_COMPETITION:
         fixture_comps.add(config.LIGA_MX_COMPETITION)
 
-    csv_paths = (
-        config.GLOBAL_UPCOMING_FILE,
-        config.MLS_UPCOMING_FILE,
-        config.EXTRA_UPCOMING_FILE,
-        config.CUP_UPCOMING_FILE,
-    )
+    # Cups: prefer the cup predictions CSV (fixtures_only + filter) and skip
+    # scanning league CSVs first — same speedup league-data got in PR #179.
+    try:
+        from competition_rules import is_cup_competition
+
+        is_cup = is_cup_competition(comp_name) or is_cup_competition(base_comp)
+    except Exception:
+        is_cup = False
+
+    if is_cup:
+        csv_paths = (
+            config.CUP_UPCOMING_FILE,
+            config.GLOBAL_UPCOMING_FILE,
+            config.MLS_UPCOMING_FILE,
+            config.EXTRA_UPCOMING_FILE,
+        )
+    else:
+        csv_paths = (
+            config.GLOBAL_UPCOMING_FILE,
+            config.MLS_UPCOMING_FILE,
+            config.EXTRA_UPCOMING_FILE,
+            config.CUP_UPCOMING_FILE,
+        )
 
     comp_filter = list(fixture_comps)
+    # Cup path: try the cup CSV alone first so we avoid 3 extra pandas scans.
+    if is_cup:
+        cup_rows = _load_cached_upcoming_rows(
+            config.CUP_UPCOMING_FILE, competition_filter=comp_filter
+        )
+        if cup_rows:
+            return cup_rows
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(csv_paths)) as pool:
         all_rows = list(pool.map(
             lambda p: _load_cached_upcoming_rows(p, competition_filter=comp_filter),
@@ -1430,6 +1455,12 @@ def clear_league_data_caches() -> int:
         _LEAGUE_DATA_MEM.clear()
     with _LEAGUE_DATA_CSV_CACHE_LOCK:
         _LEAGUE_DATA_CSV_CACHE.clear()
+    try:
+        from predictions import clear_json_payload_cache
+
+        clear_json_payload_cache()
+    except Exception:
+        pass
 
     removed = 0
     cache_dir = getattr(config, "LEAGUE_DATA_DIR", "") or ""

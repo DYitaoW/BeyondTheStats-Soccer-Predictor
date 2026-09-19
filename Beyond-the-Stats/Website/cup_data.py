@@ -57,6 +57,9 @@ _CUP_DATA_MEM: dict[str, tuple[float, dict]] = {}
 _CUP_DATA_MEM_LOCK = threading.Lock()
 _CUP_DATA_BUILD_LOCKS: dict[str, threading.Lock] = {}
 _CUP_DATA_BUILD_LOCKS_GUARD = threading.Lock()
+# mtime cache for real_cup_tables.csv (pandas parse is the other cold-path cost).
+_REAL_CUP_TABLE_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_REAL_CUP_TABLE_CACHE_LOCK = threading.Lock()
 
 
 def _cup_data_cache_path(comp_name: str) -> str:
@@ -117,21 +120,40 @@ def _load_cup_data_from_cache(comp_name: str) -> dict | None:
 
 
 def _write_cup_data_cache(comp_name: str, payload: dict) -> None:
+    """Publish to process memory immediately; persist compact JSON in the background.
+
+    League-data keeps a process-local mem cache in front of disk. Cup payloads
+    are large (knockout + odds), so blocking the API on ``json.dump`` made cold
+    ``/api/cup-data`` noticeably slower than ``/api/league-data``.
+    """
+    if isinstance(payload, dict):
+        _mem_set_cup_data(comp_name, payload)
+
     path = _cup_data_cache_path(comp_name)
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, ensure_ascii=False, separators=(",", ":"), default=str)
-        if isinstance(payload, dict):
-            _mem_set_cup_data(comp_name, payload)
-    except Exception:
-        pass
+
+    def _persist() -> None:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False, separators=(",", ":"), default=str)
+        except Exception:
+            pass
+
+    threading.Thread(target=_persist, name=f"cup-data-cache:{comp_name}", daemon=True).start()
 
 
 def clear_cup_data_caches() -> int:
     """Drop in-memory and on-disk CupData caches."""
     with _CUP_DATA_MEM_LOCK:
         _CUP_DATA_MEM.clear()
+    with _REAL_CUP_TABLE_CACHE_LOCK:
+        _REAL_CUP_TABLE_CACHE.clear()
+    try:
+        from predictions import clear_json_payload_cache
+
+        clear_json_payload_cache()
+    except Exception:
+        pass
     removed = 0
     cache_dir = getattr(config, "CUP_DATA_DIR", "") or ""
     if cache_dir and os.path.isdir(cache_dir):
@@ -144,6 +166,36 @@ def clear_cup_data_caches() -> int:
             except OSError:
                 pass
     return removed
+
+
+def warm_cup_data_mem_from_disk() -> int:
+    """Load fresh on-disk CupData JSON into the process mem cache (gunicorn warm)."""
+    cache_dir = getattr(config, "CUP_DATA_DIR", "") or ""
+    if not cache_dir or not os.path.isdir(cache_dir):
+        return 0
+    ttl = _cup_data_ttl_seconds()
+    now = datetime.now(timezone.utc).timestamp()
+    loaded = 0
+    for name in os.listdir(cache_dir):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(cache_dir, name)
+        try:
+            age = now - os.path.getmtime(path)
+            if age > ttl:
+                continue
+            with open(path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            if not isinstance(payload, dict):
+                continue
+            comp = str(payload.get("competition") or "").strip()
+            if not comp:
+                continue
+            _mem_set_cup_data(comp, payload)
+            loaded += 1
+        except Exception:
+            continue
+    return loaded
 
 
 def cup_data_competitions() -> list[str]:
@@ -160,10 +212,30 @@ def rebuild_cup_data_caches(
     clear_first: bool = True,
     max_workers: int = 4,
 ) -> dict[str, bool]:
-    """Clear (optional) and rebuild CupData caches after pipeline publish."""
+    """Clear (optional) and rebuild CupData caches after pipeline publish.
+
+    Mirrors ``rebuild_league_data_caches``: warm the competition-games index and
+    drop sticky real-standings caches so table cups do not wait on cold history
+    scans after publish.
+    """
     if clear_first:
         removed = clear_cup_data_caches()
         print(f"[cup-data] cleared caches ({removed} disk files)")
+
+    try:
+        from competition_rules import warm_competition_games_cache
+
+        warm_competition_games_cache(force=True)
+    except Exception as exc:
+        print(f"[cup-data] games-cache warm failed: {exc}")
+
+    try:
+        from standings import _clear_all_real_data_caches
+
+        _clear_all_real_data_caches()
+    except Exception:
+        pass
+
     comps = list(competitions) if competitions is not None else cup_data_competitions()
     if not comps:
         return {}
@@ -474,10 +546,24 @@ def _condensed_winners_odds(winners_odds: list[dict]) -> list[dict]:
 
 
 def _load_real_cup_table_rows(comp_name: str) -> list[dict]:
-    """Load live/real phase table rows written by Track_Cup_Results."""
+    """Load live/real phase table rows written by Track_Cup_Results.
+
+    Memoized by CSV mtime (same pattern as projected-table CSV caching in
+    ``predictions._load_projected_tables``).
+    """
     path = getattr(config, "CUP_REAL_TABLE_FILE", "") or ""
     if not path or not os.path.exists(path):
         return []
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return []
+    base_comp, _ = resolve_competition_query(comp_name)
+    cache_key = f"{os.path.normpath(path)}|{comp_name}|{base_comp}"
+    with _REAL_CUP_TABLE_CACHE_LOCK:
+        cached = _REAL_CUP_TABLE_CACHE.get(cache_key)
+        if cached is not None and cached[0] == mtime:
+            return list(cached[1])
     try:
         import pandas as pd
         df = pd.read_csv(path)
@@ -485,10 +571,13 @@ def _load_real_cup_table_rows(comp_name: str) -> list[dict]:
         return []
     if df is None or df.empty or "competition" not in df.columns:
         return []
-    base_comp, _ = resolve_competition_query(comp_name)
     mask = df["competition"].astype(str).str.strip().isin({comp_name, base_comp})
     rows = df.loc[mask].to_dict("records")
-    return rows if isinstance(rows, list) else []
+    if not isinstance(rows, list):
+        rows = []
+    with _REAL_CUP_TABLE_CACHE_LOCK:
+        _REAL_CUP_TABLE_CACHE[cache_key] = (mtime, rows)
+    return list(rows)
 
 
 def _real_cup_standings_from_rows(comp_name: str, rows: list[dict]) -> dict | None:
@@ -586,11 +675,14 @@ def _build_cup_data_payload_uncached(comp: str) -> dict:
         predicted_groups = _load_predicted_groups(comp, predicted_table, real_standings=real_standings)
         table_position_odds = _build_position_odds(predicted_table)
 
-    entry = _load_projected_cup_entry(comp)
-    # Prefer bracket.projected when section already loaded it.
+    entry = {}
+    # Prefer bracket.projected (already loaded in _build_bracket_section) so we
+    # do not re-parse projected_cup_brackets.json.
     projected = bracket.get("projected") if isinstance(bracket.get("projected"), dict) else None
     if isinstance(projected, dict) and projected:
-        entry = {**entry, **projected}
+        entry = dict(projected)
+    else:
+        entry = _load_projected_cup_entry(comp)
 
     stage_position_odds = _build_cup_stage_position_odds(comp, entry)
     winner_probs = _pct_map_to_100(entry.get("winner_probabilities") or {})
@@ -671,24 +763,26 @@ def _build_cup_data_payload_uncached(comp: str) -> dict:
         payload["round_reach_probabilities"] = entry["round_reach_probabilities"]
         predicted["round_reach_probabilities"] = entry["round_reach_probabilities"]
 
-    # Enrich knockout dicts the same way league-data cups do.
-    enriched = _enrich_league_data_cup_fields(comp, dict(payload))
-    for key in ("knockout", "odds_knockout", "real_knockout"):
-        if enriched.get(key):
-            bracket[key] = enriched[key]
-            payload[key] = enriched[key]
-    if enriched.get("winner_probabilities") and not winner_probs:
-        cleaned = {
-            t: p for t, p in (enriched.get("winner_probabilities") or {}).items()
-            if t and str(t).upper() not in {"NONE", "DRAW", "TBD", "TIE"}
-        }
-        payload["winner_probabilities"] = cleaned
-        predicted["winner"]["probabilities"] = cleaned
-    if enriched.get("champion") and not champion:
-        champ = enriched["champion"]
-        if champ and str(champ).upper() not in {"NONE", "DRAW", "TBD", "TIE"}:
-            payload["champion"] = champ
-            predicted["winner"]["champion"] = champ
+    # Enrich only when bracket section did not already build knockout maps —
+    # otherwise we re-scan competition history a second time (cold-path cost).
+    if not bracket.get("knockout"):
+        enriched = _enrich_league_data_cup_fields(comp, dict(payload))
+        for key in ("knockout", "odds_knockout", "real_knockout"):
+            if enriched.get(key):
+                bracket[key] = enriched[key]
+                payload[key] = enriched[key]
+        if enriched.get("winner_probabilities") and not winner_probs:
+            cleaned = {
+                t: p for t, p in (enriched.get("winner_probabilities") or {}).items()
+                if t and str(t).upper() not in {"NONE", "DRAW", "TBD", "TIE"}
+            }
+            payload["winner_probabilities"] = cleaned
+            predicted["winner"]["probabilities"] = cleaned
+        if enriched.get("champion") and not champion:
+            champ = enriched["champion"]
+            if champ and str(champ).upper() not in {"NONE", "DRAW", "TBD", "TIE"}:
+                payload["champion"] = champ
+                predicted["winner"]["champion"] = champ
 
     # Prefer Track-authored real_knockout / upcoming match odds when present.
     for key in ("real_knockout", "projected_knockout", "upcoming_fixtures", "rounds"):
