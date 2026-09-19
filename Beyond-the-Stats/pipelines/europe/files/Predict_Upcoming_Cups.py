@@ -1975,7 +1975,10 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
         comp_name = cup_data["name"]
         espn_id = cup_data.get("espn_id")
         lookahead = max(cup_window_days, season_calendar.DEFAULT_CUP_LOOKAHEAD_DAYS)
-        print(f"\n--- Checking Sources for: {cup_name} ({cup_window_days}-day fixture window) ---")
+        print(
+            f"\n[cups] START load fixtures {cup_name} ({cup_window_days}-day window)",
+            flush=True,
+        )
 
         source_frames = []
 
@@ -1989,11 +1992,11 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
             )
             if not espn_fixtures.empty:
                 source_frames.append(espn_fixtures)
-                print(f"  ESPN: {len(espn_fixtures)} fixtures for {cup_name}.")
+                print(f"  ESPN: {len(espn_fixtures)} fixtures for {cup_name}.", flush=True)
             else:
-                print(f"  ESPN: no fixtures for {cup_name}.")
+                print(f"  ESPN: no fixtures for {cup_name}.", flush=True)
         else:
-            print(f"  ESPN: skipped (no espn_id) for {cup_name}.")
+            print(f"  ESPN: skipped (no espn_id) for {cup_name}.", flush=True)
 
         # Also pull TheSportsDB when a league id is configured — even if ESPN
         # already returned games — so incomplete ESPN calendars get filled in.
@@ -2003,9 +2006,9 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
             )
             if not tsdb_fixtures.empty:
                 source_frames.append(tsdb_fixtures)
-                print(f"  TheSportsDB: {len(tsdb_fixtures)} fixtures for {cup_name}.")
+                print(f"  TheSportsDB: {len(tsdb_fixtures)} fixtures for {cup_name}.", flush=True)
             else:
-                print(f"  TheSportsDB: no fixtures for {cup_name}.")
+                print(f"  TheSportsDB: no fixtures for {cup_name}.", flush=True)
 
         fixtures = merge_cup_fixture_frames(source_frames, label=cup_name)
 
@@ -2013,50 +2016,55 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
             fallback = load_preseason_cup_fixtures(cup_window_days, comp_name)
             if not fallback.empty:
                 fixtures = fallback
-                print(f"  Preseason fallback: {len(fixtures)} fixtures for {cup_name}.")
+                print(f"  Preseason fallback: {len(fixtures)} fixtures for {cup_name}.", flush=True)
 
         if fixtures.empty:
             if comp_name in skip_synthetic:
-                print(f"No real fixtures found for {cup_name}; preseason fallback disabled.")
+                print(f"[cups] DONE  load fixtures {cup_name} — no real fixtures", flush=True)
             else:
-                print(f"No fixtures found for {cup_name} from any source.")
+                print(f"[cups] DONE  load fixtures {cup_name} — no fixtures from any source", flush=True)
             continue
 
         all_fixtures.append(fixtures)
-        print(f"SUCCESS: {len(fixtures)} unique fixtures for {cup_name} after merge/dedupe.")
+        print(
+            f"[cups] DONE  load fixtures {cup_name} — {len(fixtures)} unique after merge/dedupe",
+            flush=True,
+        )
 
     if not all_fixtures:
+        print("[cups] DONE with processing 0 cup fixture loads", flush=True)
         return pd.DataFrame()
 
+    print(f"[cups] DONE with processing {len(all_fixtures)} cup fixture loads", flush=True)
     final_fixtures = merge_cup_fixture_frames(all_fixtures, label="ALL CUPS")
     return final_fixtures
 
 def main():
     _t0 = time.monotonic()
     args = parse_cli_args()
-    print("=====================================================================")
-    print("STARTING CUP PREDICTION PIPELINE")
-    print("=====================================================================")
+    print("=====================================================================", flush=True)
+    print("[cups] START — Predict_Upcoming_Cups", flush=True)
+    print("=====================================================================", flush=True)
 
     if args.refresh_download:
-        print("\n[STEP 1/5] Refreshing raw data sources...")
+        print("\n[STEP 1/5] Refreshing raw data sources...", flush=True)
         download_latest.main()
     else:
-        print("\n[STEP 1/5] Skipping data refresh (using existing raw data).")
+        print("\n[STEP 1/5] Skipping data refresh (using existing raw data).", flush=True)
 
     # 1. Load Fixtures (This now handles all cups)
-    print("\n[STEP 2/5] Loading upcoming fixtures from all sources...")
+    print("\n[STEP 2/5] Loading upcoming fixtures from all sources...", flush=True)
     fixtures = load_upcoming_matchweek_fixtures(args.api_token, args.window_days)
     if fixtures.empty:
-        print("FATAL: No upcoming matchweek fixtures found for any cup. Exiting.")
+        print("FATAL: No upcoming matchweek fixtures found for any cup. Exiting.", flush=True)
         return
 
     # 2. Build Context (Requires historical data)
-    print("\n[STEP 3/5] Building prediction context (Loading models and stats)...")
+    print("\n[STEP 3/5] Building prediction context (Loading models and stats)...", flush=True)
     context = build_prediction_context()
     
     # 3. Map Teams
-    print("\n[STEP 4/5] Updating team mappings...")
+    print("\n[STEP 4/5] Updating team mappings...", flush=True)
     team_mapping = load_shared_mapping()
     team_mapping, canonical_added = ensure_canonical_self_mappings(team_mapping, context)
     team_mapping, new_map_entries, mapping_drift, blanks_added = update_team_mapping_from_fixtures(fixtures, context, team_mapping)
@@ -2064,35 +2072,58 @@ def main():
     fixtures = apply_team_mapping_to_fixtures(fixtures, team_mapping, context)
     
     # 4. Prediction & Saving
-    print("\n[STEP 5/5] Running predictions and saving results...")
+    print("\n[STEP 5/5] Running predictions and saving results...", flush=True)
     existing = load_prediction_store(PREDICTIONS_FILE)
     existing = existing.set_index("prediction_key", drop=False) if not existing.empty else existing
+
+    cup_names = sorted(
+        {str(c).strip() for c in fixtures.get("competition", []).tolist() if str(c).strip()}
+    )
+    total_cups = len(cup_names)
+    print(f"[cups] START — predicting {total_cups} cups ({len(fixtures)} fixtures)", flush=True)
 
     new_records = []
     skipped = 0
     schedule_only_count = 0
-    for _, fixture in fixtures.iterrows():
-        pred = None
-        try:
-            pred = predict_fixture(fixture, context)
-        except Exception as exc:
-            home = str(fixture.get("home_team", "")).strip()
-            away = str(fixture.get("away_team", "")).strip()
-            comp = str(fixture.get("competition", "")).strip()
-            print(f"  Prediction failed ({comp}: {home} vs {away}): {exc}")
+    finished_cups = 0
+    for cup_name in cup_names:
+        finished_cups += 1
+        cup_fixtures = fixtures[fixtures["competition"].astype(str).str.strip() == cup_name]
+        print(
+            f"[cups] START predict {cup_name} "
+            f"({finished_cups}/{total_cups}) — {len(cup_fixtures)} fixtures",
+            flush=True,
+        )
+        cup_ok = 0
+        for _, fixture in cup_fixtures.iterrows():
             pred = None
-        if pred is None:
-            pred = build_schedule_only_row(fixture, context)
-            if pred is not None:
-                schedule_only_count += 1
-        if pred is None:
-            skipped += 1
-            continue
-        new_records.append(pred)
+            try:
+                pred = predict_fixture(fixture, context)
+            except Exception as exc:
+                home = str(fixture.get("home_team", "")).strip()
+                away = str(fixture.get("away_team", "")).strip()
+                comp = str(fixture.get("competition", "")).strip()
+                print(f"  Prediction failed ({comp}: {home} vs {away}): {exc}", flush=True)
+                pred = None
+            if pred is None:
+                pred = build_schedule_only_row(fixture, context)
+                if pred is not None:
+                    schedule_only_count += 1
+            if pred is None:
+                skipped += 1
+                continue
+            new_records.append(pred)
+            cup_ok += 1
+        print(
+            f"[cups] DONE  predict {cup_name} "
+            f"({finished_cups}/{total_cups}) — {cup_ok} predictions",
+            flush=True,
+        )
+    print(f"[cups] DONE with processing {finished_cups}/{total_cups} cups", flush=True)
 
     new_df = pd.DataFrame(new_records, columns=RESULT_COLUMNS).astype("object")
     if new_df.empty and existing.empty:
-        print("No match predictions were generated.")
+        print("No match predictions were generated.", flush=True)
         return
 
     if existing.empty:
@@ -2110,9 +2141,9 @@ def main():
     try:
         from Update_Live_Prediction_Results import save_completed_rows_to_past_games
         saved = save_completed_rows_to_past_games(combined)
-        print(f"Archived {saved} completed cup games to past_games.json")
+        print(f"Archived {saved} completed cup games to past_games.json", flush=True)
     except Exception as exc:
-        print(f"[past-games] Archive skipped: {exc}")
+        print(f"[past-games] Archive skipped: {exc}", flush=True)
 
     # Remove stale rows so the website only receives fixtures from the active cup pull.
     combined = keep_only_current_fixtures(combined, fixtures)
@@ -2124,18 +2155,18 @@ def main():
     combined.to_csv(PREDICTIONS_FILE, index=False)
 
     _elapsed = time.monotonic() - _t0
-    print("\n=====================================================================")
-    print("✅ CUP PREDICTION PIPELINE FINISHED SUCCESSFULLY ✅")
-    print(f"Total unique fixtures processed: {len(fixtures)}")
-    print(f"Team mappings file updated: {TEAM_MAPPING_FILE}")
-    print(f"Predictions saved to: {PREDICTIONS_FILE}")
-    print(f"New predictions written: {len(new_df)}")
-    print(f"Schedule-only (no odds, still listed): {schedule_only_count}")
-    print(f"Skipped (unmatched team names): {skipped}")
-    print(f"Removed completed fixtures from upcoming list: {removed_completed}")
-    print(f"Newly settled with real results: {settled_count}")
-    print(f"Elapsed: {_elapsed:.1f}s")
-    print("=====================================================================")
+    print("\n=====================================================================", flush=True)
+    print("[cups] DONE — Predict_Upcoming_Cups finished successfully", flush=True)
+    print(f"Total unique fixtures processed: {len(fixtures)}", flush=True)
+    print(f"Team mappings file updated: {TEAM_MAPPING_FILE}", flush=True)
+    print(f"Predictions saved to: {PREDICTIONS_FILE}", flush=True)
+    print(f"New predictions written: {len(new_df)}", flush=True)
+    print(f"Schedule-only (no odds, still listed): {schedule_only_count}", flush=True)
+    print(f"Skipped (unmatched team names): {skipped}", flush=True)
+    print(f"Removed completed fixtures from upcoming list: {removed_completed}", flush=True)
+    print(f"Newly settled with real results: {settled_count}", flush=True)
+    print(f"Elapsed: {_elapsed:.1f}s", flush=True)
+    print("=====================================================================", flush=True)
 
 
 if __name__ == "__main__":
