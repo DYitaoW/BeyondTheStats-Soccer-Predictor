@@ -404,21 +404,27 @@ class BackendServer:
         try:
             cmd = self._build_pipeline_cmd(full_retrain=full_retrain)
             LOG.info("[pipeline] starting (trigger=%s, full_retrain=%s) -> journald", trigger, full_retrain)
-            force_path_b = os.environ.get("BTS_FORCE_PATH_B", "").strip() or "England/Premier League"
+            # Do not special-case Premier League onto PATH B. When unset, every
+            # league uses the normal PATH A/B gates (current-season CSV → full
+            # sim counts; PATH B only when no usable CSV).
+            force_path_b = os.environ.get("BTS_FORCE_PATH_B", "").strip()
             tables_only = os.environ.get("BTS_TABLES_ONLY", "1").strip() or "1"
             if tables_only.lower() in {"1", "true", "yes"}:
                 LOG.info(
                     "[pipeline] tables-only / shortened backend: "
                     "league download/train skipped; cup upcoming + Track_Cup_Results still run"
                 )
+            if force_path_b:
+                LOG.info("[pipeline] BTS_FORCE_PATH_B=%r (PATH B override)", force_path_b)
             subprocess_env = {
                 **os.environ,
                 "PYTHONIOENCODING": "utf-8",
                 "PYTHONUNBUFFERED": "1",
                 "BTS_BACKEND_MANAGED": "1",
-                "BTS_FORCE_PATH_B": force_path_b,
                 "BTS_TABLES_ONLY": tables_only,
             }
+            if force_path_b:
+                subprocess_env["BTS_FORCE_PATH_B"] = force_path_b
             pipeline_log.start_run(trigger=trigger, reset=True)
             proc = subprocess.Popen(
                 cmd,

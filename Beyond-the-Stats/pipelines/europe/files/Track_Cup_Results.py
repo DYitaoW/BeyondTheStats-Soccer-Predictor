@@ -7,12 +7,14 @@ _SP_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.dirname(_REGION_DIR)
 if _SP_DIR not in _sys_paths_setup.path:
     _sys_paths_setup.path.insert(0, _SP_DIR)
 from shared import paths as _bts_paths
+import projection_cache as proj_cache
 if str(_bts_paths.SHARED_DIR) not in _sys_paths_setup.path:
     _sys_paths_setup.path.insert(0, str(_bts_paths.SHARED_DIR))
 BASE_DIR = str(_bts_paths.SP_DIR)  # europe uses project-level Data/
 PREDICTIONS_DIR = str(_bts_paths.OUTPUT_PRED_CUPS)
 PROJECT_DIR = str(_bts_paths.SP_DIR)
 import json
+from pathlib import Path
 import os
 import random
 import sys
@@ -55,7 +57,7 @@ ESPN_CUP_NAMES_FILE = os.path.join(PREDICTIONS_DIR, "espn_cup_names_seen.json")
 
 # Sentinel when a projected knockout winner cannot be decided yet (TBD side or no odds).
 NO_PREDICTION = "NONE"
-CUP_TABLE_SIMULATION_RUNS = 500
+CUP_TABLE_SIMULATION_RUNS = 250
 
 # Import season bounds for in-season table backfill (Europe = Sept+).
 try:
@@ -104,7 +106,7 @@ DOMESTIC_BRACKET_COMPETITIONS = {
 }
 DOMESTIC_BRACKET_MATCH_LIMIT = 16
 
-CUP_SIMULATION_RUNS = 2500
+CUP_SIMULATION_RUNS = 500
 
 CUP_KNOCKOUT_FEEDS = {
     "First Round Playoff": {"next_round": "Round of 16", "feeds_to": lambda slot: slot},
@@ -1106,6 +1108,11 @@ def _build_predictions_index(upcoming_df):
     return predictions_index
 
 
+def _progress(msg: str) -> None:
+    """Flushed terminal progress so long cup sims show activity immediately."""
+    print(msg, flush=True)
+
+
 def _build_projected_cup_tables(completed_df, upcoming_df):
     """Build projected phase tables with Monte Carlo position odds + real base.
 
@@ -1141,8 +1148,18 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
     projected_rows = []
     real_rows = []
 
+    table_comps = sorted(str(c).strip() for c in combined["competition"].unique())
+    total_tables = len(table_comps)
+    _progress(f"[cups] START cup table projections — {total_tables} competitions")
+    finished_tables = 0
+
     for competition, comp_frame in combined.groupby("competition", dropna=False):
         competition_name = str(competition).strip()
+        finished_tables += 1
+        _progress(
+            f"[cups] START table {competition_name} "
+            f"({finished_tables}/{total_tables})"
+        )
         if competition_name == LEAGUES_CUP_COMPETITION:
             max_phase_matches = LEAGUES_CUP_PHASE_MATCHES
         else:
@@ -1152,6 +1169,10 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
             lambda r: _is_league_phase_cup_row(r, competition_name), axis=1
         )].copy()
         if phase.empty:
+            _progress(
+                f"[cups] DONE  table {competition_name} "
+                f"({finished_tables}/{total_tables}) — no phase rows"
+            )
             continue
 
         phase["__date_sort"] = pd.to_datetime(phase.get("match_date"), errors="coerce")
@@ -1226,6 +1247,10 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
         if runs <= 0:
             # No remaining fixtures — projected == real live table, odds unknown.
             projected_rows.extend(_emit_sides(real_table, None, 0))
+            _progress(
+                f"[cups] DONE  table {competition_name} "
+                f"({finished_tables}/{total_tables}) — live table only (0 sims)"
+            )
             continue
 
         pos_counts = defaultdict(lambda: defaultdict(int))
@@ -1278,7 +1303,12 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
             if team in real_table:
                 avg_table[team]["PlayedReal"] = real_table[team].get("PlayedReal", 0)
         projected_rows.extend(_emit_sides(avg_table, pos_counts, runs))
+        _progress(
+            f"[cups] DONE  table {competition_name} "
+            f"({finished_tables}/{total_tables}) — {runs} sims"
+        )
 
+    _progress(f"[cups] DONE with processing {finished_tables}/{total_tables} cup table competitions")
     return (
         _ensure_columns(pd.DataFrame(projected_rows), TABLE_COLUMNS),
         _ensure_columns(pd.DataFrame(real_rows), TABLE_COLUMNS),
@@ -2022,6 +2052,7 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
         "competitions": {},
     }
     tables_df = _ensure_columns(tables_df, TABLE_COLUMNS)
+    _progress("[cups] START cup bracket projections")
 
     # Build prediction index from upcoming predictions for simulation use
     predictions_index = {}
@@ -2030,25 +2061,43 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
             hm = str(row.get("home_team", "")).strip().lower()
             aw = str(row.get("away_team", "")).strip().lower()
             if hm and aw:
-                predictions_index[(hm, aw)] = {
+                probs = {
                     "prob_home": _safe_float(row.get("prob_home"), 0),
                     "prob_draw": _safe_float(row.get("prob_draw"), 0),
                     "prob_away": _safe_float(row.get("prob_away"), 0),
                 }
+                predictions_index[(hm, aw)] = probs
+                try:
+                    comp = str(row.get("competition", "")).strip()
+                    proj_cache.set_matchup_probs(
+                        row.get("home_team"),
+                        row.get("away_team"),
+                        comp,
+                        {"H": probs["prob_home"], "D": probs["prob_draw"], "A": probs["prob_away"]},
+                    )
+                except Exception:
+                    pass
 
+    bracket_done = 0
     if not tables_df.empty:
         for competition, comp_table in tables_df.groupby("competition", dropna=False):
             competition_name = str(competition).strip()
             if competition_name not in UEFA_TABLE_COMPETITIONS:
                 continue
+            _progress(f"[cups] START bracket {competition_name} (UEFA table→KO)")
             table_rows = comp_table.to_dict("records")
             bracket = _build_uefa_bracket_with_draws(competition_name, table_rows, predictions_index)
             payload["competitions"][competition_name] = bracket
+            bracket_done += 1
+            _progress(f"[cups] DONE  bracket {competition_name}")
     
     for competition_name in UEFA_PRIMARY_COMPETITIONS:
         if competition_name not in payload["competitions"]:
+            _progress(f"[cups] START bracket {competition_name} (empty UEFA fallback)")
             bracket = _build_uefa_bracket_with_draws(competition_name, [], predictions_index)
             payload["competitions"][competition_name] = bracket
+            bracket_done += 1
+            _progress(f"[cups] DONE  bracket {competition_name}")
 
     frames = []
     if completed_df is not None and not completed_df.empty:
@@ -2060,12 +2109,14 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
         pending["__status"] = "Upcoming"
         frames.append(pending)
     if not frames:
+        _progress(f"[cups] DONE with processing {bracket_done} cup bracket competitions")
         return payload
 
     combined = pd.concat(frames, ignore_index=True)
     combined["competition"] = combined["competition"].astype(str).str.strip()
     combined = combined[combined["competition"].isin(DOMESTIC_BRACKET_COMPETITIONS)]
     if combined.empty:
+        _progress(f"[cups] DONE with processing {bracket_done} cup bracket competitions")
         return payload
 
     combined = combined.sort_values(["competition", "match_date", "__status", "home_team", "away_team"], na_position="last")
@@ -2074,8 +2125,14 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
         for competition, comp_table in tables_df.groupby("competition", dropna=False):
             table_lookup[str(competition).strip()] = comp_table.to_dict("records")
 
-    for competition, comp_frame in combined.groupby("competition", dropna=False):
+    domestic_comps = sorted(str(c).strip() for c in combined["competition"].unique())
+    total_domestic = len(domestic_comps)
+    for idx, (competition, comp_frame) in enumerate(combined.groupby("competition", dropna=False), start=1):
         competition_name = str(competition).strip()
+        _progress(
+            f"[cups] START bracket {competition_name} "
+            f"(domestic {idx}/{total_domestic})"
+        )
         if competition_name == "North America/Leagues Cup":
             table_rows = table_lookup.get(competition_name, [])
             bracket = _build_leagues_cup_bracket_from_table(table_rows, predictions_index)
@@ -2083,20 +2140,84 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
         else:
             bracket = _build_domestic_cup_bracket_with_draws(competition_name, comp_frame, predictions_index)
         payload["competitions"][competition_name] = bracket
+        bracket_done += 1
+        _progress(f"[cups] DONE  bracket {competition_name}")
+    _progress(f"[cups] DONE with processing {bracket_done} cup bracket competitions")
     return payload
 
 
+def _cup_style(competition_name: str) -> str:
+    """Return knockout | table_knockout | group_knockout for routing."""
+    name = str(competition_name or "").strip()
+    if name in CUP_TABLE_COMPETITIONS:
+        # UEFA league phase + Leagues Cup dual tables.
+        if name == LEAGUES_CUP_COMPETITION:
+            return "table_knockout"
+        return "table_knockout"
+    # Domestic cups in this module are pure knockout.
+    if name in DOMESTIC_BRACKET_COMPETITIONS:
+        return "knockout"
+    return "knockout"
+
+
 def refresh_cup_projection_artifacts(completed_df, upcoming_df):
+    """Rebuild cup tables/brackets with format-aware work and optional skip.
+
+    - ``table_knockout`` / group-style: run phase-table Monte Carlo, then brackets
+    - ``knockout``: skip table sims; brackets only
+    Skip gate (``BTS_CUP_SKIP_UNCHANGED=1``) is off by default.
+    """
+    _progress("[cups] START — refresh cup projection artifacts")
+    sig = proj_cache.cup_fixture_signature(upcoming_df, completed_df)
+    if proj_cache.cup_skip_unchanged_enabled():
+        prev = proj_cache.get_cup_stamp()
+        if prev and prev == sig and os.path.exists(PROJECTED_CUP_BRACKETS_FILE):
+            _progress(f"[cups] skip projection rebuild (fixture signature unchanged; {sig[:10]}…)")
+            try:
+                tables = pd.read_csv(PROJECTED_CUP_TABLES_FILE) if os.path.exists(PROJECTED_CUP_TABLES_FILE) else _empty_frame(TABLE_COLUMNS)
+                n_rounds = 0
+                if os.path.exists(PROJECTED_CUP_BRACKETS_FILE):
+                    existing = json.loads(Path(PROJECTED_CUP_BRACKETS_FILE).read_text(encoding="utf-8"))
+                    n_rounds = sum(len(comp.get("rounds", [])) for comp in (existing.get("competitions") or {}).values())
+                _progress("[cups] DONE — reused existing cup projections")
+                return len(tables), n_rounds
+            except Exception as exc:
+                _progress(f"[cups] skip aborted, rebuilding ({exc})")
+
+    # Table / group-phase cups only — pure knockout skips the table MC entirely.
     tables, real_tables = _build_projected_cup_tables(completed_df, upcoming_df)
+    _progress(
+        f"[cups] table sims={CUP_TABLE_SIMULATION_RUNS} for "
+        f"{sorted(CUP_TABLE_COMPETITIONS)}; knockout cups skip tables"
+    )
     brackets = _build_projected_cup_brackets(completed_df, upcoming_df, tables)
+    _progress(f"[cups] bracket sims={CUP_SIMULATION_RUNS}")
     _write_csv(PROJECTED_CUP_TABLES_FILE, tables, TABLE_COLUMNS)
     _write_csv(REAL_CUP_TABLES_FILE, real_tables, TABLE_COLUMNS)
     save_json(PROJECTED_CUP_BRACKETS_FILE, brackets)
-    return len(tables), sum(len(comp.get("rounds", [])) for comp in brackets.get("competitions", {}).values())
+    try:
+        proj_cache.set_cup_stamp(
+            sig,
+            {
+                "table_sims": CUP_TABLE_SIMULATION_RUNS,
+                "bracket_sims": CUP_SIMULATION_RUNS,
+                "table_rows": len(tables),
+            },
+        )
+        proj_cache.flush_matchup_probs()
+    except Exception:
+        pass
+    n_rounds = sum(len(comp.get("rounds", [])) for comp in brackets.get("competitions", {}).values())
+    _progress(
+        f"[cups] DONE — refresh complete "
+        f"({len(tables)} table rows, {n_rounds} bracket sections)"
+    )
+    return len(tables), n_rounds
 
 
 def main():
     _t0 = time.monotonic()
+    _progress("[cups] START — Track_Cup_Results")
     cup_df = load_predictions(CUP_PREDICTIONS_FILE)
     completed_df = _load_completed_cups()
     if cup_df is None:
@@ -2163,28 +2284,28 @@ def main():
         completed_df = _filter_frame_to_cup_table_season(completed_df)
         backfill_added = max(0, len(completed_df) - before)
     except Exception as exc:
-        print(f"[WARN] in-season cup table backfill failed: {exc}")
+        _progress(f"[WARN] in-season cup table backfill failed: {exc}")
 
     _write_csv(COMPLETED_CUP_PREDICTIONS_FILE, completed_df, CUP_HISTORY_COLUMNS)
     _write_csv(CUP_PREDICTIONS_FILE, cup_df, CUP_HISTORY_COLUMNS)
     table_rows, bracket_rounds = refresh_cup_projection_artifacts(completed_df, cup_df)
 
-    print(f"Cup mapping auto-added: {mapping_added} (drift detected: {mapping_drift})")
+    _progress(f"Cup mapping auto-added: {mapping_added} (drift detected: {mapping_drift})")
     if unresolved:
-        print(f"Cup unresolved ESPN names by competition: {unresolved}")
-    print(f"Cup predictions updated: {cup_updates}")
-    print(f"Cup completed rows added to history: {completed_added}")
-    print(f"Cup in-season table backfill rows merged: {backfill_added}")
-    print(f"Cup completed rows removed from upcoming list: {removed_completed}")
-    print(f"Cup totals entries added: {totals_added}")
-    print(f"Cup projected table rows written: {table_rows}")
-    print(f"Cup bracket sections written: {bracket_rounds}")
-    print(f"Cup completed predictions file: {COMPLETED_CUP_PREDICTIONS_FILE}")
-    print(f"Cup projected tables file: {PROJECTED_CUP_TABLES_FILE}")
-    print(f"Cup real/live tables file: {REAL_CUP_TABLES_FILE}")
-    print(f"Cup projected brackets file: {PROJECTED_CUP_BRACKETS_FILE}")
-    print(f"Elapsed: {time.monotonic() - _t0:.1f}s")
-    print("Done.")
+        _progress(f"Cup unresolved ESPN names by competition: {unresolved}")
+    _progress(f"Cup predictions updated: {cup_updates}")
+    _progress(f"Cup completed rows added to history: {completed_added}")
+    _progress(f"Cup in-season table backfill rows merged: {backfill_added}")
+    _progress(f"Cup completed rows removed from upcoming list: {removed_completed}")
+    _progress(f"Cup totals entries added: {totals_added}")
+    _progress(f"Cup projected table rows written: {table_rows}")
+    _progress(f"Cup bracket sections written: {bracket_rounds}")
+    _progress(f"Cup completed predictions file: {COMPLETED_CUP_PREDICTIONS_FILE}")
+    _progress(f"Cup projected tables file: {PROJECTED_CUP_TABLES_FILE}")
+    _progress(f"Cup real/live tables file: {REAL_CUP_TABLES_FILE}")
+    _progress(f"Cup projected brackets file: {PROJECTED_CUP_BRACKETS_FILE}")
+    _progress(f"[cups] DONE — Track_Cup_Results elapsed {time.monotonic() - _t0:.1f}s")
+    _progress("Done.")
 
 
 if __name__ == "__main__":
