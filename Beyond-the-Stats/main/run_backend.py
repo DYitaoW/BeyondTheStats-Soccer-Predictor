@@ -6,14 +6,14 @@ watcher, and the memory monitor in one process tree, and stays running
 until SIGINT / SIGTERM. This is what you launch on the host that powers
 the website (and the future iOS app feed).
 
-Usage:
-    python Beyond-the-Stats/run_backend.py                     # full backend
-    python Beyond-the-Stats/run_backend.py --no-website        # scheduler + watcher only
-    python Beyond-the-Stats/run_backend.py --host 127.0.0.1    # local-only
-    python Beyond-the-Stats/run_backend.py --port 8080         # custom port
-    python Beyond-the-Stats/run_backend.py --memory-limit-gb 8 # tighter cap
-    python Beyond-the-Stats/run_backend.py --no-run-on-start   # wait for the 2am ET run
-    python Beyond-the-Stats/run_backend.py --refresh-time 03:30 --timezone America/New_York
+Usage (from Beyond-the-Stats/):
+    python main/run_backend.py                     # full backend
+    python main/run_backend.py --no-website        # scheduler + watcher only
+    python main/run_backend.py --host 127.0.0.1    # local-only
+    python main/run_backend.py --port 8080         # custom port
+    python main/run_backend.py --memory-limit-gb 8 # tighter cap
+    python main/run_backend.py --no-run-on-start   # wait for the 2am ET run
+    python main/run_backend.py --refresh-time 03:30 --timezone America/New_York
 
 What "multiple cores" means here:
   - Sub-pipelines (global, MLS, extra) ALWAYS run sequentially (global ->

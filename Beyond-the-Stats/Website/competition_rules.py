@@ -709,7 +709,7 @@ def _club_season_processed_roots() -> list[str]:
     """Processed_Data trees that hold European / Extra club season CSVs."""
     return [
         os.path.join(config.PROJECT_DIR, "Data", "Processed_Data"),
-        os.path.join(config.PROJECT_DIR, "Extra-leagues", "Data", "Processed_Data"),
+        config.EXTRA_PROCESSED_DIR,
     ]
 
 
@@ -785,8 +785,8 @@ def _find_latest_mls_season_file() -> str | None:
         return _find_latest_mls_season_cache
     candidates: list[tuple[int, str]] = []
     for base in (
-        os.path.join(config.PROJECT_DIR, "MLS", "Data", "Processed_Data"),
-        os.path.join(config.PROJECT_DIR, "MLS", "Data", "Raw_Data"),
+        config.MLS_PROCESSED_DIR,
+        os.path.join(config.MLS_DATA_DIR, "Raw_Data"),
     ):
         if not os.path.isdir(base):
             continue
@@ -805,7 +805,7 @@ def _find_latest_mls_season_file() -> str | None:
 
 def _find_latest_liga_mx_season_file() -> str | None:
     global _find_latest_liga_mx_cache
-    base = os.path.join(config.PROJECT_DIR, "MLS", "Data", "Raw_Data", "Mexico", "Liga MX")
+    base = os.path.join(config.MLS_DATA_DIR, "Raw_Data", "Mexico", "Liga MX")
     if not os.path.isdir(base):
         return None
     if _find_latest_liga_mx_cache is not None and os.path.exists(_find_latest_liga_mx_cache):

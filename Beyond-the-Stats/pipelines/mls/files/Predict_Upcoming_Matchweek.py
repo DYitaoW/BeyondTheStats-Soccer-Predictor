@@ -1481,7 +1481,7 @@ def main():
     results_index = load_results_index(RAW_DATA_DIR)
     combined, settled_count = settle_predictions(combined, results_index)
     try:
-        files_dir = os.path.join(PROJECT_DIR, "files")
+        files_dir = str(_bts_paths.EUROPE_FILES_DIR)
         if files_dir not in sys.path:
             sys.path.insert(0, files_dir)
         from Update_Live_Prediction_Results import save_completed_rows_to_past_games

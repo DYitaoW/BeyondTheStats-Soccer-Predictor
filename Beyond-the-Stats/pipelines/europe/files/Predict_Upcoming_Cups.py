@@ -259,7 +259,7 @@ LEAGUES_CUP_SOURCE_COMPETITIONS = (
 # Data/Team_Data only tracks European leagues, so without this merge every
 # MLS/Liga MX side collapsed to an identical generic fallback row (→ identical
 # 2% / 75% / 23%-style outputs for all Leagues Cup fixtures).
-MLS_TEAM_DATA_DIR = os.path.join(BASE_DIR, "MLS", "Data", "Team_Data")
+MLS_TEAM_DATA_DIR = os.path.join(str(_bts_paths.MLS_DATA_DIR), "Team_Data")
 
 # League-strength defaults for the Leagues Cup source leagues.  MLS is loaded
 # from MLS/Data/Team_Data/league_strength.json; Liga MX has no tracked value

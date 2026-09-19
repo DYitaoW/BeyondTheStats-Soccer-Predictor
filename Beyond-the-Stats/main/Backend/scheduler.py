@@ -85,8 +85,7 @@ class FutureGamesWatcher:
     """Poll upcoming-fixture CSVs and trigger a light refresh on change.
 
     Args:
-        project_root: Absolute path to the project root (where Beyond-the-Stats
-            / MLS / Extra-leagues live).
+        project_root: Absolute path to the repo root (parent of Beyond-the-Stats/).
         upcoming_paths: Explicit list of ``Path`` objects to watch. If empty,
             the default set is used (global/MLS/extra upcoming_matchweek,
             global upcoming_cups, global upcoming_national_team).

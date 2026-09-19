@@ -11,8 +11,8 @@ Wraps the existing Daily_Pipeline runner with:
 - Multiprocessing-friendly execution (--workers / --competition-workers
   forwarded to Run_All_Pipeline).
 
-The intended entry point is ``run_backend.py`` at the project root; this
-package is what it imports.
+The intended entry point is ``main/run_backend.py`` (a root shim also
+exists at ``Beyond-the-Stats/run_backend.py``); this package is what it imports.
 """
 
 from .server import BackendConfig, BackendServer
