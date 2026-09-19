@@ -118,6 +118,9 @@ CUP_COMPLETED_FILE = OUTPUT_PRED_CUPS / "completed_cup_predictions.csv"
 NATIONAL_UPCOMING_FILE = OUTPUT_PRED_NATIONAL / "upcoming_national_team_predictions.csv"
 FRIENDLIES_UPCOMING_FILE = OUTPUT_PRED_FRIENDLIES / "upcoming_club_friendlies.csv"
 PAST_GAMES_FILE = OUTPUT_PRED_SHARED / "past_games.json"
+# Never-pruned append-only journal + previous snapshot for recoverability.
+PAST_GAMES_JOURNAL_FILE = OUTPUT_PRED_SHARED / "past_games_journal.jsonl"
+PAST_GAMES_BACKUP_FILE = OUTPUT_PRED_SHARED / "past_games.prev.json"
 
 GLOBAL_PROJECTED_TABLE_FILE = OUTPUT_PRED_EUROPE / "projected_league_tables.csv"
 GLOBAL_PROJECTED_MATCHES_FILE = OUTPUT_PRED_EUROPE / "projected_future_matches.csv"

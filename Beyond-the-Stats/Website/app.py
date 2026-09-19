@@ -2059,7 +2059,8 @@ def api_past_games():
     Data is sourced from ``past_games.json`` (updated each pipeline run with
     today's rows copied from the upcoming API shape), ``live_score_history.json``
     / in-memory live scores, and settled prediction CSV rows.
-    Rows older than 30 days are excluded.
+    Rows older than 30 days are excluded from this API response for display;
+    the on-disk archive itself is retained (see ``BTS_PAST_GAMES_RETENTION_DAYS``).
 
     For full live-score details (lineups, stats, key events, game info),
     use ``/api/live-score-history``.
