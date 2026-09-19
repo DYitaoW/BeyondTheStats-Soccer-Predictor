@@ -437,13 +437,10 @@ def latest_raw_file_per_competition(raw_root):
 
 
 # Process-pool worker context: set in the parent before fork so children inherit
-# the model via copy-on-write instead of re-pickling multi-GB caches per task.
+# the model via copy-on-write. Never pass ctx through ProcessPoolExecutor
+# initargs — that re-pickles multi-GB caches into every worker and blew past
+# the backend's 14 GB MemoryMax (~36 GB RSS observed).
 _WORKER_CTX = None
-
-
-def _pool_initializer(ctx):
-    global _WORKER_CTX
-    _WORKER_CTX = ctx
 
 
 def _project_competition_worker(competition, raw_file, sim_runs):
@@ -1580,35 +1577,57 @@ def main():
             try:
                 mp_ctx = mp.get_context("fork")
             except ValueError:
-                mp_ctx = mp.get_context()
-            _progress(
-                f"[league-tables] Processing {total} competitions with {max_workers} workers "
-                f"(shared model via {mp_ctx.get_start_method()})"
-            )
-            with ProcessPoolExecutor(
-                max_workers=max_workers,
-                mp_context=mp_ctx,
-                initializer=_pool_initializer,
-                initargs=(ctx,),
-            ) as executor:
-                futures = {}
-                for idx, (comp, path) in enumerate(comps, start=1):
-                    _progress(f"[league-tables] START {comp} (queued {idx}/{total})")
-                    futures[executor.submit(_project_competition_worker, comp, path, sim_runs)] = comp
-                for fut in as_completed(futures):
-                    comp = futures[fut]
+                mp_ctx = None
+            if mp_ctx is None or mp_ctx.get_start_method() != "fork":
+                _progress(
+                    "[league-tables] fork unavailable — running sequential to avoid "
+                    "re-pickling the model cache into each worker"
+                )
+                for idx, (competition, path) in enumerate(comps, start=1):
+                    _progress(f"[league-tables] START {competition} ({idx}/{total})")
                     try:
-                        table_rows, future_rows = fut.result()
+                        table_rows, future_rows = project_competition(ctx, competition, path, sim_runs)
                         all_tables.extend(table_rows)
                         all_future.extend(future_rows)
                         finished += 1
                         _progress(
-                            f"[league-tables] DONE  {comp} ({finished}/{total}) — "
+                            f"[league-tables] DONE  {competition} ({finished}/{total}) — "
                             f"{len(table_rows)} rows"
                         )
                     except Exception as e:
                         finished += 1
-                        _progress(f"[league-tables] ERROR {comp} ({finished}/{total}): {e}")
+                        _progress(f"[league-tables] ERROR {competition} ({finished}/{total}): {e}")
+            else:
+                # Publish ctx on the parent module before fork; children inherit
+                # via CoW. Do NOT pass ctx as initargs (that re-pickles it).
+                global _WORKER_CTX
+                _WORKER_CTX = ctx
+                _progress(
+                    f"[league-tables] Processing {total} competitions with {max_workers} workers "
+                    f"(shared model via {mp_ctx.get_start_method()} CoW)"
+                )
+                with ProcessPoolExecutor(
+                    max_workers=max_workers,
+                    mp_context=mp_ctx,
+                ) as executor:
+                    futures = {}
+                    for idx, (comp, path) in enumerate(comps, start=1):
+                        _progress(f"[league-tables] START {comp} (queued {idx}/{total})")
+                        futures[executor.submit(_project_competition_worker, comp, path, sim_runs)] = comp
+                    for fut in as_completed(futures):
+                        comp = futures[fut]
+                        try:
+                            table_rows, future_rows = fut.result()
+                            all_tables.extend(table_rows)
+                            all_future.extend(future_rows)
+                            finished += 1
+                            _progress(
+                                f"[league-tables] DONE  {comp} ({finished}/{total}) — "
+                                f"{len(table_rows)} rows"
+                            )
+                        except Exception as e:
+                            finished += 1
+                            _progress(f"[league-tables] ERROR {comp} ({finished}/{total}): {e}")
         _progress(f"[league-tables] DONE with processing {finished}/{total} competitions")
     try:
         proj_cache.flush_matchup_probs()
