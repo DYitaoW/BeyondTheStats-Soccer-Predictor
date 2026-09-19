@@ -1,4 +1,14 @@
 {
-  "generated_at_utc": "2026-09-13T02:10:14+00:00",
-  "cups": {}
+  "generated_at_utc": "2026-09-18T20:36:52+00:00",
+  "cups": {
+    "England/FA Cup": [],
+    "England/League Cup": [],
+    "Europe/Champions League": [],
+    "Europe/Conference League": [],
+    "Europe/Europa League": [],
+    "Germany/DFB-Pokal": [],
+    "Italy/Coppa Italia": [],
+    "Spain/Copa del Rey": [],
+    "United States/US Open Cup": []
+  }
 }
