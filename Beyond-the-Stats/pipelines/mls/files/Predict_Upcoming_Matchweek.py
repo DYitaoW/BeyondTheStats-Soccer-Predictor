@@ -711,24 +711,48 @@ def load_upcoming_matchweek_fixtures_from_csv_fallback(window_days):
 def load_upcoming_matchweek_fixtures_from_espn(
     window_days, lookahead_days=365, competition_names=None
 ):
+    """Load MLS / Liga MX fixtures via cached ESPN scoreboard range.
+
+    Multi-day ``?dates=START-END`` queries return HTTP 400 for usa.1 / mex.1
+    (same ESPN quirk as UEFA). Use ``espn_api_cache.fetch_scoreboard_range``
+    which prefers a range pull then falls back to a smart day walk.
+    """
     today = pd.Timestamp(datetime.now(UTC).date())
     rows = []
     seen = set()
+
+    try:
+        import espn_api_cache
+    except ImportError:
+        espn_api_cache = None
 
     for competition_name, espn_id in REGIONAL_ESPN_COMPETITIONS.items():
         if competition_names and competition_name not in set(competition_names):
             continue
         end = today + pd.Timedelta(days=max(1, min(int(lookahead_days), 365)))
-        url = (
-            ESPN_SCOREBOARD_API.format(espn_id=espn_id)
-            + f"?dates={today.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}&limit=1000"
-        )
-        try:
-            data = fetch_json(url, timeout=30)
-        except Exception:
-            continue
+        events = []
+        if espn_api_cache is not None:
+            try:
+                events = espn_api_cache.fetch_scoreboard_range(
+                    espn_id,
+                    today.date(),
+                    end.date(),
+                    timeout=30,
+                    include_default=True,
+                    force_all_days=True,
+                    progress_label=competition_name,
+                ) or []
+            except Exception as exc:
+                print(f"[mls] ESPN range fetch failed for {competition_name}: {exc}")
+                events = []
+        if not events:
+            # Last-resort default scoreboard (never a multi-day range query).
+            try:
+                data = fetch_json(ESPN_SCOREBOARD_API.format(espn_id=espn_id), timeout=30)
+                events = data.get("events", []) if isinstance(data, dict) else []
+            except Exception:
+                continue
 
-        events = data.get("events", [])
         if not isinstance(events, list):
             continue
 
@@ -945,9 +969,17 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
         print("Fixture source: ESPN scoreboard API")
         return fixtures
 
-    # ESPN empty (and no usable API MLS merge above) — last resort CSV feeds.
+    # ESPN empty (and no usable API MLS merge above) — CSV then raw season files.
     fixtures = load_upcoming_matchweek_fixtures_from_csv_fallback(window_days)
     if fixtures.empty:
+        fixtures = load_upcoming_matchweek_fixtures_from_raw_season_files(
+            RAW_DATA_DIR, window_days
+        )
+        if not fixtures.empty:
+            fixtures = dedupe_fixtures(fixtures)
+            fixtures = filter_liga_mx_active_tournament(fixtures)
+            print("Fixture source: Raw_Data season CSVs")
+            return fixtures
         return fixtures
     fixtures = dedupe_fixtures(fixtures)
     fixtures = filter_liga_mx_active_tournament(fixtures)

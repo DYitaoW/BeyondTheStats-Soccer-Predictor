@@ -60,6 +60,8 @@ SHARED_MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
 ESPN_NAMES_FILE = str(_bts_paths.ESPN_TEAM_NAMES_FILE)
 ACCURACY_TOTALS_FILE = os.path.join(BASE_DIR, "Website", "files", "accuracy_totals.json")
 PAST_GAMES_FILE = str(_bts_paths.PAST_GAMES_FILE)
+PAST_GAMES_JOURNAL_FILE = str(_bts_paths.PAST_GAMES_JOURNAL_FILE)
+PAST_GAMES_BACKUP_FILE = str(_bts_paths.PAST_GAMES_BACKUP_FILE)
 
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 ESPN_COMPETITION_KEYS = {
@@ -509,11 +511,60 @@ def _is_placeholder_game(r):
     return False
 
 
+def _past_games_retention_days():
+    """How long to keep rows in past_games.json.
+
+    Default 0 = keep forever. The API can still filter to a short window for
+    display; storage used to hard-prune at 30 days which made history vanish.
+    Override with ``BTS_PAST_GAMES_RETENTION_DAYS`` (e.g. 365).
+    """
+    raw = os.environ.get("BTS_PAST_GAMES_RETENTION_DAYS", "0").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+def _append_past_games_journal(rows):
+    """Append new settled rows to the never-pruned JSONL journal."""
+    if not rows:
+        return
+    try:
+        os.makedirs(os.path.dirname(PAST_GAMES_JOURNAL_FILE), exist_ok=True)
+        with open(PAST_GAMES_JOURNAL_FILE, "a", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row, ensure_ascii=False, default=str))
+                fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+    except Exception as exc:
+        print(f"[past-games] journal append skipped: {exc}")
+
+
+def _backup_past_games_file():
+    """Keep one previous snapshot beside past_games.json before rewrite."""
+    if not os.path.exists(PAST_GAMES_FILE):
+        return
+    try:
+        import shutil
+
+        os.makedirs(os.path.dirname(PAST_GAMES_BACKUP_FILE), exist_ok=True)
+        shutil.copy2(PAST_GAMES_FILE, PAST_GAMES_BACKUP_FILE)
+    except Exception as exc:
+        print(f"[past-games] backup skipped: {exc}")
+
+
 def save_completed_rows_to_past_games(frame, today=None):
     """Extract rows about to be dropped and append them to past_games.json.
 
     Called right before ``drop_completed_rows()`` so the data persists
     and can be served by ``/api/past-games``.
+
+    Durability:
+    - New rows are always appended to ``past_games_journal.jsonl`` (never pruned).
+    - ``past_games.prev.json`` is refreshed before each rewrite.
+    - ``past_games.json`` retention defaults to forever (see
+      ``BTS_PAST_GAMES_RETENTION_DAYS``); the API may still filter for display.
     """
     if frame is None or frame.empty or "actual_result" not in frame.columns:
         return 0
@@ -566,6 +617,7 @@ def save_completed_rows_to_past_games(frame, today=None):
         else:
             keyless_existing.append(row)
     new_rows = []
+    journal_rows = []
     for _, row in to_save.iterrows():
         row_dict = {}
         for k in row.index:
@@ -584,41 +636,50 @@ def save_completed_rows_to_past_games(frame, today=None):
             continue
         key = storage_key(row_dict)
         if key:
+            is_new = key not in existing_by_key
             existing_by_key[key] = row_dict
             new_rows.append(row_dict)
+            if is_new:
+                journal_rows.append(row_dict)
         else:
             keyless_existing.append(row_dict)
             new_rows.append(row_dict)
+            journal_rows.append(row_dict)
 
     existing = list(existing_by_key.values()) + keyless_existing
-    # Prune rows older than 30 days (keep past games for the 30-day window)
-    try:
-        today_local = datetime.now(ZoneInfo("America/New_York")).date()
-        cutoff = today_local - timedelta(days=30)
-        before = len(existing)
+    retention_days = _past_games_retention_days()
+    pruned = 0
+    if retention_days > 0:
+        try:
+            today_local = datetime.now(ZoneInfo("America/New_York")).date()
+            cutoff = today_local - timedelta(days=retention_days)
+            before = len(existing)
 
-        def keep_row(row):
-            raw_date = row.get("match_date_iso") or row.get("match_date") or row.get("match_datetime_utc")
-            raw_text = str(raw_date or "").strip()
-            parsed = pd.to_datetime(
-                raw_text,
-                utc=False if len(raw_text) == 10 else True,
-                errors="coerce",
-            )
-            if pd.isna(parsed):
-                return True
-            row_date = (
-                parsed.date()
-                if len(raw_text) == 10
-                else parsed.tz_convert("America/New_York").date()
-            )
-            return row_date >= cutoff
+            def keep_row(row):
+                raw_date = row.get("match_date_iso") or row.get("match_date") or row.get("match_datetime_utc")
+                raw_text = str(raw_date or "").strip()
+                parsed = pd.to_datetime(
+                    raw_text,
+                    utc=False if len(raw_text) == 10 else True,
+                    errors="coerce",
+                )
+                if pd.isna(parsed):
+                    return True
+                row_date = (
+                    parsed.date()
+                    if len(raw_text) == 10
+                    else parsed.tz_convert("America/New_York").date()
+                )
+                return row_date >= cutoff
 
-        existing = [r for r in existing if keep_row(r)]
-        pruned = before - len(existing)
-    except Exception:
-        pruned = 0
+            existing = [r for r in existing if keep_row(r)]
+            pruned = before - len(existing)
+        except Exception:
+            pruned = 0
+
+    _append_past_games_journal(journal_rows)
     if new_rows or pruned:
+        _backup_past_games_file()
         os.makedirs(os.path.dirname(PAST_GAMES_FILE), exist_ok=True)
         fd, temporary_path = tempfile.mkstemp(
             prefix=".past-games-", suffix=".json", dir=os.path.dirname(PAST_GAMES_FILE)
@@ -632,6 +693,11 @@ def save_completed_rows_to_past_games(frame, today=None):
         finally:
             if os.path.exists(temporary_path):
                 os.unlink(temporary_path)
+        if pruned:
+            print(
+                f"[past-games] pruned {pruned} row(s) older than {retention_days}d "
+                f"(journal retained)"
+            )
     return len(new_rows)
 
 

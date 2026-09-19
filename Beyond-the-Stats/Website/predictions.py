@@ -2660,12 +2660,17 @@ def _json_safe_row(row: dict) -> dict:
 def archive_todays_games_to_past_games_file() -> int:
     """Append enriched completed rows to past_games.json.
 
-    Runs a full consolidate + prune every 10 calls; intermediate runs append
-    only new unique rows to a journal file, keeping the operation O(1) on
-    the hot path and preserving existing data if the pipeline crashes.
+    Runs a full consolidate every 10 calls; intermediate runs merge new unique
+    rows. Storage retention defaults to forever (``BTS_PAST_GAMES_RETENTION_DAYS``);
+    a never-pruned JSONL journal and ``past_games.prev.json`` backup protect
+    against accidental loss. The ``/api/past-games`` display window is separate.
     """
     today_str = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
-    cutoff_str = _week_based_cutoff()
+    # Collection window for *sourcing* settled rows from upcoming CSVs (not
+    # storage retention). Look back far enough that a missed day still archives.
+    collection_cutoff = (
+        datetime.now(ZoneInfo("America/New_York")).date() - timedelta(days=30)
+    ).isoformat()
 
     csv_sources = [
         ("global", config.GLOBAL_UPCOMING_FILE),
@@ -2673,6 +2678,7 @@ def archive_todays_games_to_past_games_file() -> int:
         ("extra", config.EXTRA_UPCOMING_FILE),
         ("cups", config.CUP_UPCOMING_FILE),
         ("national", config.NATIONAL_UPCOMING_FILE),
+        ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
     ]
     extra_sources = [
         ("global", os.path.join(config.PROJECT_DIR, "Output", "Upcoming", "all_upcoming.csv")),
@@ -2691,7 +2697,7 @@ def archive_todays_games_to_past_games_file() -> int:
             continue
         for row in rows:
             date_iso = _past_row_date_iso(row)
-            if not date_iso or date_iso < cutoff_str or date_iso > today_str:
+            if not date_iso or date_iso < collection_cutoff or date_iso > today_str:
                 continue
             actual = str(row.get("actual_result", "")).strip().upper()
             if actual not in {"H", "D", "A"}:
@@ -2709,9 +2715,9 @@ def archive_todays_games_to_past_games_file() -> int:
     # Second, authoritative source: completed rows from live_history.json so
     # standalone competitions (UCL/UEL/Conference League, national-team
     # friendlies) that never appear in the upcoming CSVs are never lost.
-    for row in _collect_live_past_game_rows(cutoff_str):
+    for row in _collect_live_past_game_rows(collection_cutoff):
         date_iso = _past_row_date_iso(row)
-        if not date_iso or date_iso < cutoff_str or date_iso > today_str:
+        if not date_iso or date_iso < collection_cutoff or date_iso > today_str:
             continue
         actual = str(row.get("actual_result", "")).strip().upper()
         if actual not in {"H", "D", "A"}:
@@ -2730,7 +2736,6 @@ def archive_todays_games_to_past_games_file() -> int:
         return 0
 
     past_dir = os.path.dirname(config.PAST_GAMES_FILE)
-    journal_path = config.PAST_GAMES_FILE  # we write to the main file directly
     counter_path = os.path.join(past_dir, ".past_games_counter")
 
     # Read existing key index for dedup
@@ -2751,18 +2756,20 @@ def archive_todays_games_to_past_games_file() -> int:
                     existing_by_key[ck] = row
 
     inserted = 0
+    journal_rows = []
     for row in all_rows:
         ck = _past_game_storage_key(row)
         if not ck:
             continue
         if ck not in existing_by_key:
             existing_by_key[ck] = row
+            journal_rows.append(row)
             inserted += 1
 
     if not inserted:
         return 0
 
-    # Read consolidation counter; consolidate (full rewrite + prune) every 10 runs
+    # Read consolidation counter; consolidate (full rewrite) every 10 runs
     run_count = 1
     try:
         if os.path.exists(counter_path):
@@ -2771,12 +2778,24 @@ def archive_todays_games_to_past_games_file() -> int:
     except Exception:
         run_count = 1
 
+    retention_days = 0
+    try:
+        retention_days = max(0, int(os.environ.get("BTS_PAST_GAMES_RETENTION_DAYS", "0").strip() or "0"))
+    except ValueError:
+        retention_days = 0
+
     if run_count >= 10:
         before = len(existing_by_key)
-        merged = [
-            r for r in existing_by_key.values()
-            if not _past_row_date_iso(r) or _past_row_date_iso(r) >= cutoff_str
-        ]
+        if retention_days > 0:
+            cutoff_str = (
+                datetime.now(ZoneInfo("America/New_York")).date() - timedelta(days=retention_days)
+            ).isoformat()
+            merged = [
+                r for r in existing_by_key.values()
+                if not _past_row_date_iso(r) or _past_row_date_iso(r) >= cutoff_str
+            ]
+        else:
+            merged = list(existing_by_key.values())
         pruned = before - len(merged)
         run_count = 0
         label = f"consolidated ({inserted} new, {pruned} pruned)"
@@ -2784,6 +2803,32 @@ def archive_todays_games_to_past_games_file() -> int:
         merged = list(existing_by_key.values())
         pruned = 0
         label = f"inserted {inserted} new rows (skipping prune; next consolidate in {10 - run_count} runs)"
+
+    # Append-only journal + previous snapshot before rewrite.
+    try:
+        journal_path = getattr(config, "PAST_GAMES_JOURNAL_FILE", "") or os.path.join(
+            past_dir, "past_games_journal.jsonl"
+        )
+        os.makedirs(past_dir, exist_ok=True)
+        with open(journal_path, "a", encoding="utf-8") as fh:
+            for row in journal_rows:
+                fh.write(json.dumps(row, ensure_ascii=False, default=str))
+                fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+    except Exception as exc:
+        print(f"[past-games] journal append skipped: {exc}")
+
+    backup_path = getattr(config, "PAST_GAMES_BACKUP_FILE", "") or os.path.join(
+        past_dir, "past_games.prev.json"
+    )
+    if os.path.exists(config.PAST_GAMES_FILE):
+        try:
+            import shutil
+
+            shutil.copy2(config.PAST_GAMES_FILE, backup_path)
+        except Exception as exc:
+            print(f"[past-games] backup skipped: {exc}")
 
     os.makedirs(past_dir, exist_ok=True)
     fd, temporary_path = tempfile.mkstemp(

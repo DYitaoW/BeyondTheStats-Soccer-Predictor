@@ -323,6 +323,9 @@ def _merged_upcoming_file_is_fresh(merged_path):
     but that merge is only refreshed by ``publish_to_output()``. If publish was
     skipped or failed, the merged file can be days/weeks stale while the
     per-pipeline prediction CSVs are fresh — fall back to the sources instead.
+
+    Missing regional sources (MLS/Extra) also count as stale so a merge written
+    without MLS does not permanently hide MLS once the regional CSV appears.
     """
     if not merged_path or not os.path.exists(merged_path):
         return False
@@ -330,8 +333,18 @@ def _merged_upcoming_file_is_fresh(merged_path):
         merged_mtime = os.path.getmtime(merged_path)
     except OSError:
         return False
+    required_sources = {
+        "mls": config.MLS_UPCOMING_FILE,
+        "extra": config.EXTRA_UPCOMING_FILE,
+        "cups": config.CUP_UPCOMING_FILE,
+    }
     for _, csv_path in _ALL_UPCOMING_SOURCES:
-        if not csv_path or not os.path.exists(csv_path):
+        if not csv_path:
+            continue
+        if not os.path.exists(csv_path):
+            # Required regional/cup sources must exist for the merge to be trusted.
+            if csv_path in required_sources.values():
+                return False
             continue
         try:
             if os.path.getmtime(csv_path) > merged_mtime + 1.0:
@@ -1321,6 +1334,9 @@ def api_home_upcoming():
                 seen_keys.add(key)
                 feed.append(row)
 
+    # Fill missing MLS / Liga MX schedule when regional CSV is empty.
+    feed = _regional_espn_schedule_fallback(feed)
+
     all_rows = []
     seen_keys = set()
     for row in feed:
@@ -2043,7 +2059,8 @@ def api_past_games():
     Data is sourced from ``past_games.json`` (updated each pipeline run with
     today's rows copied from the upcoming API shape), ``live_score_history.json``
     / in-memory live scores, and settled prediction CSV rows.
-    Rows older than 30 days are excluded.
+    Rows older than 30 days are excluded from this API response for display;
+    the on-disk archive itself is retained (see ``BTS_PAST_GAMES_RETENTION_DAYS``).
 
     For full live-score details (lineups, stats, key events, game info),
     use ``/api/live-score-history``.

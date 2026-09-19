@@ -102,7 +102,11 @@ def _build_lock_for(comp_name: str) -> threading.Lock:
 def _load_cup_data_from_cache(comp_name: str) -> dict | None:
     mem = _mem_get_cup_data(comp_name)
     if mem is not None:
-        return mem
+        if _cup_data_cache_is_stale_undersimmed(comp_name, mem):
+            with _CUP_DATA_MEM_LOCK:
+                _CUP_DATA_MEM.pop(comp_name, None)
+        else:
+            return mem
     path = _cup_data_cache_path(comp_name)
     if not os.path.exists(path):
         return None
@@ -112,11 +116,32 @@ def _load_cup_data_from_cache(comp_name: str) -> dict | None:
             return None
         with open(path, "r", encoding="utf-8") as fh:
             payload = json.load(fh)
-        if isinstance(payload, dict):
-            _mem_set_cup_data(comp_name, payload)
+        if not isinstance(payload, dict):
+            return None
+        if _cup_data_cache_is_stale_undersimmed(comp_name, payload):
+            return None
+        _mem_set_cup_data(comp_name, payload)
         return payload
     except Exception:
         return None
+
+
+def _cup_data_cache_is_stale_undersimmed(comp_name: str, payload: dict) -> bool:
+    """True when cached cup table rows are sticky live-only (sim_runs <= 1).
+
+    After empty upcoming + missing pending seed, Track wrote ``sim_runs=1``
+    placeholders that stuck in CupData forever. Treat them as a cache miss so
+    the next request rebuilds once real Monte Carlo rows land.
+    """
+    if not isinstance(payload, dict):
+        return True
+    table = ((payload.get("predicted") or {}).get("table")) or []
+    if not table:
+        return False
+    try:
+        return all(float(r.get("sim_runs") or 0) <= 1 for r in table)
+    except Exception:
+        return True
 
 
 def _write_cup_data_cache(comp_name: str, payload: dict) -> None:

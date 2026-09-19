@@ -2466,6 +2466,25 @@ def main():
     except Exception as exc:
         _progress(f"[WARN] in-season cup table backfill failed: {exc}")
 
+    # When upcoming_cup_predictions.csv is empty/sparse (Predict hung or filtered
+    # everything), seed remaining league-phase fixtures from ESPN so CL/EL/ECL
+    # Monte Carlo still gets position odds instead of sticky sim_runs=0/1.
+    pending_seeded = 0
+    try:
+        pending_df = fetch_upcoming_cup_table_fixtures(shared_mapping)
+        if pending_df is not None and not pending_df.empty:
+            before_u = len(cup_df) if cup_df is not None else 0
+            if cup_df is None or cup_df.empty:
+                cup_df = pending_df.copy()
+            else:
+                cup_df = merge_completed_cup_frames(cup_df, pending_df)
+            pending_seeded = max(0, len(cup_df) - before_u)
+            _progress(
+                f"[cup-tables] seeded {pending_seeded} pending phase fixture(s) for table sims"
+            )
+    except Exception as exc:
+        _progress(f"[WARN] pending cup table fixture seed failed: {exc}")
+
     _write_csv(COMPLETED_CUP_PREDICTIONS_FILE, completed_df, CUP_HISTORY_COLUMNS)
     _write_csv(CUP_PREDICTIONS_FILE, cup_df, CUP_HISTORY_COLUMNS)
     print(
@@ -2482,6 +2501,7 @@ def main():
     _progress(f"Cup predictions updated: {cup_updates}")
     _progress(f"Cup completed rows added to history: {completed_added}")
     _progress(f"Cup in-season table backfill rows merged: {backfill_added}")
+    _progress(f"Cup pending phase fixtures seeded: {pending_seeded}")
     _progress(f"Cup completed rows removed from upcoming list: {removed_completed}")
     _progress(f"Cup totals entries added: {totals_added}")
     _progress(f"Cup projected table rows written: {table_rows}")
