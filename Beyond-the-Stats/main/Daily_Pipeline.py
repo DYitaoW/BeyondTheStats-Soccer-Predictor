@@ -1576,10 +1576,25 @@ def _write_pipeline_timestamp() -> None:
 
 def _import_pipeline_runner():
     """Import `run_full_pipeline` from the sibling Run_All_Pipeline module."""
+    import importlib.util
+
+    target = MAIN_DIR / "Run_All_Pipeline.py"
+    # Prefer the real main/ module — never the Beyond-the-Stats/ root shim.
     if str(MAIN_DIR) not in sys.path:
         sys.path.insert(0, str(MAIN_DIR))
-    from Run_All_Pipeline import run_full_pipeline  # type: ignore
-    return run_full_pipeline
+    # Drop a stale root-shim module if one was imported earlier.
+    existing = sys.modules.get("Run_All_Pipeline")
+    if existing is not None:
+        existing_file = Path(getattr(existing, "__file__", "") or "")
+        if existing_file.resolve() != target.resolve():
+            del sys.modules["Run_All_Pipeline"]
+    spec = importlib.util.spec_from_file_location("Run_All_Pipeline", target)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {target}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["Run_All_Pipeline"] = mod
+    spec.loader.exec_module(mod)
+    return mod.run_full_pipeline
 
 
 def _write_pipeline_status(results: dict) -> None:
