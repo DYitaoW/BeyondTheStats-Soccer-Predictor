@@ -1368,7 +1368,7 @@ def api_home_upcoming():
 @app.get("/api/world-cup")
 def api_world_cup():
     """Return the World Cup projection data (archived; 2026 tournament ended)."""
-    world_cup_file = os.path.join(config.PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+    world_cup_file = config.WORLD_CUP_PROJECTION_FILE
     if not os.path.exists(world_cup_file):
         return jsonify({
             "ok": True,
@@ -3213,7 +3213,8 @@ def api_league_leaders():
                                 c["predicted_winner_odds"] = round(prob * 100, 1)
 
     # World Cup temporarily excluded from cups competitions API.
-    # wc_file = os.path.join(config.PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json")
+    # World Cup 2026 projection lives at config.WORLD_CUP_PROJECTION_FILE
+    # (Output/Predictions/national/world_cup_projection.json).
     # if os.path.exists(wc_file):
     #     try:
     #         with open(wc_file, "r") as f:

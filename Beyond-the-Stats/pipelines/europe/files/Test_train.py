@@ -294,7 +294,7 @@ def load_matches(processed_dir):
 
 # run and test the results
 def main():
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    project_root = BASE_DIR  # Beyond-the-Stats/ (Europe Processed_Data lives here)
     processed_dir = os.path.join(project_root, PROCESSED_DIR)
     overall_json = os.path.join(project_root, "Data", "Team_Data", "overall_teams.json")
     season_json = os.path.join(project_root, "Data", "Team_Data", "season_teams.json")

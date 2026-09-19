@@ -594,7 +594,8 @@ def fetch_top_market_value_players(club_url, club_id, season_id, injured_player_
 def build_top_market_value_players_file():
     files = get_target_season_files()
     if not files:
-        raise ValueError("No processed season CSV files found.")
+        print("[extra] No processed season CSV files found; skipping market-value build.")
+        return
 
     latest_file = files[-1]
     latest_file_norm = latest_file.replace("\\", "/").lower()
@@ -667,7 +668,8 @@ def build_top_market_value_players_file():
 def build_current_form_file():
     files = get_target_season_files()
     if not files:
-        raise ValueError("No processed season CSV files found.")
+        print("[extra] No processed season CSV files found; skipping current-form build.")
+        return
 
     latest_file = files[-1]
     latest_path = os.path.join(PROCESSED_DIR, latest_file)
@@ -789,6 +791,9 @@ def sort_all_seasons():
     competitions = set()
 
     files = get_target_season_files()
+    if not files:
+        print("[extra] No processed season CSV files found; skipping Sort_Data.")
+        return
     latest_year = max(parse_season_start_year(os.path.basename(file)) for file in files) if files else MIN_START_YEAR
 
     for rel_path in files:

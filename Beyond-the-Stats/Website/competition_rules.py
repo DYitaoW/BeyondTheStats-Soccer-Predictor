@@ -84,9 +84,7 @@ _MAJOR_INTERNATIONAL_TABLES = frozenset({
 NATIONAL_MATCHES_CSV = os.path.join(
     config.PROJECT_DIR, "Data", "National_Team_Data", "national_team_recent_matches_raw.csv"
 )
-WORLD_CUP_PROJECTION_FILE = os.path.join(
-    config.PROJECT_DIR, "Data", "Predictions", "world_cup_projection.json"
-)
+WORLD_CUP_PROJECTION_FILE = config.WORLD_CUP_PROJECTION_FILE
 
 _mls_name_cache: dict[str, str] | None = None
 _wc_group_cache: dict[str, str] | None = None
@@ -708,7 +706,7 @@ _find_latest_liga_mx_cache: str | None = None
 def _club_season_processed_roots() -> list[str]:
     """Processed_Data trees that hold European / Extra club season CSVs."""
     return [
-        os.path.join(config.PROJECT_DIR, "Data", "Processed_Data"),
+        config.EUROPE_PROCESSED_DIR,
         config.EXTRA_PROCESSED_DIR,
     ]
 

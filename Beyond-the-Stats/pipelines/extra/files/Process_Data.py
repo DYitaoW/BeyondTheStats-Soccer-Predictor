@@ -294,12 +294,14 @@ def process_one_file(rel_path):
 
 def main():
     if not os.path.isdir(RAW_FOLDER):
-        raise FileNotFoundError(f"Raw data folder not found: {RAW_FOLDER}")
+        print(f"[extra] Raw data folder not found ({RAW_FOLDER}); skipping Process_Data.")
+        return
 
     os.makedirs(PROCESSED_FOLDER, exist_ok=True)
     target_files = get_target_season_files(RAW_FOLDER)
     if not target_files:
-        raise ValueError("No valid extra-league season files were found in Raw_Data.")
+        print("[extra] No valid Raw_Data season files found; skipping Process_Data.")
+        return
 
     workers = max(1, PROCESS_WORKERS)
     with ThreadPoolExecutor(max_workers=workers) as pool:

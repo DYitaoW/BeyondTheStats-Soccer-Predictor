@@ -53,12 +53,76 @@ if _ROOT_DIR not in sys.path:
     sys.path.insert(0, _ROOT_DIR)
 import team_mapping_groups as tmg  # noqa: E402
 PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
+# Extra download writes here; European Extra leagues (NED/BEL/SCO/…) live in the
+# shared Europe tree. Project / train fall back so an empty Extra Processed_Data
+# does not crash the daily pipeline with UNUSABLE projected tables.
+SHARED_PROCESSED_DIR = str(_bts_paths.DATA_DIR / "Processed_Data")
+SHARED_TEAM_DATA_DIR = str(_bts_paths.DATA_DIR / "Team_Data")
 TEAM_DATA_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
 MODEL_CACHE = os.path.join(TEAM_DATA_DIR, "model_cache.pkl")
+SHARED_MODEL_CACHE = os.path.join(SHARED_TEAM_DATA_DIR, "model_cache.pkl")
 SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})(?:-(\d{2}))?\.csv$", re.IGNORECASE)
 MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
 _name_mapping_cache = None
 MIN_START_YEAR = 2002
+
+
+def processed_dir_has_season_csvs(processed_dir):
+    """True when ``processed_dir`` contains at least one parseable season CSV."""
+    if not processed_dir or not os.path.isdir(processed_dir):
+        return False
+    for root, _, files in os.walk(processed_dir):
+        for name in files:
+            if name.endswith(".csv") and SEASON_PATTERN.match(name):
+                return True
+    return False
+
+
+def resolve_processed_dir(preferred=None):
+    """Prefer Extra Processed_Data; fall back to shared Europe when Extra is empty."""
+    preferred = preferred or PROCESSED_DIR
+    if processed_dir_has_season_csvs(preferred):
+        return preferred
+    if preferred != SHARED_PROCESSED_DIR and processed_dir_has_season_csvs(SHARED_PROCESSED_DIR):
+        print(
+            f"[extra] Processed_Data empty at {preferred}; "
+            f"falling back to shared {SHARED_PROCESSED_DIR}",
+            flush=True,
+        )
+        return SHARED_PROCESSED_DIR
+    return preferred
+
+
+def resolve_team_data_dir(preferred=None):
+    """Prefer Extra Team_Data when it has roster JSON; else shared Europe Team_Data."""
+    preferred = preferred or TEAM_DATA_DIR
+    marker = os.path.join(preferred, "overall_teams.json")
+    if os.path.isfile(marker):
+        return preferred
+    shared_marker = os.path.join(SHARED_TEAM_DATA_DIR, "overall_teams.json")
+    if preferred != SHARED_TEAM_DATA_DIR and os.path.isfile(shared_marker):
+        print(
+            f"[extra] Team_Data missing at {preferred}; "
+            f"falling back to shared {SHARED_TEAM_DATA_DIR}",
+            flush=True,
+        )
+        return SHARED_TEAM_DATA_DIR
+    return preferred
+
+
+def resolve_model_cache_path(preferred=None):
+    """Prefer Extra model cache; else shared Europe cache when Extra has none."""
+    preferred = preferred or MODEL_CACHE
+    if os.path.isfile(preferred):
+        return preferred
+    if preferred != SHARED_MODEL_CACHE and os.path.isfile(SHARED_MODEL_CACHE):
+        print(
+            f"[extra] model cache missing at {preferred}; "
+            f"falling back to shared {SHARED_MODEL_CACHE}",
+            flush=True,
+        )
+        return SHARED_MODEL_CACHE
+    return preferred
 
 # MLS tuning: higher parity than major European leagues with a meaningful home edge.
 MLS_HOME_EDGE_SHIFT = 0.045
@@ -603,7 +667,9 @@ def coerce_feature_value(value, default=0.0):
     return float(value)
 
 
-def data_fingerprint(season_files, processed_dir=PROCESSED_DIR):
+def data_fingerprint(season_files, processed_dir=None):
+    if processed_dir is None:
+        processed_dir = resolve_processed_dir()
     digest = hashlib.sha256()
     for rel_path in season_files:
         digest.update(rel_path.encode("utf-8"))
@@ -1088,7 +1154,9 @@ def build_features(
     return pd.DataFrame(rows)
 
 
-def load_training_matches(processed_dir):
+def load_training_matches(processed_dir=None):
+    """Load training frames from Extra Processed_Data, with shared Europe fallback."""
+    processed_dir = resolve_processed_dir(processed_dir)
     frames = []
     valid_files = []
 
@@ -1146,7 +1214,10 @@ def load_training_matches(processed_dir):
         frames.append(df)
 
     if not frames:
-        raise ValueError("No season CSV files found in Data/Processed_Data.")
+        raise ValueError(
+            "No season CSV files found in Extra or shared Data/Processed_Data "
+            f"(tried {PROCESSED_DIR} and {SHARED_PROCESSED_DIR})."
+        )
 
     return pd.concat(frames, ignore_index=True), season_files
 
@@ -1650,13 +1721,15 @@ def predict_goal_probabilities(X_match, goal_prob_models):
 
 def main():
     matches, season_files = load_training_matches(PROCESSED_DIR)
+    team_data_dir = resolve_team_data_dir()
+    model_cache_path = resolve_model_cache_path()
 
-    overall_teams = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "overall_teams.json"))
-    season_teams = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "season_teams.json"))
-    head_to_head = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "head_to_head.json"))
-    current_form = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "current_form.json"))
-    league_strength = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "league_strength.json")) or {}
-    market_value_data = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "team_top_market_value_players.json")) or {}
+    overall_teams = load_json_if_exists(os.path.join(team_data_dir, "overall_teams.json"))
+    season_teams = load_json_if_exists(os.path.join(team_data_dir, "season_teams.json"))
+    head_to_head = load_json_if_exists(os.path.join(team_data_dir, "head_to_head.json"))
+    current_form = load_json_if_exists(os.path.join(team_data_dir, "current_form.json"))
+    league_strength = load_json_if_exists(os.path.join(team_data_dir, "league_strength.json")) or {}
+    market_value_data = load_json_if_exists(os.path.join(team_data_dir, "team_top_market_value_players.json")) or {}
     dynamic_form = build_dynamic_form_from_matches(matches)
 
     if (
@@ -1722,9 +1795,9 @@ def main():
     fingerprint = data_fingerprint(season_files)
     cache_bundle = None
     cache_valid = False
-    if os.path.exists(MODEL_CACHE):
+    if os.path.exists(model_cache_path):
         try:
-            cache_bundle = joblib.load(MODEL_CACHE)
+            cache_bundle = joblib.load(model_cache_path)
             cache_valid = cache_bundle.get("fingerprint") == fingerprint
             if not cache_valid:
                 bt = cache_bundle.get("build_time")
@@ -1774,6 +1847,7 @@ def main():
         goal_prob_models = train_all_goal_prob_models(X, matches)
         import traceback
         try:
+            os.makedirs(os.path.dirname(MODEL_CACHE), exist_ok=True)
             joblib.dump(
                 {
                     "fingerprint": fingerprint,
@@ -1792,6 +1866,7 @@ def main():
                 },
                 MODEL_CACHE,
             )
+            model_cache_path = MODEL_CACHE
         except Exception:
             traceback.print_exc()
 
@@ -1799,7 +1874,7 @@ def main():
 
     import sys
     if "--build-cache-only" in sys.argv:
-        print(f"Model cache ready: {MODEL_CACHE} (backend={backend})")
+        print(f"Model cache ready: {model_cache_path} (backend={backend})")
         return
 
     print("\nMatch Predictor\n")

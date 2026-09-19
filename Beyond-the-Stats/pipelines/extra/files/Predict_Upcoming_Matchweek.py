@@ -250,9 +250,12 @@ def latest_raw_file_per_competition(raw_root):
 
 def build_context():
     matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
-    if not os.path.exists(pm.MODEL_CACHE):
+    team_data_dir = pm.resolve_team_data_dir()
+    model_cache_path = pm.resolve_model_cache_path()
+    if not os.path.exists(model_cache_path):
         print("[model-cache] cache missing; rebuilding model cache...")
         rebuild_model_cache_once()
+        model_cache_path = pm.resolve_model_cache_path()
 
     try:
         # Ensure custom wrapper class is resolvable when cache was pickled from __main__.
@@ -261,11 +264,12 @@ def build_context():
         pass
 
     try:
-        bundle = joblib.load(pm.MODEL_CACHE)
+        bundle = joblib.load(model_cache_path)
     except Exception as exc:
         print(f"[model-cache] failed to load cache ({exc.__class__.__name__}); rebuilding...")
         rebuild_model_cache_once()
-        bundle = joblib.load(pm.MODEL_CACHE)
+        model_cache_path = pm.resolve_model_cache_path()
+        bundle = joblib.load(model_cache_path)
     if bundle.get("fingerprint") != pm.data_fingerprint(season_files):
         print("[model-cache] using cached models (data newer than cache; full retrain runs Tue/Fri)")
 
@@ -287,15 +291,16 @@ def build_context():
         if os.path.exists(pm.MODEL_CACHE):
             os.remove(pm.MODEL_CACHE)
         rebuild_model_cache_once()
-        bundle = joblib.load(pm.MODEL_CACHE)
+        model_cache_path = pm.resolve_model_cache_path()
+        bundle = joblib.load(model_cache_path)
 
-    overall_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "overall_teams.json"))
-    season_teams = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "season_teams.json"))
-    head_to_head = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "head_to_head.json"))
-    current_form = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "current_form.json"))
-    league_strength = pm.load_json_if_exists(os.path.join(pm.TEAM_DATA_DIR, "league_strength.json")) or {}
+    overall_teams = pm.load_json_if_exists(os.path.join(team_data_dir, "overall_teams.json"))
+    season_teams = pm.load_json_if_exists(os.path.join(team_data_dir, "season_teams.json"))
+    head_to_head = pm.load_json_if_exists(os.path.join(team_data_dir, "head_to_head.json"))
+    current_form = pm.load_json_if_exists(os.path.join(team_data_dir, "current_form.json"))
+    league_strength = pm.load_json_if_exists(os.path.join(team_data_dir, "league_strength.json")) or {}
     market_value = pm.load_json_if_exists(
-        os.path.join(pm.TEAM_DATA_DIR, "team_top_market_value_players.json")
+        os.path.join(team_data_dir, "team_top_market_value_players.json")
     ) or {}
     dynamic_form = pm.build_dynamic_form_from_matches(matches)
 
@@ -780,13 +785,39 @@ def main():
         all_latest.update(latest_raw_file_per_competition(root))
     latest = {comp: p for comp, p in all_latest.items() if comp in EXTRA_COMPETITIONS}
     if not latest:
-        raise ValueError(f"No raw season files found for extra-league competitions in {RAW_DATA_DIR} or {GLOBAL_RAW_DATA_DIR}")
+        # No Raw CSVs (download empty / tables-only host). Still try ESPN scoreboards
+        # for Extra competitions that have coverage so we do not fail-fast the
+        # Extra sub-pipeline and leave upcoming CSV missing.
+        espn_only = {
+            comp: None
+            for comp in EXTRA_COMPETITIONS
+            if comp in EXTRA_ESPN_COMPETITIONS
+        }
+        if espn_only:
+            print(
+                f"[extra] No raw season files in {RAW_DATA_DIR} or {GLOBAL_RAW_DATA_DIR}; "
+                f"falling back to ESPN-only for {len(espn_only)} competition(s)"
+            )
+            latest = espn_only
+        else:
+            print(
+                f"[extra] No raw season files and no ESPN Extra competitions; "
+                f"writing empty upcoming CSV"
+            )
+            os.makedirs(PREDICTIONS_DIR, exist_ok=True)
+            pd.DataFrame(columns=RESULT_COLUMNS).to_csv(PREDICTIONS_FILE, index=False)
+            print(f"Saved empty predictions to {PREDICTIONS_FILE}")
+            return
 
     ctx = build_context()
     mapping_ctx = _mapping_context(ctx)
     fixture_frames = []
     for competition, path in sorted(latest.items()):
-        raw_fixtures = upcoming_fixtures_from_raw(path, args.window_days, competition)
+        raw_fixtures = (
+            upcoming_fixtures_from_raw(path, args.window_days, competition)
+            if path
+            else pd.DataFrame()
+        )
         espn_fixtures = upcoming_fixtures_from_espn(competition, args.window_days)
         merged = merge_fixture_frames(raw_fixtures, espn_fixtures)
         if merged.empty:
@@ -803,6 +834,9 @@ def main():
 
     if not fixture_frames:
         print("No upcoming extra-league fixtures found.")
+        os.makedirs(PREDICTIONS_DIR, exist_ok=True)
+        pd.DataFrame(columns=RESULT_COLUMNS).to_csv(PREDICTIONS_FILE, index=False)
+        print(f"Saved empty predictions to {PREDICTIONS_FILE}")
         return
 
     fixtures = pd.concat(fixture_frames, ignore_index=True)

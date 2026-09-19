@@ -43,6 +43,8 @@ from pathlib import Path
 # BASE_DIR set by shared.paths bootstrap above
 FILES_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "Data", "National_Team_Data")
+WC_PROJECTION_FILE = str(_bts_paths.WORLD_CUP_PROJECTION_FILE)
+WC_OUTPUT_DIR = str(_bts_paths.OUTPUT_PRED_NATIONAL)
 
 
 def print_section(title):
@@ -181,27 +183,21 @@ def main():
     # Verify outputs from step 2
     print("\nVerifying Step 2 outputs:")
     verify_output_file(
-        os.path.join(DATA_DIR, "world_cup_projection.json"),
-        "World Cup projection"
+        WC_PROJECTION_FILE,
+        "World Cup projection",
     )
-    verify_output_file(
-        os.path.join(DATA_DIR, "projected_cup_brackets.json"),
-        "Projected brackets"
-    )
-    verify_output_file(
-        os.path.join(DATA_DIR, "projected_cup_tables.csv"),
-        "Projected group tables"
-    )
+    # Group tables + knockout brackets are embedded inside world_cup_projection.json
+    # (Output/Predictions/national/). Club-cup CSVs under Output/Predictions/cups/
+    # are produced by Track_Cup_Results, not this WC helper.
     
     # ===== Summary =====
     print_section("PIPELINE COMPLETE")
     print(f"Finished: {datetime.now(UTC).isoformat()}\n")
-    print("Output files generated in: " + DATA_DIR)
+    print("Output files generated in: " + WC_OUTPUT_DIR)
     print("\nKey outputs:")
-    print("  • world_cup_projection.json - Full tournament projection with probabilities")
-    print("  • projected_cup_tables.csv - Group stage final standings")
-    print("  • projected_cup_brackets.json - Knockout bracket predictions")
-    print("  • all_team_rankings.json - Complete rankings used for analysis")
+    print(f"  • {WC_PROJECTION_FILE}")
+    print("  • (group tables + brackets are inside the projection JSON)")
+    print(f"  • {os.path.join(DATA_DIR, 'all_team_rankings.json')} - rankings used for analysis")
     
     return 0
 
