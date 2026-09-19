@@ -59,7 +59,7 @@ EXTRA_ESPN_COMPETITIONS = {
 }
 
 # All competitions handled by the extra-leagues pipeline.
-# Data lives in either Extra-leagues/Data/Raw_Data/ or (for European leagues)
+# Data lives in either pipelines/extra/Data/Raw_Data/ or (for European leagues)
 # the global Data/Raw_Data/ directory, which is scanned at prediction time.
 EXTRA_COMPETITIONS = frozenset({
     "Argentina/Primera Division",

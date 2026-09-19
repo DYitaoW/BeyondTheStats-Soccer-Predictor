@@ -30,7 +30,7 @@ ACCURACY_TOTALS_FILE = os.path.join(WEBSITE_FILES_DIR, "accuracy_totals.json")
 ACCURACY_HISTORY_DIR = os.path.join(WEBSITE_FILES_DIR, "accuracy_history")
 
 # Working / processed data roots (per region)
-EUROPE_DATA_DIR = str(_paths.DATA_DIR)  # europe still uses project-level Data/
+EUROPE_DATA_DIR = str(_paths.EUROPE_DATA_DIR)  # project-level Data/ (same as _paths.DATA_DIR)
 MLS_DATA_DIR = str(_paths.MLS_DATA_DIR)
 EXTRA_DATA_DIR = str(_paths.EXTRA_DATA_DIR)
 EUROPE_PROCESSED_DIR = os.path.join(EUROPE_DATA_DIR, "Processed_Data")
