@@ -426,6 +426,9 @@ class BackendServer:
                 "PYTHONUNBUFFERED": "1",
                 "BTS_BACKEND_MANAGED": "1",
                 "BTS_TABLES_ONLY": tables_only,
+                # So Run_All_Pipeline sizes competition workers for the monitor
+                # ceiling (e.g. 14 GB), not bare-metal RAM which can be much larger.
+                "BTS_MEMORY_LIMIT_GB": str(self.config.memory_limit_gb),
             }
             if force_path_b:
                 subprocess_env["BTS_FORCE_PATH_B"] = force_path_b
