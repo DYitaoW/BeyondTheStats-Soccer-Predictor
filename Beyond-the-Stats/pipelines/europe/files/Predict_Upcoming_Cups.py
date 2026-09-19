@@ -262,7 +262,7 @@ LEAGUES_CUP_SOURCE_COMPETITIONS = (
 MLS_TEAM_DATA_DIR = os.path.join(str(_bts_paths.MLS_DATA_DIR), "Team_Data")
 
 # League-strength defaults for the Leagues Cup source leagues.  MLS is loaded
-# from MLS/Data/Team_Data/league_strength.json; Liga MX has no tracked value
+    # from pipelines/mls/Data/Team_Data/league_strength.json; Liga MX has no tracked value
 # anywhere, so it is seeded here (relative to the tracked European strengths).
 # MLS is deliberately rated above Liga MX.
 CROSS_LEAGUE_LEAGUE_STRENGTHS = {
@@ -341,8 +341,27 @@ def load_prediction_store(path):
     return frame.astype("object")
 
 
-def load_results_index(raw_dir):
+def load_results_index(raw_dir, api_token=None):
+    """Load finished results for settling cup predictions.
+
+    UEFA CL/EL/ECL finished matches are fetched from football-data.org here
+    (cups-last, after league tables) rather than during global upcoming, so
+    the early pipeline does not hit the API rate limit before tables finish.
+    """
     results = {}
+
+    if api_token:
+        try:
+            # Same package directory as this file — already on sys.path via bootstrap.
+            import Predict_Upcoming_Matchweek as upcoming_mw
+
+            uefa_results = upcoming_mw.load_uefa_cup_finished_matches_from_api(api_token)
+            if uefa_results:
+                results.update(uefa_results)
+                print(f"  Loaded {len(uefa_results)} UEFA cup finished matches from API")
+        except Exception as exc:
+            print(f"Warning: UEFA cup finished API fetch skipped: {exc}")
+
     for root, _, files in os.walk(raw_dir):
         for name in files:
             if not name.endswith(".csv"):
@@ -376,11 +395,12 @@ def load_results_index(raw_dir):
             for idx, row in frame.iterrows():
                 match_date = date_parsed.loc[idx]
                 key = make_prediction_key(match_date, competition, row["HomeTeam"], row["AwayTeam"])
-                results[key] = {
-                    "actual_home_goals": int(row["FTHG"]),
-                    "actual_away_goals": int(row["FTAG"]),
-                    "actual_result": str(row["FTR"]).strip(),
-                }
+                if key not in results:
+                    results[key] = {
+                        "actual_home_goals": int(row["FTHG"]),
+                        "actual_away_goals": int(row["FTAG"]),
+                        "actual_result": str(row["FTR"]).strip(),
+                    }
     return results
 
 
@@ -390,7 +410,7 @@ def merge_mls_team_data(context):
     The main ``Data/Team_Data`` pipeline only ingests European leagues, so the
     Leagues Cup teams would otherwise be unknown and would fall back to a
     generic identical row (giving identical odds for every Leagues Cup match).
-    Here we overlay the real stats from ``MLS/Data/Team_Data`` (overall/season
+    Here we overlay the real stats from ``pipelines/mls/Data/Team_Data`` (overall/season
     totals, head-to-head, current form, league strength) so each club keeps its
     own attacking/defensive profile.
     """
@@ -2148,7 +2168,7 @@ def main():
 
     # Settle from raw results first so recently-completed games get archived
     # before they are pruned from the upcoming file.
-    results_index = load_results_index(RAW_DATA_DIR)
+    results_index = load_results_index(RAW_DATA_DIR, api_token=args.api_token)
     combined, settled_count = settle_predictions(combined, results_index)
     try:
         from Update_Live_Prediction_Results import save_completed_rows_to_past_games

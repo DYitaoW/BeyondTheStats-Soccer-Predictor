@@ -181,6 +181,87 @@ class MlsProcessedFallbackPresenceTests(unittest.TestCase):
         self.assertIn("falling back to shared", source)
 
 
+class MlsUpcomingFramesFallbackTests(unittest.TestCase):
+    def test_load_upcoming_does_not_concat_undefined_frames(self):
+        source = (
+            ROOT / "pipelines" / "mls" / "files" / "Predict_Upcoming_Matchweek.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("load_upcoming_matchweek_fixtures_from_csv_fallback(window_days)", source)
+        # Dead code after empty ESPN used to call pd.concat(frames) / iterate sources
+        # without defining them → UnboundLocalError on production.
+        self.assertNotIn("pd.concat(frames, ignore_index=True)\n    fixtures = dedupe_fixtures", source)
+        self.assertNotIn("for source in sources:", source)
+        self.assertIn('print("Fixture source: CSV fallback")', source)
+
+
+class UefaCupApiDeferralTests(unittest.TestCase):
+    def test_early_finished_api_excludes_uefa_cups(self):
+        source = (
+            ROOT / "pipelines" / "europe" / "files" / "Predict_Upcoming_Matchweek.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("UEFA_CUP_API_COMPETITIONS", source)
+        self.assertIn("DOMESTIC_CUP_API_COMPETITIONS", source)
+        self.assertIn("def load_uefa_cup_finished_matches_from_api", source)
+        self.assertIn(
+            "competitions = {**API_COMPETITIONS, **DOMESTIC_CUP_API_COMPETITIONS}",
+            source,
+        )
+        # Must not merge all cups into the early finished-match loop anymore.
+        self.assertNotIn(
+            "{**API_COMPETITIONS, **CUP_API_COMPETITIONS}",
+            source,
+        )
+
+    def test_cups_last_loads_uefa_finished_via_api(self):
+        source = (
+            ROOT / "pipelines" / "europe" / "files" / "Predict_Upcoming_Cups.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("load_uefa_cup_finished_matches_from_api", source)
+        self.assertIn("load_results_index(RAW_DATA_DIR, api_token=args.api_token)", source)
+
+
+class EuropeDataDirAliasTests(unittest.TestCase):
+    def setUp(self):
+        import importlib
+        import shared.paths as paths_mod
+        import Website.config as config_mod
+
+        importlib.reload(paths_mod)
+        importlib.reload(config_mod)
+        self.paths = paths_mod
+        self.config = config_mod
+
+    def test_europe_data_dir_is_project_data(self):
+        self.assertEqual(self.paths.EUROPE_DATA_DIR, self.paths.DATA_DIR)
+        self.assertEqual(str(self.config.EUROPE_DATA_DIR), str(self.paths.DATA_DIR))
+
+
+class PipelineStepTimeoutTests(unittest.TestCase):
+    def test_global_tables_and_regional_upcoming_have_timeouts(self):
+        source = (ROOT / "main" / "Run_All_Pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("UPCOMING_MATCHWEEK_TIMEOUT_S", source)
+        self.assertIn('timeout=PROJECTED_TABLE_TIMEOUT_S["global"]', source)
+        self.assertIn("timeout=UPCOMING_MATCHWEEK_TIMEOUT_S", source)
+        # Global tables must not be the only unbounded Project_League_Table call.
+        self.assertGreaterEqual(source.count('timeout=PROJECTED_TABLE_TIMEOUT_S["global"]'), 2)
+
+    def test_extra_espn_uses_scoreboard_cache_not_day_walk(self):
+        source = (
+            ROOT / "pipelines" / "extra" / "files" / "Predict_Upcoming_Matchweek.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("espn_api_cache.fetch_scoreboard_range", source)
+        self.assertNotIn("for offset in range(0, max(1, int(lookahead_days) + 1))", source)
+
+    def test_process_data_does_not_overwrite_project_dir_to_pipelines(self):
+        for region in ("mls", "extra"):
+            source = (
+                ROOT / "pipelines" / region / "files" / "Process_Data.py"
+            ).read_text(encoding="utf-8")
+            self.assertIn("PROJECT_DIR = str(_bts_paths.SP_DIR)", source)
+            self.assertNotIn("PROJECT_DIR = os.path.dirname(MLS_DIR)", source)
+            self.assertNotIn("PROJECT_DIR = os.path.dirname(EXTRA_DIR)", source)
+
+
 class LegacyRuntimeMigrationTests(unittest.TestCase):
     def test_migrate_copies_legacy_backend_status(self):
         import importlib
@@ -232,6 +313,35 @@ class LegacyRuntimeMigrationTests(unittest.TestCase):
                 paths_mod.migrate_legacy_runtime_files()
                 self.assertTrue(dest.is_file())
                 self.assertEqual(dest.read_text(encoding="utf-8"), '{"ok": true}')
+        finally:
+            for name, value in saved.items():
+                setattr(paths_mod, name, value)
+            importlib.reload(paths_mod)
+
+    def test_migrate_legacy_mls_raw_csvs_into_pipelines_tree(self):
+        import importlib
+        import tempfile
+        from pathlib import Path
+        import shared.paths as paths_mod
+
+        attrs = ("SP_DIR", "MLS_DATA_DIR", "EXTRA_DATA_DIR", "EUROPE_DIR", "DATA_DIR")
+        saved = {name: getattr(paths_mod, name) for name in attrs}
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                legacy_mls = root / "MLS" / "Data" / "Raw_Data" / "United States" / "MLS"
+                legacy_mls.mkdir(parents=True)
+                (legacy_mls / "mlsstat2025.csv").write_text("Season,Date\n", encoding="utf-8")
+                new_mls = root / "pipelines" / "mls" / "Data"
+                paths_mod.SP_DIR = root
+                paths_mod.MLS_DATA_DIR = new_mls
+                paths_mod.EXTRA_DATA_DIR = root / "pipelines" / "extra" / "Data"
+                paths_mod.EUROPE_DIR = root / "pipelines" / "europe"
+                paths_mod.DATA_DIR = root / "Data"
+                paths_mod.migrate_legacy_working_data()
+                dest = new_mls / "Raw_Data" / "United States" / "MLS" / "mlsstat2025.csv"
+                self.assertTrue(dest.is_file(), f"expected migrated CSV at {dest}")
+                self.assertEqual(dest.read_text(encoding="utf-8"), "Season,Date\n")
         finally:
             for name, value in saved.items():
                 setattr(paths_mod, name, value)

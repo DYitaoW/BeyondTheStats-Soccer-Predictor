@@ -98,14 +98,19 @@ API_COMPETITIONS = {
     # (see config.LEAGUE_API_EXCLUDED_COMPETITIONS — not in domestic API_COMPETITIONS)
 }
 
-# Cup fixtures come from football-data.org only and share the global upcoming feed.
-CUP_API_COMPETITIONS = {
+# Domestic cups can share the early finished-match API pass with leagues.
+# UEFA CL/EL/ECL finished fetches are deferred until cups-last (after league
+# tables) so they do not burn the football-data.org rate limit mid-upcoming.
+DOMESTIC_CUP_API_COMPETITIONS = {
     "FAC": "England/FA Cup",
     "FLC": "England/League Cup",
+}
+UEFA_CUP_API_COMPETITIONS = {
     "CL": "Europe/Champions League",
     "EL": "Europe/Europa League",
     "UCL": "Europe/Conference League",
 }
+CUP_API_COMPETITIONS = {**DOMESTIC_CUP_API_COMPETITIONS, **UEFA_CUP_API_COMPETITIONS}
 CUP_COMPETITIONS = set(CUP_API_COMPETITIONS.values())
 PROVISIONAL_LEAGUE_KEY = "__provisional__"
 PROVISIONAL_STRENGTH_COEFF = 0.50
@@ -1039,12 +1044,20 @@ def load_prediction_store(path):
     return frame.astype("object")
 
 
-def load_finished_matches_from_api(api_token):
-    """Fetch finished matches from football-data.org API for all configured competitions."""
+def load_finished_matches_from_api(api_token, competitions=None):
+    """Fetch finished matches from football-data.org for the given competitions.
+
+    Default (``competitions is None``): domestic leagues + FA Cup / League Cup.
+    UEFA Champions / Europa / Conference League are intentionally omitted here
+    and fetched later via ``load_uefa_cup_finished_matches_from_api`` during the
+    cups-last step, after other league tables have been built.
+    """
     results = {}
     headers = {"X-Auth-Token": api_token}
+    if competitions is None:
+        competitions = {**API_COMPETITIONS, **DOMESTIC_CUP_API_COMPETITIONS}
 
-    for competition_code, competition_name in {**API_COMPETITIONS, **CUP_API_COMPETITIONS}.items():
+    for competition_code, competition_name in competitions.items():
         url = f"{FOOTBALL_DATA_API_BASE}/competitions/{competition_code}/matches?status=FINISHED"
         try:
             data = fetch_json(url, headers=headers, timeout=45, competition_name=competition_name)
@@ -1104,6 +1117,17 @@ def load_finished_matches_from_api(api_token):
             }
 
     return results
+
+
+def load_uefa_cup_finished_matches_from_api(api_token):
+    """Fetch CL/EL/ECL finished matches — intended for cups-last only."""
+    if not api_token:
+        return {}
+    print(
+        "Fetching UEFA cup finished matches from football-data.org "
+        "(deferred until after league tables)..."
+    )
+    return load_finished_matches_from_api(api_token, competitions=UEFA_CUP_API_COMPETITIONS)
 
 
 def load_top_scorers_from_api(api_token):

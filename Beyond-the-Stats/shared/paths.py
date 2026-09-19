@@ -49,17 +49,19 @@ EUROPE_FILES_DIR = EUROPE_DIR / "files"
 MLS_FILES_DIR = MLS_DIR / "files"
 EXTRA_FILES_DIR = EXTRA_DIR / "files"
 
-# Working data (raw / processed / team stats) per region
-EUROPE_DATA_DIR = EUROPE_DIR / "Data"
-MLS_DATA_DIR = MLS_DIR / "Data"
-EXTRA_DATA_DIR = EXTRA_DIR / "Data"
-
-# Shared non-generated / seed data
+# Shared non-generated / seed data (+ Europe working Raw/Processed/Team_Data)
 DATA_DIR = SP_DIR / "Data"
 DATA_INFO_DIR = DATA_DIR / "Info"
 DATA_NATIONAL_DIR = DATA_DIR / "National_Team_Data"
 DATA_SEEDS_DIR = DATA_DIR / "Seeds"
 DATA_TEAM_DIR = DATA_DIR / "Team_Data"  # legacy shared team artifacts
+
+# Working data (raw / processed / team stats) per region
+# Europe still uses the project-level ``Beyond-the-Stats/Data/`` tree (same as
+# pre-reorg). MLS / Extra keep region-local Data under pipelines/<region>/.
+EUROPE_DATA_DIR = DATA_DIR  # alias: not pipelines/europe/Data
+MLS_DATA_DIR = MLS_DIR / "Data"
+EXTRA_DATA_DIR = EXTRA_DIR / "Data"
 
 # Repo-level shared mapping (outside Beyond-the-Stats/)
 REPO_DATA_DIR = REPO_ROOT / "Data"
@@ -160,12 +162,116 @@ def ensure_output_dirs() -> None:
         OUTPUT_LOGS_DIR,
         OUTPUT_CACHE_DIR,
         DATA_SEEDS_DIR,
-        EUROPE_DATA_DIR,
+        DATA_DIR / "Raw_Data",
+        DATA_DIR / "Processed_Data",
+        DATA_DIR / "Team_Data",
+        MLS_DATA_DIR / "Raw_Data",
+        MLS_DATA_DIR / "Processed_Data",
+        MLS_DATA_DIR / "Team_Data",
         MLS_DATA_DIR / "Predictions",
+        EXTRA_DATA_DIR / "Raw_Data",
+        EXTRA_DATA_DIR / "Processed_Data",
+        EXTRA_DATA_DIR / "Team_Data",
         EXTRA_DATA_DIR / "Predictions",
     ):
         os.makedirs(path, exist_ok=True)
     migrate_legacy_runtime_files()
+    migrate_legacy_working_data()
+
+
+def _tree_has_files(root: Path) -> bool:
+    if not root.is_dir():
+        return False
+    try:
+        for path in root.rglob("*"):
+            if path.is_file():
+                return True
+    except OSError:
+        return False
+    return False
+
+
+def _copy_tree_fill(src: Path, dst: Path) -> int:
+    """Copy files from ``src`` into ``dst`` when the destination file is missing.
+
+    Returns the number of files copied. Never overwrites an existing destination
+    file so a partial new download is not clobbered by stale legacy copies.
+    """
+    import shutil
+
+    if not src.is_dir():
+        return 0
+    copied = 0
+    try:
+        for src_path in src.rglob("*"):
+            if not src_path.is_file():
+                continue
+            rel = src_path.relative_to(src)
+            dst_path = dst / rel
+            if dst_path.is_file():
+                continue
+            try:
+                dst_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_path, dst_path)
+                copied += 1
+            except OSError:
+                continue
+    except OSError:
+        return copied
+    return copied
+
+
+def migrate_legacy_working_data() -> None:
+    """Recover gitignored Raw/Processed/Team_Data left at pre-reorg paths.
+
+    ``**/Data/Raw_Data/**`` and Processed_Data are gitignored, so a git-based
+    folder reorg does not move downloaded CSVs. Production hosts may still have:
+
+    - ``Beyond-the-Stats/MLS/Data/...``
+    - ``Beyond-the-Stats/Extra-leagues/Data/...``
+    - ``pipelines/europe/Data/...`` (mistaken region-local europe tree)
+
+    while the code now reads ``pipelines/mls/Data``, ``pipelines/extra/Data``,
+    and project-level ``Data/``. Copy missing files into the canonical trees so
+    the pipeline does not cold-redownload (or fail) for hours.
+    """
+    working_subdirs = ("Raw_Data", "Processed_Data", "Team_Data")
+
+    # Region Data roots that moved with the reorg (code paths updated; CSVs may not).
+    region_legacy_roots = (
+        (SP_DIR / "MLS" / "Data", MLS_DATA_DIR),
+        (SP_DIR / "Extra-leagues" / "Data", EXTRA_DATA_DIR),
+        (SP_DIR / "Extra" / "Data", EXTRA_DATA_DIR),
+    )
+    for legacy_root, new_root in region_legacy_roots:
+        if legacy_root.resolve() == new_root.resolve():
+            continue
+        for sub in working_subdirs:
+            src = legacy_root / sub
+            dst = new_root / sub
+            if not _tree_has_files(src):
+                continue
+            copied = _copy_tree_fill(src, dst)
+            if copied:
+                print(
+                    f"[paths] migrated {copied} file(s) from {src} -> {dst}",
+                    flush=True,
+                )
+
+    # Europe working data must live under project Data/, not pipelines/europe/Data.
+    mistaken_europe = EUROPE_DIR / "Data"
+    if mistaken_europe.resolve() != DATA_DIR.resolve():
+        for sub in working_subdirs:
+            src = mistaken_europe / sub
+            dst = DATA_DIR / sub
+            if not _tree_has_files(src):
+                continue
+            copied = _copy_tree_fill(src, dst)
+            if copied:
+                print(
+                    f"[paths] migrated {copied} file(s) from {src} -> {dst}",
+                    flush=True,
+                )
 
 
 def migrate_legacy_runtime_files() -> None:

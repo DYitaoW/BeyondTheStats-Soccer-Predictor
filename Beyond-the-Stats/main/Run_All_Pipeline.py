@@ -252,6 +252,9 @@ PROJECTED_TABLE_TIMEOUT_S = {
     # Extra PATH B can still be heavy; prefer finishing over parallel kill (-9).
     "extra": 3600,
 }
+# Upcoming matchweek steps (ESPN + football-data.org). Without a cap, Extra's
+# day-walk can run until the backend's 6h wall clock kills the whole pipeline.
+UPCOMING_MATCHWEEK_TIMEOUT_S = 3600
 
 
 class _StepError(Exception):
@@ -642,6 +645,7 @@ def _run_global_subpipeline(args, api_token):
             "[global] Projected league tables",
             _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
             continue_on_error=args.continue_on_error,
+            timeout=PROJECTED_TABLE_TIMEOUT_S["global"],
         )
         return sub
 
@@ -671,7 +675,7 @@ def _run_global_subpipeline(args, api_token):
         "[global] Upcoming matchweek predictions",
         upcoming_cmd,
         continue_on_error=args.continue_on_error,
-        timeout=3600,
+        timeout=UPCOMING_MATCHWEEK_TIMEOUT_S,
     )
     global_out_csv = str(_paths.GLOBAL_PROJECTED_TABLE_FILE)
     global_proc_dirs = [str(_paths.DATA_DIR / "Processed_Data")]
@@ -685,6 +689,7 @@ def _run_global_subpipeline(args, api_token):
             "[global] Projected league tables",
             _project_table_cmd(FILES_DIR, comp_workers, "Project_League_Table.py"),
             continue_on_error=args.continue_on_error,
+            timeout=PROJECTED_TABLE_TIMEOUT_S["global"],
         )
     else:
         print("[skip] No processed data changes — skipping global league table projection")
@@ -767,6 +772,7 @@ def _run_mls_subpipeline(args, api_token):
         "[mls] Upcoming matchweek predictions",
         mls_upcoming_cmd,
         continue_on_error=args.continue_on_error,
+        timeout=UPCOMING_MATCHWEEK_TIMEOUT_S,
     )
     mls_out_csv = str(_paths.MLS_PROJECTED_TABLE_FILE)
     mls_proc_dirs = [str(_paths.MLS_DATA_DIR / "Processed_Data")]
@@ -827,6 +833,7 @@ def _run_extra_subpipeline(args, api_token):
         "[extra] Upcoming matchweek predictions",
         [py, str(EXTRA_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)],
         continue_on_error=args.continue_on_error,
+        timeout=UPCOMING_MATCHWEEK_TIMEOUT_S,
     )
     extra_out_csv = str(_paths.EXTRA_PROJECTED_TABLE_FILE)
     extra_proc_dirs = [

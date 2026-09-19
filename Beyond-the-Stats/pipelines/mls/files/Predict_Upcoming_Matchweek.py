@@ -945,11 +945,13 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
         print("Fixture source: ESPN scoreboard API")
         return fixtures
 
-    fixtures = pd.concat(frames, ignore_index=True)
+    # ESPN empty (and no usable API MLS merge above) — last resort CSV feeds.
+    fixtures = load_upcoming_matchweek_fixtures_from_csv_fallback(window_days)
+    if fixtures.empty:
+        return fixtures
     fixtures = dedupe_fixtures(fixtures)
     fixtures = filter_liga_mx_active_tournament(fixtures)
-    for source in sources:
-        print(f"Fixture source: {source}")
+    print("Fixture source: CSV fallback")
     return fixtures
 
 
