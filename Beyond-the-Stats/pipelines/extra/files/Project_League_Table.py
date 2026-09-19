@@ -19,6 +19,7 @@ import urllib.request
 import argparse
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mp
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 import random
@@ -460,6 +461,20 @@ def _load_espn_fixtures(competition, ctx, max_days=21):
     if not rows:
         return None
     return pd.DataFrame(rows)
+
+
+_WORKER_CTX = None
+
+
+def _pool_initializer(ctx):
+    global _WORKER_CTX
+    _WORKER_CTX = ctx
+
+
+def _project_competition_worker(competition, raw_file, sim_runs=None):
+    if sim_runs is None:
+        return project_competition(_WORKER_CTX, competition, raw_file)
+    return project_competition(_WORKER_CTX, competition, raw_file, sim_runs)
 
 
 def load_context():
@@ -1323,10 +1338,22 @@ def main():
                     print(f"  [{competition}] ERROR: {e}")
         else:
             max_workers = min(comp_workers, len(comps))
-            print(f"  Processing {len(comps)} competitions with {max_workers} workers")
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            try:
+                mp_ctx = mp.get_context("fork")
+            except ValueError:
+                mp_ctx = mp.get_context()
+            print(
+                f"  Processing {len(comps)} competitions with {max_workers} workers "
+                f"(shared model via {mp_ctx.get_start_method()})"
+            )
+            with ProcessPoolExecutor(
+                max_workers=max_workers,
+                mp_context=mp_ctx,
+                initializer=_pool_initializer,
+                initargs=(ctx,),
+            ) as executor:
                 futures = {
-                    executor.submit(project_competition, ctx, comp, path): comp
+                    executor.submit(_project_competition_worker, comp, path): comp
                     for comp, path in comps
                 }
                 for fut in as_completed(futures):

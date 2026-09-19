@@ -7,12 +7,14 @@ _SP_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.dirname(_REGION_DIR)
 if _SP_DIR not in _sys_paths_setup.path:
     _sys_paths_setup.path.insert(0, _SP_DIR)
 from shared import paths as _bts_paths
+import projection_cache as proj_cache
 if str(_bts_paths.SHARED_DIR) not in _sys_paths_setup.path:
     _sys_paths_setup.path.insert(0, str(_bts_paths.SHARED_DIR))
 BASE_DIR = str(_bts_paths.SP_DIR)  # europe uses project-level Data/
 PREDICTIONS_DIR = str(_bts_paths.OUTPUT_PRED_CUPS)
 PROJECT_DIR = str(_bts_paths.SP_DIR)
 import json
+from pathlib import Path
 import os
 import random
 import sys
@@ -55,7 +57,7 @@ ESPN_CUP_NAMES_FILE = os.path.join(PREDICTIONS_DIR, "espn_cup_names_seen.json")
 
 # Sentinel when a projected knockout winner cannot be decided yet (TBD side or no odds).
 NO_PREDICTION = "NONE"
-CUP_TABLE_SIMULATION_RUNS = 500
+CUP_TABLE_SIMULATION_RUNS = 250
 
 # Import season bounds for in-season table backfill (Europe = Sept+).
 try:
@@ -104,7 +106,7 @@ DOMESTIC_BRACKET_COMPETITIONS = {
 }
 DOMESTIC_BRACKET_MATCH_LIMIT = 16
 
-CUP_SIMULATION_RUNS = 2500
+CUP_SIMULATION_RUNS = 500
 
 CUP_KNOCKOUT_FEEDS = {
     "First Round Playoff": {"next_round": "Round of 16", "feeds_to": lambda slot: slot},
@@ -2030,11 +2032,22 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
             hm = str(row.get("home_team", "")).strip().lower()
             aw = str(row.get("away_team", "")).strip().lower()
             if hm and aw:
-                predictions_index[(hm, aw)] = {
+                probs = {
                     "prob_home": _safe_float(row.get("prob_home"), 0),
                     "prob_draw": _safe_float(row.get("prob_draw"), 0),
                     "prob_away": _safe_float(row.get("prob_away"), 0),
                 }
+                predictions_index[(hm, aw)] = probs
+                try:
+                    comp = str(row.get("competition", "")).strip()
+                    proj_cache.set_matchup_probs(
+                        row.get("home_team"),
+                        row.get("away_team"),
+                        comp,
+                        {"H": probs["prob_home"], "D": probs["prob_draw"], "A": probs["prob_away"]},
+                    )
+                except Exception:
+                    pass
 
     if not tables_df.empty:
         for competition, comp_table in tables_df.groupby("competition", dropna=False):
@@ -2086,12 +2099,65 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
     return payload
 
 
+def _cup_style(competition_name: str) -> str:
+    """Return knockout | table_knockout | group_knockout for routing."""
+    name = str(competition_name or "").strip()
+    if name in CUP_TABLE_COMPETITIONS:
+        # UEFA league phase + Leagues Cup dual tables.
+        if name == LEAGUES_CUP_COMPETITION:
+            return "table_knockout"
+        return "table_knockout"
+    # Domestic cups in this module are pure knockout.
+    if name in DOMESTIC_BRACKET_COMPETITIONS:
+        return "knockout"
+    return "knockout"
+
+
 def refresh_cup_projection_artifacts(completed_df, upcoming_df):
+    """Rebuild cup tables/brackets with format-aware work and optional skip.
+
+    - ``table_knockout`` / group-style: run phase-table Monte Carlo, then brackets
+    - ``knockout``: skip table sims; brackets only
+    Skip gate (``BTS_CUP_SKIP_UNCHANGED=1``) is off by default.
+    """
+    sig = proj_cache.cup_fixture_signature(upcoming_df, completed_df)
+    if proj_cache.cup_skip_unchanged_enabled():
+        prev = proj_cache.get_cup_stamp()
+        if prev and prev == sig and os.path.exists(PROJECTED_CUP_BRACKETS_FILE):
+            print(f"[cups] skip projection rebuild (fixture signature unchanged; {sig[:10]}…)")
+            try:
+                tables = pd.read_csv(PROJECTED_CUP_TABLES_FILE) if os.path.exists(PROJECTED_CUP_TABLES_FILE) else _empty_frame(TABLE_COLUMNS)
+                n_rounds = 0
+                if os.path.exists(PROJECTED_CUP_BRACKETS_FILE):
+                    existing = json.loads(Path(PROJECTED_CUP_BRACKETS_FILE).read_text(encoding="utf-8"))
+                    n_rounds = sum(len(comp.get("rounds", [])) for comp in (existing.get("competitions") or {}).values())
+                return len(tables), n_rounds
+            except Exception as exc:
+                print(f"[cups] skip aborted, rebuilding ({exc})")
+
+    # Table / group-phase cups only — pure knockout skips the table MC entirely.
     tables, real_tables = _build_projected_cup_tables(completed_df, upcoming_df)
+    print(
+        f"[cups] table sims={CUP_TABLE_SIMULATION_RUNS} for "
+        f"{sorted(CUP_TABLE_COMPETITIONS)}; knockout cups skip tables"
+    )
     brackets = _build_projected_cup_brackets(completed_df, upcoming_df, tables)
+    print(f"[cups] bracket sims={CUP_SIMULATION_RUNS}")
     _write_csv(PROJECTED_CUP_TABLES_FILE, tables, TABLE_COLUMNS)
     _write_csv(REAL_CUP_TABLES_FILE, real_tables, TABLE_COLUMNS)
     save_json(PROJECTED_CUP_BRACKETS_FILE, brackets)
+    try:
+        proj_cache.set_cup_stamp(
+            sig,
+            {
+                "table_sims": CUP_TABLE_SIMULATION_RUNS,
+                "bracket_sims": CUP_SIMULATION_RUNS,
+                "table_rows": len(tables),
+            },
+        )
+        proj_cache.flush_matchup_probs()
+    except Exception:
+        pass
     return len(tables), sum(len(comp.get("rounds", [])) for comp in brackets.get("competitions", {}).values())
 
 
