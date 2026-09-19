@@ -1,4 +1,4 @@
-﻿"""Prediction accuracy tracking and success metrics."""
+"""Prediction accuracy tracking and success metrics."""
 import json
 import os
 

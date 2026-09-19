@@ -17,12 +17,18 @@ from espn_parser import (  # noqa: E402
     _period_label_from_espn_status,
 )
 
+_predictions_stubbed = False
 if "predictions" not in sys.modules:
     predictions_stub = types.ModuleType("predictions")
     predictions_stub._to_float_or_none = lambda v: None
     sys.modules["predictions"] = predictions_stub
+    _predictions_stubbed = True
 
 from live_prediction import _compute_live_momentum, _update_cumulative_momentum  # noqa: E402
+
+# Do not leave the stub in sys.modules — other tests need the real Website.predictions.
+if _predictions_stubbed:
+    del sys.modules["predictions"]
 
 
 def _game(**kwargs):

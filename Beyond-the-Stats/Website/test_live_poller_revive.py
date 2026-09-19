@@ -88,7 +88,7 @@ class LivePollerReviveTests(unittest.TestCase):
 class ZeroedProjectionGateTests(unittest.TestCase):
     def test_mostly_zeroed_helper_forces_rebuild(self):
         ns = _exec_named_functions(
-            ROOT / "Run_All_Pipeline.py",
+            ROOT / "main" / "Run_All_Pipeline.py",
             {"_projected_tables_are_mostly_zeroed"},
             {"os": os},
         )
@@ -133,8 +133,8 @@ class LiveScoreCoverageTests(unittest.TestCase):
 class RosterBomEncodingTests(unittest.TestCase):
     def test_project_league_table_reads_rosters_with_utf8_sig(self):
         for rel in (
-            "files/Project_League_Table.py",
-            "Extra-leagues/files/Project_League_Table.py",
+            "pipelines/europe/files/Project_League_Table.py",
+            "pipelines/extra/files/Project_League_Table.py",
         ):
             source = (ROOT / rel).read_text(encoding="utf-8")
             self.assertIn('encoding="utf-8-sig"', source)

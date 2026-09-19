@@ -1,0 +1,773 @@
+"""Sort MLS team data — builds head-to-head + form files from processed CSVs."""
+
+import os as _os_paths_setup
+import sys as _sys_paths_setup
+_FILES_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.abspath(__file__))
+_REGION_DIR = _os_paths_setup.path.dirname(_FILES_DIR)  # pipelines/mls
+_SP_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.dirname(_REGION_DIR))
+if _SP_DIR not in _sys_paths_setup.path:
+    _sys_paths_setup.path.insert(0, _SP_DIR)
+from shared import paths as _bts_paths
+if str(_bts_paths.SHARED_DIR) not in _sys_paths_setup.path:
+    _sys_paths_setup.path.insert(0, str(_bts_paths.SHARED_DIR))
+BASE_DIR = str(_bts_paths.MLS_DIR)
+PREDICTIONS_DIR = str(_bts_paths.OUTPUT_PRED_MLS)
+PROJECT_DIR = str(_bts_paths.SP_DIR)
+import pandas as pd
+import os
+import sys
+import json
+import re
+import urllib.parse
+import urllib.request
+import time
+from collections import defaultdict
+from datetime import datetime, timezone
+from io import StringIO
+from bs4 import BeautifulSoup
+
+# BASE_DIR set by shared.paths bootstrap above
+_ROOT_DIR = os.path.dirname(BASE_DIR)
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+import team_mapping_groups as tmg  # noqa: E402
+PROCESSED_DIR = os.path.join(BASE_DIR, "Data", "Processed_Data")
+OUTPUT_DIR = os.path.join(BASE_DIR, "Data", "Team_Data")
+SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})\.csv$", re.IGNORECASE)
+MIN_START_YEAR = 2002
+DEFAULT_LEAGUE_STRENGTH = {
+    "United States/MLS": 0.84,
+    "Mexico/Liga MX": 0.62,
+}
+H2H_RECENT_YEARS = 2
+USE_GPU_DF = os.getenv("SOCCER_USE_GPU_DF", "1").strip().lower() not in {"0", "false", "no"}
+
+try:
+    import cudf  # type: ignore
+except Exception:
+    cudf = None
+MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
+_name_mapping_cache = None
+
+
+def _load_name_mapping():
+    global _name_mapping_cache
+    if _name_mapping_cache is not None:
+        return _name_mapping_cache
+    try:
+        _name_mapping_cache = tmg.load_name_mapping_flat(MAPPING_FILE)
+    except Exception:
+        _name_mapping_cache = {}
+    return _name_mapping_cache
+
+
+TRANSFERMARKT_SEARCH_URL = "https://www.transfermarkt.com/schnellsuche/ergebnis/schnellsuche?query={query}"
+TRANSFERMARKT_BASE_URL = "https://www.transfermarkt.com"
+TRANSFERMARKT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive",
+    "Referer": "https://www.transfermarkt.com/",
+}
+SQUAD_VALUES_FILE = "mls_squad_values.json"
+MLS_TRANSFERMARKT_QUERY_ALIASES = {
+    "Charlotte": "Charlotte FC",
+    "Atlanta Utd": "Atlanta United",
+    "CF Montreal": "Montreal Impact",
+    "Montreal": "Montreal Impact",
+    "Inter Miami": "Inter Miami CF",
+    "LA Galaxy": "Los Angeles Galaxy",
+    "LAFC": "Los Angeles FC",
+    "NY Red Bulls": "New York Red Bulls",
+    "New York Red Bulls": "New York Red Bulls",
+    "NYCFC": "New York City FC",
+    "St. Louis City": "St. Louis City SC",
+    "St Louis City": "St. Louis City SC",
+    "DC United": "D.C. United",
+    "D.C. United": "D.C. United",
+}
+
+# Manual club URLs for teams whose Transfermarkt search returns a youth/reserve
+# squad first (slug, club_id).
+TRANSFERMARKT_CLUB_ID_OVERRIDES = {
+    "New York Red Bulls": ("new-york-red-bulls", "623"),
+}
+
+def fetch_html(url, retries=2, pause_seconds=1.5):
+    for attempt in range(retries):
+        try:
+            request = urllib.request.Request(url, headers=TRANSFERMARKT_HEADERS)
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return response.read().decode("utf-8", errors="ignore")
+        except Exception:
+            if attempt + 1 < retries:
+                time.sleep(pause_seconds)
+                continue
+            return ""
+
+
+def read_csv_fast(path):
+    if USE_GPU_DF and cudf is not None:
+        try:
+            gdf = cudf.read_csv(path)
+            return gdf.to_pandas()
+        except Exception:
+            pass
+    return pd.read_csv(path)
+
+# the basic storage for all of the stats to be stored
+def blank_team_stats():
+    return {
+        "games": 0,
+        "wins": 0,
+        "draws": 0,
+        "losses": 0,
+        "points": 0,
+
+        "goals_scored": 0,
+        "goals_conceded": 0,
+
+        "home_games": 0,
+        "away_games": 0,
+
+        "home_wins": 0,
+        "home_draws": 0,
+        "home_losses": 0,
+
+        "away_wins": 0,
+        "away_draws": 0,
+        "away_losses": 0,
+
+        "home_goals_scored": 0,
+        "home_goals_conceded": 0,
+        "away_goals_scored": 0,
+        "away_goals_conceded": 0,
+
+        "shots_for": 0,
+        "shots_against": 0,
+        "shots_on_target_for": 0,
+        "shots_on_target_against": 0,
+
+        "home_shots_for": 0,
+        "home_shots_against": 0,
+        "home_sot_for": 0,
+        "home_sot_against": 0,
+
+        "away_shots_for": 0,
+        "away_shots_against": 0,
+        "away_sot_for": 0,
+        "away_sot_against": 0
+    }
+
+# the function used to update a team with the stats in the processed file
+def update_team(stats, gf, ga, shots_f, shots_a, sot_f, sot_a, result, is_home):
+    stats["games"] += 1
+    stats["goals_scored"] += gf
+    stats["goals_conceded"] += ga
+    stats["shots_for"] += shots_f
+    stats["shots_against"] += shots_a
+    stats["shots_on_target_for"] += sot_f
+    stats["shots_on_target_against"] += sot_a
+
+    if result == "W":
+        stats["wins"] += 1
+        stats["points"] += 3
+    elif result == "D":
+        stats["draws"] += 1
+        stats["points"] += 1
+    else:
+        stats["losses"] += 1
+
+    if is_home:
+        stats["home_games"] += 1
+        stats["home_goals_scored"] += gf
+        stats["home_goals_conceded"] += ga
+        stats["home_shots_for"] += shots_f
+        stats["home_shots_against"] += shots_a
+        stats["home_sot_for"] += sot_f
+        stats["home_sot_against"] += sot_a
+
+        if result == "W":
+            stats["home_wins"] += 1
+        elif result == "D":
+            stats["home_draws"] += 1
+        else:
+            stats["home_losses"] += 1
+    else:
+        stats["away_games"] += 1
+        stats["away_goals_scored"] += gf
+        stats["away_goals_conceded"] += ga
+        stats["away_shots_for"] += shots_f
+        stats["away_shots_against"] += shots_a
+        stats["away_sot_for"] += sot_f
+        stats["away_sot_against"] += sot_a
+
+        if result == "W":
+            stats["away_wins"] += 1
+        elif result == "D":
+            stats["away_draws"] += 1
+        else:
+            stats["away_losses"] += 1
+
+
+def update_team_weighted(stats, gf, ga, shots_f, shots_a, sot_f, sot_a, result, is_home, coeff):
+    stats["games"] += coeff
+    stats["goals_scored"] += gf * coeff
+    stats["goals_conceded"] += ga * coeff
+    stats["shots_for"] += shots_f * coeff
+    stats["shots_against"] += shots_a * coeff
+    stats["shots_on_target_for"] += sot_f * coeff
+    stats["shots_on_target_against"] += sot_a * coeff
+
+    if result == "W":
+        stats["wins"] += coeff
+        stats["points"] += 3 * coeff
+    elif result == "D":
+        stats["draws"] += coeff
+        stats["points"] += 1 * coeff
+    else:
+        stats["losses"] += coeff
+
+    if is_home:
+        stats["home_games"] += coeff
+        stats["home_goals_scored"] += gf * coeff
+        stats["home_goals_conceded"] += ga * coeff
+        stats["home_shots_for"] += shots_f * coeff
+        stats["home_shots_against"] += shots_a * coeff
+        stats["home_sot_for"] += sot_f * coeff
+        stats["home_sot_against"] += sot_a * coeff
+        if result == "W":
+            stats["home_wins"] += coeff
+        elif result == "D":
+            stats["home_draws"] += coeff
+        else:
+            stats["home_losses"] += coeff
+    else:
+        stats["away_games"] += coeff
+        stats["away_goals_scored"] += gf * coeff
+        stats["away_goals_conceded"] += ga * coeff
+        stats["away_shots_for"] += shots_f * coeff
+        stats["away_shots_against"] += shots_a * coeff
+        stats["away_sot_for"] += sot_f * coeff
+        stats["away_sot_against"] += sot_a * coeff
+        if result == "W":
+            stats["away_wins"] += coeff
+        elif result == "D":
+            stats["away_draws"] += coeff
+        else:
+            stats["away_losses"] += coeff
+
+
+# function used to calculate the average goals for/agains for a team
+def calculate_averages(team_dict):
+    for team, stats in team_dict.items():
+        g = stats["games"]
+        hg = stats["home_games"]
+        ag = stats["away_games"]
+        if g > 0:
+            stats["avg_goals_scored"] = round(stats["goals_scored"] / g, 2)
+            stats["avg_goals_conceded"] = round(stats["goals_conceded"] / g, 2)
+            stats["avg_shots"] = round(stats["shots_for"] / g, 2)
+            stats["avg_sot"] = round(stats["shots_on_target_for"] / g, 2)
+            stats["avg_shots_conceded"] = round(stats["shots_against"] / g, 2)
+        if hg > 0:
+            stats["avg_home_goals_scored"] = round(stats["home_goals_scored"] / hg, 2)
+            stats["avg_home_goals_conceded"] = round(stats["home_goals_conceded"] / hg, 2)
+            stats["avg_home_shots_for"] = round(stats["home_shots_for"] / hg, 2)
+            stats["avg_home_shots_against"] = round(stats["home_shots_against"] / hg, 2)
+        if ag > 0:
+            stats["avg_away_goals_scored"] = round(stats["away_goals_scored"] / ag, 2)
+            stats["avg_away_goals_conceded"] = round(stats["away_goals_conceded"] / ag, 2)
+            stats["avg_away_shots_for"] = round(stats["away_shots_for"] / ag, 2)
+            stats["avg_away_shots_against"] = round(stats["away_shots_against"] / ag, 2)
+
+
+def calculate_weighted_averages(team_dict):
+    for _, stats in team_dict.items():
+        g = stats["games"]
+        hg = stats["home_games"]
+        ag = stats["away_games"]
+        if g > 0:
+            stats["weighted_avg_goals_scored"] = round(stats["goals_scored"] / g, 3)
+            stats["weighted_avg_goals_conceded"] = round(stats["goals_conceded"] / g, 3)
+            stats["weighted_avg_shots_for"] = round(stats["shots_for"] / g, 3)
+            stats["weighted_avg_shots_against"] = round(stats["shots_against"] / g, 3)
+        if hg > 0:
+            stats["weighted_avg_home_goals_scored"] = round(stats["home_goals_scored"] / hg, 3)
+            stats["weighted_avg_home_goals_conceded"] = round(stats["home_goals_conceded"] / hg, 3)
+            stats["weighted_avg_home_shots_for"] = round(stats["home_shots_for"] / hg, 3)
+            stats["weighted_avg_home_shots_against"] = round(stats["home_shots_against"] / hg, 3)
+        if ag > 0:
+            stats["weighted_avg_away_goals_scored"] = round(stats["away_goals_scored"] / ag, 3)
+            stats["weighted_avg_away_goals_conceded"] = round(stats["away_goals_conceded"] / ag, 3)
+            stats["weighted_avg_away_shots_for"] = round(stats["away_shots_for"] / ag, 3)
+            stats["weighted_avg_away_shots_against"] = round(stats["away_shots_against"] / ag, 3)
+
+
+def safe_float(value):
+    if pd.isna(value):
+        return None
+    return float(value)
+
+
+def canonical_team_name(name):
+    if pd.isna(name):
+        return name
+    text = str(name).strip()
+    if not text:
+        return text
+    mapping = _load_name_mapping()
+    return mapping.get(text.lower(), text)
+
+
+def is_valid_team_name(name):
+    if pd.isna(name):
+        return False
+    text = str(name).strip()
+    if not text:
+        return False
+    return text.lower() != "nan"
+
+
+def int_if_count_key(key, value):
+    if isinstance(value, (int, float)) and "avg" not in key.lower():
+        if pd.isna(value):
+            return 0
+        return int(round(float(value)))
+    return value
+
+
+def sanitize_overall_teams(overall_teams, weighted_overall):
+    cleaned = {}
+    for team, stats in overall_teams.items():
+        entry = {}
+        for key, value in stats.items():
+            entry[key] = int_if_count_key(key, value)
+
+        weighted_entry = weighted_overall.get(team, {})
+        for key, value in weighted_entry.items():
+            if not key.startswith("weighted_avg_"):
+                continue
+            if isinstance(value, (int, float)) and pd.isna(value):
+                entry[key] = 0.0
+            else:
+                entry[key] = float(value)
+
+        cleaned[team] = entry
+    return cleaned
+
+
+def sanitize_head_to_head(h2h_stats, weighted_h2h):
+    cleaned = {}
+    for home, away_map in h2h_stats.items():
+        if home not in cleaned:
+            cleaned[home] = {}
+        for away, stats in away_map.items():
+            if home == away:
+                continue
+            entry = {}
+            for key, value in stats.items():
+                if key == "points":
+                    continue
+                entry[key] = int_if_count_key(key, value)
+
+            weighted_entry = weighted_h2h.get(home, {}).get(away, {})
+            for key, value in weighted_entry.items():
+                if key.startswith("weighted_avg_"):
+                    entry[key] = float(value)
+
+            cleaned[home][away] = entry
+    return cleaned
+
+# gets the year for the file
+def parse_season_start_year(file_name):
+    match = SEASON_PATTERN.match(file_name)
+    if not match:
+        return None
+
+    start_year = int(match.group(1))
+    if start_year < MIN_START_YEAR:
+        return None
+    if start_year > datetime.now().year:
+        return None
+
+    return start_year
+
+def get_target_season_files():
+    valid = []
+    for root, _, files in os.walk(PROCESSED_DIR):
+        for file_name in files:
+            if not file_name.endswith(".csv"):
+                continue
+            start_year = parse_season_start_year(file_name)
+            if start_year is not None:
+                full_path = os.path.join(root, file_name)
+                rel_path = os.path.relpath(full_path, PROCESSED_DIR)
+                valid.append((start_year, rel_path))
+    valid.sort(key=lambda item: item[0])
+    return [name for _, name in valid]
+
+
+def season_recency_coefficient(age):
+    if age <= 0:
+        return 1.00
+    if age == 1:
+        return 0.80
+    if age == 2:
+        return 0.55
+    if age == 3:
+        return 0.35
+    if age == 4:
+        return 0.22
+    return 0.12
+
+
+def find_transfermarkt_club_link(team_name):
+    query = MLS_TRANSFERMARKT_QUERY_ALIASES.get(team_name, team_name)
+    direct = TRANSFERMARKT_CLUB_ID_OVERRIDES.get(team_name)
+    if direct:
+        return f"{TRANSFERMARKT_BASE_URL}/{direct[0]}/startseite/verein/{direct[1]}", direct[1]
+    encoded = urllib.parse.quote(query)
+    url = TRANSFERMARKT_SEARCH_URL.format(query=encoded)
+    html = fetch_html(url)
+    if not html:
+        return None, None
+
+    match = re.search(r'href="(/[^"#]+/startseite/verein/(\d+))"', html)
+    if not match:
+        return None, None
+    relative = match.group(1)
+    club_id = match.group(2)
+    return f"{TRANSFERMARKT_BASE_URL}{relative}", club_id
+
+
+def parse_squad_value_from_html(html):
+    if not html:
+        return 0.0
+    soup = BeautifulSoup(html, "html.parser")
+    wrapper = soup.find("a", class_="data-header__market-value-wrapper")
+    if wrapper is None:
+        return 0.0
+    raw_text = wrapper.get_text(" ", strip=True)
+    text = raw_text.replace("€", "").replace("EUR", "").strip()
+    match = re.search(r"(\d+(?:[.,]\d+)?)\s*(bn|billion|m|mill|million|k|thousand|thsd)?\b", text, re.IGNORECASE)
+    if not match:
+        return 0.0
+    number = float(match.group(1).replace(",", ""))
+    unit = (match.group(2) or "").lower()
+    if unit in {"bn", "billion"}:
+        multiplier = 1000.0
+    elif unit in {"m", "mill", "million"}:
+        multiplier = 1.0
+    elif unit in {"k", "thousand", "thsd"}:
+        multiplier = 0.001
+    else:
+        multiplier = 1.0
+    return number * multiplier
+
+
+def fetch_club_squad_value(team_name, club_url, club_id):
+    if not club_url:
+        return {"squad_value_eur_m": 0.0, "status": "no_url"}
+    html = fetch_html(club_url)
+    if not html:
+        return {"squad_value_eur_m": 0.0, "status": "fetch_failed"}
+    value = parse_squad_value_from_html(html)
+    if value <= 0:
+        return {"squad_value_eur_m": 0.0, "status": "not_found"}
+    return {
+        "squad_value_eur_m": round(value, 2),
+        "team_id": str(club_id) if club_id else "",
+        "source_url": club_url,
+        "updated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "status": "ok",
+    }
+
+
+def build_squad_values_file():
+    files = get_target_season_files()
+    if not files:
+        raise ValueError("No processed season CSV files found.")
+
+    latest_file = files[-1]
+    latest_path = os.path.join(PROCESSED_DIR, latest_file)
+    df = read_csv_fast(latest_path)
+    teams = sorted(set(df["HomeTeam"].dropna()) | set(df["AwayTeam"].dropna()))
+
+    previous = {}
+    previous_path = os.path.join(OUTPUT_DIR, SQUAD_VALUES_FILE)
+    if os.path.exists(previous_path):
+        try:
+            with open(previous_path, "r", encoding="utf-8") as file:
+                previous = json.load(file) or {}
+        except Exception:
+            previous = {}
+
+    output = {
+        "season": latest_file.replace(".csv", ""),
+        "source_file": latest_file,
+        "generated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "source": "transfermarkt.com",
+        "teams": {},
+    }
+
+    for team in teams:
+        team_name = str(team).strip()
+        if not team_name:
+            continue
+        try:
+            club_url, club_id = find_transfermarkt_club_link(team_name)
+            if not club_url or not club_id:
+                cached = (previous.get("teams", {}) or {}).get(team_name)
+                if cached and cached.get("squad_value_eur_m", 0) > 0:
+                    output["teams"][team_name] = {**cached, "status": "cached_club_not_found"}
+                else:
+                    output["teams"][team_name] = {"squad_value_eur_m": 0.0, "status": "club_not_found"}
+                continue
+
+            result = fetch_club_squad_value(team_name, club_url, club_id)
+            if result.get("squad_value_eur_m", 0) > 0:
+                output["teams"][team_name] = result
+                print(f"Squad value: {team_name} (€{result['squad_value_eur_m']:.2f}m)")
+            else:
+                cached = (previous.get("teams", {}) or {}).get(team_name)
+                if cached and cached.get("squad_value_eur_m", 0) > 0:
+                    output["teams"][team_name] = {**cached, "status": "cached"}
+                    print(f"Squad value: {team_name} (cached €{cached['squad_value_eur_m']:.2f}m)")
+                else:
+                    output["teams"][team_name] = result
+                    print(f"Squad value: {team_name} (not found)")
+        except Exception:
+            cached = (previous.get("teams", {}) or {}).get(team_name)
+            if cached and cached.get("squad_value_eur_m", 0) > 0:
+                output["teams"][team_name] = {**cached, "status": "cached_fetch_failed"}
+                print(f"Squad value: {team_name} (cached)")
+            else:
+                output["teams"][team_name] = {"squad_value_eur_m": 0.0, "status": "fetch_failed"}
+                print(f"Squad value: {team_name} (failed)")
+
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    with open(os.path.join(OUTPUT_DIR, SQUAD_VALUES_FILE), "w", encoding="utf-8") as file:
+        json.dump(output, file, indent=4)
+
+    print(f"MLS squad values written to {SQUAD_VALUES_FILE}")
+
+# function used to build a file to store the current (last 10 game) stats for each team in the current season
+def build_current_form_file():
+    files = get_target_season_files()
+    if not files:
+        raise ValueError("No processed season CSV files found.")
+
+    latest_file = files[-1]
+    latest_path = os.path.join(PROCESSED_DIR, latest_file)
+    df = read_csv_fast(latest_path)
+
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df = df.sort_values("Date")
+
+    team_matches = defaultdict(list)
+
+    for row in df.itertuples(index=False):
+        home = canonical_team_name(row.HomeTeam)
+        away = canonical_team_name(row.AwayTeam)
+        if not is_valid_team_name(home) or not is_valid_team_name(away):
+            continue
+
+        hg = row.FTHG
+        ag = row.FTAG
+        result = row.FTR
+
+        avg_h = getattr(row, "AvgH", None)
+        avg_d = getattr(row, "AvgD", None)
+        avg_a = getattr(row, "AvgA", None)
+
+        if result == "H":
+            home_res = "W"
+            away_res = "L"
+        elif result == "A":
+            home_res = "L"
+            away_res = "W"
+        else:
+            home_res = "D"
+            away_res = "D"
+
+        team_matches[home].append(
+            {
+                "result": home_res,
+                "gf": hg,
+                "ga": ag,
+                "win_odds": safe_float(avg_h),
+                "draw_odds": safe_float(avg_d),
+                "lose_odds": safe_float(avg_a),
+            }
+        )
+        team_matches[away].append(
+            {
+                "result": away_res,
+                "gf": ag,
+                "ga": hg,
+                "win_odds": safe_float(avg_a),
+                "draw_odds": safe_float(avg_d),
+                "lose_odds": safe_float(avg_h),
+            }
+        )
+
+    current_form = {"season": latest_file.replace(".csv", ""), "source_file": latest_file, "teams": {}}
+
+    for team, matches in team_matches.items():
+        recent = matches[-10:]
+        total_weight = 0.0
+        weighted_wins = 0.0
+        weighted_draws = 0.0
+        weighted_losses = 0.0
+        weighted_points = 0.0
+        weighted_gf = 0.0
+        weighted_ga = 0.0
+        for idx, match in enumerate(recent):
+            w = 2.0 if idx >= len(recent) - 5 else 1.0
+            total_weight += w
+            result = match["result"]
+            if result == "W":
+                weighted_wins += w
+            elif result == "D":
+                weighted_draws += w
+            elif result == "L":
+                weighted_losses += w
+            weighted_points += w * (3 if result == "W" else 1 if result == "D" else 0)
+            weighted_gf += w * match["gf"]
+            weighted_ga += w * match["ga"]
+
+        wins = round(weighted_wins * 10.0 / total_weight) if total_weight > 0 else 0
+        draws = round(weighted_draws * 10.0 / total_weight) if total_weight > 0 else 0
+        losses = round(weighted_losses * 10.0 / total_weight) if total_weight > 0 else 0
+        points = round(weighted_points * 10.0 / total_weight) if total_weight > 0 else 0
+        goals_for = round(weighted_gf * 10.0 / total_weight, 2) if total_weight > 0 else 0.0
+        goals_against = round(weighted_ga * 10.0 / total_weight, 2) if total_weight > 0 else 0.0
+
+        last_game = matches[-1] if matches else {}
+
+        current_form["teams"][team] = {
+            "games_played": len(matches),
+            "form_last_10": "".join(match["result"] for match in recent),
+            "wins_last_10": wins,
+            "draws_last_10": draws,
+            "losses_last_10": losses,
+            "points_last_10": points,
+            "avg_goals_for_last_10": goals_for / 10.0 if recent else 0.0,
+            "avg_goals_against_last_10": goals_against / 10.0 if recent else 0.0,
+            "previous_match_win_odds": last_game.get("win_odds"),
+            "previous_match_draw_odds": last_game.get("draw_odds"),
+            "previous_match_lose_odds": last_game.get("lose_odds"),
+        }
+
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    with open(os.path.join(OUTPUT_DIR, "current_form.json"), "w") as file:
+        json.dump(current_form, file, indent=4)
+
+    print(f"Current form written from {latest_file}")
+
+# function used to sort the data and store for each season and team
+# thsi function is the main one called that completes the entiree task
+def sort_all_seasons():
+    overall_teams = defaultdict(blank_team_stats)
+    weighted_overall = defaultdict(blank_team_stats)
+    season_data = {}
+    h2h_stats = defaultdict(lambda: defaultdict(blank_team_stats))
+    weighted_h2h = defaultdict(lambda: defaultdict(blank_team_stats))
+    competitions = set()
+
+    files = get_target_season_files()
+    latest_year = max(parse_season_start_year(os.path.basename(file)) for file in files) if files else MIN_START_YEAR
+
+    for rel_path in files:
+        print(f"Processing {rel_path}")
+        competition = os.path.dirname(rel_path).replace("\\", "/") or "Unknown"
+        competitions.add(competition)
+        path = os.path.join(PROCESSED_DIR, rel_path)
+        df = read_csv_fast(path)
+        season_start_year = parse_season_start_year(os.path.basename(rel_path))
+        age = max(0, latest_year - season_start_year)
+        coeff = season_recency_coefficient(age)
+        h2h_coeff = coeff * (1.55 if age < H2H_RECENT_YEARS else 0.50)
+
+        season_teams = defaultdict(blank_team_stats)
+
+        for row in df.itertuples(index=False):
+            home = canonical_team_name(row.HomeTeam)
+            away = canonical_team_name(row.AwayTeam)
+            if not is_valid_team_name(home) or not is_valid_team_name(away):
+                continue
+
+            hg = row.FTHG
+            ag = row.FTAG
+
+            hs = 0 if pd.isna(row.HS) else row.HS
+            ass = 0 if pd.isna(row.AS) else row.AS
+
+            hst = 0 if pd.isna(row.HST) else row.HST
+            ast = 0 if pd.isna(row.AST) else row.AST
+
+            result = row.FTR
+
+            if result == "H":
+                home_res = "W"
+                away_res = "L"
+            elif result == "A":
+                home_res = "L"
+                away_res = "W"
+            else:
+                home_res = away_res = "D"
+
+            # update the stats for the teams overall, season, and head to head stats
+            update_team(season_teams[home], hg, ag, hs, ass, hst, ast, home_res, True)
+            update_team(season_teams[away], ag, hg, ass, hs, ast, hst, away_res, False)
+
+            update_team(overall_teams[home], hg, ag, hs, ass, hst, ast, home_res, True)
+            update_team(overall_teams[away], ag, hg, ass, hs, ast, hst, away_res, False)
+            update_team_weighted(weighted_overall[home], hg, ag, hs, ass, hst, ast, home_res, True, coeff)
+            update_team_weighted(weighted_overall[away], ag, hg, ass, hs, ast, hst, away_res, False, coeff)
+
+            if home != away:
+                update_team(h2h_stats[home][away], hg, ag, hs, ass, hst, ast, home_res, True)
+                update_team(h2h_stats[away][home], ag, hg, ass, hs, ast, hst, away_res, False)
+                update_team_weighted(weighted_h2h[home][away], hg, ag, hs, ass, hst, ast, home_res, True, h2h_coeff)
+                update_team_weighted(weighted_h2h[away][home], ag, hg, ass, hs, ast, hst, away_res, False, h2h_coeff)
+
+        calculate_averages(season_teams)
+        season_data[rel_path.replace(".csv", "")] = season_teams
+
+    calculate_averages(overall_teams)
+    calculate_weighted_averages(weighted_overall)
+    for home in weighted_h2h:
+        calculate_weighted_averages(weighted_h2h[home])
+
+    cleaned_overall = sanitize_overall_teams(overall_teams, weighted_overall)
+    cleaned_h2h = sanitize_head_to_head(h2h_stats, weighted_h2h)
+
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    with open(os.path.join(OUTPUT_DIR, "overall_teams.json"), "w") as f:
+        json.dump(cleaned_overall, f, indent=4)
+    with open(os.path.join(OUTPUT_DIR, "season_teams.json"), "w") as f:
+        json.dump(season_data, f, indent=4)
+    with open(os.path.join(OUTPUT_DIR, "head_to_head.json"), "w") as f:
+        json.dump(cleaned_h2h, f, indent=4)
+    league_strength_path = os.path.join(OUTPUT_DIR, "league_strength.json")
+    if not os.path.exists(league_strength_path):
+        league_strength = {}
+        for competition in sorted(competitions):
+            league_strength[competition] = DEFAULT_LEAGUE_STRENGTH.get(competition, 0.85)
+        with open(league_strength_path, "w") as f:
+            json.dump(league_strength, f, indent=4)
+
+    print("\nDone!\n")
+
+
+# testing
+if __name__ == "__main__":
+    sort_all_seasons()
+    build_current_form_file()
+    build_squad_values_file()
