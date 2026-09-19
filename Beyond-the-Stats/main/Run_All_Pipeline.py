@@ -470,18 +470,28 @@ def _resolve_competition_workers(args):
     cpu = os.cpu_count() or 1
     ram_gb = _system_ram_gb()
     if requested <= 0:
-        # Auto: reserve one core for the backend (live polling / API serving);
-        # the remaining cores go to the single active pipeline step.
-        auto = max(1, cpu - 1)
+        # Reserve cores for the backend (live polling / API / gunicorn) so the
+        # pipeline never starves request handling. On small hosts keep 1 free;
+        # on larger hosts keep 2 free.
+        reserve = 2 if cpu >= 4 else 1
+        auto = max(1, cpu - reserve)
     else:
         auto = max(1, int(requested))
+    # With fork CoW shared model caches, workers no longer each need a full
+    # ~4GB private copy. Still cap so RSS stays near the ~12GB host budget
+    # (OS + API + one shared model + modest per-worker scratch).
     if ram_gb:
-        if ram_gb < 12:
+        if ram_gb < 10:
             auto = min(auto, 1)
+        elif ram_gb < 14:
+            auto = min(auto, 3)
         elif ram_gb < 24:
-            auto = min(auto, 2)
+            auto = min(auto, 5)
         else:
-            auto = min(auto, 4)
+            auto = min(auto, 8)
+    # Never schedule more workers than free cores after the API reserve.
+    reserve = 2 if cpu >= 4 else 1
+    auto = min(auto, max(1, cpu - reserve))
     return auto
 
 

@@ -19,6 +19,7 @@ import urllib.request
 import argparse
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mp
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 import random
@@ -460,6 +461,20 @@ def _load_espn_fixtures(competition, ctx, max_days=21):
     if not rows:
         return None
     return pd.DataFrame(rows)
+
+
+_WORKER_CTX = None
+
+
+def _pool_initializer(ctx):
+    global _WORKER_CTX
+    _WORKER_CTX = ctx
+
+
+def _project_competition_worker(competition, raw_file, sim_runs=None):
+    if sim_runs is None:
+        return project_competition(_WORKER_CTX, competition, raw_file)
+    return project_competition(_WORKER_CTX, competition, raw_file, sim_runs)
 
 
 def load_context():
@@ -1254,6 +1269,11 @@ def _zeroed_placeholder_rows(competition):
     return rows
 
 
+def _progress(msg: str) -> None:
+    """Flushed terminal progress so long projections show activity immediately."""
+    print(msg, flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Project remaining fixtures onto a Monte-Carlo season.")
     parser.add_argument(
@@ -1268,6 +1288,7 @@ def main():
     comp_workers = max(1, int(args.competition_workers))
 
     _t0 = time.monotonic()
+    _progress("[league-tables] START — loading models / discovering Extra competitions")
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR) or {}
     latest = _merge_roster_only_competitions(latest, ctx["available_teams"])
@@ -1276,7 +1297,7 @@ def main():
     # roster-only competitions before any projection/placeholder rows are built.
     excluded_non_league = sorted(c for c in latest if not is_league_table_competition(c))
     for comp in excluded_non_league:
-        print(f"  [skip] not a league-table competition: {comp}")
+        _progress(f"  [skip] not a league-table competition: {comp}")
     latest = {c: p for c, p in latest.items() if is_league_table_competition(c)}
     if not latest:
         raise ValueError(f"No raw season files or current-season rosters found for Extra leagues")
@@ -1298,7 +1319,7 @@ def main():
                 if season_calendar.competition_uses_calendar_year(comp)
             }
             if european:
-                print(
+                _progress(
                     f"[skip] European club off-season (Jun–Jul 14) — "
                     f"deferring {len(european)} Extra league projection(s) until Jul 15+"
                 )
@@ -1309,35 +1330,62 @@ def main():
     all_tables = []
     all_future = []
     comps = sorted(latest.items(), key=lambda kv: kv[0])
+    total = len(comps)
+    finished = 0
     if not comps:
-        print("No competitions left to project.")
+        _progress("[league-tables] No competitions left to project.")
     else:
+        _progress(f"[league-tables] START — projecting {total} Extra competitions")
         if comp_workers <= 1 or len(comps) <= 1:
-            for competition, path in comps:
+            for idx, (competition, path) in enumerate(comps, start=1):
+                _progress(f"[league-tables] START {competition} ({idx}/{total})")
                 try:
                     table_rows, future_rows = project_competition(ctx, competition, path)
                     all_tables.extend(table_rows)
                     all_future.extend(future_rows)
-                    print(f"  [{competition}] done ({len(table_rows)} rows)")
+                    finished += 1
+                    _progress(
+                        f"[league-tables] DONE  {competition} ({finished}/{total}) — "
+                        f"{len(table_rows)} rows"
+                    )
                 except Exception as e:
-                    print(f"  [{competition}] ERROR: {e}")
+                    finished += 1
+                    _progress(f"[league-tables] ERROR {competition} ({finished}/{total}): {e}")
         else:
             max_workers = min(comp_workers, len(comps))
-            print(f"  Processing {len(comps)} competitions with {max_workers} workers")
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                futures = {
-                    executor.submit(project_competition, ctx, comp, path): comp
-                    for comp, path in comps
-                }
+            try:
+                mp_ctx = mp.get_context("fork")
+            except ValueError:
+                mp_ctx = mp.get_context()
+            _progress(
+                f"[league-tables] Processing {total} competitions with {max_workers} workers "
+                f"(shared model via {mp_ctx.get_start_method()})"
+            )
+            with ProcessPoolExecutor(
+                max_workers=max_workers,
+                mp_context=mp_ctx,
+                initializer=_pool_initializer,
+                initargs=(ctx,),
+            ) as executor:
+                futures = {}
+                for idx, (comp, path) in enumerate(comps, start=1):
+                    _progress(f"[league-tables] START {comp} (queued {idx}/{total})")
+                    futures[executor.submit(_project_competition_worker, comp, path)] = comp
                 for fut in as_completed(futures):
                     comp = futures[fut]
                     try:
                         table_rows, future_rows = fut.result()
                         all_tables.extend(table_rows)
                         all_future.extend(future_rows)
-                        print(f"  [{comp}] done ({len(table_rows)} rows)")
+                        finished += 1
+                        _progress(
+                            f"[league-tables] DONE  {comp} ({finished}/{total}) — "
+                            f"{len(table_rows)} rows"
+                        )
                     except Exception as e:
-                        print(f"  [{comp}] ERROR: {e}")
+                        finished += 1
+                        _progress(f"[league-tables] ERROR {comp} ({finished}/{total}): {e}")
+        _progress(f"[league-tables] DONE with processing {finished}/{total} competitions")
 
     # Fill zeroed placeholder rows for competitions that were skipped or errored
     # so stale projected data from the previous run does not persist.
@@ -1346,15 +1394,15 @@ def main():
         if comp not in projected_comps:
             placeholder = _zeroed_placeholder_rows(comp)
             all_tables.extend(placeholder)
-            print(f"  [{comp}] zeroed placeholder ({len(placeholder)} rows)")
+            _progress(f"  [{comp}] zeroed placeholder ({len(placeholder)} rows)")
 
     os.makedirs(OUT_DIR, exist_ok=True)
     pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)
     pd.DataFrame(all_future).to_csv(OUT_MATCHES, index=False)
     _elapsed = time.monotonic() - _t0
-    print(f"Projected league tables saved: {OUT_TABLE}")
-    print(f"Predicted remaining matches saved: {OUT_MATCHES}")
-    print(f"Elapsed: {_elapsed:.1f}s")
+    _progress(f"[league-tables] Projected league tables saved: {OUT_TABLE}")
+    _progress(f"[league-tables] Predicted remaining matches saved: {OUT_MATCHES}")
+    _progress(f"[league-tables] DONE — elapsed {_elapsed:.1f}s")
 
 
 if __name__ == "__main__":

@@ -1769,10 +1769,11 @@ def project_competition(ctx, competition, raw_file):
 
 def main():
     _t0 = time.monotonic()
+    print("[league-tables] START — loading models / discovering MLS competitions", flush=True)
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR)
     if not latest:
-        print("No raw season files found — using synthetic/ESPN-only schedule for MLS")
+        print("No raw season files found — using synthetic/ESPN-only schedule for MLS", flush=True)
         latest = {MLS_COMPETITION: None}
     elif MLS_COMPETITION not in latest:
         # MLS itself has no CSV but other competitions (e.g. Liga MX) do
@@ -1781,15 +1782,27 @@ def main():
     all_tables = []
     all_future = []
     playoff_bracket = None
-    for competition, path in sorted(latest.items()):
-        if competition == LIGA_MX_COMPETITION:
-            table_rows, future_rows, bracket_payload = project_liga_mx_competition(ctx, competition, path)
-        else:
-            table_rows, future_rows, bracket_payload = project_competition(ctx, competition, path)
-        all_tables.extend(table_rows)
-        all_future.extend(future_rows)
-        if bracket_payload:
-            playoff_bracket = bracket_payload
+    comps = sorted(latest.items())
+    total = len(comps)
+    print(f"[league-tables] START — projecting {total} MLS/Liga MX competitions", flush=True)
+    for idx, (competition, path) in enumerate(comps, start=1):
+        print(f"[league-tables] START {competition} ({idx}/{total})", flush=True)
+        try:
+            if competition == LIGA_MX_COMPETITION:
+                table_rows, future_rows, bracket_payload = project_liga_mx_competition(ctx, competition, path)
+            else:
+                table_rows, future_rows, bracket_payload = project_competition(ctx, competition, path)
+            all_tables.extend(table_rows)
+            all_future.extend(future_rows)
+            if bracket_payload:
+                playoff_bracket = bracket_payload
+            print(
+                f"[league-tables] DONE  {competition} ({idx}/{total}) — {len(table_rows)} rows",
+                flush=True,
+            )
+        except Exception as e:
+            print(f"[league-tables] ERROR {competition} ({idx}/{total}): {e}", flush=True)
+    print(f"[league-tables] DONE with processing {total} competitions", flush=True)
 
     os.makedirs(OUT_DIR, exist_ok=True)
     pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)
@@ -1798,11 +1811,11 @@ def main():
         with open(OUT_BRACKET, "w", encoding="utf-8") as fh:
             json.dump(playoff_bracket, fh, indent=2)
     _elapsed = time.monotonic() - _t0
-    print(f"Projected league tables saved: {OUT_TABLE}")
-    print(f"Predicted remaining matches saved: {OUT_MATCHES}")
+    print(f"[league-tables] Projected league tables saved: {OUT_TABLE}", flush=True)
+    print(f"[league-tables] Predicted remaining matches saved: {OUT_MATCHES}", flush=True)
     if playoff_bracket is not None:
-        print(f"Predicted MLS playoff bracket saved: {OUT_BRACKET}")
-    print(f"Elapsed: {_elapsed:.1f}s")
+        print(f"[league-tables] Predicted MLS playoff bracket saved: {OUT_BRACKET}", flush=True)
+    print(f"[league-tables] DONE — elapsed {_elapsed:.1f}s", flush=True)
 
 
 if __name__ == "__main__":

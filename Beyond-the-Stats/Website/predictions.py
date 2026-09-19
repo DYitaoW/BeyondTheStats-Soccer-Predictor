@@ -2020,15 +2020,42 @@ def _build_winner_probability_payload(comp_table: list[dict], competition: str =
     return payload
 
 
+# mtime-keyed process cache for large prediction JSON (cup brackets, etc.).
+_JSON_PAYLOAD_CACHE: dict[str, tuple[float, object]] = {}
+_JSON_PAYLOAD_CACHE_LOCK = threading.Lock()
+
+
 def _load_json_payload(path):
-    """Safely load JSON payload from disk, returning None on failure."""
-    if not os.path.exists(path):
+    """Safely load JSON payload from disk, returning None on failure.
+
+    Memoized by (path, mtime) so cup-data / league-data cold builds do not
+    re-parse the same multi-MB bracket files on every helper call.
+    """
+    if not path or not os.path.exists(path):
         return None
     try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None
+    key = os.path.normpath(path)
+    with _JSON_PAYLOAD_CACHE_LOCK:
+        cached = _JSON_PAYLOAD_CACHE.get(key)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+    try:
         with open(path, "r", encoding="utf-8-sig") as fh:
-            return json.load(fh)
+            payload = json.load(fh)
     except Exception:
         return None
+    with _JSON_PAYLOAD_CACHE_LOCK:
+        _JSON_PAYLOAD_CACHE[key] = (mtime, payload)
+    return payload
+
+
+def clear_json_payload_cache() -> None:
+    """Drop memoized JSON payloads (call after pipeline publishes new brackets)."""
+    with _JSON_PAYLOAD_CACHE_LOCK:
+        _JSON_PAYLOAD_CACHE.clear()
 
 
 def _file_mtime_utc(path):

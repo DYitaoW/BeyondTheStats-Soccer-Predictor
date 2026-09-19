@@ -16,6 +16,7 @@ Environment="FOOTBALL_DATA_API_TOKEN=//"
 Environment="ALLOWED_ORIGINS=https://beyondthestatsapp.com,https://www.beyondthestatsapp.com,https://api.beyondthestatsapp.com,https://beyond-the-stats.pages.dev,http://localhost:8099,http://localhost:5000"
 # Shortened backend defaults to BTS_TABLES_ONLY=1 (league download/train skipped).
 # Cup upcoming + Track_Cup_Results still run via Run_All_Pipeline._run_cups_last.
+# Optional (off by default): BTS_SKIP_UNCHANGED_PROJECTIONS=1, BTS_CUP_SKIP_UNCHANGED=1
 ExecStart=/home/dylan/bts/Beyond-the-Stats/.venv/bin/python main/run_backend.py --memory-limit-gb 14 --no-watcher --national-window-days 60 --port 8099
 Restart=on-failure
 RestartSec=30

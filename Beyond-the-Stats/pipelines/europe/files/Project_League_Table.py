@@ -35,6 +35,7 @@ import time
 import urllib.request
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mp
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -42,6 +43,7 @@ import joblib
 import pandas as pd
 
 import Predict_Match as pm
+import projection_cache as proj_cache
 
 
 # BASE_DIR set by shared.paths bootstrap above
@@ -433,6 +435,45 @@ def latest_raw_file_per_competition(raw_root):
     return {comp: path for comp, (_, path) in latest.items()}
 
 
+
+# Process-pool worker context: set in the parent before fork so children inherit
+# the model via copy-on-write instead of re-pickling multi-GB caches per task.
+_WORKER_CTX = None
+
+
+def _pool_initializer(ctx):
+    global _WORKER_CTX
+    _WORKER_CTX = ctx
+
+
+def _project_competition_worker(competition, raw_file, sim_runs):
+    return project_competition(_WORKER_CTX, competition, raw_file, sim_runs)
+
+
+def _reuse_projected_rows(competition):
+    """Load prior projected rows for *competition* from the last output CSV."""
+    if not os.path.exists(OUT_TABLE):
+        return None, None
+    try:
+        df = pd.read_csv(OUT_TABLE)
+    except Exception:
+        return None, None
+    if "competition" not in df.columns:
+        return None, None
+    rows = df[df["competition"].astype(str) == str(competition)]
+    if rows.empty:
+        return None, None
+    future_rows = []
+    if os.path.exists(OUT_MATCHES):
+        try:
+            fut = pd.read_csv(OUT_MATCHES)
+            if "competition" in fut.columns:
+                future_rows = fut[fut["competition"].astype(str) == str(competition)].to_dict("records")
+        except Exception:
+            future_rows = []
+    return rows.to_dict("records"), future_rows
+
+
 def load_context():
     matches, season_files = pm.load_training_matches(pm.PROCESSED_DIR)
     if not os.path.exists(pm.MODEL_CACHE):
@@ -724,10 +765,32 @@ def _predict_matches_batch(ctx, fixture_pairs, competition_hint):
     """Predict a batch of (home, away) fixtures sharing the same competition hint.
 
     Returns a list of (pred_res, hg, ag, probs) tuples in input order.
+    Daily matchup-probability cache avoids re-scoring the same pair twice in a day.
     """
     if not fixture_pairs:
         return []
 
+    n = len(fixture_pairs)
+    results = [None] * n
+    pending_pairs = []
+    pending_idx = []
+    for i, (h, a) in enumerate(fixture_pairs):
+        cached = proj_cache.get_matchup_probs(h, a, competition_hint)
+        if cached and all(k in cached for k in ("H", "D", "A")):
+            # Reconstruct a sampled scoreline from cached probs later via model-free coerce.
+            labels = ["H", "D", "A"]
+            weights = [max(0.0, float(cached.get(label, 0.0))) for label in labels]
+            total = sum(weights)
+            pred_res = max(cached, key=cached.get) if total <= 0 else RNG.choices(labels, weights=weights, k=1)[0]
+            hg, ag = (2, 1) if pred_res == "H" else ((1, 2) if pred_res == "A" else (1, 1))
+            results[i] = (pred_res, hg, ag, cached)
+        else:
+            pending_pairs.append((h, a))
+            pending_idx.append(i)
+    if not pending_pairs:
+        return results
+
+    fixture_pairs = pending_pairs
     n = len(fixture_pairs)
     batch_input = pd.concat(
         [pm.build_match_input(h, a) for h, a in fixture_pairs], ignore_index=True
@@ -765,7 +828,6 @@ def _predict_matches_batch(ctx, fixture_pairs, competition_hint):
     classes = list(ctx["clf"].classes_)
     class_labels = [ctx["result_le"].inverse_transform([enc])[0] for enc in classes]
 
-    results = []
     for i in range(n):
         probs = {"H": 0.0, "D": 0.0, "A": 0.0}
         for c_idx, lbl in enumerate(class_labels):
@@ -799,7 +861,12 @@ def _predict_matches_batch(ctx, fixture_pairs, competition_hint):
         elif pred_res == "D":
             ag = hg
 
-        results.append((pred_res, hg, ag, probs))
+        out_i = pending_idx[i]
+        results[out_i] = (pred_res, hg, ag, probs)
+        try:
+            proj_cache.set_matchup_probs(home_team_i, away_team_i, competition_hint, probs)
+        except Exception:
+            pass
     return results
 
 
@@ -950,6 +1017,17 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
     if sim_runs is None:
         sim_runs = SIMULATION_RUNS
     sim_runs = COMPETITION_SIM_RUNS.get(competition, sim_runs)
+
+    # Optional skip: reuse prior projection when the season CSV is unchanged.
+    # Disabled unless BTS_SKIP_UNCHANGED_PROJECTIONS=1.
+    csv_sig = proj_cache.file_signature(raw_file)
+    if proj_cache.skip_unchanged_projections_enabled():
+        prev = proj_cache.get_league_stamp(competition)
+        if prev and prev == csv_sig:
+            reused, reused_future = _reuse_projected_rows(competition)
+            if reused:
+                print(f"  [{competition}] skip reproject (CSV unchanged; stamp={csv_sig[:10]}…)")
+                return reused, reused_future or []
 
     # Determine if this CSV represents the current season or a past season
     if raw_file and os.path.exists(raw_file):
@@ -1223,6 +1301,14 @@ def project_competition(ctx, competition, raw_file, sim_runs=None):
             "sim_runs": int(sim_runs),
         })
 
+    try:
+        proj_cache.set_league_stamp(
+            competition,
+            csv_sig,
+            {"sim_runs": int(sim_runs), "rows": len(table_rows)},
+        )
+    except Exception:
+        pass
     return table_rows, future_rows
 
 
@@ -1409,11 +1495,17 @@ def _zeroed_placeholder_rows(competition):
     return rows
 
 
+def _progress(msg: str) -> None:
+    """Flushed terminal progress so long projections show activity immediately."""
+    print(msg, flush=True)
+
+
 def main():
     _t0 = time.monotonic()
     args = parse_cli_args()
     sim_runs = max(1, int(args.sim_runs))
     comp_workers = max(1, int(args.competition_workers))
+    _progress("[league-tables] START — loading models / discovering competitions")
     ctx = load_context()
     latest = latest_raw_file_per_competition(RAW_DIR) or {}
     latest = _merge_roster_only_competitions(latest, ctx["available_teams"])
@@ -1422,7 +1514,7 @@ def main():
     # roster-only competitions before any projection/placeholder rows are built.
     excluded_non_league = sorted(c for c in latest if not is_league_table_competition(c))
     for comp in excluded_non_league:
-        print(f"  [skip] not a league-table competition: {comp}")
+        _progress(f"  [skip] not a league-table competition: {comp}")
     latest = {c: p for c, p in latest.items() if is_league_table_competition(c)}
     if not latest:
         raise ValueError(f"No raw season files or current-season rosters found in {RAW_DIR}")
@@ -1448,7 +1540,7 @@ def main():
                 if sc.competition_uses_calendar_year(comp)
             }
             if european:
-                print(
+                _progress(
                     f"[skip] European club off-season (Jun–Jul 14) — "
                     f"deferring {len(european)} league projection(s) until Jul 15+"
                 )
@@ -1460,35 +1552,68 @@ def main():
     all_tables = []
     all_future = []
     comps = sorted(latest.items(), key=lambda kv: kv[0])
+    total = len(comps)
+    finished = 0
     if not comps:
-        print("No competitions left to project.")
+        _progress("[league-tables] No competitions left to project.")
     else:
+        _progress(f"[league-tables] START — projecting {total} competitions")
         if comp_workers <= 1 or len(comps) <= 1:
-            for competition, path in comps:
+            for idx, (competition, path) in enumerate(comps, start=1):
+                _progress(f"[league-tables] START {competition} ({idx}/{total})")
                 try:
                     table_rows, future_rows = project_competition(ctx, competition, path, sim_runs)
                     all_tables.extend(table_rows)
                     all_future.extend(future_rows)
-                    print(f"  [{competition}] done ({len(table_rows)} rows)")
+                    finished += 1
+                    _progress(
+                        f"[league-tables] DONE  {competition} ({finished}/{total}) — "
+                        f"{len(table_rows)} rows"
+                    )
                 except Exception as e:
-                    print(f"  [{competition}] ERROR: {e}")
+                    finished += 1
+                    _progress(f"[league-tables] ERROR {competition} ({finished}/{total}): {e}")
         else:
             max_workers = min(comp_workers, len(comps))
-            print(f"  Processing {len(comps)} competitions with {max_workers} workers")
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                futures = {
-                    executor.submit(project_competition, ctx, comp, path, sim_runs): comp
-                    for comp, path in comps
-                }
+            # Prefer fork so workers inherit the already-loaded model via CoW
+            # instead of pickling multi-GB ctx into every child.
+            try:
+                mp_ctx = mp.get_context("fork")
+            except ValueError:
+                mp_ctx = mp.get_context()
+            _progress(
+                f"[league-tables] Processing {total} competitions with {max_workers} workers "
+                f"(shared model via {mp_ctx.get_start_method()})"
+            )
+            with ProcessPoolExecutor(
+                max_workers=max_workers,
+                mp_context=mp_ctx,
+                initializer=_pool_initializer,
+                initargs=(ctx,),
+            ) as executor:
+                futures = {}
+                for idx, (comp, path) in enumerate(comps, start=1):
+                    _progress(f"[league-tables] START {comp} (queued {idx}/{total})")
+                    futures[executor.submit(_project_competition_worker, comp, path, sim_runs)] = comp
                 for fut in as_completed(futures):
                     comp = futures[fut]
                     try:
                         table_rows, future_rows = fut.result()
                         all_tables.extend(table_rows)
                         all_future.extend(future_rows)
-                        print(f"  [{comp}] done ({len(table_rows)} rows)")
+                        finished += 1
+                        _progress(
+                            f"[league-tables] DONE  {comp} ({finished}/{total}) — "
+                            f"{len(table_rows)} rows"
+                        )
                     except Exception as e:
-                        print(f"  [{comp}] ERROR: {e}")
+                        finished += 1
+                        _progress(f"[league-tables] ERROR {comp} ({finished}/{total}): {e}")
+        _progress(f"[league-tables] DONE with processing {finished}/{total} competitions")
+    try:
+        proj_cache.flush_matchup_probs()
+    except Exception:
+        pass
 
     # Fill zeroed placeholder rows for competitions that were skipped or errored
     # so stale projected data from the previous run does not persist.
@@ -1497,15 +1622,15 @@ def main():
         if comp not in projected_comps:
             placeholder = _zeroed_placeholder_rows(comp)
             all_tables.extend(placeholder)
-            print(f"  [{comp}] zeroed placeholder ({len(placeholder)} rows)")
+            _progress(f"  [{comp}] zeroed placeholder ({len(placeholder)} rows)")
 
     os.makedirs(OUT_DIR, exist_ok=True)
     pd.DataFrame(all_tables).to_csv(OUT_TABLE, index=False)
     pd.DataFrame(all_future).to_csv(OUT_MATCHES, index=False)
     _elapsed = time.monotonic() - _t0
-    print(f"Projected league tables saved: {OUT_TABLE}")
-    print(f"Predicted remaining matches saved: {OUT_MATCHES}")
-    print(f"Elapsed: {_elapsed:.1f}s")
+    _progress(f"[league-tables] Projected league tables saved: {OUT_TABLE}")
+    _progress(f"[league-tables] Predicted remaining matches saved: {OUT_MATCHES}")
+    _progress(f"[league-tables] DONE — elapsed {_elapsed:.1f}s")
 
 
 if __name__ == "__main__":
