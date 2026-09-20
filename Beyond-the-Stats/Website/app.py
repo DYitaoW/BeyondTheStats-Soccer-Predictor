@@ -1019,6 +1019,7 @@ def api_help():
         ("/api/league-leaders", "GET", "Predicted winner + current leader per competition"),
         ("/api/live-scores", "GET", "Currently live matches with scores"),
         ("/api/live-score-history", "GET", "Recent live score history"),
+        ("/api/past-live-scores", "GET", "Alias for /api/live-score-history (SQLite-backed)"),
         ("/api/h2h", "GET", "Head-to-head stats between two teams (?home=&away=)"),
         ("/api/scorers", "GET", "Top scorers data"),
         ("/api/stats", "GET", "Aggregate prediction statistics"),
@@ -2001,9 +2002,13 @@ def api_debug_poller_state():
 
 
 @app.get("/api/live-score-history")
+@app.get("/api/past-live-scores")
 def api_live_score_history():
     """Return historical completed games, grouped by competition
     (matching ``/api/live-scores`` response structure).
+
+    Served from SQLite (``Output/Status/bts_store.db``) with JSON dual-write
+    backup. ``/api/past-live-scores`` is an alias for this endpoint.
 
     Query params:
         league   -- filter by competition name (substring match, case-insensitive)
@@ -2020,17 +2025,33 @@ def api_live_score_history():
     if to_date and not _valid_date_iso(to_date):
         return jsonify({"ok": False, "error": "Invalid 'to' date format (use YYYY-MM-DD)"}), 400
 
-    games = _load_live_score_history()
+    games = None
+    used_sqlite = False
+    try:
+        from shared import sqlite_store as _sqlite_store
 
-    if league:
-        league_lower = league.lower()
-        games = [g for g in games if league_lower in g.get("competition", "").lower()]
-    if from_date:
-        games = [g for g in games if g.get("kickoff_utc", "") >= from_date]
-    if to_date:
-        games = [g for g in games if g.get("kickoff_utc", "") <= to_date]
+        _sqlite_store.ensure_store()
+        if _sqlite_store.count_rows("live_score_history") > 0:
+            games = _sqlite_store.load_live_score_history(
+                competition_substr=league,
+                from_date=from_date,
+                to_date=to_date,
+            )
+            used_sqlite = True
+    except Exception:
+        games = None
+        used_sqlite = False
 
-    games.sort(key=lambda g: g.get("kickoff_utc", ""), reverse=True)
+    if not used_sqlite:
+        games = _load_live_score_history()
+        if league:
+            league_lower = league.lower()
+            games = [g for g in games if league_lower in g.get("competition", "").lower()]
+        if from_date:
+            games = [g for g in games if g.get("kickoff_utc", "") >= from_date]
+        if to_date:
+            games = [g for g in games if g.get("kickoff_utc", "") <= to_date]
+        games.sort(key=lambda g: g.get("kickoff_utc", ""), reverse=True)
 
     competitions = {}
     for g in games:
@@ -2056,14 +2077,14 @@ def api_past_games():
 
     Response structure matches ``/api/upcoming/global`` per-row format.
 
-    Data is sourced from ``past_games.json`` (updated each pipeline run with
-    today's rows copied from the upcoming API shape), ``live_score_history.json``
-    / in-memory live scores, and settled prediction CSV rows.
+    Data is sourced from SQLite (``bts_store.db`` past_games table), with
+    ``past_games.json`` dual-write backup, plus live-score history and settled
+    prediction CSV rows for freshness.
     Rows older than 30 days are excluded from this API response for display;
     the on-disk archive itself is retained (see ``BTS_PAST_GAMES_RETENTION_DAYS``).
 
     For full live-score details (lineups, stats, key events, game info),
-    use ``/api/live-score-history``.
+    use ``/api/live-score-history`` (alias ``/api/past-live-scores``).
 
     Query params:
         league   -- filter by competition name (substring match, case-insensitive)
@@ -2082,9 +2103,19 @@ def api_past_games():
 
     prediction_lookup = _build_past_game_prediction_lookup()
 
-    # ── 1. Rows from persistent archive ────────────────────────────
+    # ── 1. Rows from persistent archive (SQLite preferred) ─────────
     by_key = {}
-    archive = _load_json_payload(config.PAST_GAMES_FILE)
+    archive = None
+    try:
+        from shared import sqlite_store as _sqlite_store
+
+        _sqlite_store.ensure_store()
+        if _sqlite_store.count_rows("past_games") > 0:
+            archive = _sqlite_store.load_past_games(competition_substr=league)
+    except Exception:
+        archive = None
+    if archive is None:
+        archive = _load_json_payload(config.PAST_GAMES_FILE)
     if isinstance(archive, list):
         for r in archive:
             if _is_placeholder_game(r):

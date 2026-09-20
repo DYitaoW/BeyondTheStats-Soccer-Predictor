@@ -2850,6 +2850,14 @@ def archive_todays_games_to_past_games_file() -> int:
     except Exception:
         pass
 
+    try:
+        from shared import sqlite_store as _sqlite_store
+
+        # Upsert only newly inserted rows; full merge already lives in JSON.
+        _sqlite_store.upsert_past_games(journal_rows)
+    except Exception as exc:
+        print(f"[past-games] sqlite upsert skipped: {exc}")
+
     print(f"[past-games] {label} → past_games.json ({len(merged)} total)")
     return inserted
 
