@@ -1383,7 +1383,8 @@ def _live_score_poller_loop():
                                 g[f"_{arr_key}_len"] = len(batch)
 
             # Persist finished games again once full summary stats are attached
-            # so SQLite/JSON history keeps lineups, boxscore, key events, etc.
+            # so SQLite/JSON history keeps the same fields /api/live-scores exposes
+            # for completed games (lineups, boxscore, key events, game_info, …).
             try:
                 _persist_post_games_full_stats()
             except Exception:

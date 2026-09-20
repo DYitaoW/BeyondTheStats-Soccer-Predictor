@@ -414,6 +414,26 @@ def upsert_past_games(rows: Iterable[dict], db_path: Optional[Path] = None) -> d
             conn.close()
 
 
+def _deep_merge_payload(prior: dict, incoming: dict) -> dict:
+    """Merge live-score payloads without dropping richer nested fields."""
+    out = dict(prior or {})
+    for key, value in (incoming or {}).items():
+        if value in (None, ""):
+            continue
+        existing = out.get(key)
+        if isinstance(value, dict) and isinstance(existing, dict):
+            out[key] = _deep_merge_payload(existing, value)
+        elif isinstance(value, list):
+            # Prefer non-empty newer lists (key_events, lineups lists, etc.).
+            if value:
+                out[key] = value
+            elif existing in (None, [], ""):
+                out[key] = value
+        else:
+            out[key] = value
+    return out
+
+
 def _upsert_live_history_conn(conn: sqlite3.Connection, rows: Iterable[dict]) -> dict:
     upserted = 0
     skipped = 0
@@ -432,9 +452,7 @@ def _upsert_live_history_conn(conn: sqlite3.Connection, rows: Iterable[dict]) ->
         ).fetchone()
         if existing:
             prior = _json_loads(existing["payload_json"]) or {}
-            merged = dict(prior)
-            merged.update({k: v for k, v in row.items() if v not in (None, "")})
-            row = merged
+            row = _deep_merge_payload(prior, row)
         game_date = _row_date_iso(row) or None
         conn.execute(
             f"""

@@ -1057,28 +1057,35 @@ def _archive_completed_games():
 
 
 def _sync_predicted_games_to_sqlite(label: str = "upcoming"):
-    """Push all predicted upcoming CSV rows into SQLite as a durable backup.
+    """Push full upcoming-API-shaped rows into SQLite as a durable backup.
 
-    Runs after upcoming prediction steps so fixtures exist in the DB even if
-    later settle / live / cup steps fail.
+    Uses Website ``sync_api_shaped_predictions_to_sqlite`` so stored payloads
+    match ``/api/upcoming`` / ``/api/past-games`` field-for-field.
     """
+    website_dir = SP_DIR / "Website"
+    if str(website_dir) not in sys.path:
+        sys.path.insert(0, str(website_dir))
     try:
+        from predictions import sync_api_shaped_predictions_to_sqlite
         from shared import sqlite_store as store
 
         info = store.ensure_store()
-        result = store.sync_upcoming_predictions_from_csvs()
+        result = sync_api_shaped_predictions_to_sqlite()
         print(
-            f"  [sqlite] {label}: upserted {result.get('upserted', 0)} row(s) "
-            f"from {result.get('files', 0)} CSV(s) → {info}"
+            f"  [sqlite] {label}: upserted {result.get('upserted', 0)} upcoming + "
+            f"{result.get('past_upserted', 0)} past row(s) → {info}"
         )
         for source, stats in (result.get("by_source") or {}).items():
             if stats.get("missing"):
                 continue
+            if stats.get("error"):
+                print(f"    - {source}: error {stats.get('error')}")
+                continue
             print(
                 f"    - {source}: {stats.get('upserted', 0)} upserted "
-                f"({stats.get('rows', 0)} csv rows)"
+                f"({stats.get('rows', 0)} api rows, {stats.get('settled', 0)} settled)"
             )
-        return True
+        return bool(result.get("ok", True))
     except Exception as exc:
         print(f"  [sqlite] {label} sync failed: {exc}")
         import traceback

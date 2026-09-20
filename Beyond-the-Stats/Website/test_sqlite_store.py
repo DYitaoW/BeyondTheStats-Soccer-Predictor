@@ -235,14 +235,80 @@ class SqliteStoreTests(unittest.TestCase):
                     "lineups": {"home": ["A"], "away": ["B"]},
                     "boxscore_stats": {"possession": {"home": 55, "away": 45}},
                     "key_events": [{"type": "goal", "team": "home"}],
+                    "game_info": {"venue": "Chase Stadium"},
+                    "home_stats": {"shots": 12},
+                    "away_stats": {"shots": 8},
                 }
             ]
         )
         loaded = self.store.load_live_score_history()
         self.assertEqual(len(loaded), 1)
-        self.assertIn("lineups", loaded[0])
-        self.assertIn("boxscore_stats", loaded[0])
-        self.assertEqual(loaded[0]["home_score"], 2)
+        game = loaded[0]
+        for key in (
+            "lineups",
+            "boxscore_stats",
+            "key_events",
+            "game_info",
+            "home_stats",
+            "away_stats",
+            "home_score",
+            "away_score",
+            "status",
+            "competition",
+            "match_id",
+        ):
+            self.assertIn(key, game)
+        self.assertEqual(game["home_score"], 2)
+        self.assertEqual(game["lineups"]["home"], ["A"])
+
+    def test_past_games_roundtrip_keeps_api_fields(self):
+        api_row = {
+            "prediction_key": "pk-api",
+            "match_date": "2026-09-18",
+            "match_date_iso": "2026-09-18",
+            "match_datetime_utc": "2026-09-18T19:00:00Z",
+            "match_datetime_et": "2026-09-18T15:00:00-0400",
+            "weekday": "Friday",
+            "date_label": "September 18, 2026",
+            "time_label": "3:00 PM ET",
+            "competition": "England/Premier League",
+            "home_team": "Arsenal",
+            "away_team": "Chelsea",
+            "predicted_result": "H",
+            "winner_label": "Pred: Arsenal",
+            "prob_home": 48.5,
+            "prob_draw": 26.0,
+            "prob_away": 25.5,
+            "prob_home_text": "48.5%",
+            "prob_draw_text": "26.0%",
+            "prob_away_text": "25.5%",
+            "pred_home_goals": 2,
+            "pred_away_goals": 1,
+            "has_prediction": True,
+            "prediction_quality": "prediction",
+            "correct_score_dist": {"1-0": 0.12},
+            "double_chance": {"1X": 0.74},
+            "asian_handicap": {"line": -0.5},
+            "last_5_home": [{"opp": "Fulham", "result": "W"}],
+            "last_5_away": [{"opp": "Brighton", "result": "D"}],
+            "home_attack_rating": 1.1,
+            "away_defence_rating": 0.9,
+            "actual_result": "H",
+            "actual_home_goals": 2,
+            "actual_away_goals": 0,
+            "is_correct": "1",
+            "source": "global",
+        }
+        self.store.upsert_upcoming_games([api_row], source="global")
+        self.store.upsert_past_games([api_row])
+        loaded = self.store.load_past_games()
+        self.assertEqual(len(loaded), 1)
+        got = loaded[0]
+        for key, value in api_row.items():
+            self.assertEqual(got.get(key), value, msg=f"mismatch on {key}")
+        upcoming = self.store.load_upcoming_games(status="settled")
+        self.assertEqual(len(upcoming), 1)
+        self.assertEqual(upcoming[0].get("prob_home_text"), "48.5%")
 
 
 class PastGamesSqliteWriterTests(unittest.TestCase):

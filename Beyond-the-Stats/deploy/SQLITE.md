@@ -48,9 +48,13 @@ compatibility. APIs prefer SQLite when it has rows.
 - **SQLite never deletes** history for date limits. JSON live history may still
   prune ~30 days; SQLite keeps everything.
 
-## Quick health check in Python
+## API parity
 
-```python
-from shared import sqlite_store
-print(sqlite_store.store_info())
-```
+Pipeline sync uses the Website ``_load_upcoming_rows`` enrichment so
+``upcoming_games`` / ``past_games`` store the **same fields** returned by
+``/api/upcoming`` and ``/api/past-games`` (probs, markets, form, ratings,
+display labels, actuals, etc.).
+
+``live_score_history`` stores the full live game object (same shape as
+``/api/live-scores`` games), including summary fields after full-time
+(lineups, boxscore, key events, game_info, home/away stats).
