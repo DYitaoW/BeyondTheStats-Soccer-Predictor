@@ -1014,6 +1014,7 @@ def _check_dependencies():
         "joblib": "joblib",
         "requests": "requests",
         "bs4": "beautifulsoup4",
+        "sqlite3": "sqlite3 (stdlib)",
     }
     print("\n--- Pre-flight dependency check ---")
     all_ok = True
@@ -1053,6 +1054,36 @@ def _archive_completed_games():
         print(f"  [past-games] Archive failed: {exc}")
         import traceback
         traceback.print_exc()
+
+
+def _sync_predicted_games_to_sqlite(label: str = "upcoming"):
+    """Push all predicted upcoming CSV rows into SQLite as a durable backup.
+
+    Runs after upcoming prediction steps so fixtures exist in the DB even if
+    later settle / live / cup steps fail.
+    """
+    try:
+        from shared import sqlite_store as store
+
+        info = store.ensure_store()
+        result = store.sync_upcoming_predictions_from_csvs()
+        print(
+            f"  [sqlite] {label}: upserted {result.get('upserted', 0)} row(s) "
+            f"from {result.get('files', 0)} CSV(s) → {info}"
+        )
+        for source, stats in (result.get("by_source") or {}).items():
+            if stats.get("missing"):
+                continue
+            print(
+                f"    - {source}: {stats.get('upserted', 0)} upserted "
+                f"({stats.get('rows', 0)} csv rows)"
+            )
+        return True
+    except Exception as exc:
+        print(f"  [sqlite] {label} sync failed: {exc}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 _REAL_STANDINGS_FILE = _paths.STANDINGS_CACHE_FILE
@@ -1226,6 +1257,14 @@ def run_full_pipeline(args, api_token, results=None):
     # its projection step (OOM / uncaught executor exception on the host).
     results.update(_ensure_projected_tables(args))
 
+    # Backup predicted fixtures into SQLite as soon as upcoming CSVs exist,
+    # before settle/live post-steps that might fail. Best-effort: never blocks
+    # the pipeline fail-fast barrier.
+    if not _tables_only():
+        print("\n=== [sqlite] Sync predicted upcoming games after sub-pipelines ===")
+        _sync_predicted_games_to_sqlite("post-subpipelines")
+        results["sqlite_sync_upcoming"] = True
+
     if any(not v for v in results.values()) and not args.continue_on_error:
         print(
             "\n[barrier] not starting league-dependent post-pipeline steps: an earlier step failed "
@@ -1242,6 +1281,9 @@ def run_full_pipeline(args, api_token, results=None):
         if not _tables_only():
             print("\n=== [past-games] Archive completed games to past_games.json ===")
             _archive_completed_games()
+            print("\n=== [sqlite] Re-sync upcoming/settled rows after settle ===")
+            _sync_predicted_games_to_sqlite("post-settle")
+            results["sqlite_sync_after_settle"] = True
         else:
             print("\n[tables-only] Skipped settle/friendlies/archive steps")
         print(f"  [TIMING] post-pipeline steps: {time.monotonic() - post_start:.1f}s")
@@ -1255,6 +1297,10 @@ def run_full_pipeline(args, api_token, results=None):
     cups_start = time.monotonic()
     results.update(_run_cups_last(args))
     print(f"  [TIMING] cup predictions: {time.monotonic() - cups_start:.1f}s")
+    # Cups write their own upcoming CSV; always sync after cups refresh.
+    print("\n=== [sqlite] Sync after cup predictions ===")
+    _sync_predicted_games_to_sqlite("post-cups")
+    results["sqlite_sync_after_cups"] = True
     print(f"\n[TIMING] full pipeline: {time.monotonic() - pipeline_start:.1f}s")
     print(f"[DEBUG] pipeline wall clock done at T+{time.monotonic() - _pipeline_start_global:.0f}s")
 

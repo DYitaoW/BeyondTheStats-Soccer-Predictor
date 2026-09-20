@@ -813,7 +813,7 @@ def _upsert_live_score_history(games, as_of=None):
                     from shared import sqlite_store as _sqlite_store
 
                     # Append/upsert into SQLite without applying the JSON 30-day
-                    # prune so APIs retain long-term history.
+                    # prune so APIs retain long-term history forever.
                     _sqlite_store.upsert_live_score_history(list(by_key.values()) + keyless)
                 except Exception as exc:
                     print(f"[live-history] sqlite upsert skipped: {exc}")

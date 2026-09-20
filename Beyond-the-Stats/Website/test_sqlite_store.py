@@ -162,6 +162,88 @@ class SqliteStoreTests(unittest.TestCase):
         self.assertIn("old-match", ids)
         self.assertIn("new-match", ids)
 
+    def test_sync_upcoming_csvs_and_settled_to_past(self):
+        import pandas as pd
+
+        csv_path = Path(self.tmp.name) / "upcoming.csv"
+        pd.DataFrame(
+            [
+                {
+                    "prediction_key": "up-1",
+                    "match_date": "2026-09-21",
+                    "competition": "England/Premier League",
+                    "home_team": "Arsenal",
+                    "away_team": "Chelsea",
+                    "predicted_result": "H",
+                    "actual_result": "",
+                },
+                {
+                    "prediction_key": "up-2",
+                    "match_date": "2026-09-18",
+                    "competition": "England/Premier League",
+                    "home_team": "Liverpool",
+                    "away_team": "Everton",
+                    "predicted_result": "D",
+                    "actual_result": "D",
+                    "actual_home_goals": 1,
+                    "actual_away_goals": 1,
+                },
+            ]
+        ).to_csv(csv_path, index=False)
+
+        result = self.store.sync_upcoming_predictions_from_csvs(
+            sources=[("global", csv_path)],
+            db_path=self.db,
+        )
+        self.assertEqual(result["upserted"], 2)
+        upcoming = self.store.load_upcoming_games(status="upcoming")
+        settled = self.store.load_upcoming_games(status="settled")
+        self.assertEqual(len(upcoming), 1)
+        self.assertEqual(len(settled), 1)
+        past = self.store.load_past_games()
+        self.assertEqual({r.get("prediction_key") for r in past}, {"up-2"})
+        info = self.store.store_info(self.db)
+        self.assertTrue(info["never_deletes"])
+        self.assertEqual(info["tables"]["upcoming_games"], 2)
+
+    def test_live_history_keeps_full_stats_on_update(self):
+        self.store.upsert_live_score_history(
+            [
+                {
+                    "match_id": "stats-1",
+                    "kickoff_utc": "2026-09-18T19:00:00Z",
+                    "competition": "USA/Major League Soccer",
+                    "home_team": "Inter Miami",
+                    "away_team": "Atlanta United",
+                    "home_score": 2,
+                    "away_score": 1,
+                    "status": "post",
+                }
+            ]
+        )
+        self.store.upsert_live_score_history(
+            [
+                {
+                    "match_id": "stats-1",
+                    "kickoff_utc": "2026-09-18T19:00:00Z",
+                    "competition": "USA/Major League Soccer",
+                    "home_team": "Inter Miami",
+                    "away_team": "Atlanta United",
+                    "home_score": 2,
+                    "away_score": 1,
+                    "status": "post",
+                    "lineups": {"home": ["A"], "away": ["B"]},
+                    "boxscore_stats": {"possession": {"home": 55, "away": 45}},
+                    "key_events": [{"type": "goal", "team": "home"}],
+                }
+            ]
+        )
+        loaded = self.store.load_live_score_history()
+        self.assertEqual(len(loaded), 1)
+        self.assertIn("lineups", loaded[0])
+        self.assertIn("boxscore_stats", loaded[0])
+        self.assertEqual(loaded[0]["home_score"], 2)
+
 
 class PastGamesSqliteWriterTests(unittest.TestCase):
     def test_save_completed_dual_writes_sqlite(self):

@@ -1,8 +1,14 @@
-"""SQLite append/upsert store for past games and live-score history.
+"""SQLite append/upsert store for past games, upcoming predictions, and live history.
 
 JSON files remain as dual-write backups for deploy compatibility; APIs and
 in-process readers prefer SQLite when rows exist (auto-migrating from JSON
 on first open).
+
+SQLite never deletes rows for date-window limits. Tables:
+
+- ``upcoming_games`` — predicted fixtures synced from upcoming CSVs
+- ``past_games`` — settled prediction archive
+- ``live_score_history`` — finished live games with full stats
 """
 from __future__ import annotations
 
@@ -19,11 +25,12 @@ try:
 except Exception:  # pragma: no cover - script bootstrap fallback
     _paths = None  # type: ignore
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _WRITE_LOCK = threading.RLock()
 
 _PAST_TABLE = "past_games"
 _LIVE_TABLE = "live_score_history"
+_UPCOMING_TABLE = "upcoming_games"
 _META_TABLE = "store_meta"
 
 
@@ -146,6 +153,40 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         f"""
         CREATE INDEX IF NOT EXISTS idx_live_hist_date
         ON {_LIVE_TABLE}(game_date)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {_UPCOMING_TABLE} (
+            storage_key TEXT PRIMARY KEY,
+            match_date_iso TEXT,
+            competition TEXT,
+            home_team TEXT,
+            away_team TEXT,
+            prediction_key TEXT,
+            source TEXT,
+            status TEXT,
+            payload_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_upcoming_date
+        ON {_UPCOMING_TABLE}(match_date_iso)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_upcoming_comp
+        ON {_UPCOMING_TABLE}(competition)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_upcoming_status
+        ON {_UPCOMING_TABLE}(status)
         """
     )
     conn.execute(
@@ -537,7 +578,7 @@ def load_live_score_history(
 
 
 def count_rows(table: str, db_path: Optional[Path] = None) -> int:
-    if table not in {_PAST_TABLE, _LIVE_TABLE}:
+    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE}:
         raise ValueError(f"unknown table: {table}")
     ensure_store(db_path)
     conn = _open_ready(db_path)
@@ -548,21 +589,248 @@ def count_rows(table: str, db_path: Optional[Path] = None) -> int:
         conn.close()
 
 
+def _row_status(row: dict) -> str:
+    actual = str(row.get("actual_result", "") or "").strip().upper()
+    if actual in {"H", "D", "A"}:
+        return "settled"
+    return "upcoming"
+
+
+def _sanitize_csv_value(value: Any) -> Any:
+    if value is None:
+        return None
+    try:
+        import math
+
+        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+            return None
+    except Exception:
+        pass
+    try:
+        import pandas as pd
+
+        if isinstance(value, pd.Timestamp):
+            return None if pd.isna(value) else value.isoformat()
+        try:
+            if pd.isna(value):
+                return None
+        except Exception:
+            pass
+    except Exception:
+        pass
+    if isinstance(value, (datetime,)):
+        return value.isoformat()
+    return value
+
+
+def _frame_rows_to_dicts(frame) -> list[dict]:
+    rows: list[dict] = []
+    for _, series in frame.iterrows():
+        row = {str(k): _sanitize_csv_value(series[k]) for k in frame.columns}
+        rows.append(row)
+    return rows
+
+
+def _upsert_upcoming_conn(conn: sqlite3.Connection, rows: Iterable[dict], source: str = "") -> dict:
+    upserted = 0
+    skipped = 0
+    now = _utc_now()
+    for row in rows:
+        if not isinstance(row, dict):
+            skipped += 1
+            continue
+        payload = dict(row)
+        if source and not payload.get("source"):
+            payload["source"] = source
+        key = past_game_storage_key(payload)
+        if not key:
+            skipped += 1
+            continue
+        date_iso = _row_date_iso(payload) or None
+        if date_iso and not payload.get("match_date_iso"):
+            payload["match_date_iso"] = date_iso
+        status = _row_status(payload)
+        payload["status"] = status
+        conn.execute(
+            f"""
+            INSERT INTO {_UPCOMING_TABLE}(
+                storage_key, match_date_iso, competition, home_team, away_team,
+                prediction_key, source, status, payload_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(storage_key) DO UPDATE SET
+                match_date_iso = excluded.match_date_iso,
+                competition = excluded.competition,
+                home_team = excluded.home_team,
+                away_team = excluded.away_team,
+                prediction_key = excluded.prediction_key,
+                source = COALESCE(excluded.source, {_UPCOMING_TABLE}.source),
+                status = excluded.status,
+                payload_json = excluded.payload_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                key,
+                date_iso,
+                str(payload.get("competition", "") or "").strip() or None,
+                str(payload.get("home_team", "") or "").strip() or None,
+                str(payload.get("away_team", "") or "").strip() or None,
+                str(payload.get("prediction_key", "") or "").strip() or None,
+                str(payload.get("source", "") or source or "").strip() or None,
+                status,
+                _json_dumps(payload),
+                now,
+            ),
+        )
+        upserted += 1
+        # Settled rows also land in past_games so /api/past-games has them.
+        if status == "settled":
+            _upsert_past_games_conn(conn, [payload])
+    return {"upserted": upserted, "skipped": skipped}
+
+
+def upsert_upcoming_games(
+    rows: Iterable[dict],
+    *,
+    source: str = "",
+    db_path: Optional[Path] = None,
+) -> dict:
+    """Append/update predicted upcoming (and settled) fixture rows."""
+    rows = list(rows or [])
+    if not rows:
+        return {"upserted": 0, "skipped": 0}
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            result = _upsert_upcoming_conn(conn, rows, source=source)
+            conn.execute("COMMIT")
+            return result
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def load_upcoming_games(
+    *,
+    competition_substr: str = "",
+    status: str = "",
+    from_date: str = "",
+    to_date: str = "",
+    db_path: Optional[Path] = None,
+) -> list[dict]:
+    """Return upcoming/predicted game payloads, soonest first."""
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        clauses = []
+        params: list[Any] = []
+        if competition_substr:
+            clauses.append("LOWER(COALESCE(competition, '')) LIKE ?")
+            params.append(f"%{competition_substr.lower()}%")
+        if status:
+            clauses.append("LOWER(COALESCE(status, '')) = ?")
+            params.append(status.lower())
+        if from_date:
+            clauses.append("COALESCE(match_date_iso, '') >= ?")
+            params.append(from_date[:10])
+        if to_date:
+            clauses.append("COALESCE(match_date_iso, '') <= ?")
+            params.append(to_date[:10])
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = conn.execute(
+            f"""
+            SELECT payload_json FROM {_UPCOMING_TABLE}
+            {where}
+            ORDER BY COALESCE(match_date_iso, '') ASC, updated_at DESC
+            """,
+            params,
+        ).fetchall()
+        return _decode_rows(rows)
+    finally:
+        conn.close()
+
+
+def _default_upcoming_sources() -> list[tuple[str, Path]]:
+    if _paths is None:
+        base = Path(__file__).resolve().parent.parent / "Output" / "Predictions"
+        return [
+            ("global", base / "europe" / "upcoming_matchweek_predictions.csv"),
+            ("mls", base / "mls" / "upcoming_matchweek_predictions.csv"),
+            ("extra", base / "extra" / "upcoming_matchweek_predictions.csv"),
+            ("cups", base / "cups" / "upcoming_cup_predictions.csv"),
+            ("national", base / "national" / "upcoming_national_team_predictions.csv"),
+            ("friendlies", base / "friendlies" / "upcoming_club_friendlies.csv"),
+        ]
+    return [
+        ("global", Path(_paths.GLOBAL_UPCOMING_FILE)),
+        ("mls", Path(_paths.MLS_UPCOMING_FILE)),
+        ("extra", Path(_paths.EXTRA_UPCOMING_FILE)),
+        ("cups", Path(_paths.CUP_UPCOMING_FILE)),
+        ("national", Path(_paths.NATIONAL_UPCOMING_FILE)),
+        ("friendlies", Path(_paths.FRIENDLIES_UPCOMING_FILE)),
+    ]
+
+
+def sync_upcoming_predictions_from_csvs(
+    sources: Optional[Iterable[tuple[str, Path | str]]] = None,
+    db_path: Optional[Path] = None,
+) -> dict:
+    """Push all predicted upcoming CSV rows into SQLite (backup + continuity).
+
+    Called from the pipeline after upcoming prediction steps so the DB holds
+    fixtures even if later settle/live steps fail.
+    """
+    try:
+        import pandas as pd
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("pandas is required to sync upcoming CSVs") from exc
+
+    pairs = list(sources) if sources is not None else _default_upcoming_sources()
+    totals = {"files": 0, "upserted": 0, "skipped": 0, "missing": 0, "by_source": {}}
+    ensure_store(db_path)
+
+    for source, path in pairs:
+        csv_path = Path(path)
+        if not csv_path.is_file():
+            totals["missing"] += 1
+            totals["by_source"][source] = {"upserted": 0, "skipped": 0, "missing": True}
+            continue
+        try:
+            frame = pd.read_csv(csv_path)
+        except Exception as exc:
+            print(f"[sqlite-store] failed reading {csv_path}: {exc}")
+            totals["by_source"][source] = {"upserted": 0, "skipped": 0, "error": str(exc)}
+            continue
+        if frame is None or frame.empty:
+            totals["by_source"][source] = {"upserted": 0, "skipped": 0, "empty": True}
+            continue
+        rows = _frame_rows_to_dicts(frame)
+        result = upsert_upcoming_games(rows, source=source, db_path=db_path)
+        totals["files"] += 1
+        totals["upserted"] += result["upserted"]
+        totals["skipped"] += result["skipped"]
+        totals["by_source"][source] = {
+            "upserted": result["upserted"],
+            "skipped": result["skipped"],
+            "rows": len(rows),
+        }
+    return totals
+
+
 def replace_live_score_history_snapshot(
     rows: Iterable[dict], db_path: Optional[Path] = None
 ) -> dict:
-    """Full replace used only when JSON writer has already pruned/deduped.
+    """Upsert a live-history snapshot without deleting older SQLite rows.
 
-    Prefer ``upsert_live_score_history`` for normal appends. This keeps SQLite
-    aligned when the JSON path rewrites the whole list.
+    JSON may still prune to ~30 days; SQLite retains forever.
     """
     rows = [r for r in (rows or []) if isinstance(r, dict)]
     with _WRITE_LOCK:
         conn = _open_ready(db_path)
         try:
             conn.execute("BEGIN IMMEDIATE")
-            # Upsert incoming, then drop keys that disappeared from the snapshot
-            # only when the snapshot is non-empty (never wipe on empty poll).
             if not rows:
                 conn.execute("COMMIT")
                 return {"upserted": 0, "deleted": 0, "total": count_rows(_LIVE_TABLE, db_path)}
@@ -572,9 +840,6 @@ def replace_live_score_history_snapshot(
             }
             result = _upsert_live_history_conn(conn, rows)
             after_keys = {live_history_storage_key(r) for r in rows if live_history_storage_key(r)}
-            # Do not delete keys missing from a partial poll snapshot — only
-            # upsert. Full delete-missing would erase long-term SQLite history
-            # whenever JSON is pruned to 30 days.
             conn.execute("COMMIT")
             return {
                 "upserted": result["upserted"],
@@ -588,3 +853,19 @@ def replace_live_score_history_snapshot(
             raise
         finally:
             conn.close()
+
+
+def store_info(db_path: Optional[Path] = None) -> dict:
+    """Return path + row counts for ops / health checks."""
+    path = ensure_store(db_path)
+    return {
+        "path": str(path),
+        "exists": path.is_file(),
+        "schema_version": _SCHEMA_VERSION,
+        "tables": {
+            _PAST_TABLE: count_rows(_PAST_TABLE, path),
+            _LIVE_TABLE: count_rows(_LIVE_TABLE, path),
+            _UPCOMING_TABLE: count_rows(_UPCOMING_TABLE, path),
+        },
+        "never_deletes": True,
+    }

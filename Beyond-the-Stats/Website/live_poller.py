@@ -120,38 +120,89 @@ def _flush_completed_live_scores_to_history():
 
 
 def _merge_completed_to_history():
-    """Move finished games from _live_scores into persistent history file.
+    """Move finished games from _live_scores into persistent history.
 
     Stores all game data including summary fields (lineups, h2h, key events,
     boxscore stats) that were merged onto game objects from ``_live_summary_cache``.
+
+    Always upserts current ``post`` games (not only first-seen) so a later
+    summary fetch can enrich the SQLite/JSON row with full stats. SQLite never
+    prunes these rows.
 
     Returns the set of competition names that received newly completed games.
     """
     history = _load_live_score_history()
     historic_ids = {g["match_id"] for g in history if g.get("match_id")}
     new_games = []
+    all_post = []
     cleared_standings = set()
-    with _live_scores_lock:
+    with _live_scores_lock, _live_summary_cache_lock:
         for comp_name, comp_data in _live_scores.items():
             for g in comp_data.get("games", []):
                 status = str(g.get("status", "")).strip().lower()
-                if status == "post" and g.get("match_id") not in historic_ids:
-                    entry = dict(g)
-                    entry.setdefault("competition", comp_name)
-                    entry.setdefault("completed_at", datetime.now(timezone.utc).isoformat())
+                if status != "post":
+                    continue
+                entry = dict(g)
+                entry.setdefault("competition", comp_name)
+                entry.setdefault("completed_at", datetime.now(timezone.utc).isoformat())
+                mid = entry.get("match_id")
+                if mid:
+                    cached = _live_summary_cache.get(mid) or {}
+                    if cached:
+                        for key, value in cached.items():
+                            if value not in (None, "", [], {}):
+                                entry[key] = value
+                all_post.append(entry)
+                if mid and mid not in historic_ids:
                     new_games.append(entry)
-                    historic_ids.add(entry["match_id"])
+                    historic_ids.add(mid)
+                    cleared_standings.add(comp_name)
+                elif not mid:
+                    new_games.append(entry)
                     cleared_standings.add(comp_name)
     for comp in cleared_standings:
         _clear_standings_cache(comp)
         _clear_leaders_cache(comp)
-    if new_games:
-        _upsert_live_score_history(new_games)
+    if all_post:
+        _upsert_live_score_history(all_post)
     # Track predictions for newly completed games against our CSV predictions.
     if new_games:
         _track_prediction_results(new_games)
     return cleared_standings
 
+
+def _persist_post_games_full_stats():
+    """Re-upsert finished games after summary enrichment (lineups/boxscore/etc.)."""
+    enriched = []
+    with _live_scores_lock, _live_summary_cache_lock:
+        for comp_name, comp_data in _live_scores.items():
+            for g in comp_data.get("games", []):
+                if str(g.get("status", "")).strip().lower() != "post":
+                    continue
+                entry = dict(g)
+                entry.setdefault("competition", comp_name)
+                entry.setdefault("completed_at", datetime.now(timezone.utc).isoformat())
+                mid = entry.get("match_id")
+                if mid and mid in _live_summary_cache:
+                    entry.update(_live_summary_cache[mid])
+                # Only rewrite when we actually have richer detail.
+                has_detail = any(
+                    entry.get(key)
+                    for key in (
+                        "lineups",
+                        "boxscore_stats",
+                        "key_events",
+                        "home_stats",
+                        "away_stats",
+                        "game_info",
+                        "h2h",
+                    )
+                )
+                if has_detail or mid:
+                    enriched.append(entry)
+    if enriched:
+        _upsert_live_score_history(enriched)
+    return len(enriched)
 def _effective_poller_date():
     """Return the primary ET calendar date for live-score polling.
 
@@ -1330,6 +1381,14 @@ def _live_score_poller_loop():
                                 persistent = g.setdefault(arr_key, [])
                                 persistent.extend(new_items)
                                 g[f"_{arr_key}_len"] = len(batch)
+
+            # Persist finished games again once full summary stats are attached
+            # so SQLite/JSON history keeps lineups, boxscore, key events, etc.
+            try:
+                _persist_post_games_full_stats()
+            except Exception:
+                import traceback
+                traceback.print_exc()
 
             # ── Event push notifications (goals, red cards, halftime, full time) ──
             try:
