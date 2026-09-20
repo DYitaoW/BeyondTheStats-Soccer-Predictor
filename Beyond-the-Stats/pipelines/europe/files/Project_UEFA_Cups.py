@@ -233,17 +233,79 @@ def _rank_items(table: dict):
     )
 
 
-def _build_real_and_pending(competition: str, completed: pd.DataFrame, upcoming: pd.DataFrame):
+def _canon_team(name: str, competition: str, mapping, roster: set[str]) -> str:
+    """Map ESPN / alias names onto the league-phase roster when possible."""
+    raw = str(name or "").strip()
+    if not raw:
+        return raw
+    if raw in roster:
+        return raw
+    try:
+        resolved, ok = track.resolve_cup_team_name(raw, competition, mapping, roster or {raw})
+        if ok and resolved:
+            return str(resolved).strip()
+    except Exception:
+        pass
+    # Soft suffix / containment match against roster.
+    raw_key = track.normalize_team_key(raw)
+    hits = []
+    for team in roster:
+        tk = track.normalize_team_key(team)
+        if not raw_key or not tk:
+            continue
+        if raw_key == tk or raw_key.endswith(tk) or tk.endswith(raw_key):
+            hits.append(team)
+    if len(hits) == 1:
+        return hits[0]
+    return raw
+
+
+def _build_real_and_pending(competition: str, completed: pd.DataFrame, upcoming: pd.DataFrame, mapping=None):
+    """Build live table + pending fixtures for one UEFA competition.
+
+    Roster is the set of teams appearing in upcoming league-phase fixtures
+    (36 for CL/EL/ECL). Completed results are only applied when both sides
+    resolve onto that roster, which drops qualifying / mis-tagged / alias dupes.
+    """
     max_matches = uefa_ko.UEFA_PHASE_MATCHES.get(competition, 8)
-    real_table = {}
-    played_real = {}
-    comp_completed = completed[completed["competition"] == competition] if not completed.empty else completed
-    for _, row in (comp_completed or pd.DataFrame()).iterrows():
+    mapping = mapping if mapping is not None else {}
+
+    if upcoming is None or getattr(upcoming, "empty", True):
+        comp_upcoming = pd.DataFrame()
+    else:
+        comp_upcoming = upcoming.loc[upcoming["competition"] == competition].copy()
+
+    roster: set[str] = set()
+    upcoming_phase_rows = []
+    for _, row in comp_upcoming.iterrows():
         if not track._is_league_phase_cup_row(row, competition):
             continue
         home = str(row.get("home_team") or "").strip()
         away = str(row.get("away_team") or "").strip()
         if not track._is_known_team(home) or not track._is_known_team(away):
+            continue
+        roster.add(home)
+        roster.add(away)
+        upcoming_phase_rows.append(row)
+
+    if completed is None or getattr(completed, "empty", True):
+        comp_completed = pd.DataFrame()
+    else:
+        comp_completed = completed.loc[completed["competition"] == competition].copy()
+
+    real_table = {}
+    played_real = {}
+    for _, row in comp_completed.iterrows():
+        if not track._is_league_phase_cup_row(row, competition):
+            continue
+        home_raw = str(row.get("home_team") or "").strip()
+        away_raw = str(row.get("away_team") or "").strip()
+        if not track._is_known_team(home_raw) or not track._is_known_team(away_raw):
+            continue
+        home = _canon_team(home_raw, competition, mapping, roster) if roster else home_raw
+        away = _canon_team(away_raw, competition, mapping, roster) if roster else away_raw
+        if roster and (home not in roster or away not in roster):
+            # Qualifying / wrong-competition / unresolved alias — skip.
             continue
         if played_real.get(home, 0) >= max_matches or played_real.get(away, 0) >= max_matches:
             continue
@@ -254,22 +316,30 @@ def _build_real_and_pending(competition: str, completed: pd.DataFrame, upcoming:
         _apply_result(real_table, home, away, hg, ag, is_real=True)
         played_real[home] = played_real.get(home, 0) + 1
         played_real[away] = played_real.get(away, 0) + 1
+        if not roster:
+            roster.add(home)
+            roster.add(away)
 
     pending = []
     played = dict(played_real)
-    comp_upcoming = upcoming[upcoming["competition"] == competition] if not upcoming.empty else upcoming
-    for _, row in (comp_upcoming or pd.DataFrame()).iterrows():
-        if not track._is_league_phase_cup_row(row, competition):
-            continue
+    seen_keys = set()
+    for row in upcoming_phase_rows:
         home = str(row.get("home_team") or "").strip()
         away = str(row.get("away_team") or "").strip()
-        if not track._is_known_team(home) or not track._is_known_team(away):
-            continue
         if played.get(home, 0) >= max_matches or played.get(away, 0) >= max_matches:
             continue
+        key = str(row.get("prediction_key") or f"{row.get('match_date')}|{home}|{away}")
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
         pending.append(row)
         played[home] = played.get(home, 0) + 1
         played[away] = played.get(away, 0) + 1
+
+    # Ensure every roster team appears on the live table even at 0 played.
+    for team in roster:
+        real_table.setdefault(team, _init_table_stats())
+
     return real_table, pending, max_matches
 
 
@@ -336,9 +406,11 @@ def _table_rows_from_stats(competition, table, pos_counts, runs):
     return rows
 
 
-def project_competition(competition: str, completed: pd.DataFrame, upcoming: pd.DataFrame, rng: np.random.Generator):
+def project_competition(competition: str, completed: pd.DataFrame, upcoming: pd.DataFrame, rng: np.random.Generator, mapping=None):
     _progress(f"[uefa] START {competition}")
-    real_table, pending_rows, max_matches = _build_real_and_pending(competition, completed, upcoming)
+    real_table, pending_rows, max_matches = _build_real_and_pending(
+        competition, completed, upcoming, mapping=mapping
+    )
     predictions_index = track._build_predictions_index(upcoming)
     predict_fn = _make_predict_fn(predictions_index)
 
@@ -531,7 +603,7 @@ def refresh_uefa_cup_projections() -> dict:
 
     for competition in uefa_ko.UEFA_COMPETITIONS:
         projected, real, finish_probs, illustrative, sims = project_competition(
-            competition, uefa_completed, pending_df, rng
+            competition, uefa_completed, pending_df, rng, mapping=mapping
         )
         all_projected.extend(projected)
         all_real.extend(real)
