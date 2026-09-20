@@ -41,8 +41,10 @@ compatibility. APIs prefer SQLite when it has rows.
 
 ## When rows are written
 
-- **After upcoming predictions** (and again after settle / cups): pipeline syncs
-  all upcoming CSVs into `upcoming_games` (settled rows also upsert `past_games`).
+- **Pipeline start**: sync whatever prediction CSVs already exist (pre-run snapshot).
+- **After sub-pipelines**: sync newly written upcoming CSVs (before settle/cups).
+- **Pipeline end** (`finally`): always sync again — even if a later step failed —
+  so SQLite has the freshest on-disk rows from this run.
 - **When a live game ends**: poller upserts the finished game; after ESPN summary
   fetch it re-upserts with lineups / boxscore / key events / etc.
 - **SQLite never deletes** history for date limits. JSON live history may still
@@ -50,11 +52,21 @@ compatibility. APIs prefer SQLite when it has rows.
 
 ## API parity
 
-Pipeline sync uses the Website ``_load_upcoming_rows`` enrichment so
-``upcoming_games`` / ``past_games`` store the **same fields** returned by
-``/api/upcoming`` and ``/api/past-games`` (probs, markets, form, ratings,
+Pipeline sync uses the Website `_load_upcoming_rows` enrichment so
+`upcoming_games` / `past_games` store the **same fields** returned by
+`/api/upcoming` and `/api/past-games` (probs, markets, form, ratings,
 display labels, actuals, etc.).
 
-``live_score_history`` stores the full live game object (same shape as
-``/api/live-scores`` games), including summary fields after full-time
+`live_score_history` stores the full live game object (same shape as
+`/api/live-scores` games), including summary fields after full-time
 (lineups, boxscore, key events, game_info, home/away stats).
+
+`/api/past-games` and `/api/live-score-history` (`/api/past-live-scores`) read
+from SQLite first and return those full payloads.
+
+## Quick health check in Python
+
+```python
+from shared import sqlite_store
+print(sqlite_store.store_info())
+```
