@@ -310,6 +310,34 @@ class SqliteStoreTests(unittest.TestCase):
         self.assertEqual(len(upcoming), 1)
         self.assertEqual(upcoming[0].get("prob_home_text"), "48.5%")
 
+    def test_store_is_on_disk_not_memory(self):
+        self.store.upsert_past_games(
+            [
+                {
+                    "prediction_key": "disk-1",
+                    "match_date": "2026-09-18",
+                    "competition": "England/Premier League",
+                    "home_team": "Arsenal",
+                    "away_team": "Chelsea",
+                    "actual_result": "H",
+                }
+            ]
+        )
+        self.assertTrue(self.db.is_file())
+        self.assertGreater(self.db.stat().st_size, 0)
+        info = self.store.store_info(self.db)
+        self.assertTrue(info["on_disk"])
+        self.assertTrue(info["persists_across_reboot"])
+        self.assertNotEqual(str(self.db), ":memory:")
+        # Re-open from path alone — data must still be there (disk, not RAM).
+        loaded = self.store.load_past_games(db_path=self.db)
+        self.assertEqual(len(loaded), 1)
+
+    def test_refuses_memory_database(self):
+        with mock.patch.dict(os.environ, {"BTS_SQLITE_STORE_PATH": ":memory:"}):
+            with self.assertRaises(ValueError):
+                self.store._db_path()
+
 
 class PastGamesSqliteWriterTests(unittest.TestCase):
     def test_save_completed_dual_writes_sqlite(self):

@@ -3,13 +3,32 @@
 The backend uses Python’s built-in **`sqlite3`** module. There is **nothing to
 pip-install** for SQLite itself.
 
-## What gets created
+## Persistence (not RAM)
 
-On first write/read the backend creates:
+The database is a normal **on-disk file**:
 
 ```
 Beyond-the-Stats/Output/Status/bts_store.db
 ```
+
+(+ optional `bts_store.db-wal` / `bts_store.db-shm` while the process is open)
+
+| Event | What happens to the DB |
+|-------|-------------------------|
+| PC / server reboot | Survives — file is on the filesystem |
+| Backend crash / kill | Survives — writes use `synchronous=FULL` + WAL checkpoint |
+| `git pull` / checkout | Survives — `Output/**` is gitignored (not in the repo) |
+| `git clean -fdx` of `Output/` | **Would delete it** — avoid on the production host |
+
+It is **never** opened as `:memory:`. Override path only with another **disk** path:
+
+```
+Environment="BTS_SQLITE_STORE_PATH=/absolute/path/bts_store.db"
+```
+
+## What gets created
+
+On first write/read the backend creates the file above under `Output/Status/`.
 
 Tables (auto-created, schema v2):
 

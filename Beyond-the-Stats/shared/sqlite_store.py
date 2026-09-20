@@ -66,10 +66,22 @@ def _live_history_json() -> Path:
 
 
 def _db_path() -> Path:
+    """Return the on-disk SQLite path (never ``:memory:`` / RAM-only)."""
     override = os.environ.get("BTS_SQLITE_STORE_PATH", "").strip()
-    if override:
-        return Path(override)
-    return _default_db_path()
+    raw = override if override else str(_default_db_path())
+    lowered = raw.strip().lower()
+    if (
+        not raw
+        or lowered in {":memory:", "file::memory:"}
+        or lowered.startswith("file:mem")
+        or "mode=memory" in lowered
+    ):
+        raise ValueError(
+            f"BTS SQLite store must be an on-disk file path, not in-memory ({raw!r})"
+        )
+    path = Path(raw).expanduser()
+    path = path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve()
+    return path
 
 
 def _utc_now() -> str:
@@ -77,14 +89,29 @@ def _utc_now() -> str:
 
 
 def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
+    """Open a durable on-disk SQLite connection (WAL + full sync)."""
     path = Path(db_path) if db_path is not None else _db_path()
+    if str(path) == ":memory:":
+        raise ValueError("refusing to open in-memory SQLite store")
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), timeout=30, isolation_level=None)
+    conn = sqlite3.connect(str(path), timeout=30, isolation_level=None, uri=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
+    mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+    if mode and str(mode[0]).lower() == "memory":
+        conn.execute("PRAGMA journal_mode=DELETE")
+    conn.execute("PRAGMA synchronous=FULL")
     conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA temp_store=FILE")
     return conn
+
+
+def _durable_commit(conn: sqlite3.Connection) -> None:
+    """Commit and push WAL frames to the main ``.db`` file on disk."""
+    conn.execute("COMMIT")
+    try:
+        conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+    except sqlite3.Error:
+        pass
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
@@ -327,6 +354,10 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
                 f"INSERT OR REPLACE INTO {_META_TABLE}(key, value) VALUES (?, ?)",
                 ("json_migrated", "1"),
             )
+            try:
+                conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            except sqlite3.Error:
+                pass
             return {
                 "past_games": past_count,
                 "live_score_history": live_count,
@@ -337,8 +368,10 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
 
 
 def ensure_store(db_path: Optional[Path] = None) -> Path:
-    """Ensure DB exists, schema is ready, and JSON has been migrated once."""
+    """Ensure on-disk DB exists, schema is ready, and JSON has been migrated once."""
     path = Path(db_path) if db_path is not None else _db_path()
+    if str(path) == ":memory:":
+        raise ValueError("refusing to use in-memory SQLite store")
     with _WRITE_LOCK:
         conn = _open_ready(path)
         conn.close()
@@ -405,7 +438,7 @@ def upsert_past_games(rows: Iterable[dict], db_path: Optional[Path] = None) -> d
         try:
             conn.execute("BEGIN IMMEDIATE")
             result = _upsert_past_games_conn(conn, rows)
-            conn.execute("COMMIT")
+            _durable_commit(conn)
             return result
         except Exception:
             conn.execute("ROLLBACK")
@@ -497,7 +530,7 @@ def upsert_live_score_history(rows: Iterable[dict], db_path: Optional[Path] = No
         try:
             conn.execute("BEGIN IMMEDIATE")
             result = _upsert_live_history_conn(conn, rows)
-            conn.execute("COMMIT")
+            _durable_commit(conn)
             return result
         except Exception:
             conn.execute("ROLLBACK")
@@ -721,7 +754,7 @@ def upsert_upcoming_games(
         try:
             conn.execute("BEGIN IMMEDIATE")
             result = _upsert_upcoming_conn(conn, rows, source=source)
-            conn.execute("COMMIT")
+            _durable_commit(conn)
             return result
         except Exception:
             conn.execute("ROLLBACK")
@@ -850,7 +883,7 @@ def replace_live_score_history_snapshot(
         try:
             conn.execute("BEGIN IMMEDIATE")
             if not rows:
-                conn.execute("COMMIT")
+                _durable_commit(conn)
                 return {"upserted": 0, "deleted": 0, "total": count_rows(_LIVE_TABLE, db_path)}
             before_keys = {
                 r["storage_key"]
@@ -858,7 +891,7 @@ def replace_live_score_history_snapshot(
             }
             result = _upsert_live_history_conn(conn, rows)
             after_keys = {live_history_storage_key(r) for r in rows if live_history_storage_key(r)}
-            conn.execute("COMMIT")
+            _durable_commit(conn)
             return {
                 "upserted": result["upserted"],
                 "deleted": 0,
@@ -876,9 +909,16 @@ def replace_live_score_history_snapshot(
 def store_info(db_path: Optional[Path] = None) -> dict:
     """Return path + row counts for ops / health checks."""
     path = ensure_store(db_path)
+    size = path.stat().st_size if path.is_file() else 0
+    wal = Path(str(path) + "-wal")
+    shm = Path(str(path) + "-shm")
     return {
         "path": str(path),
         "exists": path.is_file(),
+        "on_disk": path.is_file() and str(path) != ":memory:",
+        "bytes": size,
+        "wal_bytes": wal.stat().st_size if wal.is_file() else 0,
+        "shm_present": shm.is_file(),
         "schema_version": _SCHEMA_VERSION,
         "tables": {
             _PAST_TABLE: count_rows(_PAST_TABLE, path),
@@ -886,4 +926,6 @@ def store_info(db_path: Optional[Path] = None) -> dict:
             _UPCOMING_TABLE: count_rows(_UPCOMING_TABLE, path),
         },
         "never_deletes": True,
+        "persists_across_reboot": True,
+        "gitignored": True,  # Output/** — survives git pull; not wiped by checkout
     }
