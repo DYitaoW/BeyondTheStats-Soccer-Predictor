@@ -702,6 +702,28 @@ def predict_fixture(row, context):
         is_neutral=bool(row.get("is_neutral_site", False)),
         league_strength=context.get("league_strength", {}),
     )
+
+    # Cross-league / sparse-H2H cups: blend domestic position × UEFA country
+    # coefficient so odds do not collapse toward equal thirds.
+    try:
+        cup_prior = uefa.cup_matchup_prior(
+            home_team,
+            away_team,
+            is_neutral=bool(row.get("is_neutral_site", False)),
+            uefa_coefficients=context.get("uefa_coefficients"),
+            uefa_team_registry=context.get("uefa_team_registry"),
+            uefa_squad_values=context.get("uefa_squad_values"),
+            uefa_domestic_tables=context.get("uefa_domestic_tables"),
+        )
+        if cup_prior:
+            cross_league = bool(home_comp and away_comp and home_comp != away_comp)
+            prior_w = 0.45 if cross_league else 0.25
+            probabilities = uefa.blend_probs_with_cup_prior(
+                probabilities, cup_prior, prior_weight=prior_w
+            )
+    except Exception:
+        pass
+
     seed = pm.prediction_randomizer_seed(home_team, away_team, competition, prediction_season)
 
     # --- Randomizer delta logic by cup type ---
@@ -793,6 +815,43 @@ def build_schedule_only_row(row, context=None):
     if not home_team or not away_team:
         return None
     key = make_prediction_key(match_date, competition, home_team, away_team)
+
+    # Prefer domestic×coefficient strength prior over blank 0/0/0 odds so
+    # Track / Project_UEFA Monte Carlo still has differentiated matchups.
+    ph = pd_ = pa = 0.0
+    hg = ag = None
+    predicted = ""
+    reasoning = (
+        "Prediction unavailable — fixture listed without odds "
+        "(model failure, missing data, or placeholder team)."
+    )
+    quality = "no_prediction"
+    schedule_only = "1"
+    if context is not None:
+        try:
+            prior = uefa.cup_matchup_prior(
+                home_team,
+                away_team,
+                is_neutral=bool(row.get("is_neutral_site", False)),
+                uefa_coefficients=context.get("uefa_coefficients"),
+                uefa_team_registry=context.get("uefa_team_registry"),
+                uefa_squad_values=context.get("uefa_squad_values"),
+                uefa_domestic_tables=context.get("uefa_domestic_tables"),
+            )
+            if prior:
+                ph, pd_, pa = float(prior["H"]), float(prior["D"]), float(prior["A"])
+                hg = prior.get("pred_home_goals")
+                ag = prior.get("pred_away_goals")
+                predicted = max({"H": ph, "D": pd_, "A": pa}, key=lambda k: {"H": ph, "D": pd_, "A": pa}[k])
+                reasoning = (
+                    f"Cup strength prior (domestic×coeff) "
+                    f"H={ph:.3f} D={pd_:.3f} A={pa:.3f}"
+                )
+                quality = "strength_prior"
+                schedule_only = "0"
+        except Exception:
+            pass
+
     return {
         "prediction_key": key,
         "created_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat(),
@@ -804,18 +863,15 @@ def build_schedule_only_row(row, context=None):
         "away_team": away_team,
         "display_home_team": raw_home,
         "display_away_team": raw_away,
-        "schedule_only": "1",
-        "prediction_quality": "no_prediction",
-        "predicted_result": "",
-        "probability_reasoning": (
-            "Prediction unavailable — fixture listed without odds "
-            "(model failure, missing data, or placeholder team)."
-        ),
-        "prob_home": 0.0,
-        "prob_draw": 0.0,
-        "prob_away": 0.0,
-        "pred_home_goals": None,
-        "pred_away_goals": None,
+        "schedule_only": schedule_only,
+        "prediction_quality": quality,
+        "predicted_result": predicted,
+        "probability_reasoning": reasoning,
+        "prob_home": round(ph, 6) if ph else 0.0,
+        "prob_draw": round(pd_, 6) if pd_ else 0.0,
+        "prob_away": round(pa, 6) if pa else 0.0,
+        "pred_home_goals": hg,
+        "pred_away_goals": ag,
         "pred_home_shots": None,
         "pred_away_shots": None,
         "pred_home_sot": None,

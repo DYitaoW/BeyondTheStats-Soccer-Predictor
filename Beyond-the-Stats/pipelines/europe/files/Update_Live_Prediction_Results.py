@@ -698,6 +698,13 @@ def save_completed_rows_to_past_games(frame, today=None):
                 f"[past-games] pruned {pruned} row(s) older than {retention_days}d "
                 f"(journal retained)"
             )
+    if new_rows:
+        try:
+            from shared import sqlite_store as _sqlite_store
+
+            _sqlite_store.upsert_past_games(new_rows)
+        except Exception as exc:
+            print(f"[past-games] sqlite upsert skipped: {exc}")
     return len(new_rows)
 
 

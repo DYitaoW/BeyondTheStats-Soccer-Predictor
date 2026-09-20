@@ -127,70 +127,205 @@ def _attach_simple_predictions(frame: pd.DataFrame) -> pd.DataFrame:
     return track._ensure_columns(out, track.CUP_HISTORY_COLUMNS)
 
 
+def _load_uefa_prior_context():
+    """Load UEFA domestic/coeff assets once for strength priors."""
+    try:
+        import UEFA_Data_Manager as uefa
+    except Exception as exc:
+        _progress(f"[uefa] UEFA_Data_Manager unavailable ({exc})")
+        return None
+    try:
+        # Refresh domestic tables for teams we care about when cache is stale/empty.
+        return {
+            "uefa": uefa,
+            "coefficients": uefa.load_country_coefficients(),
+            "registry": uefa.load_team_registry(),
+            "squad_values": uefa.load_uefa_squad_values(),
+            "domestic_tables": uefa._load_json(uefa.DOMESTIC_TABLES_FILE, {}),
+        }
+    except Exception as exc:
+        _progress(f"[uefa] prior context load failed ({exc})")
+        return None
+
+
+def _strength_prior_for_row(home: str, away: str, prior_ctx) -> dict | None:
+    if not prior_ctx:
+        return None
+    uefa = prior_ctx["uefa"]
+    return uefa.cup_matchup_prior(
+        home,
+        away,
+        uefa_coefficients=prior_ctx["coefficients"],
+        uefa_team_registry=prior_ctx["registry"],
+        uefa_squad_values=prior_ctx["squad_values"],
+        uefa_domestic_tables=prior_ctx["domestic_tables"],
+    )
+
+
+def _apply_probs_to_row(rec: dict, ph: float, pd_: float, pa: float, *, reason: str, hg=None, ag=None):
+    total = ph + pd_ + pa
+    if total <= 0:
+        ph, pd_, pa = 0.46, 0.26, 0.28
+        total = 1.0
+    ph, pd_, pa = ph / total, pd_ / total, pa / total
+    rec["prob_home"] = round(ph, 6)
+    rec["prob_draw"] = round(pd_, 6)
+    rec["prob_away"] = round(pa, 6)
+    if hg is not None:
+        rec["pred_home_goals"] = hg
+    if ag is not None:
+        rec["pred_away_goals"] = ag
+    if ph >= pd_ and ph >= pa:
+        rec["predicted_result"] = "H"
+    elif pa >= pd_ and pa >= ph:
+        rec["predicted_result"] = "A"
+    else:
+        rec["predicted_result"] = "D"
+    rec["probability_reasoning"] = reason
+    return rec
+
+
 def _try_model_predict_pending(pending: pd.DataFrame) -> pd.DataFrame:
-    """Best-effort: enrich pending rows via Predict_Match when a cache exists."""
+    """Attach cup predictions: model (when available) blended with strength prior.
+
+    Flat 0.46/0.26/0.28 home priors made every UEFA tie look coin-flip. Prefer:
+      1. Predict_Upcoming_Cups.predict_fixture (full cup model path)
+      2. Domestic position × UEFA country coefficient prior
+      3. Mild home prior only as last resort
+    """
     if pending is None or pending.empty:
         return pending
-    try:
-        import Predict_Match as pm
-    except Exception as exc:
-        _progress(f"[uefa] Predict_Match unavailable ({exc}); using home priors")
-        return _attach_simple_predictions(pending)
 
+    prior_ctx = _load_uefa_prior_context()
+    # Ensure domestic tables cover teams in this pending slate.
+    if prior_ctx is not None:
+        try:
+            teams = sorted(
+                {
+                    str(t).strip()
+                    for t in list(pending.get("home_team", [])) + list(pending.get("away_team", []))
+                    if str(t).strip()
+                }
+            )
+            refreshed = prior_ctx["uefa"].ensure_domestic_tables_for_teams(teams)
+            if refreshed:
+                prior_ctx["domestic_tables"] = refreshed
+        except Exception as exc:
+            _progress(f"[uefa] domestic table refresh skipped: {exc}")
+
+    cup_ctx = None
     try:
-        if hasattr(pm, "ensure_model_cache"):
-            pm.ensure_model_cache()
-        ctx = None
-        if hasattr(pm, "load_prediction_context"):
-            ctx = pm.load_prediction_context()
-        elif hasattr(pm, "build_context"):
-            ctx = pm.build_context()
-        if not ctx:
-            return _attach_simple_predictions(pending)
+        import Predict_Upcoming_Cups as puc
+
+        if hasattr(puc, "build_prediction_context") and hasattr(puc, "predict_fixture"):
+            cup_ctx = puc.build_prediction_context()
+            _progress("[uefa] loaded Predict_Upcoming_Cups context for pending fixtures")
     except Exception as exc:
-        _progress(f"[uefa] model context failed ({exc}); using home priors")
-        return _attach_simple_predictions(pending)
+        _progress(f"[uefa] Predict_Upcoming_Cups context unavailable ({exc}); strength priors only")
 
     rows = []
+    model_ok = 0
+    prior_ok = 0
+    fallback = 0
     for _, row in pending.iterrows():
         rec = dict(row)
         home = str(rec.get("home_team") or "").strip()
         away = str(rec.get("away_team") or "").strip()
-        comp = str(rec.get("competition") or "").strip()
-        try:
-            if hasattr(pm, "predict_match_proba"):
-                probs = pm.predict_match_proba(ctx, home, away, comp)
-                ph, pd_, pa = float(probs["H"]), float(probs["D"]), float(probs["A"])
-            elif hasattr(pm, "predict_match"):
-                pred = pm.predict_match(ctx, home, away, comp)
-                # Various return shapes across versions
-                if isinstance(pred, dict):
-                    ph = float(pred.get("prob_home") or pred.get("H") or 0.46)
-                    pd_ = float(pred.get("prob_draw") or pred.get("D") or 0.26)
-                    pa = float(pred.get("prob_away") or pred.get("A") or 0.28)
-                    rec["pred_home_goals"] = pred.get("pred_home_goals", rec.get("pred_home_goals", 1.4))
-                    rec["pred_away_goals"] = pred.get("pred_away_goals", rec.get("pred_away_goals", 1.1))
-                else:
-                    ph, pd_, pa = 0.46, 0.26, 0.28
-            else:
-                ph, pd_, pa = 0.46, 0.26, 0.28
-            rec["prob_home"] = round(ph, 6)
-            rec["prob_draw"] = round(pd_, 6)
-            rec["prob_away"] = round(pa, 6)
-            if ph >= pd_ and ph >= pa:
-                rec["predicted_result"] = "H"
-            elif pa >= pd_ and pa >= ph:
-                rec["predicted_result"] = "A"
-            else:
-                rec["predicted_result"] = "D"
-            rec["probability_reasoning"] = f"UEFA model H={ph:.3f} D={pd_:.3f} A={pa:.3f}"
-        except Exception:
-            rec.setdefault("prob_home", 0.46)
-            rec.setdefault("prob_draw", 0.26)
-            rec.setdefault("prob_away", 0.28)
-            rec.setdefault("predicted_result", "H")
+        prior = _strength_prior_for_row(home, away, prior_ctx)
+
+        used = False
+        if cup_ctx is not None:
+            try:
+                import Predict_Upcoming_Cups as puc
+
+                fixture_row = dict(rec)
+                fixture_row.setdefault("mapped_home_team", home)
+                fixture_row.setdefault("mapped_away_team", away)
+                pred = puc.predict_fixture(fixture_row, cup_ctx)
+                if isinstance(pred, dict) and (
+                    pred.get("prob_home") is not None or pred.get("H") is not None
+                ):
+                    ph = float(pred.get("prob_home") if pred.get("prob_home") is not None else pred.get("H"))
+                    pd_ = float(pred.get("prob_draw") if pred.get("prob_draw") is not None else pred.get("D"))
+                    pa = float(pred.get("prob_away") if pred.get("prob_away") is not None else pred.get("A"))
+                    # Cross-league cup ties: lean harder on domestic×coeff prior.
+                    prior_w = 0.40 if prior else 0.0
+                    if prior_ctx and prior:
+                        blended = prior_ctx["uefa"].blend_probs_with_cup_prior(
+                            {"H": ph, "D": pd_, "A": pa}, prior, prior_weight=prior_w
+                        )
+                        ph, pd_, pa = blended["H"], blended["D"], blended["A"]
+                    hg = pred.get("pred_home_goals", (prior or {}).get("pred_home_goals", 1.4))
+                    ag = pred.get("pred_away_goals", (prior or {}).get("pred_away_goals", 1.1))
+                    reason = (
+                        f"UEFA model+strength H={ph:.3f} D={pd_:.3f} A={pa:.3f}"
+                        if prior_w > 0
+                        else f"UEFA model H={ph:.3f} D={pd_:.3f} A={pa:.3f}"
+                    )
+                    _apply_probs_to_row(rec, ph, pd_, pa, reason=reason, hg=hg, ag=ag)
+                    model_ok += 1
+                    used = True
+            except Exception:
+                used = False
+
+        if not used and prior is not None:
+            _apply_probs_to_row(
+                rec,
+                float(prior["H"]),
+                float(prior["D"]),
+                float(prior["A"]),
+                reason=(
+                    f"UEFA strength prior "
+                    f"(dom×coeff home={prior.get('home_strength', 0):.2f} "
+                    f"away={prior.get('away_strength', 0):.2f}) "
+                    f"H={prior['H']:.3f} D={prior['D']:.3f} A={prior['A']:.3f}"
+                ),
+                hg=prior.get("pred_home_goals", 1.4),
+                ag=prior.get("pred_away_goals", 1.1),
+            )
+            prior_ok += 1
+            used = True
+
+        if not used:
+            _apply_probs_to_row(rec, 0.46, 0.26, 0.28, reason="UEFA home prior fallback")
+            fallback += 1
         rows.append(rec)
+
+    _progress(
+        f"[uefa] pending predictions: model={model_ok} strength_prior={prior_ok} fallback={fallback}"
+    )
     return _attach_simple_predictions(pd.DataFrame(rows))
+
+
+def _sync_cups_to_sqlite(completed_df: pd.DataFrame, upcoming_df: pd.DataFrame) -> None:
+    """Persist cup results + upcoming rows into the durable SQLite store."""
+    try:
+        from shared import sqlite_store
+    except Exception as exc:
+        _progress(f"[uefa] sqlite_store unavailable ({exc})")
+        return
+    try:
+        if completed_df is not None and not completed_df.empty:
+            if "actual_result" in completed_df.columns:
+                settled = completed_df[
+                    completed_df["actual_result"]
+                    .astype(str)
+                    .str.strip()
+                    .str.upper()
+                    .isin({"H", "D", "A"})
+                ]
+            else:
+                settled = completed_df.iloc[0:0]
+            if not settled.empty:
+                result = sqlite_store.upsert_past_games(settled.to_dict("records"))
+                _progress(f"[uefa] sqlite past_games upsert: {result}")
+        if upcoming_df is not None and not upcoming_df.empty:
+            result_u = sqlite_store.upsert_upcoming_games(
+                upcoming_df.to_dict("records"), source="cups"
+            )
+            _progress(f"[uefa] sqlite upcoming_games upsert: {result_u}")
+    except Exception as exc:
+        _progress(f"[uefa] sqlite sync skipped: {exc}")
 
 
 def _init_table_stats():
@@ -651,6 +786,10 @@ def refresh_uefa_cup_projections() -> dict:
     }
     BRACKETS_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     _progress(f"[uefa] wrote brackets → {BRACKETS_FILE}")
+
+    # Durable archive for future seasons / training reuse.
+    _sync_cups_to_sqlite(completed_out, upcoming)
+
     _progress(f"[uefa] DONE in {time.monotonic() - t0:.1f}s")
     return {
         "upcoming": len(pending_df),
