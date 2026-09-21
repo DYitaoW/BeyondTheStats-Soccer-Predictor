@@ -776,27 +776,42 @@ def _run_global_subpipeline(args, api_token):
             continue_on_error=args.continue_on_error,
         )
     else:
-        # Between World Cups: reuse the national-team model to predict
-        # International/Friendly fixtures in a short lookahead window only.
-        # No World Cup projection / no full national league-table rebuild.
+        # Between World Cups: reuse the existing national-team model/cache to
+        # predict International/Friendly fixtures in a short lookahead window.
+        # Do not rebuild or overwrite National_Team_Data training archives.
         friendly_window = min(14, max(1, int(args.national_window_days or 14)))
         print(
             f"[national] World Cup inactive — predicting international friendlies "
             f"(next {friendly_window} day(s) only)"
         )
-        national_process_cmd = [
-            py,
-            str(FILES_DIR / "Process_National_Team_Data.py"),
-            "--friendlies-only",
-        ]
-        if args.skip_model_train:
-            national_process_cmd.append("--skip-squad-values")
-        sub["national_friendlies_model"] = run_step(
-            "[global] National team model (friendlies)",
-            national_process_cmd,
-            continue_on_error=args.continue_on_error,
-            timeout=3600,
-        )
+        national_model_cache = _paths.DATA_DIR / "National_Team_Data" / "national_team_model_cache.pkl"
+        national_raw_matches = _paths.DATA_DIR / "National_Team_Data" / "national_team_recent_matches_raw.csv"
+        if national_model_cache.is_file():
+            print(
+                f"[national] Reusing existing model cache "
+                f"({national_model_cache.name}); training files left untouched"
+            )
+        else:
+            national_process_cmd = [
+                py,
+                str(FILES_DIR / "Process_National_Team_Data.py"),
+                "--friendlies-only",
+            ]
+            # Prefer archived recent-match training data over a fresh ESPN wipe.
+            if national_raw_matches.is_file():
+                national_process_cmd.append("--skip-fetch")
+                print(
+                    f"[national] Building model from existing training file "
+                    f"({national_raw_matches.name}); not refetching/overwriting it"
+                )
+            if args.skip_model_train:
+                national_process_cmd.append("--skip-squad-values")
+            sub["national_friendlies_model"] = run_step(
+                "[global] National team model (friendlies, preserve training data)",
+                national_process_cmd,
+                continue_on_error=args.continue_on_error,
+                timeout=3600,
+            )
         national_upcoming_cmd = [
             py,
             str(FILES_DIR / "Predict_Upcoming_National_Team_Games.py"),

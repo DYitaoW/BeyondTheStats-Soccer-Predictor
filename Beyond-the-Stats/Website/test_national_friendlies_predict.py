@@ -40,7 +40,7 @@ class NationalFriendliesPredictTests(unittest.TestCase):
             src,
         )
 
-    def test_empty_friendlies_clears_store(self):
+    def test_empty_friendlies_keeps_existing_store(self):
         with mock.patch.object(self.pred.national, "load_model_bundle", return_value={"ok": True}):
             with mock.patch.object(self.pred, "load_upcoming_fixtures", return_value=pd.DataFrame()):
                 with mock.patch.object(self.pred, "_write_national_predictions") as write:
@@ -55,9 +55,13 @@ class NationalFriendliesPredictTests(unittest.TestCase):
                         ),
                     ):
                         self.pred.main()
-        write.assert_called_once()
-        written = write.call_args[0][0]
-        self.assertTrue(written.empty)
+        write.assert_not_called()
+
+    def test_pipeline_preserves_training_when_cache_exists(self):
+        src = (MAIN_DIR / "Run_All_Pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("training files left untouched", src)
+        self.assertIn("national_team_recent_matches_raw.csv", src)
+        self.assertIn("--skip-fetch", src)
 
 
 if __name__ == "__main__":

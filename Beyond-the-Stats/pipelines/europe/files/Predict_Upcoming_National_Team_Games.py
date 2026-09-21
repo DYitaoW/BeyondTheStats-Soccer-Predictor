@@ -529,10 +529,9 @@ def main():
         mode = "friendlies" if args.friendlies_only else ("World Cup" if args.world_cup_only else "national-team")
         print(f"No upcoming {mode} fixtures in the next {window_days} day(s).")
         if args.friendlies_only:
-            # Drop stale World Cup / other national rows so /api/upcoming/global
-            # does not keep showing an ended tournament.
-            _write_national_predictions(pd.DataFrame(columns=RESULT_COLUMNS))
-            print(f"Cleared national upcoming file: {PREDICTIONS_FILE}")
+            # Leave existing upcoming predictions and all National_Team_Data
+            # training archives untouched.
+            print("[national] Keeping existing national upcoming file; training data untouched.")
         return
 
     existing = load_prediction_store(PREDICTIONS_FILE)
@@ -551,10 +550,7 @@ def main():
             continue
 
     if not new_records:
-        if args.friendlies_only:
-            _write_national_predictions(pd.DataFrame(columns=RESULT_COLUMNS))
-            print("No friendlies predictions generated; cleared national upcoming file.")
-        elif existing.empty:
+        if existing.empty:
             print("No national-team predictions were generated.")
         else:
             print("No new predictions generated, keeping existing data.")
@@ -566,11 +562,37 @@ def main():
             new_df[col] = None
     new_df = new_df[RESULT_COLUMNS].astype("object")
 
+    # Merge new friendlies/WC predictions into the store. Never wipe the file
+    # just because the current window is empty of scorables.
+    combined = merge_prediction_frames(existing.astype("object"), new_df)
     if args.friendlies_only:
-        # Replace file contents with only the current friendlies window.
-        combined = keep_only_current_fixtures(new_df, fixtures, bundle)
+        # Refresh keys for fixtures in this window; keep other upcoming rows.
+        friendly_keys = set()
+        snapshot = bundle["snapshot"]
+        for _, row in fixtures.iterrows():
+            raw_features, home_team, away_team = national.build_prediction_feature_frame(
+                row.get("home_team", ""),
+                row.get("away_team", ""),
+                row.get("competition", ""),
+                row.get("stage", "unknown"),
+                bool(row.get("is_neutral_site", False)),
+                snapshot,
+            )
+            del raw_features
+            if home_team and away_team and home_team != away_team:
+                friendly_keys.add(
+                    national.make_prediction_key(
+                        row.get("match_date"),
+                        row.get("competition", ""),
+                        home_team,
+                        away_team,
+                    )
+                )
+        # Drop only International/Friendly rows that are outside the current window.
+        is_friendly = combined["competition"].astype(str).str.contains("Friendly", case=False, na=False)
+        keep = (~is_friendly) | combined["prediction_key"].astype(str).isin(friendly_keys)
+        combined = combined[keep].copy()
     else:
-        combined = merge_prediction_frames(existing.astype("object"), new_df)
         combined = keep_only_current_fixtures(combined, fixtures, bundle)
 
     combined = combined.drop_duplicates(subset=["prediction_key"], keep="last")

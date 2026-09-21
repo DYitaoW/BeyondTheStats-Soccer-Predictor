@@ -1936,6 +1936,13 @@ def run_pipeline(args):
             print(f"[INFO] Friendlies mode falling back to {len(target_teams)} World Cup roster teams.")
         else:
             print(f"[INFO] Friendlies mode using {len(target_teams)} ranked national teams.")
+        # Never overwrite the archived recent-matches training CSV for friendlies.
+        if os.path.exists(RAW_MATCHES_FILE) and not args.skip_fetch:
+            args.skip_fetch = True
+            print(
+                f"[INFO] Friendlies mode: preserving training file {RAW_MATCHES_FILE} "
+                f"(--skip-fetch forced)."
+            )
     elif getattr(args, "world_cup_only", False):
         target_teams = fetch_world_cup_team_names()
     else:
