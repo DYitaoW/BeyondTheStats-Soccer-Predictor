@@ -181,6 +181,21 @@ def parse_cli_args():
         help="Build national context from FIFA rankings teams for international friendlies predictions.",
     )
     parser.add_argument(
+        "--archive-matches",
+        action="store_true",
+        help=(
+            "Append newly completed national matches to the raw training CSV and "
+            "mirror the full archive into SQLite. Does not rebuild the model or "
+            "rewrite processed context."
+        ),
+    )
+    parser.add_argument(
+        "--archive-lookback-days",
+        type=int,
+        default=45,
+        help="Days of ESPN scoreboards to scan when appending new national results (default: 45).",
+    )
+    parser.add_argument(
         "--lookback-days",
         type=int,
         default=DEFAULT_LOOKBACK_DAYS,
@@ -1488,11 +1503,215 @@ def load_existing_recent_matches():
         return [], {}
     frame = pd.read_csv(RAW_MATCHES_FILE)
     rows = frame.to_dict("records")
+    return rows, by_team_from_rows(rows)
+
+
+def by_team_from_rows(rows):
     by_team = defaultdict(list)
-    for row in rows:
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
         for side in ["home_team", "away_team"]:
             by_team[canonical_team_name(row.get(side, ""))].append(row)
-    return rows, by_team
+    return by_team
+
+
+def _clean_match_cell(value):
+    if isinstance(value, str):
+        return value
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
+def national_match_key(row):
+    """Stable identity for a national match. Prefer ESPN/provider id, else fixture."""
+    match_id = str(row.get("match_id") or "").strip()
+    if match_id and match_id.lower() not in {"nan", "none"}:
+        return f"id:{match_id}"
+    return "fx:" + make_prediction_key(
+        row.get("match_date") or row.get("match_datetime_utc") or "",
+        row.get("competition") or "",
+        row.get("home_team") or "",
+        row.get("away_team") or "",
+    )
+
+
+def merge_national_match_rows(existing_rows, incoming_rows):
+    """Keep every existing row. Append incoming matches whose key is new.
+
+    Existing rows win on key collision so a refetch cannot rewrite training history.
+    """
+    merged = []
+    index = {}
+    for row in existing_rows or []:
+        if not isinstance(row, dict):
+            continue
+        key = national_match_key(row)
+        if key in index:
+            continue
+        index[key] = len(merged)
+        merged.append(row)
+    added = 0
+    for row in incoming_rows or []:
+        if not isinstance(row, dict):
+            continue
+        key = national_match_key(row)
+        if key in index:
+            continue
+        index[key] = len(merged)
+        merged.append(row)
+        added += 1
+    merged.sort(key=lambda row: str(row.get("match_datetime_utc") or row.get("match_date") or ""))
+    return merged, added
+
+
+def national_rows_for_sqlite(rows):
+    """Copy training rows into past-games payloads without mutating the CSV rows."""
+    payloads = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        payload = {key: _clean_match_cell(value) for key, value in row.items()}
+        home = str(payload.get("home_team") or "").strip()
+        away = str(payload.get("away_team") or "").strip()
+        if not home or not away:
+            continue
+        payload["prediction_key"] = make_prediction_key(
+            payload.get("match_date") or payload.get("match_datetime_utc") or "",
+            payload.get("competition") or "",
+            home,
+            away,
+        )
+        payload["archive_source"] = "national_training"
+        date_iso = str(payload.get("match_date") or payload.get("match_datetime_utc") or "")[:10]
+        if len(date_iso) == 10 and date_iso[4] == "-" and date_iso[7] == "-":
+            payload["match_date_iso"] = date_iso
+        if payload.get("FTHG") is not None and payload.get("actual_home_goals") in (None, ""):
+            payload["actual_home_goals"] = payload.get("FTHG")
+        if payload.get("FTAG") is not None and payload.get("actual_away_goals") in (None, ""):
+            payload["actual_away_goals"] = payload.get("FTAG")
+        if payload.get("FTR") and not payload.get("actual_result"):
+            payload["actual_result"] = payload.get("FTR")
+        payloads.append(payload)
+    return payloads
+
+
+def upsert_national_matches_sqlite(rows):
+    """Mirror national training matches into the on-disk SQLite past_games table."""
+    payloads = national_rows_for_sqlite(rows)
+    if not payloads:
+        return {"upserted": 0, "skipped": 0}
+    try:
+        from shared import sqlite_store
+
+        result = sqlite_store.upsert_past_games(payloads)
+        print(
+            f"[national-archive] sqlite past_games upserted={result.get('upserted')} "
+            f"skipped={result.get('skipped')}"
+        )
+        return result
+    except Exception as exc:
+        print(f"[national-archive] sqlite upsert skipped: {exc}")
+        return {"upserted": 0, "skipped": len(payloads), "error": str(exc)}
+
+
+def fetch_completed_national_matches(target_teams, lookback_days):
+    """Completed national results in a recent window. Does not trim to last-15."""
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=max(1, int(lookback_days)))
+    target_keys = {normalize_team_key(team) for team in target_teams}
+    all_rows = []
+    seen = set()
+    for competition_name, config in sorted(RECENT_ESPN_COMPETITIONS.items(), key=lambda item: item[1]["priority"]):
+        espn_id = config["espn_id"]
+        print(f"Scanning ESPN {competition_name} for new national-team results ({start} to {today})...")
+        for _, payload in fetch_espn_scoreboard_days(espn_id, date_range(start, today), timeout=30):
+            for event in payload.get("events") or []:
+                event_id = str(event.get("id", "")).strip()
+                if event_id and event_id in seen:
+                    continue
+                parsed = parse_espn_event(event, competition_name, require_completed=True)
+                if not parsed or str(parsed.get("FTR", "")).strip() not in RESULT_LABELS:
+                    continue
+                home_key = normalize_team_key(parsed["home_team"])
+                away_key = normalize_team_key(parsed["away_team"])
+                if target_keys and home_key not in target_keys and away_key not in target_keys:
+                    continue
+                if event_id:
+                    seen.add(event_id)
+                all_rows.append(parsed)
+    all_rows.sort(key=lambda row: row.get("match_datetime_utc") or "")
+    return all_rows
+
+
+def ranked_national_teams():
+    target_teams = []
+    try:
+        with open(FIFA_RANKINGS_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if isinstance(payload, dict):
+            target_teams = sorted(str(key).strip() for key in payload.keys() if str(key).strip())
+    except Exception as exc:
+        print(f"[WARN] could not load rankings for national archive: {exc}")
+    return target_teams
+
+
+def archive_national_match_history(args):
+    """Append new completed matches to the raw training CSV and copy all rows to SQLite.
+
+    Existing CSV rows are never deleted. The model cache and processed context
+    files are not rewritten.
+    """
+    os.makedirs(NATIONAL_DATA_DIR, exist_ok=True)
+    if getattr(args, "world_cup_only", False) and not getattr(args, "friendlies_only", False):
+        target_teams = fetch_world_cup_team_names()
+    else:
+        target_teams = ranked_national_teams()
+        if not target_teams:
+            target_teams = fetch_world_cup_team_names()
+            print(f"[national-archive] rankings missing; using {len(target_teams)} World Cup roster teams.")
+        else:
+            print(f"[national-archive] collecting results for {len(target_teams)} ranked national teams.")
+
+    existing_rows, _ = load_existing_recent_matches()
+    print(f"[national-archive] existing training rows: {len(existing_rows)}")
+    # Persist the current archive before any network fetch so a failed scan cannot drop it.
+    upsert_national_matches_sqlite(existing_rows)
+
+    lookback = int(getattr(args, "archive_lookback_days", 45) or 45)
+    if not existing_rows:
+        lookback = max(lookback, int(getattr(args, "lookback_days", DEFAULT_LOOKBACK_DAYS) or DEFAULT_LOOKBACK_DAYS))
+        print(f"[national-archive] no existing file; scanning {lookback} days to seed the archive")
+    else:
+        print(f"[national-archive] scanning last {lookback} days for new completed matches")
+
+    fetched = []
+    if target_teams:
+        try:
+            fetched = fetch_completed_national_matches(target_teams, lookback)
+        except Exception as exc:
+            print(f"[national-archive] new-match fetch failed; existing archive kept: {exc}")
+            fetched = []
+    merged, added = merge_national_match_rows(existing_rows, fetched)
+    if added or (merged and not os.path.exists(RAW_MATCHES_FILE)):
+        pd.DataFrame(merged).to_csv(RAW_MATCHES_FILE, index=False)
+        print(
+            f"[national-archive] appended {added} new match(es); "
+            f"archive now {len(merged)} (old rows kept)"
+        )
+        upsert_national_matches_sqlite(merged)
+    else:
+        print(
+            f"[national-archive] no new matches; training file left unchanged "
+            f"({len(existing_rows)} rows)"
+        )
+    return {"existing": len(existing_rows), "added": added, "total": len(merged)}
 
 
 def strength_from_context(team_context):
@@ -1921,6 +2140,10 @@ def run_pipeline(args):
     if getattr(args, "friendlies_only", False) and getattr(args, "world_cup_only", False):
         raise SystemExit("Use only one of --world-cup-only or --friendlies-only.")
 
+    # Append-only collection + SQLite safety copy. Does not train or touch the model cache.
+    if getattr(args, "archive_matches", False):
+        return archive_national_match_history(args)
+
     if getattr(args, "friendlies_only", False):
         # Rankings cover the broad national-team universe used for friendlies.
         target_teams = []
@@ -1936,13 +2159,6 @@ def run_pipeline(args):
             print(f"[INFO] Friendlies mode falling back to {len(target_teams)} World Cup roster teams.")
         else:
             print(f"[INFO] Friendlies mode using {len(target_teams)} ranked national teams.")
-        # Never overwrite the archived recent-matches training CSV for friendlies.
-        if os.path.exists(RAW_MATCHES_FILE) and not args.skip_fetch:
-            args.skip_fetch = True
-            print(
-                f"[INFO] Friendlies mode: preserving training file {RAW_MATCHES_FILE} "
-                f"(--skip-fetch forced)."
-            )
     elif getattr(args, "world_cup_only", False):
         target_teams = fetch_world_cup_team_names()
     else:
@@ -1998,9 +2214,18 @@ def run_pipeline(args):
     step_t0 = time.monotonic()
     if args.skip_fetch:
         recent_rows, by_team = load_existing_recent_matches()
+        upsert_national_matches_sqlite(recent_rows)
     else:
-        recent_rows, by_team = fetch_recent_espn_matches(target_teams, args.lookback_days)
+        fetched_rows, _fetched_by_team = fetch_recent_espn_matches(target_teams, args.lookback_days)
+        existing_rows, _existing_by_team = load_existing_recent_matches()
+        recent_rows, added = merge_national_match_rows(existing_rows, fetched_rows)
+        by_team = by_team_from_rows(recent_rows)
         pd.DataFrame(recent_rows).to_csv(RAW_MATCHES_FILE, index=False)
+        print(
+            f"[national-archive] merged fetch into training file "
+            f"(kept {len(existing_rows)}, added {added}, total {len(recent_rows)})"
+        )
+        upsert_national_matches_sqlite(recent_rows)
     print(f"[TIMING] fetch_recent_espn_matches: {time.monotonic() - step_t0:.1f}s ({len(recent_rows)} matches)")
 
     # Retry failed fetches: after both sources have run, check for missing data.
@@ -2024,18 +2249,11 @@ def run_pipeline(args):
             time.sleep(3)
             extra_rows, extra_by = fetch_recent_espn_matches(teams_with_few_matches, args.lookback_days)
             if extra_rows:
-                existing_ids = {r.get("match_id", "") for r in recent_rows if r.get("match_id")}
-                new_rows = [r for r in extra_rows if r.get("match_id", "") not in existing_ids]
-                recent_rows.extend(new_rows)
-                for team in teams_with_few_matches:
-                    team_key = normalize_team_key(team)
-                    for row in extra_rows:
-                        if normalize_team_key(row.get("home_team", "")) == team_key or normalize_team_key(row.get("away_team", "")) == team_key:
-                            if row.get("match_id", "") not in existing_ids:
-                                by_team[team].append(row)
-                    by_team[team] = sorted(by_team[team], key=lambda r: r["match_datetime_utc"], reverse=True)[:LAST_N_MATCHES]
-                print(f"  ESPN retry added {len(new_rows)} new matches.")
+                recent_rows, added = merge_national_match_rows(recent_rows, extra_rows)
+                by_team = by_team_from_rows(recent_rows)
+                print(f"  ESPN retry added {added} new matches.")
             pd.DataFrame(recent_rows).to_csv(RAW_MATCHES_FILE, index=False)
+            upsert_national_matches_sqlite(recent_rows)
 
     step_t0 = time.monotonic()
     team_context = build_team_context(target_teams, by_team, rankings, squad_values)

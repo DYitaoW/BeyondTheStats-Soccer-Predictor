@@ -776,9 +776,10 @@ def _run_global_subpipeline(args, api_token):
             continue_on_error=args.continue_on_error,
         )
     else:
-        # Between World Cups: reuse the existing national-team model/cache to
+        # Between World Cups: keep collecting completed national results into the
+        # training archive and SQLite, reuse the model cache when it exists, and
         # predict International/Friendly fixtures in a short lookahead window.
-        # Do not rebuild or overwrite National_Team_Data training archives.
+        # Never delete existing training rows or the model cache.
         friendly_window = min(14, max(1, int(args.national_window_days or 14)))
         print(
             f"[national] World Cup inactive — predicting international friendlies "
@@ -786,10 +787,24 @@ def _run_global_subpipeline(args, api_token):
         )
         national_model_cache = _paths.DATA_DIR / "National_Team_Data" / "national_team_model_cache.pkl"
         national_raw_matches = _paths.DATA_DIR / "National_Team_Data" / "national_team_recent_matches_raw.csv"
+        # Always append newly completed games and mirror the full training
+        # archive into SQLite. This does not rebuild or delete the model cache.
+        archive_cmd = [
+            py,
+            str(FILES_DIR / "Process_National_Team_Data.py"),
+            "--friendlies-only",
+            "--archive-matches",
+        ]
+        sub["national_match_archive"] = run_step(
+            "[global] Collect new national matches + SQLite safety copy",
+            archive_cmd,
+            continue_on_error=True,
+            timeout=3600,
+        )
         if national_model_cache.is_file():
             print(
                 f"[national] Reusing existing model cache "
-                f"({national_model_cache.name}); training files left untouched"
+                f"({national_model_cache.name}); processed model files left untouched"
             )
         else:
             national_process_cmd = [
@@ -797,12 +812,13 @@ def _run_global_subpipeline(args, api_token):
                 str(FILES_DIR / "Process_National_Team_Data.py"),
                 "--friendlies-only",
             ]
-            # Prefer archived recent-match training data over a fresh ESPN wipe.
+            # Train from the archive (including any rows just appended). Do not
+            # replace that file with a fresh ESPN window.
             if national_raw_matches.is_file():
                 national_process_cmd.append("--skip-fetch")
                 print(
                     f"[national] Building model from existing training file "
-                    f"({national_raw_matches.name}); not refetching/overwriting it"
+                    f"({national_raw_matches.name}); not replacing archived matches"
                 )
             if args.skip_model_train:
                 national_process_cmd.append("--skip-squad-values")
