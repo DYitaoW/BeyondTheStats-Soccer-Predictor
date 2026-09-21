@@ -13,7 +13,7 @@ Execution order
    (the core left free for the backend's live score polling and API/file
    serving). Each sub-pipeline runs its steps sequentially: Download → Process
    → Sort → Model Cache → Predict Upcoming → Project League Table →
-   (national team / WC when a World Cup is active)
+   (national team / WC when a World Cup is active; otherwise international friendlies ≤14d)
 3. **Post-pipeline steps** (after all sub-pipelines finish):
    Settle predictions (update CSVs with real results from ESPN),
    Sync club friendlies, Track cup results
@@ -134,8 +134,11 @@ def parse_args():
     parser.add_argument(
         "--national-window-days",
         type=int,
-        default=90,
-        help="Fixture window days for national-team and World Cup prediction scripts.",
+        default=14,
+        help=(
+            "Fixture window days for national-team scripts. When no World Cup is "
+            "active this caps international friendlies predictions (default: 14)."
+        ),
     )
     parser.add_argument(
         "--continue-on-error",
@@ -773,7 +776,42 @@ def _run_global_subpipeline(args, api_token):
             continue_on_error=args.continue_on_error,
         )
     else:
-        print("[skip] No active World Cup window — skipping World Cup steps")
+        # Between World Cups: reuse the national-team model to predict
+        # International/Friendly fixtures in a short lookahead window only.
+        # No World Cup projection / no full national league-table rebuild.
+        friendly_window = min(14, max(1, int(args.national_window_days or 14)))
+        print(
+            f"[national] World Cup inactive — predicting international friendlies "
+            f"(next {friendly_window} day(s) only)"
+        )
+        national_process_cmd = [
+            py,
+            str(FILES_DIR / "Process_National_Team_Data.py"),
+            "--friendlies-only",
+        ]
+        if args.skip_model_train:
+            national_process_cmd.append("--skip-squad-values")
+        sub["national_friendlies_model"] = run_step(
+            "[global] National team model (friendlies)",
+            national_process_cmd,
+            continue_on_error=args.continue_on_error,
+            timeout=3600,
+        )
+        national_upcoming_cmd = [
+            py,
+            str(FILES_DIR / "Predict_Upcoming_National_Team_Games.py"),
+            "--friendlies-only",
+            "--window-days",
+            str(friendly_window),
+        ]
+        if api_token:
+            national_upcoming_cmd += ["--api-token", api_token]
+        sub["upcoming_international_friendlies"] = run_step(
+            "[global] Upcoming international friendlies predictions",
+            national_upcoming_cmd,
+            continue_on_error=args.continue_on_error,
+            timeout=UPCOMING_MATCHWEEK_TIMEOUT_S,
+        )
     return sub
 
 

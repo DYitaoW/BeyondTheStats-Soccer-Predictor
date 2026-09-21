@@ -82,6 +82,11 @@ def parse_cli_args():
         help="Only predict FIFA World Cup fixtures.",
     )
     parser.add_argument(
+        "--friendlies-only",
+        action="store_true",
+        help="Only predict International/Friendly fixtures (default window for this mode is 14 days).",
+    )
+    parser.add_argument(
         "--api-token",
         type=str,
         default=os.getenv("FOOTBALL_DATA_API_TOKEN", "").strip(),
@@ -100,7 +105,11 @@ def load_prediction_store(path):
     return frame[RESULT_COLUMNS].astype("object")
 
 
-def competition_configs(world_cup_only=False):
+def competition_configs(world_cup_only=False, friendlies_only=False):
+    if friendlies_only:
+        return {
+            "International/Friendly": national.UPCOMING_ESPN_COMPETITIONS["International/Friendly"]
+        }
     if world_cup_only:
         return {"International/World Cup": national.UPCOMING_ESPN_COMPETITIONS["International/World Cup"]}
     return dict(national.UPCOMING_ESPN_COMPETITIONS)
@@ -142,12 +151,12 @@ def parse_espn_fixture(event, competition_name):
     return fixture
 
 
-def fetch_espn_upcoming_fixtures(window_days, world_cup_only=False):
+def fetch_espn_upcoming_fixtures(window_days, world_cup_only=False, friendlies_only=False):
     rows = []
     seen_event_ids = set()
     rows_lock = threading.Lock()
     
-    configs = competition_configs(world_cup_only=world_cup_only)
+    configs = competition_configs(world_cup_only=world_cup_only, friendlies_only=friendlies_only)
     
     def fetch_competition_day(espn_id, competition_name, date):
         """Fetch fixtures for a specific competition and date."""
@@ -208,7 +217,7 @@ def parse_football_data_fixture(match, competition_name):
     return parsed
 
 
-def fetch_football_data_upcoming_fixtures(api_token, window_days, world_cup_only=False):
+def fetch_football_data_upcoming_fixtures(api_token, window_days, world_cup_only=False, friendlies_only=False):
     if not api_token:
         return pd.DataFrame()
 
@@ -216,7 +225,7 @@ def fetch_football_data_upcoming_fixtures(api_token, window_days, world_cup_only
     today = datetime.now(UTC).date()
     end = today + timedelta(days=max(0, int(window_days)))
     headers = {"X-Auth-Token": api_token}
-    wanted_names = set(competition_configs(world_cup_only=world_cup_only).keys())
+    wanted_names = set(competition_configs(world_cup_only=world_cup_only, friendlies_only=friendlies_only).keys())
     api_competitions = [
         (code, name)
         for code, name in national.FOOTBALL_DATA_COMPETITIONS.items()
@@ -291,12 +300,15 @@ def dedupe_fixtures(fixtures):
     return frame.sort_values(["match_datetime_utc", "competition", "home_team"], na_position="last").reset_index(drop=True)
 
 
-def load_upcoming_fixtures(api_token, window_days, world_cup_only=False):
-    espn = fetch_espn_upcoming_fixtures(window_days, world_cup_only=world_cup_only)
+def load_upcoming_fixtures(api_token, window_days, world_cup_only=False, friendlies_only=False):
+    espn = fetch_espn_upcoming_fixtures(
+        window_days, world_cup_only=world_cup_only, friendlies_only=friendlies_only
+    )
     football_data = fetch_football_data_upcoming_fixtures(
         api_token,
         window_days,
         world_cup_only=world_cup_only,
+        friendlies_only=friendlies_only,
     )
     frames = [frame for frame in [espn, football_data] if not frame.empty]
     if not frames:
@@ -473,17 +485,54 @@ def merge_prediction_frames(existing_df, new_df):
     return combined.reset_index(drop=True)
 
 
+def _write_national_predictions(frame: pd.DataFrame) -> None:
+    os.makedirs(PREDICTIONS_DIR, exist_ok=True)
+    out = frame.copy() if frame is not None else pd.DataFrame(columns=RESULT_COLUMNS)
+    for col in RESULT_COLUMNS:
+        if col not in out.columns:
+            out[col] = None
+    if out.empty:
+        out = pd.DataFrame(columns=RESULT_COLUMNS)
+    else:
+        out = out[RESULT_COLUMNS].sort_values(
+            ["match_date", "competition", "home_team", "away_team"],
+            na_position="last",
+        )
+    out.to_csv(PREDICTIONS_FILE, index=False)
+
+
 def main():
     _t0 = time.monotonic()
     args = parse_cli_args()
-    bundle = national.load_model_bundle()
+    if args.world_cup_only and args.friendlies_only:
+        raise SystemExit("Use only one of --world-cup-only or --friendlies-only.")
+
+    window_days = int(args.window_days)
+    if args.friendlies_only and window_days == 90:
+        # Sensible default when friendlies mode is used without an explicit window.
+        window_days = 14
+
+    try:
+        bundle = national.load_model_bundle()
+    except FileNotFoundError as exc:
+        print(f"[national] {exc}")
+        print("[national] Skipping upcoming national predictions until Process_National_Team_Data.py has been run.")
+        return
+
     fixtures = load_upcoming_fixtures(
         args.api_token,
-        args.window_days,
+        window_days,
         world_cup_only=args.world_cup_only,
+        friendlies_only=args.friendlies_only,
     )
     if fixtures.empty:
-        print("No upcoming national-team fixtures returned by ESPN or football-data.org.")
+        mode = "friendlies" if args.friendlies_only else ("World Cup" if args.world_cup_only else "national-team")
+        print(f"No upcoming {mode} fixtures in the next {window_days} day(s).")
+        if args.friendlies_only:
+            # Drop stale World Cup / other national rows so /api/upcoming/global
+            # does not keep showing an ended tournament.
+            _write_national_predictions(pd.DataFrame(columns=RESULT_COLUMNS))
+            print(f"Cleared national upcoming file: {PREDICTIONS_FILE}")
         return
 
     existing = load_prediction_store(PREDICTIONS_FILE)
@@ -502,42 +551,43 @@ def main():
             continue
 
     if not new_records:
-        if existing.empty:
+        if args.friendlies_only:
+            _write_national_predictions(pd.DataFrame(columns=RESULT_COLUMNS))
+            print("No friendlies predictions generated; cleared national upcoming file.")
+        elif existing.empty:
             print("No national-team predictions were generated.")
         else:
             print("No new predictions generated, keeping existing data.")
         return
 
-    # Create new predictions DataFrame with correct columns
     new_df = pd.DataFrame(new_records)
     for col in RESULT_COLUMNS:
         if col not in new_df.columns:
             new_df[col] = None
     new_df = new_df[RESULT_COLUMNS].astype("object")
 
-    # Merge with existing predictions
-    combined = merge_prediction_frames(existing.astype("object"), new_df)
+    if args.friendlies_only:
+        # Replace file contents with only the current friendlies window.
+        combined = keep_only_current_fixtures(new_df, fixtures, bundle)
+    else:
+        combined = merge_prediction_frames(existing.astype("object"), new_df)
+        combined = keep_only_current_fixtures(combined, fixtures, bundle)
 
-    # Filter to keep only current fixtures
-    combined = keep_only_current_fixtures(combined, fixtures, bundle)
     combined = combined.drop_duplicates(subset=["prediction_key"], keep="last")
-    
-    # Ensure all columns exist and sort
-    for col in RESULT_COLUMNS:
-        if col not in combined.columns:
-            combined[col] = None
-    combined = combined[RESULT_COLUMNS].sort_values(
-        ["match_date", "competition", "home_team", "away_team"], 
-        na_position="last"
+    _write_national_predictions(combined)
+
+    friendlies_count = int(
+        combined["competition"].astype(str).str.contains("Friendly", case=False, na=False).sum()
     )
-
-    os.makedirs(PREDICTIONS_DIR, exist_ok=True)
-    combined.to_csv(PREDICTIONS_FILE, index=False)
-
-    world_cup_count = int(combined["competition"].astype(str).str.contains("World Cup", case=False, na=False).sum())
+    world_cup_count = int(
+        combined["competition"].astype(str).str.contains("World Cup", case=False, na=False).sum()
+    )
     print("\nUpcoming national-team predictions generated")
+    print(f"Mode: {'friendlies-only' if args.friendlies_only else ('world-cup-only' if args.world_cup_only else 'all')}")
+    print(f"Window days: {window_days}")
     print(f"Fixtures found: {len(fixtures)}")
     print(f"Predictions written: {len(new_df)}")
+    print(f"Friendlies currently in file: {friendlies_count}")
     print(f"World Cup predictions currently in file: {world_cup_count}")
     print(f"Skipped fixtures: {skipped}")
     print(f"Saved tracking file: {PREDICTIONS_FILE}")

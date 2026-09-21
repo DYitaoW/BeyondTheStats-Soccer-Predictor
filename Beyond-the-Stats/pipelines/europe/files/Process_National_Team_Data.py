@@ -176,6 +176,11 @@ def parse_cli_args():
         help="Build context for current World Cup teams only. This is the default pipeline use.",
     )
     parser.add_argument(
+        "--friendlies-only",
+        action="store_true",
+        help="Build national context from FIFA rankings teams for international friendlies predictions.",
+    )
+    parser.add_argument(
         "--lookback-days",
         type=int,
         default=DEFAULT_LOOKBACK_DAYS,
@@ -1913,16 +1918,48 @@ def run_pipeline(args):
     os.makedirs(NATIONAL_DATA_DIR, exist_ok=True)
     pipeline_t0 = time.monotonic()
     step_t0 = time.monotonic()
-    target_teams = fetch_world_cup_team_names() if args.world_cup_only else fetch_world_cup_team_names()
+    if getattr(args, "friendlies_only", False) and getattr(args, "world_cup_only", False):
+        raise SystemExit("Use only one of --world-cup-only or --friendlies-only.")
+
+    if getattr(args, "friendlies_only", False):
+        # Rankings cover the broad national-team universe used for friendlies.
+        target_teams = []
+        try:
+            with open(FIFA_RANKINGS_FILE, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            if isinstance(payload, dict):
+                target_teams = sorted(str(k).strip() for k in payload.keys() if str(k).strip())
+        except Exception as exc:
+            print(f"[WARN] could not load rankings for friendlies mode: {exc}")
+        if not target_teams:
+            target_teams = fetch_world_cup_team_names()
+            print(f"[INFO] Friendlies mode falling back to {len(target_teams)} World Cup roster teams.")
+        else:
+            print(f"[INFO] Friendlies mode using {len(target_teams)} ranked national teams.")
+    elif getattr(args, "world_cup_only", False):
+        target_teams = fetch_world_cup_team_names()
+    else:
+        # Prefer rankings when available; otherwise WC roster as a broad seed set.
+        target_teams = []
+        try:
+            with open(FIFA_RANKINGS_FILE, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            if isinstance(payload, dict):
+                target_teams = sorted(str(k).strip() for k in payload.keys() if str(k).strip())
+        except Exception:
+            target_teams = []
+        if not target_teams:
+            target_teams = fetch_world_cup_team_names()
+
     if not target_teams:
         try:
             with open(FIFA_RANKINGS_FILE, "r", encoding="utf-8") as f:
                 target_teams = sorted(json.load(f).keys())
             print(f"[INFO] Using {len(target_teams)} teams from {FIFA_RANKINGS_FILE} as fallback.")
         except Exception:
-            print("[ERROR] ESPN API unreachable and no rankings file available. Cannot determine World Cup teams.")
+            print("[ERROR] ESPN API unreachable and no rankings file available. Cannot determine national teams.")
             raise
-    print(f"[TIMING] fetch_world_cup_team_names: {time.monotonic() - step_t0:.1f}s")
+    print(f"[TIMING] resolve target teams: {time.monotonic() - step_t0:.1f}s")
 
     step_t0 = time.monotonic()
     rankings = load_fifa_rankings(
