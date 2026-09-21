@@ -1447,6 +1447,9 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
                     row.get("pred_home_goals"), row.get("pred_away_goals"),
                 ),
                 "reasoning": str(row.get("probability_reasoning", "")).strip(),
+                "predicted_result": str(row.get("predicted_result", "")).strip(),
+                "prediction_key": str(row.get("prediction_key", "")).strip(),
+                "match_datetime_utc": utc_dt_raw,
                 "actual_home_goals": int(actual_home_goals) if pd.notna(actual_home_goals) else None,
                 "actual_away_goals": int(actual_away_goals) if pd.notna(actual_away_goals) else None,
                 "actual_result": str(row.get("actual_result", "")).strip(),
@@ -1461,6 +1464,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
                         else ""
                     )
                 ),
+                "source": target_mode,
             }
         )
     from accuracy_tracker import _build_persistent_accuracy_stats
@@ -2530,35 +2534,66 @@ def _collect_live_past_game_rows(cutoff: str) -> list[dict]:
 
 
 def _build_past_game_prediction_lookup() -> dict[str, dict]:
-    """Index prediction CSV rows by match key for enriching live results."""
+    """Index prediction rows by match key for enriching live results.
+
+    Prefers API-shaped SQLite upcoming rows when present, then CSV enrichment.
+    """
     lookup: dict[str, dict] = {}
+
+    def _index_row(row: dict) -> None:
+        date_iso = _past_row_date_iso(row)
+        if not date_iso:
+            return
+        ck = "|".join(
+            [
+                date_iso,
+                str(row.get("competition", "")).strip().lower(),
+                str(row.get("home_team", "")).strip().lower(),
+                str(row.get("away_team", "")).strip().lower(),
+            ]
+        )
+        if not ck.strip("|"):
+            return
+        existing = lookup.get(ck)
+        if existing and _past_row_looks_api_complete(existing) and not _past_row_looks_api_complete(row):
+            return
+        lookup[ck] = row
+
+    try:
+        from shared import sqlite_store as store
+
+        store.ensure_store()
+        if store.count_rows("upcoming_games") > 0:
+            for row in store.load_upcoming_games():
+                if isinstance(row, dict):
+                    _index_row(row)
+        if store.count_rows("past_games") > 0:
+            for row in store.load_past_games():
+                if isinstance(row, dict):
+                    _index_row(row)
+    except Exception:
+        pass
+
     for source, csv_path in (
         ("global", config.GLOBAL_UPCOMING_FILE),
         ("mls", config.MLS_UPCOMING_FILE),
         ("extra", config.EXTRA_UPCOMING_FILE),
         ("cups", config.CUP_UPCOMING_FILE),
         ("national", config.NATIONAL_UPCOMING_FILE),
+        ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
     ):
         pred_rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
         for row in pred_rows:
-            date_iso = _past_row_date_iso(row)
-            if not date_iso:
-                continue
-            ck = "|".join(
-                [
-                    date_iso,
-                    str(row.get("competition", "")).strip().lower(),
-                    str(row.get("home_team", "")).strip().lower(),
-                    str(row.get("away_team", "")).strip().lower(),
-                ]
-            )
-            if ck:
-                lookup[ck] = row
+            _index_row(row)
     return lookup
 
 
 def _merge_prediction_onto_past_row(row: dict, lookup: dict[str, dict]) -> dict:
-    """Attach pre-match prediction fields when a CSV row exists for the fixture."""
+    """Attach pre-match prediction fields when a CSV/SQLite row exists for the fixture.
+
+    Copies the full upcoming API field set so past-games responses match
+    ``/api/upcoming`` row shape (probs, markets, form, ratings, etc.).
+    """
     date_iso = _past_row_date_iso(row)
     if not date_iso:
         return row
@@ -2574,29 +2609,125 @@ def _merge_prediction_onto_past_row(row: dict, lookup: dict[str, dict]) -> dict:
     if not pred:
         return row
     merged = dict(row)
-    for key in (
-        "predicted_result",
-        "prob_home",
-        "prob_draw",
-        "prob_away",
-        "prob_home_text",
-        "prob_draw_text",
-        "prob_away_text",
-        "pred_home_goals",
-        "pred_away_goals",
-        "winner_label",
-        "schedule_only",
-        "match_datetime_et",
-        "weekday",
-        "date_label",
-        "time_label",
-    ):
-        if pred.get(key) not in (None, ""):
-            merged[key] = pred[key]
-    if not merged.get("match_datetime_utc") and pred.get("match_datetime_utc"):
-        merged["match_datetime_utc"] = pred.get("match_datetime_utc")
+    # Prefer non-empty prediction fields; keep live actual scores / results.
+    preserve = {
+        "actual_home_goals",
+        "actual_away_goals",
+        "actual_result",
+        "home_score",
+        "away_score",
+        "is_correct",
+        "match_id",
+        "status",
+        "completed_at",
+    }
+    for key, value in pred.items():
+        if key in preserve:
+            continue
+        if value in (None, "", [], {}):
+            continue
+        if merged.get(key) in (None, "", [], {}):
+            merged[key] = value
+        elif key.startswith("prob_") or key.startswith("pred_") or key in {
+            "winner_label",
+            "predicted_result",
+            "prediction_key",
+            "prediction_quality",
+            "has_prediction",
+            "prediction_note",
+            "reasoning",
+            "correct_score_dist",
+            "double_chance",
+            "asian_handicap",
+            "total_goals_dist",
+            "first_to_score",
+            "clean_sheet",
+            "last_5_home",
+            "last_5_away",
+            "home_attack_rating",
+            "home_defence_rating",
+            "away_attack_rating",
+            "away_defence_rating",
+            "prob_home_text",
+            "prob_draw_text",
+            "prob_away_text",
+            "weekday",
+            "date_label",
+            "time_label",
+            "match_datetime_et",
+            "match_datetime_utc",
+            "schedule_only",
+        }:
+            merged[key] = value
     _enrich_json_past_row(merged)
     return merged
+
+
+def _past_row_looks_api_complete(row: dict) -> bool:
+    """True when a stored row already has the upcoming/past-games API shape."""
+    if not isinstance(row, dict):
+        return False
+    if row.get("prob_home_text") not in (None, ""):
+        return True
+    if row.get("has_prediction") is not None and row.get("winner_label") not in (None, ""):
+        return True
+    if row.get("correct_score_dist") not in (None, {}, []):
+        return True
+    return False
+
+
+def sync_api_shaped_predictions_to_sqlite() -> dict:
+    """Upsert full upcoming-API-shaped rows into SQLite from prediction CSVs.
+
+    Uses the same ``_load_upcoming_rows`` enrichment as ``/api/upcoming`` and
+    ``/api/past-games`` so the DB stores (and can later serve) identical fields.
+    """
+    try:
+        from shared import sqlite_store as store
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+    sources = (
+        ("global", config.GLOBAL_UPCOMING_FILE),
+        ("mls", config.MLS_UPCOMING_FILE),
+        ("extra", config.EXTRA_UPCOMING_FILE),
+        ("cups", config.CUP_UPCOMING_FILE),
+        ("national", config.NATIONAL_UPCOMING_FILE),
+        ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
+    )
+    totals = {"ok": True, "upserted": 0, "by_source": {}, "past_upserted": 0}
+    store.ensure_store()
+    for source, csv_path in sources:
+        if not csv_path or not os.path.exists(csv_path):
+            totals["by_source"][source] = {"missing": True}
+            continue
+        try:
+            rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
+        except Exception as exc:
+            totals["by_source"][source] = {"error": str(exc)}
+            continue
+        api_rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            stored = _json_safe_row(dict(row))
+            if not stored.get("match_date_iso"):
+                stored["match_date_iso"] = _past_row_date_iso(stored)
+            stored["source"] = source
+            _enrich_json_past_row(stored)
+            api_rows.append(stored)
+        result = store.upsert_upcoming_games(api_rows, source=source)
+        settled = [r for r in api_rows if str(r.get("actual_result", "")).strip().upper() in {"H", "D", "A"}]
+        past_result = store.upsert_past_games(settled) if settled else {"upserted": 0}
+        totals["upserted"] += result.get("upserted", 0)
+        totals["past_upserted"] += past_result.get("upserted", 0)
+        totals["by_source"][source] = {
+            "rows": len(api_rows),
+            "upserted": result.get("upserted", 0),
+            "settled": len(settled),
+            "past_upserted": past_result.get("upserted", 0),
+        }
+    return totals
 
 
 def _past_game_storage_key(row: dict) -> str:
@@ -2710,11 +2841,13 @@ def archive_todays_games_to_past_games_file() -> int:
             seen.add(ck)
             stored = _json_safe_row(dict(row))
             stored["match_date_iso"] = date_iso
+            _enrich_json_past_row(stored)
             all_rows.append(stored)
 
     # Second, authoritative source: completed rows from live_history.json so
     # standalone competitions (UCL/UEL/Conference League, national-team
     # friendlies) that never appear in the upcoming CSVs are never lost.
+    prediction_lookup = _build_past_game_prediction_lookup()
     for row in _collect_live_past_game_rows(collection_cutoff):
         date_iso = _past_row_date_iso(row)
         if not date_iso or date_iso < collection_cutoff or date_iso > today_str:
@@ -2728,8 +2861,10 @@ def archive_todays_games_to_past_games_file() -> int:
         if not ck or ck in seen:
             continue
         seen.add(ck)
-        stored = _json_safe_row(dict(row))
+        enriched = _merge_prediction_onto_past_row(dict(row), prediction_lookup)
+        stored = _json_safe_row(enriched)
         stored["match_date_iso"] = date_iso
+        _enrich_json_past_row(stored)
         all_rows.append(stored)
 
     if not all_rows:
@@ -2849,6 +2984,14 @@ def archive_todays_games_to_past_games_file() -> int:
             f.write(str(run_count))
     except Exception:
         pass
+
+    try:
+        from shared import sqlite_store as _sqlite_store
+
+        # Upsert only newly inserted rows; full merge already lives in JSON.
+        _sqlite_store.upsert_past_games(journal_rows)
+    except Exception as exc:
+        print(f"[past-games] sqlite upsert skipped: {exc}")
 
     print(f"[past-games] {label} → past_games.json ({len(merged)} total)")
     return inserted

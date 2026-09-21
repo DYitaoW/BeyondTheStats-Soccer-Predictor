@@ -43,6 +43,7 @@ ENDPOINTS = [
     ("GET", "/api/league-leaders", "League leaders"),
     ("GET", "/api/live-scores", "Live scores"),
     ("GET", "/api/live-score-history", "Live score history"),
+    ("GET", "/api/past-live-scores", "Past live scores (alias)"),
     ("GET", "/api/live-score-history?league=Premier", "Live score history filtered"),
     ("GET", "/api/h2h?home=Manchester+United&away=Liverpool", "H2H"),
     ("GET", "/api/scorers", "Top scorers"),

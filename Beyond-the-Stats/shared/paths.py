@@ -101,6 +101,8 @@ BACKEND_RUN_STATUS_FILE = OUTPUT_STATUS_DIR / "backend_run_status.json"
 PIPELINE_LOG_FILE = OUTPUT_LOGS_DIR / "pipeline_latest.log"
 STANDINGS_CACHE_FILE = OUTPUT_STATUS_DIR / "standings_cache.json"
 LIVE_SCORE_HISTORY_FILE = OUTPUT_STATUS_DIR / "live_score_history.json"
+# Durable append/upsert store for past games + live-score history (APIs prefer this).
+SQLITE_STORE_FILE = OUTPUT_STATUS_DIR / "bts_store.db"
 PREDICTION_TRACKING_FILE = OUTPUT_STATUS_DIR / "prediction_tracking.json"
 
 # Seed / roster files (tracked in git)
@@ -121,6 +123,10 @@ PAST_GAMES_FILE = OUTPUT_PRED_SHARED / "past_games.json"
 # Never-pruned append-only journal + previous snapshot for recoverability.
 PAST_GAMES_JOURNAL_FILE = OUTPUT_PRED_SHARED / "past_games_journal.jsonl"
 PAST_GAMES_BACKUP_FILE = OUTPUT_PRED_SHARED / "past_games.prev.json"
+# Alias kept for callers that want an explicit past-games DB path; both tables
+# live in SQLITE_STORE_FILE.
+PAST_GAMES_DB_FILE = SQLITE_STORE_FILE
+LIVE_SCORE_HISTORY_DB_FILE = SQLITE_STORE_FILE
 
 GLOBAL_PROJECTED_TABLE_FILE = OUTPUT_PRED_EUROPE / "projected_league_tables.csv"
 GLOBAL_PROJECTED_MATCHES_FILE = OUTPUT_PRED_EUROPE / "projected_future_matches.csv"
