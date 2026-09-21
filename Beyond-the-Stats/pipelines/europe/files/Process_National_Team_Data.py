@@ -1610,6 +1610,8 @@ def upsert_national_matches_sqlite(rows):
     try:
         from shared import sqlite_store
 
+        # Create schema / migrate once so national writes never hit a bare file.
+        sqlite_store.ensure_store()
         result = sqlite_store.upsert_past_games(payloads)
         print(
             f"[national-archive] sqlite past_games upserted={result.get('upserted')} "

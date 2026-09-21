@@ -1083,6 +1083,7 @@ def _check_dependencies():
         "joblib": "joblib",
         "requests": "requests",
         "bs4": "beautifulsoup4",
+        "sqlite3": "sqlite3 (stdlib)",
     }
     print("\n--- Pre-flight dependency check ---")
     all_ok = True
@@ -1122,6 +1123,44 @@ def _archive_completed_games():
         print(f"  [past-games] Archive failed: {exc}")
         import traceback
         traceback.print_exc()
+
+
+def _sync_predicted_games_to_sqlite(label: str = "upcoming"):
+    """Push full upcoming-API-shaped rows into SQLite as a durable backup.
+
+    Uses Website ``sync_api_shaped_predictions_to_sqlite`` so stored payloads
+    match ``/api/upcoming`` / ``/api/past-games`` field-for-field. Sources
+    include global, mls, extra, cups, national, and friendlies CSVs.
+    """
+    website_dir = SP_DIR / "Website"
+    if str(website_dir) not in sys.path:
+        sys.path.insert(0, str(website_dir))
+    try:
+        from predictions import sync_api_shaped_predictions_to_sqlite
+        from shared import sqlite_store as store
+
+        info = store.ensure_store()
+        result = sync_api_shaped_predictions_to_sqlite()
+        print(
+            f"  [sqlite] {label}: upserted {result.get('upserted', 0)} upcoming + "
+            f"{result.get('past_upserted', 0)} past row(s) → {info}"
+        )
+        for source, stats in (result.get("by_source") or {}).items():
+            if stats.get("missing"):
+                continue
+            if stats.get("error"):
+                print(f"    - {source}: error {stats.get('error')}")
+                continue
+            print(
+                f"    - {source}: {stats.get('upserted', 0)} upserted "
+                f"({stats.get('rows', 0)} api rows, {stats.get('settled', 0)} settled)"
+            )
+        return bool(result.get("ok", True))
+    except Exception as exc:
+        print(f"  [sqlite] {label} sync failed: {exc}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 _REAL_STANDINGS_FILE = _paths.STANDINGS_CACHE_FILE
@@ -1250,6 +1289,14 @@ def run_full_pipeline(args, api_token, results=None):
     # ── Pre-pipeline: build real standings from completed games ──
     results["build_real_standings"] = _build_real_standings()
 
+    # Snapshot whatever prediction CSVs already exist before this run mutates
+    # them, so a mid-pipeline crash still leaves a recent SQLite backup.
+    # ensure_store also creates past_games / upcoming_games / live_score_history
+    # / store_meta if the on-disk DB is new.
+    print("\n=== [sqlite] Sync at pipeline start (pre-existing CSVs) ===")
+    _sync_predicted_games_to_sqlite("pipeline-start")
+    results["sqlite_sync_start"] = True
+
     # Sub-pipelines ALWAYS run sequentially: global first, MLS next, then the
     # other leagues (extra). Only one training run or table projection is ever
     # active, so the whole machine (minus one core held for the backend's live
@@ -1273,59 +1320,73 @@ def run_full_pipeline(args, api_token, results=None):
 
     pipeline_start = time.monotonic()
 
-    # Sequential only (no ProcessPoolExecutor across sub-pipelines).
-    for name, fn in sub_tasks:
-        sub_start = time.monotonic()
-        print(f"\n>>> Running {name} sub-pipeline (sequential)")
-        sub_result = _run_sub_pipeline(name, fn, args, api_token)
-        results.update(sub_result)
-        elapsed = time.monotonic() - sub_start
-        if sub_result and not all(sub_result.values()):
-            failed_steps = [k for k, v in sub_result.items() if not v]
-            print(f"  [WARN] {name} sub-pipeline had {len(failed_steps)} failed step(s): {failed_steps}")
-        print(f"  [TIMING] {name} sub-pipeline: {elapsed:.1f}s")
-        if sub_result and not all(sub_result.values()) and not args.continue_on_error:
-            print(
-                "\n[barrier] not starting remaining sub-pipelines: "
-                f"'{name}' failed (set --continue-on-error to continue past failures)"
-            )
-            break
+    try:
+        # Sequential only (no ProcessPoolExecutor across sub-pipelines).
+        for name, fn in sub_tasks:
+            sub_start = time.monotonic()
+            print(f"\n>>> Running {name} sub-pipeline (sequential)")
+            sub_result = _run_sub_pipeline(name, fn, args, api_token)
+            results.update(sub_result)
+            elapsed = time.monotonic() - sub_start
+            if sub_result and not all(sub_result.values()):
+                failed_steps = [k for k, v in sub_result.items() if not v]
+                print(f"  [WARN] {name} sub-pipeline had {len(failed_steps)} failed step(s): {failed_steps}")
+            print(f"  [TIMING] {name} sub-pipeline: {elapsed:.1f}s")
+            if sub_result and not all(sub_result.values()) and not args.continue_on_error:
+                print(
+                    "\n[barrier] not starting remaining sub-pipelines: "
+                    f"'{name}' failed (set --continue-on-error to continue past failures)"
+                )
+                break
 
-    # Ensure tables on disk even if a sub-pipeline child died before reaching
-    # its projection step (OOM / uncaught executor exception on the host).
-    results.update(_ensure_projected_tables(args))
+        # Ensure tables on disk even if a sub-pipeline child died before reaching
+        # its projection step (OOM / uncaught executor exception on the host).
+        results.update(_ensure_projected_tables(args))
 
-    if any(not v for v in results.values()) and not args.continue_on_error:
-        print(
-            "\n[barrier] not starting league-dependent post-pipeline steps: an earlier step failed "
-            "(set --continue-on-error to continue past failures)"
-        )
-        print("[cups] running cup steps anyway so a league failure cannot leave cup outputs stale")
-    else:
-        # Post-pipeline steps (depend on all sub-pipelines' outputs being on disk).
-        post_start = time.monotonic()
-        print("\n>>> Running post-pipeline steps")
-        results.update(_run_shared_post_steps(args, api_token))
-
-        # Archive completed games AFTER settle (so CSVs have actual_result filled).
+        # Mid-run backup once upcoming CSVs are refreshed (before settle/cups),
+        # including national friendlies predictions written by the global branch.
         if not _tables_only():
-            print("\n=== [past-games] Archive completed games to past_games.json ===")
-            _archive_completed_games()
-        else:
-            print("\n[tables-only] Skipped settle/friendlies/archive steps")
-        print(f"  [TIMING] post-pipeline steps: {time.monotonic() - post_start:.1f}s")
+            print("\n=== [sqlite] Sync after sub-pipelines (new upcoming CSVs) ===")
+            _sync_predicted_games_to_sqlite("post-subpipelines")
+            results["sqlite_sync_upcoming"] = True
 
-    # Cups last, and ALWAYS: after every league sub-pipeline, even when an
-    # earlier step failed OR when the shortened backend is in tables-only mode
-    # (``BTS_TABLES_ONLY=1``). Tables-only skips download/train/settle for
-    # leagues, but cup upcoming + Track_Cup_Results must still refresh
-    # ``Output/Predictions/cups/`` so brackets/tables stay current.
-    print("\n>>> Running cup predictions (last)")
-    cups_start = time.monotonic()
-    results.update(_run_cups_last(args))
-    print(f"  [TIMING] cup predictions: {time.monotonic() - cups_start:.1f}s")
-    print(f"\n[TIMING] full pipeline: {time.monotonic() - pipeline_start:.1f}s")
-    print(f"[DEBUG] pipeline wall clock done at T+{time.monotonic() - _pipeline_start_global:.0f}s")
+        if any(not v for v in results.values()) and not args.continue_on_error:
+            print(
+                "\n[barrier] not starting league-dependent post-pipeline steps: an earlier step failed "
+                "(set --continue-on-error to continue past failures)"
+            )
+            print("[cups] running cup steps anyway so a league failure cannot leave cup outputs stale")
+        else:
+            # Post-pipeline steps (depend on all sub-pipelines' outputs being on disk).
+            post_start = time.monotonic()
+            print("\n>>> Running post-pipeline steps")
+            results.update(_run_shared_post_steps(args, api_token))
+
+            # Archive completed games AFTER settle (so CSVs have actual_result filled).
+            if not _tables_only():
+                print("\n=== [past-games] Archive completed games to past_games.json ===")
+                _archive_completed_games()
+            else:
+                print("\n[tables-only] Skipped settle/friendlies/archive steps")
+            print(f"  [TIMING] post-pipeline steps: {time.monotonic() - post_start:.1f}s")
+
+        # Cups last, and ALWAYS: after every league sub-pipeline, even when an
+        # earlier step failed OR when the shortened backend is in tables-only mode
+        # (``BTS_TABLES_ONLY=1``). Tables-only skips download/train/settle for
+        # leagues, but cup upcoming + Track_Cup_Results must still refresh
+        # ``Output/Predictions/cups/`` so brackets/tables stay current.
+        print("\n>>> Running cup predictions (last)")
+        cups_start = time.monotonic()
+        results.update(_run_cups_last(args))
+        print(f"  [TIMING] cup predictions: {time.monotonic() - cups_start:.1f}s")
+        print(f"\n[TIMING] full pipeline: {time.monotonic() - pipeline_start:.1f}s")
+        print(f"[DEBUG] pipeline wall clock done at T+{time.monotonic() - _pipeline_start_global:.0f}s")
+    finally:
+        # Always sync at end — even if a later step raised — so SQLite has the
+        # freshest on-disk CSVs after this run (or partial run).
+        print("\n=== [sqlite] Sync at pipeline end ===")
+        _sync_predicted_games_to_sqlite("pipeline-end")
+        results["sqlite_sync_end"] = True
 
     # Print step summary
     print("\n--- Pipeline Step Summary ---")

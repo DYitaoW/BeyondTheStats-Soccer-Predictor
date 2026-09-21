@@ -101,8 +101,8 @@ BACKEND_RUN_STATUS_FILE = OUTPUT_STATUS_DIR / "backend_run_status.json"
 PIPELINE_LOG_FILE = OUTPUT_LOGS_DIR / "pipeline_latest.log"
 STANDINGS_CACHE_FILE = OUTPUT_STATUS_DIR / "standings_cache.json"
 LIVE_SCORE_HISTORY_FILE = OUTPUT_STATUS_DIR / "live_score_history.json"
-# Durable append/upsert store for past games + live-score history.
-# National-team training matches are mirrored here as a safety copy.
+# Durable append/upsert store for past games, upcoming predictions, live-score
+# history, and the national-team training safety copy. APIs prefer this file.
 SQLITE_STORE_FILE = OUTPUT_STATUS_DIR / "bts_store.db"
 PREDICTION_TRACKING_FILE = OUTPUT_STATUS_DIR / "prediction_tracking.json"
 

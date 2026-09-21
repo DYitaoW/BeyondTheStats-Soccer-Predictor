@@ -12,6 +12,7 @@ SQLite never deletes rows for date-window limits. Tables:
 """
 from __future__ import annotations
 
+import csv
 import json
 import os
 import sqlite3
@@ -63,6 +64,17 @@ def _live_history_json() -> Path:
     if _paths is not None:
         return Path(_paths.LIVE_SCORE_HISTORY_FILE)
     return Path(__file__).resolve().parent.parent / "Output" / "Status" / "live_score_history.json"
+
+
+def _national_raw_matches_csv() -> Path:
+    if _paths is not None:
+        return Path(_paths.DATA_NATIONAL_DIR) / "national_team_recent_matches_raw.csv"
+    return (
+        Path(__file__).resolve().parent.parent
+        / "Data"
+        / "National_Team_Data"
+        / "national_team_recent_matches_raw.csv"
+    )
 
 
 def _db_path() -> Path:
@@ -367,8 +379,84 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
             conn.close()
 
 
+def _national_row_from_csv(raw: dict) -> Optional[dict]:
+    """Normalize one national training CSV row into a past_games payload."""
+    if not isinstance(raw, dict):
+        return None
+    row = {str(key): (value.strip() if isinstance(value, str) else value) for key, value in raw.items()}
+    home = str(row.get("home_team") or "").strip()
+    away = str(row.get("away_team") or "").strip()
+    if not home or not away:
+        return None
+    competition = str(row.get("competition") or "").strip()
+    match_date = str(row.get("match_date") or row.get("match_datetime_utc") or "").strip()
+    date_iso = ""
+    if len(match_date) >= 10 and match_date[4] == "-" and match_date[7] == "-":
+        date_iso = match_date[:10]
+    pair = sorted([home.lower(), away.lower()])
+    prediction_key = f"{date_iso or match_date[:10]}|{competition}|{pair[0]}|{pair[1]}"
+    payload = dict(row)
+    payload["home_team"] = home
+    payload["away_team"] = away
+    payload["competition"] = competition
+    payload["prediction_key"] = prediction_key
+    payload["archive_source"] = "national_training"
+    if date_iso:
+        payload["match_date_iso"] = date_iso
+        payload["match_date"] = date_iso
+    for src, dest in (
+        ("FTHG", "actual_home_goals"),
+        ("FTAG", "actual_away_goals"),
+        ("FTR", "actual_result"),
+    ):
+        if payload.get(src) not in (None, "") and payload.get(dest) in (None, ""):
+            payload[dest] = payload.get(src)
+    return payload
+
+
+def migrate_national_training_archive(db_path: Optional[Path] = None, *, force: bool = False) -> dict:
+    """One-time (or forced) import of national_team_recent_matches_raw.csv into past_games."""
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            flag = conn.execute(
+                f"SELECT value FROM {_META_TABLE} WHERE key = ?",
+                ("national_training_migrated",),
+            ).fetchone()
+            if flag and flag["value"] == "1" and not force:
+                return {"past_games": 0, "skipped": True}
+
+            csv_path = _national_raw_matches_csv()
+            upserted = 0
+            if csv_path.is_file():
+                try:
+                    with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
+                        reader = csv.DictReader(handle)
+                        rows = []
+                        for raw in reader:
+                            payload = _national_row_from_csv(raw)
+                            if payload:
+                                rows.append(payload)
+                        if rows:
+                            upserted = _upsert_past_games_conn(conn, rows)["upserted"]
+                except Exception as exc:
+                    print(f"[sqlite-store] national training CSV migrate skipped: {exc}")
+
+            conn.execute(
+                f"INSERT OR REPLACE INTO {_META_TABLE}(key, value) VALUES (?, ?)",
+                ("national_training_migrated", "1"),
+            )
+            try:
+                conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            except sqlite3.Error:
+                pass
+            return {"past_games": upserted, "skipped": False, "source": str(csv_path)}
+        finally:
+            conn.close()
+
+
 def ensure_store(db_path: Optional[Path] = None) -> Path:
-    """Ensure on-disk DB exists, schema is ready, and JSON has been migrated once."""
+    """Ensure on-disk DB exists, schema is ready, and archives have been migrated once."""
     path = Path(db_path) if db_path is not None else _db_path()
     if str(path) == ":memory:":
         raise ValueError("refusing to use in-memory SQLite store")
@@ -379,6 +467,10 @@ def ensure_store(db_path: Optional[Path] = None) -> Path:
         migrate_json_archives(path)
     except Exception as exc:
         print(f"[sqlite-store] migrate skipped: {exc}")
+    try:
+        migrate_national_training_archive(path)
+    except Exception as exc:
+        print(f"[sqlite-store] national training migrate skipped: {exc}")
     return path
 
 

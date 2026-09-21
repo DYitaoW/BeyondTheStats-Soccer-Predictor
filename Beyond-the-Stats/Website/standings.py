@@ -606,6 +606,15 @@ def _fetch_espn_roster_for_competition(comp_name: str) -> list[str]:
 
 
 def _load_live_score_history():
+    """Load completed live-score games (SQLite preferred, JSON fallback)."""
+    try:
+        from shared import sqlite_store as _sqlite_store
+
+        rows = _sqlite_store.load_live_score_history()
+        if rows:
+            return rows
+    except Exception:
+        pass
     if not os.path.exists(config.LIVE_SCORE_HISTORY_FILE):
         return []
     try:
@@ -800,6 +809,14 @@ def _upsert_live_score_history(games, as_of=None):
                     reverse=True,
                 )
                 _atomic_write_live_history(retained)
+                try:
+                    from shared import sqlite_store as _sqlite_store
+
+                    # Append/upsert into SQLite without applying the JSON 30-day
+                    # prune so APIs retain long-term history forever.
+                    _sqlite_store.upsert_live_score_history(list(by_key.values()) + keyless)
+                except Exception as exc:
+                    print(f"[live-history] sqlite upsert skipped: {exc}")
                 return {
                     "inserted": inserted,
                     "updated": updated,

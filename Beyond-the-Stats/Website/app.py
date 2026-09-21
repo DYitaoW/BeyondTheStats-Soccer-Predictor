@@ -1019,6 +1019,7 @@ def api_help():
         ("/api/league-leaders", "GET", "Predicted winner + current leader per competition"),
         ("/api/live-scores", "GET", "Currently live matches with scores"),
         ("/api/live-score-history", "GET", "Recent live score history"),
+        ("/api/past-live-scores", "GET", "Alias for /api/live-score-history (SQLite-backed)"),
         ("/api/h2h", "GET", "Head-to-head stats between two teams (?home=&away=)"),
         ("/api/scorers", "GET", "Top scorers data"),
         ("/api/stats", "GET", "Aggregate prediction statistics"),
@@ -2001,9 +2002,13 @@ def api_debug_poller_state():
 
 
 @app.get("/api/live-score-history")
+@app.get("/api/past-live-scores")
 def api_live_score_history():
     """Return historical completed games, grouped by competition
     (matching ``/api/live-scores`` response structure).
+
+    Served from SQLite (``Output/Status/bts_store.db``) with JSON dual-write
+    backup. ``/api/past-live-scores`` is an alias for this endpoint.
 
     Query params:
         league   -- filter by competition name (substring match, case-insensitive)
@@ -2020,17 +2025,33 @@ def api_live_score_history():
     if to_date and not _valid_date_iso(to_date):
         return jsonify({"ok": False, "error": "Invalid 'to' date format (use YYYY-MM-DD)"}), 400
 
-    games = _load_live_score_history()
+    games = None
+    used_sqlite = False
+    try:
+        from shared import sqlite_store as _sqlite_store
 
-    if league:
-        league_lower = league.lower()
-        games = [g for g in games if league_lower in g.get("competition", "").lower()]
-    if from_date:
-        games = [g for g in games if g.get("kickoff_utc", "") >= from_date]
-    if to_date:
-        games = [g for g in games if g.get("kickoff_utc", "") <= to_date]
+        _sqlite_store.ensure_store()
+        if _sqlite_store.count_rows("live_score_history") > 0:
+            games = _sqlite_store.load_live_score_history(
+                competition_substr=league,
+                from_date=from_date,
+                to_date=to_date,
+            )
+            used_sqlite = True
+    except Exception:
+        games = None
+        used_sqlite = False
 
-    games.sort(key=lambda g: g.get("kickoff_utc", ""), reverse=True)
+    if not used_sqlite:
+        games = _load_live_score_history()
+        if league:
+            league_lower = league.lower()
+            games = [g for g in games if league_lower in g.get("competition", "").lower()]
+        if from_date:
+            games = [g for g in games if g.get("kickoff_utc", "") >= from_date]
+        if to_date:
+            games = [g for g in games if g.get("kickoff_utc", "") <= to_date]
+        games.sort(key=lambda g: g.get("kickoff_utc", ""), reverse=True)
 
     competitions = {}
     for g in games:
@@ -2056,14 +2077,14 @@ def api_past_games():
 
     Response structure matches ``/api/upcoming/global`` per-row format.
 
-    Data is sourced from ``past_games.json`` (updated each pipeline run with
-    today's rows copied from the upcoming API shape), ``live_score_history.json``
-    / in-memory live scores, and settled prediction CSV rows.
+    Data is sourced from SQLite (``bts_store.db`` past_games table), with
+    ``past_games.json`` dual-write backup, plus live-score history and settled
+    prediction CSV rows for freshness.
     Rows older than 30 days are excluded from this API response for display;
     the on-disk archive itself is retained (see ``BTS_PAST_GAMES_RETENTION_DAYS``).
 
     For full live-score details (lineups, stats, key events, game info),
-    use ``/api/live-score-history``.
+    use ``/api/live-score-history`` (alias ``/api/past-live-scores``).
 
     Query params:
         league   -- filter by competition name (substring match, case-insensitive)
@@ -2082,64 +2103,89 @@ def api_past_games():
 
     prediction_lookup = _build_past_game_prediction_lookup()
 
-    # ── 1. Rows from persistent archive ────────────────────────────
+    # ── 1. Rows from persistent archive (SQLite API-shaped preferred) ─
     by_key = {}
-    archive = _load_json_payload(config.PAST_GAMES_FILE)
+
+    def _put_past_row(r, *, overwrite_incomplete_only: bool = False):
+        if not isinstance(r, dict) or _is_placeholder_game(r):
+            return
+        row = dict(r)
+        _enrich_json_past_row(row)
+        ck = "|".join(
+            [
+                _past_row_date_iso(row),
+                str(row.get("competition", "")).strip().lower(),
+                str(row.get("home_team", "")).strip().lower(),
+                str(row.get("away_team", "")).strip().lower(),
+            ]
+        )
+        if not ck.strip("|"):
+            return
+        existing = by_key.get(ck)
+        if existing and overwrite_incomplete_only and _past_row_looks_api_complete(existing):
+            # Keep complete SQLite/API row; only fill missing actuals from new row.
+            for key in (
+                "actual_home_goals",
+                "actual_away_goals",
+                "actual_result",
+                "home_score",
+                "away_score",
+                "is_correct",
+            ):
+                if existing.get(key) in (None, "") and row.get(key) not in (None, ""):
+                    existing[key] = row[key]
+            by_key[ck] = existing
+            return
+        if existing and _past_row_looks_api_complete(existing) and not _past_row_looks_api_complete(row):
+            merged = dict(row)
+            merged.update({k: v for k, v in existing.items() if v not in (None, "", [], {})})
+            by_key[ck] = merged
+            return
+        by_key[ck] = row
+
+    archive = None
+    try:
+        from shared import sqlite_store as _sqlite_store
+
+        _sqlite_store.ensure_store()
+        if _sqlite_store.count_rows("past_games") > 0:
+            archive = _sqlite_store.load_past_games(competition_substr=league)
+        # Settled upcoming_games rows are also full API payloads.
+        if _sqlite_store.count_rows("upcoming_games") > 0:
+            for r in _sqlite_store.load_upcoming_games(
+                competition_substr=league, status="settled"
+            ):
+                _put_past_row(r)
+    except Exception:
+        archive = None
+    if archive is None:
+        archive = _load_json_payload(config.PAST_GAMES_FILE)
     if isinstance(archive, list):
         for r in archive:
-            if _is_placeholder_game(r):
-                continue
-            _enrich_json_past_row(r)
-            ck = "|".join(
-                [
-                    _past_row_date_iso(r),
-                    str(r.get("competition", "")).strip().lower(),
-                    str(r.get("home_team", "")).strip().lower(),
-                    str(r.get("away_team", "")).strip().lower(),
-                ]
-            )
-            if ck.strip("|"):
-                by_key[ck] = r
+            _put_past_row(r)
 
     # ── 2. Completed games from live scores (today + recent) ───────
     for r in _collect_live_past_game_rows("2000-01-01"):
         r = _merge_prediction_onto_past_row(r, prediction_lookup)
-        ck = "|".join(
-            [
-                _past_row_date_iso(r),
-                str(r.get("competition", "")).strip().lower(),
-                str(r.get("home_team", "")).strip().lower(),
-                str(r.get("away_team", "")).strip().lower(),
-            ]
-        )
-        if ck.strip("|"):
-            by_key[ck] = r
+        _put_past_row(r, overwrite_incomplete_only=True)
 
     # ── 3. Supplement with CSV rows (richest prediction data) ───────
+    # Skip when SQLite already has a complete API-shaped row for the fixture.
     for source, csv_path in (
         ("global", config.GLOBAL_UPCOMING_FILE),
         ("mls", config.MLS_UPCOMING_FILE),
         ("extra", config.EXTRA_UPCOMING_FILE),
         ("cups", config.CUP_UPCOMING_FILE),
         ("national", config.NATIONAL_UPCOMING_FILE),
+        ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
     ):
         rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
         for r in rows:
-            # Only include actually settled games — skip placeholders
             if str(r.get("actual_result", "")).strip().upper() not in {"H", "D", "A"}:
                 continue
             if _is_placeholder_game(r):
                 continue
-            ck = "|".join(
-                [
-                    _past_row_date_iso(r),
-                    str(r.get("competition", "")).strip().lower(),
-                    str(r.get("home_team", "")).strip().lower(),
-                    str(r.get("away_team", "")).strip().lower(),
-                ]
-            )
-            if ck.strip("|"):
-                by_key[ck] = r  # CSV row (enriched) takes priority
+            _put_past_row(r)
 
     all_rows = list(by_key.values())
 

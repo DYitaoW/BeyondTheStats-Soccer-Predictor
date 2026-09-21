@@ -32,6 +32,7 @@ class PostReorgPathConstantsTests(unittest.TestCase):
             "BACKEND_RUN_STATUS_FILE",
             "PIPELINE_STATUS_FILE",
             "LIVE_SCORE_HISTORY_FILE",
+            "SQLITE_STORE_FILE",
         )
         for attr in path_attrs:
             path = getattr(self.paths, attr)
