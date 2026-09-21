@@ -7,9 +7,9 @@ _SP_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.dirname(_REGION_DIR)
 if _SP_DIR not in _sys_paths_setup.path:
     _sys_paths_setup.path.insert(0, _SP_DIR)
 from shared import paths as _bts_paths
-import projection_cache as proj_cache
 if str(_bts_paths.SHARED_DIR) not in _sys_paths_setup.path:
     _sys_paths_setup.path.insert(0, str(_bts_paths.SHARED_DIR))
+import projection_cache as proj_cache
 BASE_DIR = str(_bts_paths.SP_DIR)  # europe uses project-level Data/
 PREDICTIONS_DIR = str(_bts_paths.OUTPUT_PRED_CUPS)
 PROJECT_DIR = str(_bts_paths.SP_DIR)
@@ -1314,7 +1314,9 @@ def _build_projected_cup_tables(completed_df, upcoming_df):
 
     combined = pd.concat(frames, ignore_index=True)
     combined["competition"] = combined["competition"].astype(str).str.strip()
-    combined = combined[combined["competition"].isin(CUP_TABLE_COMPETITIONS)]
+    # Leagues Cup (and any future non-UEFA table cups) only — UEFA is Project_UEFA_Cups.
+    non_uefa_table = CUP_TABLE_COMPETITIONS - UEFA_TABLE_COMPETITIONS
+    combined = combined[combined["competition"].isin(non_uefa_table)]
     if combined.empty:
         return _empty_frame(TABLE_COLUMNS), _empty_frame(TABLE_COLUMNS)
 
@@ -2258,26 +2260,10 @@ def _build_projected_cup_brackets(completed_df, upcoming_df, tables_df):
                 except Exception:
                     pass
 
+    # UEFA CL/EL/ECL brackets are produced by Project_UEFA_Cups (band draws,
+    # two-legged aggregate, nested finish odds). Skip the legacy single-leg path.
     bracket_done = 0
-    if not tables_df.empty:
-        for competition, comp_table in tables_df.groupby("competition", dropna=False):
-            competition_name = str(competition).strip()
-            if competition_name not in UEFA_TABLE_COMPETITIONS:
-                continue
-            _progress(f"[cups] START bracket {competition_name} (UEFA table→KO)")
-            table_rows = comp_table.to_dict("records")
-            bracket = _build_uefa_bracket_with_draws(competition_name, table_rows, predictions_index)
-            payload["competitions"][competition_name] = bracket
-            bracket_done += 1
-            _progress(f"[cups] DONE  bracket {competition_name}")
-    
-    for competition_name in UEFA_PRIMARY_COMPETITIONS:
-        if competition_name not in payload["competitions"]:
-            _progress(f"[cups] START bracket {competition_name} (empty UEFA fallback)")
-            bracket = _build_uefa_bracket_with_draws(competition_name, [], predictions_index)
-            payload["competitions"][competition_name] = bracket
-            bracket_done += 1
-            _progress(f"[cups] DONE  bracket {competition_name}")
+    _progress("[cups] skip legacy UEFA brackets — Project_UEFA_Cups owns CL/EL/ECL")
 
     frames = []
     if completed_df is not None and not completed_df.empty:
@@ -2365,34 +2351,67 @@ def refresh_cup_projection_artifacts(completed_df, upcoming_df):
                 _progress(f"[cups] skip aborted, rebuilding ({exc})")
 
     # Table / group-phase cups only — pure knockout skips the table MC entirely.
+    # UEFA CL/EL/ECL tables + knockout odds are owned by Project_UEFA_Cups
+    # (band draws, two-legged ties, per-table-sim playoff). Skip them here.
     tables, real_tables = _build_projected_cup_tables(completed_df, upcoming_df)
+    if tables is not None and not tables.empty and "competition" in tables.columns:
+        tables = tables[~tables["competition"].astype(str).isin(UEFA_TABLE_COMPETITIONS)].reset_index(drop=True)
+    if real_tables is not None and not real_tables.empty and "competition" in real_tables.columns:
+        real_tables = real_tables[~real_tables["competition"].astype(str).isin(UEFA_TABLE_COMPETITIONS)].reset_index(drop=True)
     _progress(
         f"[cups] table sims={CUP_TABLE_SIMULATION_RUNS} for "
-        f"{sorted(CUP_TABLE_COMPETITIONS)}; knockout cups skip tables"
+        f"non-UEFA {sorted(CUP_TABLE_COMPETITIONS - UEFA_TABLE_COMPETITIONS)}; "
+        f"UEFA via Project_UEFA_Cups"
     )
     brackets = _build_projected_cup_brackets(completed_df, upcoming_df, tables)
+    # Drop any UEFA stubs from the legacy builder before the dedicated engine fills them.
+    comps = brackets.get("competitions") or {}
+    for uefa_name in list(UEFA_TABLE_COMPETITIONS):
+        comps.pop(uefa_name, None)
+    brackets["competitions"] = comps
     _progress(f"[cups] bracket sims={CUP_SIMULATION_RUNS}")
     _write_csv(PROJECTED_CUP_TABLES_FILE, tables, TABLE_COLUMNS)
     _write_csv(REAL_CUP_TABLES_FILE, real_tables, TABLE_COLUMNS)
     save_json(PROJECTED_CUP_BRACKETS_FILE, brackets)
+
+    # Dedicated UEFA league-phase + knockout engine (CL / EL / ECL).
+    try:
+        import Project_UEFA_Cups as uefa_proj
+
+        uefa_summary = uefa_proj.refresh_uefa_cup_projections()
+        _progress(f"[cups] UEFA engine summary: {uefa_summary}")
+    except Exception as exc:
+        _progress(f"[WARN] Project_UEFA_Cups failed: {exc}")
+
+    # Re-read merged artifacts for stamp / return counts.
+    try:
+        tables = pd.read_csv(PROJECTED_CUP_TABLES_FILE) if os.path.exists(PROJECTED_CUP_TABLES_FILE) else tables
+    except Exception:
+        pass
+    try:
+        brackets = json.loads(Path(PROJECTED_CUP_BRACKETS_FILE).read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
     try:
         proj_cache.set_cup_stamp(
             sig,
             {
                 "table_sims": CUP_TABLE_SIMULATION_RUNS,
                 "bracket_sims": CUP_SIMULATION_RUNS,
-                "table_rows": len(tables),
+                "table_rows": len(tables) if tables is not None else 0,
+                "uefa_engine": "Project_UEFA_Cups",
             },
         )
         proj_cache.flush_matchup_probs()
     except Exception:
         pass
-    n_rounds = sum(len(comp.get("rounds", [])) for comp in brackets.get("competitions", {}).values())
+    n_rounds = sum(len(comp.get("rounds", [])) for comp in (brackets.get("competitions") or {}).values())
     _progress(
         f"[cups] DONE — refresh complete "
-        f"({len(tables)} table rows, {n_rounds} bracket sections)"
+        f"({len(tables) if tables is not None else 0} table rows, {n_rounds} bracket sections)"
     )
-    return len(tables), n_rounds
+    return len(tables) if tables is not None else 0, n_rounds
 
 
 def main():

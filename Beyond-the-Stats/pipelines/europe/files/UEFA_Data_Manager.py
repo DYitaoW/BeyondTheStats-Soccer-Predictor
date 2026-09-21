@@ -28,6 +28,7 @@ import json
 import os
 import urllib.request
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 # ── Paths ──────────────────────────────────────────────────────────
@@ -138,6 +139,186 @@ UEFA_COUNTRY_ALIASES = {
     "Republic of Ireland": "Ireland",
 }
 
+# League-name prefixes that are not UEFA associations / domestic countries.
+_NON_DOMESTIC_LEAGUE_PREFIXES = frozenset({
+    "Europe", "International", "Asia", "Africa", "North America", "South America",
+    "World", "FIFA", "UEFA",
+})
+
+_CUP_LEAGUE_TOKENS = (
+    "cup", "pokal", "copa", "coupe", "coppa", "shield", "trophy",
+    "playoff", "play-off", "super cup", "supercup",
+)
+
+_SEED_TEAM_INDEX: dict | None = None
+_STANDINGS_CACHE: dict | None = None
+
+
+def _normalize_name(name: str) -> str:
+    text = str(name or "").strip().lower()
+    for ch in ("'", "’", ".", "-", "_"):
+        text = text.replace(ch, " ")
+    return " ".join(text.split())
+
+
+def _country_from_league(league: str) -> str | None:
+    league = str(league or "").strip()
+    if not league or "/" not in league:
+        return None
+    prefix = league.split("/", 1)[0].strip()
+    if not prefix or prefix in _NON_DOMESTIC_LEAGUE_PREFIXES:
+        return None
+    return UEFA_COUNTRY_ALIASES.get(prefix, prefix)
+
+
+def _is_domestic_league_name(league: str) -> bool:
+    """True for domestic league tables (not domestic cups / continental cups)."""
+    league = str(league or "").strip()
+    if not league or _country_from_league(league) is None:
+        return False
+    lower = league.lower()
+    return not any(tok in lower for tok in _CUP_LEAGUE_TOKENS)
+
+
+def _load_seed_team_index() -> dict:
+    """Build team→{country,league} from league_teams / current_season seeds.
+
+    Used when ``uefa_team_registry.json`` is missing or incomplete (common in
+    fresh / cloud environments where Team_Data caches are not generated yet).
+    Prefers domestic leagues over domestic cups when a team appears in both.
+    """
+    global _SEED_TEAM_INDEX
+    if _SEED_TEAM_INDEX is not None:
+        return _SEED_TEAM_INDEX
+    index: dict[str, dict] = {}
+    seed_paths = []
+    try:
+        from shared import paths as _paths
+        seed_paths = [
+            Path(_paths.LEAGUE_TEAMS_FILE),
+            Path(_paths.CURRENT_SEASON_TEAMS_FILE),
+        ]
+    except Exception:
+        root = Path(TEAM_DATA_DIR).resolve().parent
+        seed_paths = [
+            root / "Seeds" / "league_teams.json",
+            root / "Seeds" / "current_season_teams.json",
+        ]
+
+    def _store(name: str, entry: dict, *, prefer: bool) -> None:
+        for key in (name, _normalize_name(name)):
+            if not key:
+                continue
+            existing = index.get(key)
+            if existing is None or (prefer and not _is_domestic_league_name(existing.get("league", ""))):
+                index[key] = entry
+
+    for path in seed_paths:
+        data = _load_json(str(path), {})
+        if not isinstance(data, dict):
+            continue
+        # Pass 1: domestic leagues. Pass 2: everything else (cups) as fill-ins.
+        for prefer_domestic in (True, False):
+            for league, teams in data.items():
+                country = _country_from_league(league)
+                if not country:
+                    continue
+                is_domestic = _is_domestic_league_name(league)
+                if prefer_domestic and not is_domestic:
+                    continue
+                if (not prefer_domestic) and is_domestic:
+                    continue
+                if not isinstance(teams, list):
+                    continue
+                entry = {"country": country, "league": str(league).strip()}
+                for team in teams:
+                    name = str(team or "").strip()
+                    if name:
+                        _store(name, entry, prefer=is_domestic)
+    _SEED_TEAM_INDEX = index
+    return index
+
+
+def _load_standings_cache() -> dict:
+    global _STANDINGS_CACHE
+    if _STANDINGS_CACHE is not None:
+        return _STANDINGS_CACHE
+    try:
+        from shared import paths as _paths
+        path = Path(_paths.STANDINGS_CACHE_FILE)
+    except Exception:
+        path = Path(TEAM_DATA_DIR).resolve().parent.parent / "Output" / "Status" / "standings_cache.json"
+    _STANDINGS_CACHE = _load_json(str(path), {})
+    if not isinstance(_STANDINGS_CACHE, dict):
+        _STANDINGS_CACHE = {}
+    return _STANDINGS_CACHE
+
+
+def _match_standings_entry(team_name: str, entries: list) -> dict | None:
+    want = _normalize_name(team_name)
+    if not want:
+        return None
+    exact = None
+    soft = []
+    for entry in entries or []:
+        name = str((entry or {}).get("team") or "").strip()
+        if not name:
+            continue
+        key = _normalize_name(name)
+        if key == want:
+            exact = entry
+            break
+        if want in key or key in want:
+            soft.append(entry)
+    if exact is not None:
+        return exact
+    if len(soft) == 1:
+        return soft[0]
+    return None
+
+
+def domestic_stats_from_standings_cache(team_name: str, league: str | None = None) -> dict | None:
+    """Read live domestic position/points from Output/Status/standings_cache.json."""
+    cache = _load_standings_cache()
+    if league:
+        leagues = [league]
+    else:
+        # Prefer real domestic leagues over cup tables (FA Cup ranks are useless).
+        leagues = sorted(
+            cache.keys(),
+            key=lambda name: (0 if _is_domestic_league_name(name) else 1, str(name)),
+        )
+    for league_name in leagues:
+        if not league_name or _country_from_league(league_name) is None:
+            continue
+        if league is None and not _is_domestic_league_name(league_name):
+            continue
+        payload = cache.get(league_name) or {}
+        groups = payload.get("groups") or []
+        entries = []
+        for group in groups:
+            entries.extend(group.get("entries") or [])
+        hit = _match_standings_entry(team_name, entries)
+        if not hit:
+            continue
+        played = int(hit.get("P") or hit.get("played") or 0)
+        points = float(hit.get("Pts") or hit.get("points") or 0)
+        position = int(hit.get("position") or hit.get("rank") or 0)
+        return {
+            "name": str(hit.get("team") or team_name),
+            "position": position or 999,
+            "points": points,
+            "played": played,
+            "wins": int(hit.get("W") or 0),
+            "draws": int(hit.get("D") or 0),
+            "losses": int(hit.get("L") or 0),
+            "goals_for": int(hit.get("GF") or 0),
+            "goals_against": int(hit.get("GA") or 0),
+            "league": league_name,
+            "source": "standings_cache",
+        }
+    return None
+
 
 def load_country_coefficients() -> dict:
     """Return {country_name: strength_float} for all UEFA associations.
@@ -179,6 +360,8 @@ def lookup_team(team_name: str, registry: dict | None = None) -> dict | None:
     """Look up a team by its primary name or any alias.
 
     Returns {"country": str, "league": str} or None.
+    Falls back to league_teams / current_season seeds when the UEFA registry
+    cache is empty.
     """
     if registry is None:
         registry = load_team_registry()
@@ -191,6 +374,40 @@ def lookup_team(team_name: str, registry: dict | None = None) -> dict | None:
     for primary, info in teams.items():
         if team_name in info.get("aliases", []):
             return {"country": info["country"], "league": info["league"]}
+    # Seed index fallback (exact + normalized).
+    seeds = _load_seed_team_index()
+    hit = seeds.get(team_name) or seeds.get(_normalize_name(team_name))
+    if hit:
+        return dict(hit)
+    # Soft containment against seed keys (Man City ↔ Manchester City).
+    want = _normalize_name(team_name)
+    soft = []
+    for key, info in seeds.items():
+        if " " not in str(key):
+            # Skip normalized duplicates without spaces weirdness; keys include both.
+            pass
+        kn = _normalize_name(key) if key != _normalize_name(key) else key
+        # Only compare against display-name keys (contain uppercase originally).
+        if key != _normalize_name(key):
+            continue
+        # key here is already normalized form stored alongside display names.
+        if want and kn and (want in kn or kn in want):
+            soft.append(info)
+    # Also scan display names
+    soft2 = []
+    for key, info in seeds.items():
+        if key == _normalize_name(key):
+            continue
+        kn = _normalize_name(key)
+        if want and kn and (want in kn or kn in want) and abs(len(want) - len(kn)) <= 12:
+            soft2.append(info)
+    candidates = soft2 or soft
+    if len(candidates) == 1:
+        return dict(candidates[0])
+    # Prefer unique league among soft matches.
+    leagues = {c["league"] for c in candidates}
+    if len(leagues) == 1 and candidates:
+        return dict(candidates[0])
     return None
 
 
@@ -487,16 +704,43 @@ def lookup_team_data_for_fallback(
         uefa_domestic_tables = _load_json(DOMESTIC_TABLES_FILE, {})
 
     entry = lookup_team(team_name, uefa_team_registry)
-    if not entry:
-        return {"country": None, "league": None, "league_strength": 0.50,
-                "squad_value_eur_m": None, "domestic": None, "domestic_ppg": 1.2}
+    # Even without a registry hit, standings_cache may know the team.
+    domestic = None
+    country = None
+    league = None
+    if entry:
+        country = entry["country"]
+        league = entry["league"]
+        domestic = get_team_domestic_stats(
+            team_name, league, uefa_domestic_tables, uefa_team_registry
+        )
+    if domestic is None:
+        domestic = domestic_stats_from_standings_cache(team_name, league)
+        if domestic and not league:
+            league = domestic.get("league")
+            country = country or _country_from_league(league)
+    if not entry and not domestic:
+        return {
+            "country": None,
+            "league": None,
+            "league_strength": 0.50,
+            "squad_value_eur_m": None,
+            "domestic": None,
+            "domestic_ppg": 1.2,
+        }
 
-    country = entry["country"]
-    league = entry["league"]
-    strength = get_country_strength(country, uefa_coefficients)
+    if country is None and league:
+        country = _country_from_league(league)
+    strength = get_country_strength(country, uefa_coefficients) if country else 0.50
     squad_value = get_team_squad_value(team_name, uefa_team_registry, uefa_squad_values)
-    domestic = get_team_domestic_stats(team_name, league, uefa_domestic_tables, uefa_team_registry)
-    domestic_ppg = (domestic["points"] / domestic["played"]) if domestic and domestic.get("played", 0) > 0 else 1.2
+    if domestic and domestic.get("played", 0) > 0:
+        domestic_ppg = float(domestic["points"]) / float(domestic["played"])
+    elif domestic and domestic.get("position"):
+        # Early season: infer a mild PPG prior from table position alone.
+        pos = float(domestic.get("position") or 10)
+        domestic_ppg = max(0.6, min(2.6, 2.4 - (pos - 1) * 0.08))
+    else:
+        domestic_ppg = 1.2
 
     return {
         "country": country,
@@ -506,3 +750,166 @@ def lookup_team_data_for_fallback(
         "domestic": domestic,
         "domestic_ppg": domestic_ppg,
     }
+
+
+# ── 7. Cup matchup priors (domestic position × country strength) ──
+
+
+def _position_to_strength(position: float | None) -> float:
+    """Soft rank transform: pos 1 → ~1.0, mid-table → ~0.55, bottom → ~0.28."""
+    try:
+        pos = float(position or 0.0)
+    except (TypeError, ValueError):
+        pos = 0.0
+    if pos <= 0:
+        return 0.45
+    strength = 1.0 / (1.0 + (pos - 1.0) * 0.08)
+    return max(0.05, min(1.0, strength))
+
+
+def cup_team_strength(
+    team_name: str,
+    *,
+    uefa_coefficients: dict | None = None,
+    uefa_team_registry: dict | None = None,
+    uefa_squad_values: dict | None = None,
+    uefa_domestic_tables: dict | None = None,
+) -> dict:
+    """Scalar strength for a club in a European / cross-league cup tie.
+
+    Combines:
+      - domestic table position (rank transform)
+      - domestic points-per-game
+      - UEFA country / league coefficient
+      - squad market-value scale
+
+    Returns dict with ``strength`` in roughly [0.05, 1.25] plus metadata.
+    """
+    bundle = lookup_team_data_for_fallback(
+        team_name,
+        uefa_coefficients=uefa_coefficients,
+        uefa_team_registry=uefa_team_registry,
+        uefa_squad_values=uefa_squad_values,
+        uefa_domestic_tables=uefa_domestic_tables,
+    )
+    domestic = bundle.get("domestic") or {}
+    league_ls = float(bundle.get("league_strength") or 0.50)
+    pos_strength = _position_to_strength(domestic.get("position") if domestic else None)
+    ppg = float(bundle.get("domestic_ppg") or 1.2)
+    # ~2.4 PPG is title-challenger pace across most European leagues.
+    ppg_strength = max(0.15, min(1.0, ppg / 2.4))
+    form_strength = 0.65 * pos_strength + 0.35 * ppg_strength
+    value_scale = squad_value_scale_factor(bundle.get("squad_value_eur_m"))
+    strength = max(0.05, min(1.35, form_strength * league_ls * value_scale))
+    return {
+        "team": team_name,
+        "strength": strength,
+        "position_strength": pos_strength,
+        "ppg_strength": ppg_strength,
+        "league_strength": league_ls,
+        "squad_value_scale": value_scale,
+        "country": bundle.get("country"),
+        "league": bundle.get("league"),
+        "domestic_position": (domestic or {}).get("position"),
+        "domestic_ppg": ppg,
+        "found": bool(bundle.get("country") or bundle.get("league") or domestic),
+    }
+
+
+def cup_matchup_prior(
+    home_team: str,
+    away_team: str,
+    *,
+    is_neutral: bool = False,
+    uefa_coefficients: dict | None = None,
+    uefa_team_registry: dict | None = None,
+    uefa_squad_values: dict | None = None,
+    uefa_domestic_tables: dict | None = None,
+) -> dict | None:
+    """Build H/D/A prior from domestic standing × league coefficient.
+
+    Used when cup sides share little/no H2H history so model outputs do not
+    collapse toward 1/3–1/3–1/3 (or a flat home prior).
+    """
+    home = cup_team_strength(
+        home_team,
+        uefa_coefficients=uefa_coefficients,
+        uefa_team_registry=uefa_team_registry,
+        uefa_squad_values=uefa_squad_values,
+        uefa_domestic_tables=uefa_domestic_tables,
+    )
+    away = cup_team_strength(
+        away_team,
+        uefa_coefficients=uefa_coefficients,
+        uefa_team_registry=uefa_team_registry,
+        uefa_squad_values=uefa_squad_values,
+        uefa_domestic_tables=uefa_domestic_tables,
+    )
+    if not home.get("found") and not away.get("found"):
+        return None
+
+    hs = float(home["strength"])
+    as_ = float(away["strength"])
+    if not is_neutral:
+        hs += 0.05  # modest single-leg / first-leg home edge
+
+    gap = abs(hs - as_)
+    draw_prior = max(0.18, min(0.32, 0.32 - 0.55 * gap))
+    if hs >= as_:
+        home_share = 0.5 + 0.55 * min(1.0, gap)
+    else:
+        home_share = 0.5 - 0.55 * min(1.0, gap)
+    home_share = max(0.12, min(0.88, home_share))
+    away_share = 1.0 - home_share
+    ph = (1.0 - draw_prior) * home_share
+    pa = (1.0 - draw_prior) * away_share
+    total = ph + draw_prior + pa
+    if total <= 0:
+        return None
+    # Expected goals from relative strength (keeps sims from 1-0 / 0-1 only).
+    home_xg = max(0.6, min(3.2, 1.15 + 1.4 * (hs - as_)))
+    away_xg = max(0.4, min(2.8, 1.05 + 1.4 * (as_ - hs)))
+    return {
+        "H": ph / total,
+        "D": draw_prior / total,
+        "A": pa / total,
+        "pred_home_goals": round(home_xg, 2),
+        "pred_away_goals": round(away_xg, 2),
+        "home_strength": hs,
+        "away_strength": as_,
+        "home_meta": home,
+        "away_meta": away,
+        "source": "cup_strength_prior",
+    }
+
+
+def blend_probs_with_cup_prior(
+    model_probs: dict,
+    prior: dict | None,
+    *,
+    prior_weight: float = 0.45,
+) -> dict:
+    """Blend model {H,D,A} with a cup strength prior. prior_weight in [0,1]."""
+    if not prior:
+        return {
+            "H": float(model_probs.get("H") or model_probs.get("prob_home") or 0.0),
+            "D": float(model_probs.get("D") or model_probs.get("prob_draw") or 0.0),
+            "A": float(model_probs.get("A") or model_probs.get("prob_away") or 0.0),
+        }
+    w = max(0.0, min(1.0, float(prior_weight)))
+    mh = float(model_probs.get("H") or model_probs.get("prob_home") or 0.0)
+    md = float(model_probs.get("D") or model_probs.get("prob_draw") or 0.0)
+    ma = float(model_probs.get("A") or model_probs.get("prob_away") or 0.0)
+    mt = mh + md + ma
+    if mt <= 1e-9:
+        return {"H": prior["H"], "D": prior["D"], "A": prior["A"]}
+    mh, md, ma = mh / mt, md / mt, ma / mt
+    out = {
+        "H": (1.0 - w) * mh + w * float(prior["H"]),
+        "D": (1.0 - w) * md + w * float(prior["D"]),
+        "A": (1.0 - w) * ma + w * float(prior["A"]),
+    }
+    total = out["H"] + out["D"] + out["A"]
+    if total > 0:
+        out = {k: v / total for k, v in out.items()}
+    return out
