@@ -13,7 +13,7 @@ Execution order
    (the core left free for the backend's live score polling and API/file
    serving). Each sub-pipeline runs its steps sequentially: Download → Process
    → Sort → Model Cache → Predict Upcoming → Project League Table →
-   (national team / WC when a World Cup is active)
+   (national team / WC when a World Cup is active; otherwise international friendlies ≤14d)
 3. **Post-pipeline steps** (after all sub-pipelines finish):
    Settle predictions (update CSVs with real results from ESPN),
    Sync club friendlies, Track cup results
@@ -134,8 +134,11 @@ def parse_args():
     parser.add_argument(
         "--national-window-days",
         type=int,
-        default=90,
-        help="Fixture window days for national-team and World Cup prediction scripts.",
+        default=14,
+        help=(
+            "Fixture window days for national-team scripts. When no World Cup is "
+            "active this caps international friendlies predictions (default: 14)."
+        ),
     )
     parser.add_argument(
         "--continue-on-error",
@@ -773,7 +776,73 @@ def _run_global_subpipeline(args, api_token):
             continue_on_error=args.continue_on_error,
         )
     else:
-        print("[skip] No active World Cup window — skipping World Cup steps")
+        # Between World Cups: keep collecting completed national results into the
+        # training archive and SQLite, reuse the model cache when it exists, and
+        # predict International/Friendly fixtures in a short lookahead window.
+        # Never delete existing training rows or the model cache.
+        friendly_window = min(14, max(1, int(args.national_window_days or 14)))
+        print(
+            f"[national] World Cup inactive — predicting international friendlies "
+            f"(next {friendly_window} day(s) only)"
+        )
+        national_model_cache = _paths.DATA_DIR / "National_Team_Data" / "national_team_model_cache.pkl"
+        national_raw_matches = _paths.DATA_DIR / "National_Team_Data" / "national_team_recent_matches_raw.csv"
+        # Always append newly completed games and mirror the full training
+        # archive into SQLite. This does not rebuild or delete the model cache.
+        archive_cmd = [
+            py,
+            str(FILES_DIR / "Process_National_Team_Data.py"),
+            "--friendlies-only",
+            "--archive-matches",
+        ]
+        sub["national_match_archive"] = run_step(
+            "[global] Collect new national matches + SQLite safety copy",
+            archive_cmd,
+            continue_on_error=True,
+            timeout=3600,
+        )
+        if national_model_cache.is_file():
+            print(
+                f"[national] Reusing existing model cache "
+                f"({national_model_cache.name}); processed model files left untouched"
+            )
+        else:
+            national_process_cmd = [
+                py,
+                str(FILES_DIR / "Process_National_Team_Data.py"),
+                "--friendlies-only",
+            ]
+            # Train from the archive (including any rows just appended). Do not
+            # replace that file with a fresh ESPN window.
+            if national_raw_matches.is_file():
+                national_process_cmd.append("--skip-fetch")
+                print(
+                    f"[national] Building model from existing training file "
+                    f"({national_raw_matches.name}); not replacing archived matches"
+                )
+            if args.skip_model_train:
+                national_process_cmd.append("--skip-squad-values")
+            sub["national_friendlies_model"] = run_step(
+                "[global] National team model (friendlies, preserve training data)",
+                national_process_cmd,
+                continue_on_error=args.continue_on_error,
+                timeout=3600,
+            )
+        national_upcoming_cmd = [
+            py,
+            str(FILES_DIR / "Predict_Upcoming_National_Team_Games.py"),
+            "--friendlies-only",
+            "--window-days",
+            str(friendly_window),
+        ]
+        if api_token:
+            national_upcoming_cmd += ["--api-token", api_token]
+        sub["upcoming_international_friendlies"] = run_step(
+            "[global] Upcoming international friendlies predictions",
+            national_upcoming_cmd,
+            continue_on_error=args.continue_on_error,
+            timeout=UPCOMING_MATCHWEEK_TIMEOUT_S,
+        )
     return sub
 
 
@@ -1060,7 +1129,8 @@ def _sync_predicted_games_to_sqlite(label: str = "upcoming"):
     """Push full upcoming-API-shaped rows into SQLite as a durable backup.
 
     Uses Website ``sync_api_shaped_predictions_to_sqlite`` so stored payloads
-    match ``/api/upcoming`` / ``/api/past-games`` field-for-field.
+    match ``/api/upcoming`` / ``/api/past-games`` field-for-field. Sources
+    include global, mls, extra, cups, national, and friendlies CSVs.
     """
     website_dir = SP_DIR / "Website"
     if str(website_dir) not in sys.path:
@@ -1221,6 +1291,8 @@ def run_full_pipeline(args, api_token, results=None):
 
     # Snapshot whatever prediction CSVs already exist before this run mutates
     # them, so a mid-pipeline crash still leaves a recent SQLite backup.
+    # ensure_store also creates past_games / upcoming_games / live_score_history
+    # / store_meta if the on-disk DB is new.
     print("\n=== [sqlite] Sync at pipeline start (pre-existing CSVs) ===")
     _sync_predicted_games_to_sqlite("pipeline-start")
     results["sqlite_sync_start"] = True
@@ -1271,7 +1343,8 @@ def run_full_pipeline(args, api_token, results=None):
         # its projection step (OOM / uncaught executor exception on the host).
         results.update(_ensure_projected_tables(args))
 
-        # Mid-run backup once upcoming CSVs are refreshed (before settle/cups).
+        # Mid-run backup once upcoming CSVs are refreshed (before settle/cups),
+        # including national friendlies predictions written by the global branch.
         if not _tables_only():
             print("\n=== [sqlite] Sync after sub-pipelines (new upcoming CSVs) ===")
             _sync_predicted_games_to_sqlite("post-subpipelines")

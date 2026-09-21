@@ -89,10 +89,11 @@ Beyond-the-Stats/Website/static/tesmp
 **/pipelines/*/Data/Team_Data/mls_squad_values.json
 
 # All generated artifacts (predictions, LeagueData, CupData, status, logs, cache)
-# Includes Output/Status/bts_store.db (SQLite history). Intentionally untracked so
-# git pull/checkout never overwrite host data — the file lives on disk across
-# reboots and is NOT stored in RAM. Do not `git clean -fdx` Output/ on the server
-# unless you mean to wipe runtime history.
+# Includes Output/Status/bts_store.db (SQLite history, including the national-team
+# training safety copy). Intentionally untracked so git pull/checkout never
+# overwrite host data — the file lives on disk across reboots and is NOT stored
+# in RAM. Do not `git clean -fdx` Output/ on the server unless you mean to wipe
+# runtime history.
 **/Output/**
 
 # ESPN API response cache (legacy location under Data/)

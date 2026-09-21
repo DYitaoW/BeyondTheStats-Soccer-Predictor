@@ -23,6 +23,7 @@ class SqliteStoreTests(unittest.TestCase):
         self.past_json = Path(self.tmp.name) / "past_games.json"
         self.live_json = Path(self.tmp.name) / "live_score_history.json"
         self.journal = Path(self.tmp.name) / "past_games_journal.jsonl"
+        self.national_csv = Path(self.tmp.name) / "national_team_recent_matches_raw.csv"
 
         from shared import sqlite_store as store
 
@@ -32,6 +33,7 @@ class SqliteStoreTests(unittest.TestCase):
             mock.patch.object(store, "_past_games_json", return_value=self.past_json),
             mock.patch.object(store, "_past_games_journal", return_value=self.journal),
             mock.patch.object(store, "_live_history_json", return_value=self.live_json),
+            mock.patch.object(store, "_national_raw_matches_csv", return_value=self.national_csv),
             mock.patch.dict(os.environ, {"BTS_SQLITE_STORE_PATH": str(self.db)}),
         ]
         for patch in self._path_patches:
@@ -397,6 +399,75 @@ class PathsSqliteConstantTests(unittest.TestCase):
         )
         self.assertEqual(paths_mod.PAST_GAMES_DB_FILE, paths_mod.SQLITE_STORE_FILE)
         self.assertEqual(paths_mod.LIVE_SCORE_HISTORY_DB_FILE, paths_mod.SQLITE_STORE_FILE)
+
+
+class SqliteSchemaAndNationalMigrateTests(unittest.TestCase):
+    def test_ensure_store_creates_all_tables(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "bts_store.db"
+            national = Path(tmp) / "national_team_recent_matches_raw.csv"
+            national.write_text(
+                "match_id,match_date,match_datetime_utc,competition,home_team,away_team,FTHG,FTAG,FTR\n"
+                "n1,2025-11-01,2025-11-01T18:00:00+00:00,International/Friendly,Brazil,Argentina,1,0,H\n",
+                encoding="utf-8",
+            )
+            from shared import sqlite_store as store
+
+            with mock.patch.object(store, "_default_db_path", return_value=db), mock.patch.object(
+                store, "_past_games_json", return_value=Path(tmp) / "past.json"
+            ), mock.patch.object(
+                store, "_past_games_journal", return_value=Path(tmp) / "journal.jsonl"
+            ), mock.patch.object(
+                store, "_live_history_json", return_value=Path(tmp) / "live.json"
+            ), mock.patch.object(
+                store, "_national_raw_matches_csv", return_value=national
+            ), mock.patch.dict(os.environ, {"BTS_SQLITE_STORE_PATH": str(db)}):
+                path = store.ensure_store()
+                self.assertEqual(path, db.resolve())
+                info = store.store_info()
+                self.assertEqual(
+                    set(info["tables"]),
+                    {"past_games", "live_score_history", "upcoming_games"},
+                )
+                self.assertEqual(info["schema_version"], store._SCHEMA_VERSION)
+                past = store.load_past_games()
+                self.assertEqual(len(past), 1)
+                self.assertEqual(past[0].get("archive_source"), "national_training")
+                self.assertEqual(past[0].get("home_team"), "Brazil")
+                # Second ensure_store should not wipe / re-duplicate.
+                store.ensure_store()
+                self.assertEqual(len(store.load_past_games()), 1)
+                # All three write paths must succeed against the same schema.
+                store.upsert_upcoming_games(
+                    [
+                        {
+                            "prediction_key": "u1",
+                            "match_date": "2026-09-22",
+                            "competition": "International/Friendly",
+                            "home_team": "Spain",
+                            "away_team": "France",
+                            "prob_home": 0.4,
+                        }
+                    ],
+                    source="national",
+                )
+                store.upsert_live_score_history(
+                    [
+                        {
+                            "match_id": "live-1",
+                            "kickoff_utc": "2026-09-18T19:00:00Z",
+                            "competition": "International/Friendly",
+                            "home_team": "Spain",
+                            "away_team": "France",
+                            "home_score": 2,
+                            "away_score": 1,
+                        }
+                    ]
+                )
+                info2 = store.store_info()
+                self.assertEqual(info2["tables"]["upcoming_games"], 1)
+                self.assertEqual(info2["tables"]["live_score_history"], 1)
+                self.assertGreaterEqual(info2["tables"]["past_games"], 1)
 
 
 if __name__ == "__main__":
