@@ -34,16 +34,13 @@ Tables (auto-created, schema v2):
 
 | Table | Purpose |
 |-------|---------|
-| `upcoming_games` | All predicted fixtures (incl. unsettled) synced after pipeline upcoming steps — global, mls, extra, cups, **national friendlies**, club friendlies |
-| `past_games` | Settled prediction archive for `/api/past-games`, plus national-team training matches (`archive_source=national_training`) |
+| `upcoming_games` | All predicted fixtures (incl. unsettled) synced after pipeline upcoming steps |
+| `past_games` | Settled prediction archive for `/api/past-games` |
 | `live_score_history` | Finished live games with full stats; **never pruned** |
 | `store_meta` | Schema / migration flags |
 
 JSON dual-write (`past_games.json`, `live_score_history.json`) still runs for
-compatibility. APIs prefer SQLite when it has rows. The national raw training
-CSV (`Data/National_Team_Data/national_team_recent_matches_raw.csv`) is also
-mirrored into `past_games` on first store open and whenever
-`Process_National_Team_Data.py --archive-matches` runs.
+compatibility. APIs prefer SQLite when it has rows.
 
 ## Backend setup (deploy host)
 
@@ -63,17 +60,12 @@ mirrored into `past_games` on first store open and whenever
 
 ## When rows are written
 
-- **Pipeline start**: `ensure_store()` creates tables + migrates JSON / national
-  training archives; then sync whatever prediction CSVs already exist.
-- **National friendlies archive**: appends new completed international matches
-  into the raw training CSV and upserts the full set into `past_games`.
-- **After sub-pipelines**: sync newly written upcoming CSVs (before settle/cups),
-  including national friendlies predictions.
+- **Pipeline start**: sync whatever prediction CSVs already exist (pre-run snapshot).
+- **After sub-pipelines**: sync newly written upcoming CSVs (before settle/cups).
 - **Pipeline end** (`finally`): always sync again — even if a later step failed —
   so SQLite has the freshest on-disk rows from this run.
 - **When a live game ends**: poller upserts the finished game; after ESPN summary
   fetch it re-upserts with lineups / boxscore / key events / etc.
-- **Settle / past-games archive**: dual-writes settled rows into `past_games`.
 - **SQLite never deletes** history for date limits. JSON live history may still
   prune ~30 days; SQLite keeps everything.
 

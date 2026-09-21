@@ -1129,8 +1129,7 @@ def _sync_predicted_games_to_sqlite(label: str = "upcoming"):
     """Push full upcoming-API-shaped rows into SQLite as a durable backup.
 
     Uses Website ``sync_api_shaped_predictions_to_sqlite`` so stored payloads
-    match ``/api/upcoming`` / ``/api/past-games`` field-for-field. Sources
-    include global, mls, extra, cups, national, and friendlies CSVs.
+    match ``/api/upcoming`` / ``/api/past-games`` field-for-field.
     """
     website_dir = SP_DIR / "Website"
     if str(website_dir) not in sys.path:
@@ -1291,8 +1290,6 @@ def run_full_pipeline(args, api_token, results=None):
 
     # Snapshot whatever prediction CSVs already exist before this run mutates
     # them, so a mid-pipeline crash still leaves a recent SQLite backup.
-    # ensure_store also creates past_games / upcoming_games / live_score_history
-    # / store_meta if the on-disk DB is new.
     print("\n=== [sqlite] Sync at pipeline start (pre-existing CSVs) ===")
     _sync_predicted_games_to_sqlite("pipeline-start")
     results["sqlite_sync_start"] = True
@@ -1343,8 +1340,7 @@ def run_full_pipeline(args, api_token, results=None):
         # its projection step (OOM / uncaught executor exception on the host).
         results.update(_ensure_projected_tables(args))
 
-        # Mid-run backup once upcoming CSVs are refreshed (before settle/cups),
-        # including national friendlies predictions written by the global branch.
+        # Mid-run backup once upcoming CSVs are refreshed (before settle/cups).
         if not _tables_only():
             print("\n=== [sqlite] Sync after sub-pipelines (new upcoming CSVs) ===")
             _sync_predicted_games_to_sqlite("post-subpipelines")

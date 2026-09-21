@@ -12,7 +12,6 @@ SQLite never deletes rows for date-window limits. Tables:
 """
 from __future__ import annotations
 
-import csv
 import json
 import os
 import sqlite3
@@ -64,17 +63,6 @@ def _live_history_json() -> Path:
     if _paths is not None:
         return Path(_paths.LIVE_SCORE_HISTORY_FILE)
     return Path(__file__).resolve().parent.parent / "Output" / "Status" / "live_score_history.json"
-
-
-def _national_raw_matches_csv() -> Path:
-    if _paths is not None:
-        return Path(_paths.DATA_NATIONAL_DIR) / "national_team_recent_matches_raw.csv"
-    return (
-        Path(__file__).resolve().parent.parent
-        / "Data"
-        / "National_Team_Data"
-        / "national_team_recent_matches_raw.csv"
-    )
 
 
 def _db_path() -> Path:
