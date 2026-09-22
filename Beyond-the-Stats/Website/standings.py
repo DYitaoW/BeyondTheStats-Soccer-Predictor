@@ -605,12 +605,12 @@ def _fetch_espn_roster_for_competition(comp_name: str) -> list[str]:
         return []
 
 
-def _load_live_score_history():
+def _load_live_score_history(from_date: str | None = None):
     """Load completed live-score games (SQLite preferred, JSON fallback)."""
     try:
         from shared import sqlite_store as _sqlite_store
 
-        rows = _sqlite_store.load_live_score_history()
+        rows = _sqlite_store.load_live_score_history(from_date=from_date)
         if rows:
             return rows
     except Exception:
@@ -631,6 +631,10 @@ def _load_live_score_history():
         match_id = str(game.get("match_id", "")).strip().lower()
         if match_id.startswith("test-") or "test-past-games" in match_id:
             continue
+        if from_date:
+            kickoff = str(game.get("kickoff_utc", "") or game.get("match_date", ""))[:10]
+            if kickoff and kickoff < from_date:
+                continue
         filtered.append(game)
     return filtered
 

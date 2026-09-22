@@ -50,6 +50,8 @@ MLS_FILES_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DATA_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_matchweek_predictions.csv")
 SHARED_TEAM_MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
+TEAM_MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
+SHARED_TEAM_MAPPING_FILE = TEAM_MAPPING_FILE
 FOOTBALL_DATA_API_BASE = "https://api.football-data.org/v4"
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
@@ -730,6 +732,11 @@ def load_upcoming_matchweek_fixtures_from_espn(
         if competition_names and competition_name not in set(competition_names):
             continue
         end = today + pd.Timedelta(days=max(1, min(int(lookahead_days), 365)))
+        cutoff_end = season_calendar.fixture_search_bounds(
+            competition_name, reference_date=today
+        )[1]
+        scan_days = min(int(lookahead_days), max(1, int((cutoff_end - today).days) + 1))
+        end = min(today + pd.Timedelta(days=scan_days), cutoff_end)
         events = []
         if espn_api_cache is not None:
             try:
@@ -980,7 +987,28 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
             fixtures = filter_liga_mx_active_tournament(fixtures)
             print("Fixture source: Raw_Data season CSVs")
             return fixtures
+
+    if fixtures.empty:
+        # Last-resort fallback: read stored upcoming games from durable SQLite
+        # backup (never deletes or modifies SQLite).
+        try:
+            import sqlite_store
+
+            today = pd.Timestamp(datetime.now(UTC).date())
+            sqlite_fixtures = sqlite_store.load_upcoming_fixtures_dataframe(
+                competitions=REGIONAL_ESPN_COMPETITIONS.keys(),
+                reference_date=today,
+                window_days=window_days,
+            )
+            if sqlite_fixtures is not None and not sqlite_fixtures.empty:
+                fixtures = dedupe_fixtures(sqlite_fixtures)
+                fixtures = filter_liga_mx_active_tournament(fixtures)
+                print("Fixture source: SQLite upcoming_games backup")
+                return fixtures
+        except Exception as exc:
+            print(f"[mls] SQLite upcoming games fallback skipped: {exc}")
         return fixtures
+
     fixtures = dedupe_fixtures(fixtures)
     fixtures = filter_liga_mx_active_tournament(fixtures)
     print("Fixture source: CSV fallback")

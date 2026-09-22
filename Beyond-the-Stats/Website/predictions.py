@@ -1,4 +1,5 @@
 """Pre-match predictions, model context loading, and data helpers."""
+import csv
 import importlib.util
 import json
 import os
@@ -247,50 +248,51 @@ def _build_last5_form_index(mode):
         _LAST_5_FORM_CACHE_TIME = now
         return {}
 
-    # Walk all CSVs and build team -> matches
+    # Walk CSVs and build team -> matches. Sort files descending so the latest
+    # seasons are read first, and cap to the latest 3 files per league folder.
     team_matches = defaultdict(list)
     for root, _, files in os.walk(processed_dir):
-        for name in sorted(files):
-            if not name.endswith(".csv"):
-                continue
+        csv_files = [f for f in sorted(files, reverse=True) if f.endswith(".csv")][:3]
+        for name in csv_files:
             path = os.path.join(root, name)
+            comp = os.path.basename(root) or "Unknown"
             try:
-                df = pd.read_csv(path, usecols=lambda c: c in {"Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"})
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    reader = csv.DictReader(f)
+                    for r in reader:
+                        home = str(r.get("HomeTeam", "")).strip()
+                        away = str(r.get("AwayTeam", "")).strip()
+                        if not home or not away:
+                            continue
+                        date_str = str(r.get("Date", ""))
+                        result = str(r.get("FTR", ""))
+                        try:
+                            hg = int(float(r.get("FTHG", 0) or 0))
+                            ag = int(float(r.get("FTAG", 0) or 0))
+                        except (ValueError, TypeError):
+                            continue
+                        team_matches[home].append({
+                            "opponent": away,
+                            "date": date_str,
+                            "result": result,
+                            "home_score": hg,
+                            "away_score": ag,
+                            "is_home": True,
+                            "venue": "home",
+                            "competition": comp,
+                        })
+                        team_matches[away].append({
+                            "opponent": home,
+                            "date": date_str,
+                            "result": "H" if result == "A" else ("A" if result == "H" else result),
+                            "home_score": hg,
+                            "away_score": ag,
+                            "is_home": False,
+                            "venue": "away",
+                            "competition": comp,
+                        })
             except Exception:
                 continue
-            if "HomeTeam" not in df.columns or "AwayTeam" not in df.columns:
-                continue
-            comp = os.path.basename(os.path.dirname(path)) or "Unknown"
-            for _, r in df.iterrows():
-                home = str(r["HomeTeam"]).strip()
-                away = str(r["AwayTeam"]).strip()
-                try:
-                    hg = int(r["FTHG"]) if pd.notna(r.get("FTHG")) else 0
-                    ag = int(r["FTAG"]) if pd.notna(r.get("FTAG")) else 0
-                except (ValueError, TypeError):
-                    continue
-                date_str = str(r.get("Date", ""))
-                result = str(r.get("FTR", ""))
-                team_matches[home].append({
-                    "opponent": away,
-                    "date": date_str,
-                    "result": result,
-                    "home_score": hg,
-                    "away_score": ag,
-                    "is_home": True,
-                    "venue": "home",
-                    "competition": comp,
-                })
-                team_matches[away].append({
-                    "opponent": home,
-                    "date": date_str,
-                    "result": "H" if result == "A" else ("A" if result == "H" else result),
-                    "home_score": hg,
-                    "away_score": ag,
-                    "is_home": False,
-                    "venue": "away",
-                    "competition": comp,
-                })
 
     # Keep only last-5 per team, sorted by date descending
     result_index = {}
@@ -2209,11 +2211,13 @@ def run_live_results_updater():
 
 def _invalidate_prediction_caches(*, reload_contexts: bool = False) -> None:
     """Clear in-memory predictor state and Redis API caches after a pipeline run."""
-    global _ctx_global, _ctx_mls, _ctx_extra
+    global _ctx_global, _ctx_mls, _ctx_extra, _PAST_GAME_PREDICTION_LOOKUP_CACHE
     with _ctx_lock:
         _ctx_global = None
         _ctx_mls = None
         _ctx_extra = None
+    with _PAST_GAME_PREDICTION_LOOKUP_LOCK:
+        _PAST_GAME_PREDICTION_LOOKUP_CACHE = None
     _static_predictions_cache.clear()
     _static_team_cache.clear()
     try:
@@ -2517,7 +2521,7 @@ def _collect_live_past_game_rows(cutoff: str) -> list[dict]:
         seen.add(ck)
         rows.append(row)
 
-    for game in _load_live_score_history():
+    for game in _load_live_score_history(from_date=cutoff):
         add_game(game)
 
     try:
@@ -2533,11 +2537,27 @@ def _collect_live_past_game_rows(cutoff: str) -> list[dict]:
     return rows
 
 
+_PAST_GAME_PREDICTION_LOOKUP_CACHE: dict[str, dict] | None = None
+_PAST_GAME_PREDICTION_LOOKUP_CACHE_TIME: float = 0.0
+_PAST_GAME_PREDICTION_LOOKUP_LOCK = threading.Lock()
+_PAST_GAME_PREDICTION_LOOKUP_TTL: float = 120.0
+
+
 def _build_past_game_prediction_lookup() -> dict[str, dict]:
     """Index prediction rows by match key for enriching live results.
 
     Prefers API-shaped SQLite upcoming rows when present, then CSV enrichment.
+    Cached for up to 120 seconds or until pipeline cache invalidation.
     """
+    global _PAST_GAME_PREDICTION_LOOKUP_CACHE, _PAST_GAME_PREDICTION_LOOKUP_CACHE_TIME
+    now = time.time()
+    with _PAST_GAME_PREDICTION_LOOKUP_LOCK:
+        if (
+            _PAST_GAME_PREDICTION_LOOKUP_CACHE is not None
+            and (now - _PAST_GAME_PREDICTION_LOOKUP_CACHE_TIME) < _PAST_GAME_PREDICTION_LOOKUP_TTL
+        ):
+            return _PAST_GAME_PREDICTION_LOOKUP_CACHE
+
     lookup: dict[str, dict] = {}
 
     def _index_row(row: dict) -> None:
@@ -2582,9 +2602,13 @@ def _build_past_game_prediction_lookup() -> dict[str, dict]:
         ("national", config.NATIONAL_UPCOMING_FILE),
         ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
     ):
-        pred_rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
+        pred_rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="completed")
         for row in pred_rows:
             _index_row(row)
+
+    with _PAST_GAME_PREDICTION_LOOKUP_LOCK:
+        _PAST_GAME_PREDICTION_LOOKUP_CACHE = lookup
+        _PAST_GAME_PREDICTION_LOOKUP_CACHE_TIME = now
     return lookup
 
 

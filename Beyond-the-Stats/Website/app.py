@@ -1,4 +1,4 @@
-﻿"""
+"""
 Flask API server — the main web serving layer for Beyond the Stats.
 
 Architecture
@@ -107,6 +107,7 @@ from predictions import (
     _collect_live_past_game_rows,
     _merge_prediction_onto_past_row,
     _past_row_date_iso,
+    _past_row_looks_api_complete,
     _load_team_recent_matches,
     _load_teams_from_team_data,
     _load_upcoming_rows,
@@ -2165,7 +2166,8 @@ def api_past_games():
             _put_past_row(r)
 
     # ── 2. Completed games from live scores (today + recent) ───────
-    for r in _collect_live_past_game_rows("2000-01-01"):
+    live_cutoff = (datetime.now(timezone.utc).date() - timedelta(days=60)).isoformat()
+    for r in _collect_live_past_game_rows(live_cutoff):
         r = _merge_prediction_onto_past_row(r, prediction_lookup)
         _put_past_row(r, overwrite_incomplete_only=True)
 

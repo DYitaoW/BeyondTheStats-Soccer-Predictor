@@ -895,6 +895,116 @@ def load_upcoming_games(
         conn.close()
 
 
+def load_upcoming_fixtures_dataframe(
+    competitions: Optional[Iterable[str]] = None,
+    reference_date: Optional[Any] = None,
+    window_days: Optional[int] = None,
+    db_path: Optional[Path] = None,
+):
+    """Return future unplayed fixtures from SQLite as a DataFrame for prediction fallback.
+
+    Strictly read-only: never deletes, drops, or mutates any rows in SQLite.
+    Maps storage payloads to the standard fixture schema:
+        ['match_date', 'match_datetime_et', 'match_datetime_utc', 'competition', 'home_team', 'away_team']
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        return None
+
+    ref = pd.Timestamp(
+        reference_date
+        if reference_date is not None
+        else datetime.now(timezone.utc).date()
+    ).normalize()
+    from_date_str = ref.strftime("%Y-%m-%d")
+    to_date_str = ""
+    if window_days is not None and int(window_days) > 0:
+        end_ref = ref + pd.Timedelta(days=int(window_days))
+        to_date_str = end_ref.strftime("%Y-%m-%d")
+
+    target_comps = set(str(c).strip() for c in (competitions or []) if str(c).strip())
+
+    # 1) Try uncompleted games (status != 'settled') from today onward.
+    all_upcoming = load_upcoming_games(
+        status="upcoming",
+        from_date=from_date_str,
+        to_date=to_date_str,
+        db_path=db_path,
+    )
+    if not all_upcoming:
+        # Fallback to querying without status filter in case status was empty
+        all_upcoming = load_upcoming_games(
+            from_date=from_date_str,
+            to_date=to_date_str,
+            db_path=db_path,
+        )
+
+    rows = []
+    seen = set()
+    for item in all_upcoming:
+        if not isinstance(item, dict):
+            continue
+        actual = str(item.get("actual_result", "") or "").strip().upper()
+        if actual in {"H", "D", "A"}:
+            continue
+        comp = str(item.get("competition", "") or "").strip()
+        if target_comps and comp not in target_comps:
+            continue
+        match_date = pd.to_datetime(
+            item.get("match_date") or item.get("match_date_iso"), errors="coerce"
+        )
+        if pd.isna(match_date):
+            continue
+        match_date = match_date.normalize()
+        if match_date < ref:
+            continue
+
+        home_team = str(item.get("home_team", "") or "").strip()
+        away_team = str(item.get("away_team", "") or "").strip()
+        if not home_team or not away_team:
+            continue
+
+        key = (comp, match_date.strftime("%Y-%m-%d"), home_team, away_team)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        dt_utc = str(
+            item.get("match_datetime_utc", "") or item.get("kickoff_utc", "") or ""
+        ).strip()
+        dt_et = str(item.get("match_datetime_et", "") or "").strip()
+        if not dt_utc and match_date is not None:
+            dt_utc = match_date.isoformat()
+        if not dt_et and match_date is not None:
+            dt_et = match_date.isoformat()
+
+        rows.append(
+            {
+                "match_date": match_date,
+                "match_datetime_et": dt_et,
+                "match_datetime_utc": dt_utc,
+                "competition": comp,
+                "home_team": home_team,
+                "away_team": away_team,
+            }
+        )
+
+    cols = [
+        "match_date",
+        "match_datetime_et",
+        "match_datetime_utc",
+        "competition",
+        "home_team",
+        "away_team",
+    ]
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame(rows).sort_values(
+        ["match_date", "competition", "home_team", "away_team"]
+    ).reset_index(drop=True)
+
+
 def _default_upcoming_sources() -> list[tuple[str, Path]]:
     if _paths is None:
         base = Path(__file__).resolve().parent.parent / "Output" / "Predictions"

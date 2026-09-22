@@ -1793,6 +1793,21 @@ def main():
     fixtures = _dedupe_fixtures(fixtures)
     if fixtures.empty:
         print("No upcoming matchweek fixtures returned by API or raw CSVs.")
+        try:
+            import sqlite_store
+
+            sqlite_fixtures = sqlite_store.load_upcoming_fixtures_dataframe(
+                reference_date=pd.Timestamp(datetime.now(UTC).date()),
+                window_days=args.window_days,
+            )
+            if sqlite_fixtures is not None and not sqlite_fixtures.empty:
+                print(f"[global] Loaded {len(sqlite_fixtures)} fixtures from SQLite backup.")
+                fixtures = _dedupe_fixtures(sqlite_fixtures)
+        except Exception as exc:
+            print(f"[global] SQLite backup load failed: {exc}")
+
+    if fixtures.empty:
+        print("No upcoming matchweek fixtures returned by API, raw CSVs, or SQLite backup.")
         return
 
     context = build_prediction_context()

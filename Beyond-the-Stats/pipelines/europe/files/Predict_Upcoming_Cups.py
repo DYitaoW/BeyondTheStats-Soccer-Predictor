@@ -2121,6 +2121,25 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
 
     if not all_fixtures:
         print("[cups] DONE with processing 0 cup fixture loads", flush=True)
+        try:
+            import sqlite_store
+
+            cup_comps = [cup_data["name"] for cup_data in CUP_CONFIGS.values()]
+            sqlite_fixtures = sqlite_store.load_upcoming_fixtures_dataframe(
+                competitions=cup_comps,
+                reference_date=pd.Timestamp(datetime.now(UTC).date()),
+                window_days=window_days,
+            )
+            if sqlite_fixtures is not None and not sqlite_fixtures.empty:
+                print(
+                    f"[cups] Loaded {len(sqlite_fixtures)} fixtures from SQLite backup.",
+                    flush=True,
+                )
+                return merge_cup_fixture_frames(
+                    [sqlite_fixtures], label="SQLITE_BACKUP"
+                )
+        except Exception as exc:
+            print(f"[cups] SQLite backup load failed: {exc}", flush=True)
         return pd.DataFrame()
 
     print(f"[cups] DONE with processing {len(all_fixtures)} cup fixture loads", flush=True)

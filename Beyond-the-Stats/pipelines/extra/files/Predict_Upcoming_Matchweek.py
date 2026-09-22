@@ -846,6 +846,33 @@ def main():
         )
 
     if not fixture_frames:
+        try:
+            import sqlite_store
+
+            sqlite_fixtures = sqlite_store.load_upcoming_fixtures_dataframe(
+                competitions=EXTRA_COMPETITIONS,
+                reference_date=pd.Timestamp(datetime.now(UTC).date()),
+                window_days=args.window_days,
+            )
+            if sqlite_fixtures is not None and not sqlite_fixtures.empty:
+                print(
+                    f"[extra] Loaded {len(sqlite_fixtures)} fixtures from SQLite backup."
+                )
+                fixture_frames.append(
+                    sqlite_fixtures[
+                        [
+                            "match_date",
+                            "competition",
+                            "home_team",
+                            "away_team",
+                            "match_datetime_utc",
+                        ]
+                    ]
+                )
+        except Exception as exc:
+            print(f"[extra] SQLite backup load failed: {exc}")
+
+    if not fixture_frames:
         print("No upcoming extra-league fixtures found.")
         os.makedirs(PREDICTIONS_DIR, exist_ok=True)
         pd.DataFrame(columns=RESULT_COLUMNS).to_csv(PREDICTIONS_FILE, index=False)

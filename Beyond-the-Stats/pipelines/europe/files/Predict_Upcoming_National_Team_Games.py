@@ -303,6 +303,34 @@ def dedupe_fixtures(fixtures):
 def load_upcoming_fixtures(api_token, window_days, world_cup_only=False, friendlies_only=False):
     espn = fetch_espn_upcoming_fixtures(
         window_days, world_cup_only=world_cup_only, friendlies_only=friendlies_only
+    today = datetime.now(UTC).date()
+    should_scan_espn = True
+    if friendlies_only:
+        try:
+            import season_calendar
+
+            if not season_calendar.is_near_international_window(
+                today, lookahead_days=window_days
+            ):
+                should_scan_espn = False
+                next_w = season_calendar.next_international_window(today)
+                next_desc = (
+                    f"{next_w[0].strftime('%Y-%m-%d')} to {next_w[1].strftime('%Y-%m-%d')}"
+                    if next_w
+                    else "none"
+                )
+                print(
+                    f"[national] No international break in next {window_days}d (next window: {next_desc}). Skipping live ESPN scan."
+                )
+        except Exception:
+            should_scan_espn = True
+
+    espn = (
+        fetch_espn_upcoming_fixtures(
+            window_days, world_cup_only=world_cup_only, friendlies_only=friendlies_only
+        )
+        if should_scan_espn
+        else pd.DataFrame()
     )
     football_data = fetch_football_data_upcoming_fixtures(
         api_token,
@@ -311,6 +339,28 @@ def load_upcoming_fixtures(api_token, window_days, world_cup_only=False, friendl
         friendlies_only=friendlies_only,
     )
     frames = [frame for frame in [espn, football_data] if not frame.empty]
+    if not frames:
+        try:
+            import sqlite_store
+
+            comps = (
+                ["International/Friendly"]
+                if friendlies_only
+                else (["International/World Cup"] if world_cup_only else None)
+            )
+            sqlite_df = sqlite_store.load_upcoming_fixtures_dataframe(
+                competitions=comps,
+                reference_date=today,
+                window_days=window_days,
+            )
+            if sqlite_df is not None and not sqlite_df.empty:
+                print(
+                    f"[national] Loaded {len(sqlite_df)} fixtures from SQLite backup."
+                )
+                frames.append(sqlite_df)
+        except Exception as exc:
+            print(f"[national] SQLite backup load failed: {exc}")
+
     if not frames:
         return pd.DataFrame()
     return dedupe_fixtures(pd.concat(frames, ignore_index=True))

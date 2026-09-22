@@ -1,6 +1,8 @@
-"""Redis caching utilities for API responses."""
+"""Redis and in-memory caching utilities for API responses."""
 import hashlib
 import functools
+import threading
+import time
 from flask import request
 import config
 
@@ -13,6 +15,10 @@ if config.REDIS_URL:
     except Exception:
         _redis_client = None
 
+_mem_cache: dict[str, tuple[float, str]] = {}
+_mem_cache_lock = threading.Lock()
+_MAX_MEM_CACHE_ENTRIES = 500
+
 
 def _cache_key(endpoint: str, query_str: str = "") -> str:
     """Return a deterministic cache key for an API call."""
@@ -22,37 +28,56 @@ def _cache_key(endpoint: str, query_str: str = "") -> str:
 
 def _cache_get(key: str) -> str | None:
     """Return cached JSON string or None."""
-    if _redis_client is None:
-        return None
-    try:
-        return _redis_client.get(key)
-    except Exception:
-        return None
+    if _redis_client is not None:
+        try:
+            return _redis_client.get(key)
+        except Exception:
+            pass
+    now = time.monotonic()
+    with _mem_cache_lock:
+        item = _mem_cache.get(key)
+        if item is not None:
+            expires_at, val = item
+            if now < expires_at:
+                return val
+            _mem_cache.pop(key, None)
+    return None
 
 
 def _cache_set(key: str, value: str, ttl: int = config.CACHE_TTL_DEFAULT) -> None:
     """Store a JSON string in cache with TTL."""
-    if _redis_client is None:
-        return
-    try:
-        _redis_client.setex(key, ttl, value)
-    except Exception:
-        pass
+    if _redis_client is not None:
+        try:
+            _redis_client.setex(key, ttl, value)
+            return
+        except Exception:
+            pass
+    now = time.monotonic()
+    with _mem_cache_lock:
+        if len(_mem_cache) >= _MAX_MEM_CACHE_ENTRIES:
+            expired = [k for k, (exp, _) in _mem_cache.items() if now >= exp]
+            for k in expired:
+                _mem_cache.pop(k, None)
+            if len(_mem_cache) >= _MAX_MEM_CACHE_ENTRIES:
+                for k in list(_mem_cache.keys())[:_MAX_MEM_CACHE_ENTRIES // 5]:
+                    _mem_cache.pop(k, None)
+        _mem_cache[key] = (now + max(1, int(ttl)), value)
 
 
 def _cache_clear_pattern(pattern: str = "api:*") -> None:
     """Clear all cached API responses. Called after pipeline refresh."""
-    if _redis_client is None:
-        return
-    try:
-        for k in _redis_client.scan_iter(match=pattern):
-            _redis_client.delete(k)
-    except Exception:
-        pass
+    if _redis_client is not None:
+        try:
+            for k in _redis_client.scan_iter(match=pattern):
+                _redis_client.delete(k)
+        except Exception:
+            pass
+    with _mem_cache_lock:
+        _mem_cache.clear()
 
 
 def _cached_response(ttl: int = config.CACHE_TTL_DEFAULT):
-    """Decorator that caches a route's JSON response in Redis.
+    """Decorator that caches a route's JSON response in Redis (or in-memory).
 
     The cache key is ``api:{md5(endpoint + query_string)}``.
     Skips caching when ``?no_cache=1`` or ``?refresh=1`` is present.
@@ -71,7 +96,7 @@ def _cached_response(ttl: int = config.CACHE_TTL_DEFAULT):
                 resp = app.response_class(
                     response=cached, status=200, mimetype="application/json"
                 )
-                resp.headers["X-Cache"] = "redis"
+                resp.headers["X-Cache"] = "redis" if _redis_client else "memory"
                 return resp
             result = f(*args, **kwargs)
             if isinstance(result, app.response_class) and result.status_code == 200:
