@@ -744,12 +744,23 @@ def _run_global_subpipeline(args, api_token):
         )
     else:
         print("[skip] No processed data changes — skipping global league table projection")
+    return sub
+
+
+def _run_national_subpipeline(args, api_token):
+    """Run national team / World Cup / international friendlies steps. Returns dict of results."""
+    py = sys.executable
+    sub = {}
+    if _tables_only():
+        return sub
+
     if _world_cup_is_active():
         national_process_cmd = [py, str(FILES_DIR / "Process_National_Team_Data.py"), "--world-cup-only"]
         if args.skip_model_train:
             national_process_cmd.append("--skip-squad-values")
         sub["national_world_cup_model"] = run_step(
             "[global] National team World Cup model",
+            "[national] National team World Cup model",
             national_process_cmd,
             continue_on_error=args.continue_on_error,
         )
@@ -764,6 +775,7 @@ def _run_global_subpipeline(args, api_token):
             national_upcoming_cmd += ["--api-token", api_token]
         sub["upcoming_world_cup_predictions"] = run_step(
             "[global] Upcoming World Cup predictions",
+            "[national] Upcoming World Cup predictions",
             national_upcoming_cmd,
             continue_on_error=args.continue_on_error,
         )
@@ -772,6 +784,7 @@ def _run_global_subpipeline(args, api_token):
             world_cup_project_cmd += ["--api-token", api_token]
         sub["projected_world_cup"] = run_step(
             "[global] Projected World Cup groups and bracket",
+            "[national] Projected World Cup groups and bracket",
             world_cup_project_cmd,
             continue_on_error=args.continue_on_error,
         )
@@ -797,6 +810,7 @@ def _run_global_subpipeline(args, api_token):
         ]
         sub["national_match_archive"] = run_step(
             "[global] Collect new national matches + SQLite safety copy",
+            "[national] Collect new national matches + SQLite safety copy",
             archive_cmd,
             continue_on_error=True,
             timeout=3600,
@@ -824,6 +838,7 @@ def _run_global_subpipeline(args, api_token):
                 national_process_cmd.append("--skip-squad-values")
             sub["national_friendlies_model"] = run_step(
                 "[global] National team model (friendlies, preserve training data)",
+                "[national] National team model (friendlies, preserve training data)",
                 national_process_cmd,
                 continue_on_error=args.continue_on_error,
                 timeout=3600,
@@ -839,6 +854,7 @@ def _run_global_subpipeline(args, api_token):
             national_upcoming_cmd += ["--api-token", api_token]
         sub["upcoming_international_friendlies"] = run_step(
             "[global] Upcoming international friendlies predictions",
+            "[national] Upcoming international friendlies predictions",
             national_upcoming_cmd,
             continue_on_error=args.continue_on_error,
             timeout=UPCOMING_MATCHWEEK_TIMEOUT_S,
@@ -1308,10 +1324,12 @@ def run_full_pipeline(args, api_token, results=None):
         print(
             f"[NOTE] --workers {requested_workers} ignored: sub-pipelines always run "
             "sequentially (global -> MLS -> extra) so global/MLS/extra training or "
+            "sequentially (national -> global -> MLS -> extra) so national/global/MLS/extra training or "
             "table projections never run at the same time."
         )
     sub_tasks = []
     if not args.skip_global:
+        sub_tasks.append(("national", _run_national_subpipeline))
         sub_tasks.append(("global", _run_global_subpipeline))
     if not args.skip_mls:
         sub_tasks.append(("mls", _run_mls_subpipeline))

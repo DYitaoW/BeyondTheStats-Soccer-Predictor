@@ -371,3 +371,58 @@ def filter_fixtures_to_bounds(
         & (frame[date_column] >= lower)
         & (frame[date_column] <= end)
     ].reset_index(drop=True)
+
+
+FIFA_INTERNATIONAL_WINDOWS = (
+    # (start_month, start_day, end_month, end_day)
+    (3, 15, 3, 31),    # March spring break
+    (5, 25, 7, 15),    # Late May - mid July summer break / tourneys
+    (9, 1, 9, 16),     # Early September autumn break
+    (10, 3, 10, 18),   # October autumn break
+    (11, 8, 11, 23),   # November autumn break
+)
+
+
+def get_international_windows_for_year(year: int) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Return inclusive Timestamp intervals for international windows in the given year."""
+    intervals = []
+    for sm, sd, em, ed in FIFA_INTERNATIONAL_WINDOWS:
+        try:
+            start = pd.Timestamp(year=year, month=sm, day=sd)
+            end = pd.Timestamp(year=year, month=em, day=ed)
+            intervals.append((start, end))
+        except Exception:
+            pass
+    return intervals
+
+
+def is_near_international_window(reference_date=None, lookahead_days: int = 14) -> bool:
+    """Return True if reference_date is currently inside or within lookahead_days of a FIFA international break.
+
+    Used to avoid wasteful ESPN querying for international friendlies during off-periods
+    (e.g., mid-winter or mid-league months with no scheduled international fixtures).
+    """
+    ref = _as_timestamp(reference_date)
+    window_end = ref + pd.Timedelta(days=max(0, int(lookahead_days)))
+
+    for y in (ref.year - 1, ref.year, ref.year + 1):
+        for w_start, w_end in get_international_windows_for_year(y):
+            # Check overlap between [ref, window_end] and [w_start, w_end]
+            if max(ref, w_start) <= min(window_end, w_end):
+                return True
+    return False
+
+
+def next_international_window(reference_date=None) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    """Return the next upcoming (or current) international window (start, end) after reference_date."""
+    ref = _as_timestamp(reference_date)
+    candidates = []
+    for y in (ref.year, ref.year + 1):
+        for w_start, w_end in get_international_windows_for_year(y):
+            if w_end >= ref:
+                candidates.append((w_start, w_end))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda pair: pair[0])
+    return candidates[0]
+
