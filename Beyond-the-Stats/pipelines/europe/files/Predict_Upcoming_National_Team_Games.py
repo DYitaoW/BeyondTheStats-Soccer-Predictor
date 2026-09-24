@@ -301,8 +301,6 @@ def dedupe_fixtures(fixtures):
 
 
 def load_upcoming_fixtures(api_token, window_days, world_cup_only=False, friendlies_only=False):
-    espn = fetch_espn_upcoming_fixtures(
-        window_days, world_cup_only=world_cup_only, friendlies_only=friendlies_only
     today = datetime.now(UTC).date()
     should_scan_espn = True
     if friendlies_only:

@@ -11,7 +11,8 @@ from unittest import mock
 import pandas as pd
 
 
-WEBSITE_DIR = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
+WEBSITE_DIR = ROOT / "Website"
 ROOT_DIR = WEBSITE_DIR.parent
 FILES_DIR = ROOT_DIR / "pipelines" / "europe" / "files"
 MAIN_DIR = ROOT_DIR / "main"
@@ -109,31 +110,31 @@ class NationalFriendliesPredictTests(unittest.TestCase):
             raw_path = Path(tmp) / "national_team_recent_matches_raw.csv"
             db_path = Path(tmp) / "bts_store.db"
             pd.DataFrame([existing]).to_csv(raw_path, index=False)
-            with mock.patch.object(nat, "RAW_MATCHES_FILE", str(raw_path)):
-                with mock.patch.object(nat, "ranked_national_teams", return_value=["Brazil", "Spain"]):
-                    with mock.patch.object(
-                        nat,
-                        "fetch_completed_national_matches",
-                        return_value=[incoming_dup, incoming_new],
-                    ):
-                        with mock.patch.dict(os.environ, {"BTS_SQLITE_STORE_PATH": str(db_path)}):
-                            result = nat.archive_national_match_history(
-                                mock.Mock(
-                                    friendlies_only=True,
-                                    world_cup_only=False,
-                                    archive_lookback_days=45,
-                                    lookback_days=900,
-                                )
-                            )
-            self.assertEqual(result["added"], 1)
-            self.assertEqual(result["total"], 2)
-            saved = pd.read_csv(raw_path)
-            self.assertEqual(len(saved), 2)
-            old = saved[saved["match_id"] == "old-1"].iloc[0]
-            self.assertEqual(int(old["FTHG"]), 1)
             from shared import sqlite_store
+            with mock.patch.object(nat, 'RAW_MATCHES_FILE', str(raw_path)), \
+                 mock.patch.object(nat, 'ranked_national_teams', return_value=['Brazil', 'Spain']), \
+                 mock.patch.object(nat, 'fetch_completed_national_matches', return_value=[incoming_dup, incoming_new]), \
+                 mock.patch.object(sqlite_store, '_past_games_json', return_value=Path(tmp) / 'empty.json'), \
+                 mock.patch.object(sqlite_store, '_past_games_journal', return_value=Path(tmp) / 'empty.jsonl'), \
+                 mock.patch.object(sqlite_store, '_live_history_json', return_value=Path(tmp) / 'empty_live.json'), \
+                 mock.patch.object(sqlite_store, 'migrate_national_training_archive', return_value={'skipped': True}), \
+                 mock.patch.dict(os.environ, {'BTS_SQLITE_STORE_PATH': str(db_path)}):
+                result = nat.archive_national_match_history(
+                    mock.Mock(
+                        friendlies_only=True,
+                        world_cup_only=False,
+                        archive_lookback_days=45,
+                        lookback_days=900,
+                    )
+                )
+                self.assertEqual(result["added"], 1)
+                self.assertEqual(result["total"], 2)
+                saved = pd.read_csv(raw_path)
+                self.assertEqual(len(saved), 2)
+                old = saved[saved["match_id"] == "old-1"].iloc[0]
+                self.assertEqual(int(old["FTHG"]), 1)
 
-            loaded = sqlite_store.load_past_games(db_path=db_path)
+                loaded = sqlite_store.load_past_games(db_path=db_path)
             self.assertEqual(len(loaded), 2)
             sources = {row.get("archive_source") for row in loaded}
             self.assertEqual(sources, {"national_training"})

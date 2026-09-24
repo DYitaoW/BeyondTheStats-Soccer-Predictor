@@ -2071,36 +2071,54 @@ def api_live_score_history():
     })
 
 
+def _week_bounds_from_iso(date_str: str):
+    """Given an ISO date YYYY-MM-DD, compute (monday_iso, sunday_iso, label).
+
+    Weeks run Monday through Sunday (ISO calendar week standard).
+    """
+    if not date_str:
+        return None
+    raw = str(date_str).strip()
+    if len(raw) < 10:
+        return None
+    try:
+        dt = datetime.strptime(raw[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+    monday = dt - timedelta(days=dt.weekday())
+    sunday = monday + timedelta(days=6)
+    if monday.year == sunday.year:
+        label = f"{monday.strftime('%b %d')} - {sunday.strftime('%b %d, %Y')}"
+    else:
+        label = f"{monday.strftime('%b %d, %Y')} - {sunday.strftime('%b %d, %Y')}"
+    return monday.isoformat(), sunday.isoformat(), label
+
+
 @app.get("/api/past-games")
 @_cached_response(ttl=config.CACHE_TTL_DEFAULT)
 def api_past_games():
-    """Return completed games persisted across pipeline runs.
+    """Return completed games persisted across pipeline runs grouped by week.
 
     Response structure matches ``/api/upcoming/global`` per-row format.
+    Pagination is organized weekly: each page corresponds to one Monday-Sunday
+    calendar week, ordered from newest week to oldest.
 
     Data is sourced from SQLite (``bts_store.db`` past_games table), with
     ``past_games.json`` dual-write backup, plus live-score history and settled
     prediction CSV rows for freshness.
-    Rows older than 30 days are excluded from this API response for display;
-    the on-disk archive itself is retained (see ``BTS_PAST_GAMES_RETENTION_DAYS``).
-
-    For full live-score details (lineups, stats, key events, game info),
-    use ``/api/live-score-history`` (alias ``/api/past-live-scores``).
 
     Query params:
-        league   -- filter by competition name (substring match, case-insensitive)
-        page     -- page number (default 1)
-        per_page -- results per page (default 50, max 200)
+        league     -- filter by competition name (substring match, case-insensitive)
+        page       -- week number / page (default 1 = most recent week with games)
+        week_start -- directly jump to the week matching this Monday ISO date (YYYY-MM-DD)
+        date       -- directly jump to the week containing this match date (YYYY-MM-DD)
     """
     league = request.args.get("league", "").strip()
+    target_date = request.args.get("week_start", "").strip() or request.args.get("date", "").strip()
     try:
         page = max(1, int(request.args.get("page", "1")))
     except (ValueError, TypeError):
         page = 1
-    try:
-        per_page = min(200, max(1, int(request.args.get("per_page", "50"))))
-    except (ValueError, TypeError):
-        per_page = 50
 
     prediction_lookup = _build_past_game_prediction_lookup()
 
@@ -2197,17 +2215,93 @@ def api_past_games():
 
     all_rows.sort(key=lambda r: _past_row_date_iso(r), reverse=True)
 
-    total = len(all_rows)
-    start = (page - 1) * per_page
-    end = start + per_page
-    page_rows = all_rows[start:end]
+    # Group matches into Monday-Sunday weeks
+    weeks_map = {}
+    for r in all_rows:
+        d_iso = _past_row_date_iso(r)
+        bounds = _week_bounds_from_iso(d_iso)
+        if bounds is None:
+            continue
+        m_iso, s_iso, label = bounds
+        if m_iso not in weeks_map:
+            weeks_map[m_iso] = {
+                "week_start": m_iso,
+                "week_end": s_iso,
+                "week_label": label,
+                "rows": [],
+            }
+        weeks_map[m_iso]["rows"].append(r)
+
+    sorted_mondays = sorted(weeks_map.keys(), reverse=True)
+    total_weeks = len(sorted_mondays)
+
+    # If target_date (or week_start) was supplied, find the matching week index
+    if target_date:
+        target_bounds = _week_bounds_from_iso(target_date)
+        if target_bounds:
+            target_mon = target_bounds[0]
+            if target_mon in sorted_mondays:
+                page = sorted_mondays.index(target_mon) + 1
+            else:
+                return jsonify({
+                    "ok": True,
+                    "page": 1,
+                    "total_pages": total_weeks,
+                    "total_weeks": total_weeks,
+                    "week_start": target_mon,
+                    "week_end": target_bounds[1],
+                    "week_label": target_bounds[2],
+                    "rows": [],
+                    "total": len(all_rows),
+                    "per_page": 0,
+                    "available_weeks": [
+                        {
+                            "page": idx,
+                            "week_start": m,
+                            "week_end": weeks_map[m]["week_end"],
+                            "week_label": weeks_map[m]["week_label"],
+                            "total_games": len(weeks_map[m]["rows"]),
+                        }
+                        for idx, m in enumerate(sorted_mondays, start=1)
+                    ],
+                })
+
+    if total_weeks > 0 and 1 <= page <= total_weeks:
+        active_mon = sorted_mondays[page - 1]
+        active_week = weeks_map[active_mon]
+        page_rows = active_week["rows"]
+        week_start = active_week["week_start"]
+        week_end = active_week["week_end"]
+        week_label = active_week["week_label"]
+    else:
+        page_rows = []
+        week_start = None
+        week_end = None
+        week_label = None
+
+    available_weeks = [
+        {
+            "page": idx,
+            "week_start": m,
+            "week_end": weeks_map[m]["week_end"],
+            "week_label": weeks_map[m]["week_label"],
+            "total_games": len(weeks_map[m]["rows"]),
+        }
+        for idx, m in enumerate(sorted_mondays, start=1)
+    ]
 
     return jsonify({
         "ok": True,
-        "rows": page_rows,
-        "total": total,
         "page": page,
-        "per_page": per_page,
+        "total_pages": total_weeks,
+        "total_weeks": total_weeks,
+        "week_start": week_start,
+        "week_end": week_end,
+        "week_label": week_label,
+        "rows": page_rows,
+        "total": len(all_rows),
+        "per_page": len(page_rows),
+        "available_weeks": available_weeks,
     })
 
 

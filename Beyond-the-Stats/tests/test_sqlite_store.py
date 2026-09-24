@@ -427,7 +427,7 @@ class SqliteSchemaAndNationalMigrateTests(unittest.TestCase):
                 info = store.store_info()
                 self.assertEqual(
                     set(info["tables"]),
-                    {"past_games", "live_score_history", "upcoming_games"},
+                    {"past_games", "live_score_history", "upcoming_games", "squad_values"},
                 )
                 self.assertEqual(info["schema_version"], store._SCHEMA_VERSION)
                 past = store.load_past_games()

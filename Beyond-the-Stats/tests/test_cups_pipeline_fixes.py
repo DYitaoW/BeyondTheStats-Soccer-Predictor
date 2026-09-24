@@ -8,7 +8,8 @@ import unittest
 from pathlib import Path
 
 
-WEBSITE_DIR = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
+WEBSITE_DIR = ROOT / "Website"
 ROOT_DIR = WEBSITE_DIR.parent
 FILES_DIR = ROOT_DIR / "pipelines" / "europe" / "files"
 for path in (WEBSITE_DIR, FILES_DIR, ROOT_DIR):
@@ -397,7 +398,7 @@ class CupDataPayloadTests(unittest.TestCase):
             self.assertEqual(third["competitions"]["X"]["champion"], "A")
 
     def test_gunicorn_warms_cup_data_mem(self):
-        src = Path(__file__).resolve().parents[0].joinpath("gunicorn_config.py").read_text(encoding="utf-8")
+        src = Path(__file__).resolve().parents[1].joinpath("Website", "gunicorn_config.py").read_text(encoding="utf-8")
         self.assertIn("warm_cup_data_mem_from_disk", src)
 
     def test_stage_position_odds_from_sim_entry(self):
@@ -516,52 +517,52 @@ class CupWinnerNoneAndOddsTests(unittest.TestCase):
 
         completed = pd.DataFrame([
             {
-                "competition": "Europe/Champions League",
-                "home_team": "Arsenal",
-                "away_team": "Chelsea",
+                "competition": "North America/Leagues Cup",
+                "home_team": "Inter Miami",
+                "away_team": "Club America",
                 "actual_home_goals": 2,
                 "actual_away_goals": 1,
                 "actual_result": "H",
-                "match_date": "2026-09-01",
-                "round": "League Phase",
+                "match_date": "2026-08-01",
+                "round": "Group Stage",
             },
             {
-                "competition": "Europe/Champions League",
-                "home_team": "Barcelona",
-                "away_team": "Inter",
+                "competition": "North America/Leagues Cup",
+                "home_team": "Columbus Crew",
+                "away_team": "Tigres",
                 "actual_home_goals": 1,
                 "actual_away_goals": 1,
                 "actual_result": "D",
-                "match_date": "2026-09-01",
-                "round": "League Phase",
+                "match_date": "2026-08-01",
+                "round": "Group Stage",
             },
         ])
         upcoming = pd.DataFrame([
             {
-                "competition": "Europe/Champions League",
-                "home_team": "Arsenal",
-                "away_team": "Barcelona",
+                "competition": "North America/Leagues Cup",
+                "home_team": "Inter Miami",
+                "away_team": "Columbus Crew",
                 "prob_home": 0.4,
                 "prob_draw": 0.25,
                 "prob_away": 0.35,
                 "pred_home_goals": 1,
                 "pred_away_goals": 1,
                 "predicted_result": "H",
-                "match_date": "2026-10-01",
-                "round": "League Phase",
+                "match_date": "2026-08-15",
+                "round": "Group Stage",
             },
             {
-                "competition": "Europe/Champions League",
-                "home_team": "Chelsea",
-                "away_team": "Inter",
+                "competition": "North America/Leagues Cup",
+                "home_team": "Club America",
+                "away_team": "Tigres",
                 "prob_home": 0.33,
                 "prob_draw": 0.3,
                 "prob_away": 0.37,
                 "pred_home_goals": 1,
                 "pred_away_goals": 1,
                 "predicted_result": "A",
-                "match_date": "2026-10-01",
-                "round": "League Phase",
+                "match_date": "2026-08-15",
+                "round": "Group Stage",
             },
         ])
         with mock.patch.object(track, "CUP_TABLE_SIMULATION_RUNS", 40):
