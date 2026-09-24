@@ -27,11 +27,13 @@ except Exception:  # pragma: no cover - script bootstrap fallback
     _paths = None  # type: ignore
 
 _SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _WRITE_LOCK = threading.RLock()
 
 _PAST_TABLE = "past_games"
 _LIVE_TABLE = "live_score_history"
 _UPCOMING_TABLE = "upcoming_games"
+_SQUAD_VALUES_TABLE = "squad_values"
 _META_TABLE = "store_meta"
 
 
@@ -74,6 +76,19 @@ def _national_raw_matches_csv() -> Path:
         / "Data"
         / "National_Team_Data"
         / "national_team_recent_matches_raw.csv"
+    )
+
+
+def _mls_squad_values_json() -> Path:
+    if _paths is not None:
+        return Path(_paths.MLS_DATA_DIR) / "Team_Data" / "mls_squad_values.json"
+    return (
+        Path(__file__).resolve().parent.parent
+        / "pipelines"
+        / "mls"
+        / "Data"
+        / "Team_Data"
+        / "mls_squad_values.json"
     )
 
 
@@ -230,6 +245,33 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         f"""
+        CREATE TABLE IF NOT EXISTS {_SQUAD_VALUES_TABLE} (
+            storage_key TEXT PRIMARY KEY,
+            team_name TEXT NOT NULL,
+            competition TEXT NOT NULL,
+            squad_value_eur_m REAL NOT NULL,
+            team_id TEXT,
+            source_url TEXT,
+            source TEXT,
+            payload_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_squad_values_comp
+        ON {_SQUAD_VALUES_TABLE}(competition)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_squad_values_team
+        ON {_SQUAD_VALUES_TABLE}(team_name)
+        """
+    )
+    conn.execute(
+        f"""
         INSERT OR REPLACE INTO {_META_TABLE}(key, value)
         VALUES ('schema_version', ?)
         """,
@@ -279,6 +321,13 @@ def live_history_storage_key(row: dict) -> str:
     return ""
 
 
+def squad_value_storage_key(team_name: str, competition: str = "") -> str:
+    """Stable dedupe key for squad value rows."""
+    comp = str(competition or "").strip().lower()
+    team = str(team_name or "").strip().lower()
+    return f"{comp}:{team}"
+
+
 def _row_date_iso(row: dict) -> str:
     for field in (
         "match_date_iso",
@@ -317,6 +366,10 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
             ).fetchone()
             if flag and flag["value"] == "1" and not force:
                 return {"past_games": 0, "live_score_history": 0, "skipped": True}
+            squad_flag = conn.execute(
+                f"SELECT value FROM {_META_TABLE} WHERE key = ?",
+                ("squad_values_migrated",),
+            ).fetchone()
 
             past_count = 0
             live_count = 0
@@ -330,6 +383,8 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
                         )["upserted"]
                 except Exception as exc:
                     print(f"[sqlite-store] past_games.json migrate skipped: {exc}")
+            squad_count = 0
+            did_work = False
 
             live_file = _live_history_json()
             if live_file.is_file():
@@ -341,6 +396,18 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
                         )["upserted"]
                 except Exception as exc:
                     print(f"[sqlite-store] live_score_history.json migrate skipped: {exc}")
+            if not flag or flag["value"] != "1" or force:
+                did_work = True
+                past_file = _past_games_json()
+                if past_file.is_file():
+                    try:
+                        payload = json.loads(past_file.read_text(encoding="utf-8-sig"))
+                        if isinstance(payload, list):
+                            past_count = _upsert_past_games_conn(
+                                conn, [r for r in payload if isinstance(r, dict)]
+                            )["upserted"]
+                    except Exception as exc:
+                        print(f"[sqlite-store] past_games.json migrate skipped: {exc}")
 
             journal = _past_games_journal()
             if journal.is_file():
@@ -361,11 +428,72 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
                         past_count += _upsert_past_games_conn(conn, journal_rows)["upserted"]
                 except Exception as exc:
                     print(f"[sqlite-store] past_games journal migrate skipped: {exc}")
+                live_file = _live_history_json()
+                if live_file.is_file():
+                    try:
+                        payload = json.loads(live_file.read_text(encoding="utf-8"))
+                        if isinstance(payload, list):
+                            live_count = _upsert_live_history_conn(
+                                conn, [r for r in payload if isinstance(r, dict)]
+                            )["upserted"]
+                    except Exception as exc:
+                        print(f"[sqlite-store] live_score_history.json migrate skipped: {exc}")
 
             conn.execute(
                 f"INSERT OR REPLACE INTO {_META_TABLE}(key, value) VALUES (?, ?)",
                 ("json_migrated", "1"),
             )
+                journal = _past_games_journal()
+                if journal.is_file():
+                    try:
+                        journal_rows = []
+                        with journal.open("r", encoding="utf-8") as fh:
+                            for line in fh:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                try:
+                                    row = json.loads(line)
+                                except Exception:
+                                    continue
+                                if isinstance(row, dict):
+                                    journal_rows.append(row)
+                        if journal_rows:
+                            past_count += _upsert_past_games_conn(conn, journal_rows)["upserted"]
+                    except Exception as exc:
+                        print(f"[sqlite-store] past_games journal migrate skipped: {exc}")
+
+                conn.execute(
+                    f"INSERT OR REPLACE INTO {_META_TABLE}(key, value) VALUES (?, ?)",
+                    ("json_migrated", "1"),
+                )
+
+            if not squad_flag or squad_flag["value"] != "1" or force:
+                squad_file = _mls_squad_values_json()
+                if squad_file.is_file():
+                    try:
+                        payload = json.loads(squad_file.read_text(encoding="utf-8"))
+                        teams_data = payload.get("teams", {}) if isinstance(payload, dict) else {}
+                        if teams_data:
+                            squad_count = _upsert_squad_values_conn(
+                                conn, teams_data, competition="United States/MLS"
+                            )["upserted"]
+                            did_work = True
+                    except Exception as exc:
+                        print(f"[sqlite-store] mls_squad_values.json migrate skipped: {exc}")
+                conn.execute(
+                    f"INSERT OR REPLACE INTO {_META_TABLE}(key, value) VALUES (?, ?)",
+                    ("squad_values_migrated", "1"),
+                )
+
+            if not did_work:
+                return {
+                    "past_games": 0,
+                    "live_score_history": 0,
+                    "squad_values": 0,
+                    "skipped": True,
+                }
+
             try:
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
             except sqlite3.Error:
@@ -373,6 +501,7 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
             return {
                 "past_games": past_count,
                 "live_score_history": live_count,
+                "squad_values": squad_count,
                 "skipped": False,
             }
         finally:
@@ -722,6 +851,7 @@ def load_live_score_history(
 
 def count_rows(table: str, db_path: Optional[Path] = None) -> int:
     if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE}:
+    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE}:
         raise ValueError(f"unknown table: {table}")
     ensure_store(db_path)
     conn = _open_ready(db_path)
@@ -1126,8 +1256,205 @@ def store_info(db_path: Optional[Path] = None) -> dict:
             _PAST_TABLE: count_rows(_PAST_TABLE, path),
             _LIVE_TABLE: count_rows(_LIVE_TABLE, path),
             _UPCOMING_TABLE: count_rows(_UPCOMING_TABLE, path),
+            _SQUAD_VALUES_TABLE: count_rows(_SQUAD_VALUES_TABLE, path),
         },
         "never_deletes": True,
         "persists_across_reboot": True,
         "gitignored": True,  # Output/** — survives git pull; not wiped by checkout
     }
+
+
+def _upsert_squad_values_conn(
+    conn: sqlite3.Connection,
+    records: Iterable[dict] | dict[str, dict],
+    competition: str = "United States/MLS",
+) -> dict:
+    upserted = 0
+    skipped = 0
+    now = _utc_now()
+
+    items = []
+    if isinstance(records, dict):
+        for t_name, data in records.items():
+            if isinstance(data, dict):
+                items.append((str(t_name).strip(), competition, dict(data)))
+    elif isinstance(records, (list, tuple, set)):
+        for item in records:
+            if isinstance(item, dict):
+                t_name = str(item.get("team_name") or item.get("name") or "").strip()
+                comp = str(item.get("competition") or competition).strip()
+                items.append((t_name, comp, dict(item)))
+
+    for team_name, comp, payload in items:
+        if not team_name:
+            skipped += 1
+            continue
+
+        key = squad_value_storage_key(team_name, comp)
+        try:
+            new_val = float(payload.get("squad_value_eur_m", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            new_val = 0.0
+
+        team_id = str(payload.get("team_id", "") or "").strip() or None
+        source_url = str(payload.get("source_url", "") or "").strip() or None
+        source = str(payload.get("source", "transfermarkt.com") or "").strip() or None
+
+        existing = conn.execute(
+            f"SELECT squad_value_eur_m, team_id, source_url, source, payload_json FROM {_SQUAD_VALUES_TABLE} WHERE storage_key = ?",
+            (key,),
+        ).fetchone()
+
+        if existing:
+            prior_val = float(existing["squad_value_eur_m"] or 0.0)
+            prior_payload = _json_loads(existing["payload_json"]) or {}
+            if new_val <= 0.0 and prior_val > 0.0:
+                # Retain the durable prior positive value
+                new_val = prior_val
+                team_id = team_id or existing["team_id"]
+                source_url = source_url or existing["source_url"]
+                source = source or existing["source"]
+                payload["squad_value_eur_m"] = prior_val
+                if team_id and not payload.get("team_id"):
+                    payload["team_id"] = team_id
+                if source_url and not payload.get("source_url"):
+                    payload["source_url"] = source_url
+                payload["status"] = payload.get("status", "cached")
+            else:
+                merged = dict(prior_payload)
+                merged.update(payload)
+                payload = merged
+
+        payload["team_name"] = team_name
+        payload["competition"] = comp
+        payload["updated_at"] = payload.get("updated_at") or now
+
+        conn.execute(
+            f"""
+            INSERT INTO {_SQUAD_VALUES_TABLE}(
+                storage_key, team_name, competition, squad_value_eur_m,
+                team_id, source_url, source, payload_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(storage_key) DO UPDATE SET
+                team_name = excluded.team_name,
+                competition = excluded.competition,
+                squad_value_eur_m = excluded.squad_value_eur_m,
+                team_id = COALESCE(excluded.team_id, {_SQUAD_VALUES_TABLE}.team_id),
+                source_url = COALESCE(excluded.source_url, {_SQUAD_VALUES_TABLE}.source_url),
+                source = COALESCE(excluded.source, {_SQUAD_VALUES_TABLE}.source),
+                payload_json = excluded.payload_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                key,
+                team_name,
+                comp,
+                new_val,
+                team_id,
+                source_url,
+                source,
+                _json_dumps(payload),
+                now,
+            ),
+        )
+        upserted += 1
+
+    return {"upserted": upserted, "skipped": skipped}
+
+
+def upsert_squad_values(
+    records: Iterable[dict] | dict[str, dict],
+    competition: str = "United States/MLS",
+    db_path: Optional[Path] = None,
+) -> dict:
+    """Upsert squad values into SQLite. Never drops prior positive values on scrape failure."""
+    if not records:
+        return {"upserted": 0, "skipped": 0}
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            result = _upsert_squad_values_conn(conn, records, competition=competition)
+            _durable_commit(conn)
+            return result
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def load_squad_values(
+    competition: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> dict:
+    """Return squad market values as a dict compatible with mls_squad_values.json.
+
+    Returns:
+        {
+            "source": "sqlite_store",
+            "competition": competition or "all",
+            "teams": {
+                team_name: {
+                    "squad_value_eur_m": float,
+                    "team_id": str,
+                    "source_url": str,
+                    "updated_at": str,
+                    "status": str,
+                    ...
+                }
+            }
+        }
+    """
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        clauses = []
+        params: list[Any] = []
+        if competition:
+            clauses.append("LOWER(competition) = ?")
+            params.append(competition.strip().lower())
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = conn.execute(
+            f"""
+            SELECT team_name, squad_value_eur_m, payload_json, updated_at
+            FROM {_SQUAD_VALUES_TABLE}
+            {where}
+            ORDER BY team_name ASC
+            """,
+            params,
+        ).fetchall()
+        teams = {}
+        for r in rows:
+            payload = _json_loads(r["payload_json"]) or {}
+            payload["squad_value_eur_m"] = float(r["squad_value_eur_m"] or 0.0)
+            payload["updated_at"] = payload.get("updated_at") or r["updated_at"]
+            teams[r["team_name"]] = payload
+        return {
+            "source": "sqlite_store",
+            "competition": competition or "all",
+            "teams": teams,
+        }
+    finally:
+        conn.close()
+
+
+def migrate_squad_values_from_json(
+    json_path: Path | str,
+    competition: str = "United States/MLS",
+    db_path: Optional[Path] = None,
+) -> dict:
+    """Migrate a squad values JSON file into SQLite store."""
+    path = Path(json_path)
+    if not path.is_file():
+        return {"upserted": 0, "skipped": 0, "missing": True}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        teams_data = payload.get("teams", {}) if isinstance(payload, dict) else {}
+        if not teams_data and isinstance(payload, dict):
+            teams_data = payload
+        return upsert_squad_values(teams_data, competition=competition, db_path=db_path)
+    except Exception as exc:
+        print(f"[sqlite-store] failed to migrate squad values from {path}: {exc}")
+        return {"upserted": 0, "skipped": 0, "error": str(exc)}
+

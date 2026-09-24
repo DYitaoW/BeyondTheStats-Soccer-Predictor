@@ -1703,6 +1703,14 @@ def main():
     current_form = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "current_form.json"))
     league_strength = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "league_strength.json")) or {}
     market_value_data = load_json_if_exists(os.path.join(TEAM_DATA_DIR, "mls_squad_values.json")) or {}
+    if not market_value_data or not market_value_data.get("teams"):
+        try:
+            import sqlite_store
+            db_squad = sqlite_store.load_squad_values(competition="United States/MLS")
+            if db_squad and db_squad.get("teams"):
+                market_value_data = db_squad
+        except Exception:
+            pass
     dynamic_form = build_dynamic_form_from_matches(matches)
 
     if (

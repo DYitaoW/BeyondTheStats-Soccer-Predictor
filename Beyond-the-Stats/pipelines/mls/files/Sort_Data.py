@@ -505,6 +505,17 @@ def build_squad_values_file():
         except Exception:
             previous = {}
 
+    try:
+        import sqlite_store
+        db_squad = sqlite_store.load_squad_values(competition="United States/MLS")
+        if db_squad and db_squad.get("teams"):
+            prev_teams = previous.setdefault("teams", {})
+            for t_name, t_val in db_squad["teams"].items():
+                if t_name not in prev_teams or prev_teams[t_name].get("squad_value_eur_m", 0) <= 0:
+                    prev_teams[t_name] = t_val
+    except Exception as exc:
+        print(f"[mls] SQLite squad values fallback skipped: {exc}")
+
     output = {
         "season": latest_file.replace(".csv", ""),
         "source_file": latest_file,
@@ -531,11 +542,13 @@ def build_squad_values_file():
             if result.get("squad_value_eur_m", 0) > 0:
                 output["teams"][team_name] = result
                 print(f"Squad value: {team_name} (€{result['squad_value_eur_m']:.2f}m)")
+                print(f"Squad value: {team_name} (EUR {result['squad_value_eur_m']:.2f}m)")
             else:
                 cached = (previous.get("teams", {}) or {}).get(team_name)
                 if cached and cached.get("squad_value_eur_m", 0) > 0:
                     output["teams"][team_name] = {**cached, "status": "cached"}
                     print(f"Squad value: {team_name} (cached €{cached['squad_value_eur_m']:.2f}m)")
+                    print(f"Squad value: {team_name} (cached EUR {cached['squad_value_eur_m']:.2f}m)")
                 else:
                     output["teams"][team_name] = result
                     print(f"Squad value: {team_name} (not found)")
@@ -551,6 +564,13 @@ def build_squad_values_file():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     with open(os.path.join(OUTPUT_DIR, SQUAD_VALUES_FILE), "w", encoding="utf-8") as file:
         json.dump(output, file, indent=4)
+
+    # Persist to SQLite store for durable long-term storage
+    try:
+        import sqlite_store
+        sqlite_store.upsert_squad_values(output.get("teams", {}), competition="United States/MLS")
+    except Exception as exc:
+        print(f"[mls] Failed to save squad values to SQLite: {exc}")
 
     print(f"MLS squad values written to {SQUAD_VALUES_FILE}")
 
