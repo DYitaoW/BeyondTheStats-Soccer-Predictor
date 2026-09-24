@@ -364,8 +364,6 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
                 f"SELECT value FROM {_META_TABLE} WHERE key = ?",
                 ("json_migrated",),
             ).fetchone()
-            if flag and flag["value"] == "1" and not force:
-                return {"past_games": 0, "live_score_history": 0, "skipped": True}
             squad_flag = conn.execute(
                 f"SELECT value FROM {_META_TABLE} WHERE key = ?",
                 ("squad_values_migrated",),
@@ -373,29 +371,9 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
 
             past_count = 0
             live_count = 0
-            past_file = _past_games_json()
-            if past_file.is_file():
-                try:
-                    payload = json.loads(past_file.read_text(encoding="utf-8-sig"))
-                    if isinstance(payload, list):
-                        past_count = _upsert_past_games_conn(
-                            conn, [r for r in payload if isinstance(r, dict)]
-                        )["upserted"]
-                except Exception as exc:
-                    print(f"[sqlite-store] past_games.json migrate skipped: {exc}")
             squad_count = 0
             did_work = False
 
-            live_file = _live_history_json()
-            if live_file.is_file():
-                try:
-                    payload = json.loads(live_file.read_text(encoding="utf-8"))
-                    if isinstance(payload, list):
-                        live_count = _upsert_live_history_conn(
-                            conn, [r for r in payload if isinstance(r, dict)]
-                        )["upserted"]
-                except Exception as exc:
-                    print(f"[sqlite-store] live_score_history.json migrate skipped: {exc}")
             if not flag or flag["value"] != "1" or force:
                 did_work = True
                 past_file = _past_games_json()
@@ -409,25 +387,6 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
                     except Exception as exc:
                         print(f"[sqlite-store] past_games.json migrate skipped: {exc}")
 
-            journal = _past_games_journal()
-            if journal.is_file():
-                try:
-                    journal_rows = []
-                    with journal.open("r", encoding="utf-8") as fh:
-                        for line in fh:
-                            line = line.strip()
-                            if not line:
-                                continue
-                            try:
-                                row = json.loads(line)
-                            except Exception:
-                                continue
-                            if isinstance(row, dict):
-                                journal_rows.append(row)
-                    if journal_rows:
-                        past_count += _upsert_past_games_conn(conn, journal_rows)["upserted"]
-                except Exception as exc:
-                    print(f"[sqlite-store] past_games journal migrate skipped: {exc}")
                 live_file = _live_history_json()
                 if live_file.is_file():
                     try:
@@ -439,10 +398,6 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
                     except Exception as exc:
                         print(f"[sqlite-store] live_score_history.json migrate skipped: {exc}")
 
-            conn.execute(
-                f"INSERT OR REPLACE INTO {_META_TABLE}(key, value) VALUES (?, ?)",
-                ("json_migrated", "1"),
-            )
                 journal = _past_games_journal()
                 if journal.is_file():
                     try:
@@ -506,7 +461,6 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
             }
         finally:
             conn.close()
-
 
 def _national_row_from_csv(raw: dict) -> Optional[dict]:
     """Normalize one national training CSV row into a past_games payload."""
@@ -850,7 +804,6 @@ def load_live_score_history(
 
 
 def count_rows(table: str, db_path: Optional[Path] = None) -> int:
-    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE}:
     if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE}:
         raise ValueError(f"unknown table: {table}")
     ensure_store(db_path)

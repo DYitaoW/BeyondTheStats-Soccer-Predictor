@@ -759,7 +759,6 @@ def _run_national_subpipeline(args, api_token):
         if args.skip_model_train:
             national_process_cmd.append("--skip-squad-values")
         sub["national_world_cup_model"] = run_step(
-            "[global] National team World Cup model",
             "[national] National team World Cup model",
             national_process_cmd,
             continue_on_error=args.continue_on_error,
@@ -774,7 +773,6 @@ def _run_national_subpipeline(args, api_token):
         if api_token:
             national_upcoming_cmd += ["--api-token", api_token]
         sub["upcoming_world_cup_predictions"] = run_step(
-            "[global] Upcoming World Cup predictions",
             "[national] Upcoming World Cup predictions",
             national_upcoming_cmd,
             continue_on_error=args.continue_on_error,
@@ -783,7 +781,6 @@ def _run_national_subpipeline(args, api_token):
         if api_token:
             world_cup_project_cmd += ["--api-token", api_token]
         sub["projected_world_cup"] = run_step(
-            "[global] Projected World Cup groups and bracket",
             "[national] Projected World Cup groups and bracket",
             world_cup_project_cmd,
             continue_on_error=args.continue_on_error,
@@ -809,7 +806,6 @@ def _run_national_subpipeline(args, api_token):
             "--archive-matches",
         ]
         sub["national_match_archive"] = run_step(
-            "[global] Collect new national matches + SQLite safety copy",
             "[national] Collect new national matches + SQLite safety copy",
             archive_cmd,
             continue_on_error=True,
@@ -837,7 +833,6 @@ def _run_national_subpipeline(args, api_token):
             if args.skip_model_train:
                 national_process_cmd.append("--skip-squad-values")
             sub["national_friendlies_model"] = run_step(
-                "[global] National team model (friendlies, preserve training data)",
                 "[national] National team model (friendlies, preserve training data)",
                 national_process_cmd,
                 continue_on_error=args.continue_on_error,
@@ -853,7 +848,6 @@ def _run_national_subpipeline(args, api_token):
         if api_token:
             national_upcoming_cmd += ["--api-token", api_token]
         sub["upcoming_international_friendlies"] = run_step(
-            "[global] Upcoming international friendlies predictions",
             "[national] Upcoming international friendlies predictions",
             national_upcoming_cmd,
             continue_on_error=args.continue_on_error,
