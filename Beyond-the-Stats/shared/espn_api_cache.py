@@ -226,7 +226,6 @@ def fetch_scoreboard_range(
         if _absorb(payload):
             if progress_label:
                 print(
-                    f"  [espn] {progress_label}: range {date_param} → {len(events)} events",
                     f"  [espn] {progress_label}: range {date_param} -> {len(events)} events",
                     flush=True,
                 )
@@ -246,7 +245,6 @@ def fetch_scoreboard_range(
     if progress_label:
         print(
             f"  [espn] {progress_label}: walking {len(days)} day(s) "
-            f"{start_d}→{end_d}"
             f"{start_d}->{end_d}"
             + (" (UEFA Tue/Wed/Thu)" if is_uefa_espn_id(espn_id) and not force_all_days else ""),
             flush=True,

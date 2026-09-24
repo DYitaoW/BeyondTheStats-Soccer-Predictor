@@ -213,7 +213,10 @@ def main():
         sort_data.sort_all_seasons()
         sort_data.build_current_form_file()
         if not args.skip_squad_values:
-            sort_data.build_squad_values_file()
+            try:
+                sort_data.build_squad_values_file()
+            except Exception as exc:
+                print(f"[warn] Squad values update failed ({exc}); continuing with existing squad values.")
         _touch_sort_tracker()
         print(f"Sort complete. ({time.monotonic() - _t3:.1f}s)")
     else:

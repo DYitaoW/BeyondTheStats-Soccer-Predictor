@@ -458,6 +458,14 @@ def load_context():
     current_form = pm.load_json_if_exists(os.path.join(team_data_dir, "current_form.json"))
     league_strength = pm.load_json_if_exists(os.path.join(team_data_dir, "league_strength.json")) or {}
     market_value_data = pm.load_json_if_exists(os.path.join(team_data_dir, "mls_squad_values.json")) or {}
+    if not market_value_data or not market_value_data.get("teams"):
+        try:
+            import sqlite_store
+            db_squad = sqlite_store.load_squad_values(competition="United States/MLS")
+            if db_squad and db_squad.get("teams"):
+                market_value_data = db_squad
+        except Exception:
+            pass
     dynamic_form = pm.build_dynamic_form_from_matches(matches)
 
     if (
