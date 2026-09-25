@@ -34,6 +34,7 @@ _PAST_TABLE = "past_games"
 _LIVE_TABLE = "live_score_history"
 _UPCOMING_TABLE = "upcoming_games"
 _SQUAD_VALUES_TABLE = "squad_values"
+_NOTIF_SUBS_TABLE = "notification_subscriptions"
 _META_TABLE = "store_meta"
 
 
@@ -270,6 +271,25 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         ON {_SQUAD_VALUES_TABLE}(team_name)
         """
     )
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {_NOTIF_SUBS_TABLE} (
+            token TEXT NOT NULL,
+            sub_type TEXT NOT NULL,
+            sub_target TEXT NOT NULL,
+            competition TEXT,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (token, sub_type, sub_target)
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_notif_subs_target
+        ON {_NOTIF_SUBS_TABLE}(sub_type, sub_target)
+        """
+    )
+
     conn.execute(
         f"""
         INSERT OR REPLACE INTO {_META_TABLE}(key, value)
@@ -804,7 +824,7 @@ def load_live_score_history(
 
 
 def count_rows(table: str, db_path: Optional[Path] = None) -> int:
-    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE}:
+    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE, _NOTIF_SUBS_TABLE}:
         raise ValueError(f"unknown table: {table}")
     ensure_store(db_path)
     conn = _open_ready(db_path)
@@ -1210,6 +1230,7 @@ def store_info(db_path: Optional[Path] = None) -> dict:
             _LIVE_TABLE: count_rows(_LIVE_TABLE, path),
             _UPCOMING_TABLE: count_rows(_UPCOMING_TABLE, path),
             _SQUAD_VALUES_TABLE: count_rows(_SQUAD_VALUES_TABLE, path),
+            _NOTIF_SUBS_TABLE: count_rows(_NOTIF_SUBS_TABLE, path),
         },
         "never_deletes": True,
         "persists_across_reboot": True,
@@ -1410,4 +1431,127 @@ def migrate_squad_values_from_json(
     except Exception as exc:
         print(f"[sqlite-store] failed to migrate squad values from {path}: {exc}")
         return {"upserted": 0, "skipped": 0, "error": str(exc)}
+
+def save_notification_sub(
+    token: str,
+    sub_type: str,
+    sub_target: str,
+    competition: str = "",
+    db_path: Optional[Path] = None,
+) -> bool:
+    """Persist a notification subscription (match or team) to SQLite."""
+    t = str(token or "").strip()
+    st = str(sub_type or "").strip().lower()
+    tgt = str(sub_target or "").strip()
+    if not t or not st or not tgt:
+        return False
+    ensure_store(db_path)
+    now = _utc_now()
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                f"""
+                INSERT INTO {_NOTIF_SUBS_TABLE}(
+                    token, sub_type, sub_target, competition, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(token, sub_type, sub_target) DO UPDATE SET
+                    competition = excluded.competition,
+                    created_at = excluded.created_at
+                """,
+                (t, st, tgt, str(competition or "").strip() or None, now),
+            )
+            _durable_commit(conn)
+            return True
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def remove_notification_sub(
+    token: str,
+    sub_type: str,
+    sub_target: str,
+    db_path: Optional[Path] = None,
+) -> bool:
+    """Remove a notification subscription from SQLite."""
+    t = str(token or "").strip()
+    st = str(sub_type or "").strip().lower()
+    tgt = str(sub_target or "").strip()
+    if not t or not st or not tgt:
+        return False
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"DELETE FROM {_NOTIF_SUBS_TABLE} WHERE token = ? AND sub_type = ? AND sub_target = ?",
+                (t, st, tgt),
+            )
+            deleted = cur.rowcount > 0
+            _durable_commit(conn)
+            return deleted
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def remove_match_notification_subs(
+    match_id: str,
+    competition: str = "",
+    db_path: Optional[Path] = None,
+) -> int:
+    """Remove all subscriptions for a specific match upon completion."""
+    mid = str(match_id or "").strip()
+    if not mid:
+        return 0
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"DELETE FROM {_NOTIF_SUBS_TABLE} WHERE sub_type = 'match' AND (sub_target = ? OR sub_target LIKE ?)",
+                (mid, f"{mid}|%"),
+            )
+            deleted = cur.rowcount
+            _durable_commit(conn)
+            return deleted
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def load_all_notification_subs(db_path: Optional[Path] = None) -> list[dict]:
+    """Load all notification subscriptions from SQLite store."""
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT token, sub_type, sub_target, competition, created_at
+            FROM {_NOTIF_SUBS_TABLE}
+            ORDER BY created_at ASC
+            """
+        ).fetchall()
+        return [
+            {
+                "token": r["token"],
+                "sub_type": r["sub_type"],
+                "sub_target": r["sub_target"],
+                "competition": r["competition"] or "",
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
 

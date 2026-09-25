@@ -1395,7 +1395,8 @@ def _live_score_poller_loop():
             try:
                 from notifications import (
                     clear_match_subscriptions,
-                    for_match_tokens as la_for_match_tokens,
+                    for_game_or_team_subscribers,
+                    record_notification_event,
                     send_live_activity_update,
                 )
 
@@ -1413,13 +1414,15 @@ def _live_score_poller_loop():
                             if cur_status not in ("in", "post"):
                                 continue
 
+                            ht = g.get("home_team", "")
+                            at = g.get("away_team", "")
                             notified = _notified_events.setdefault(mid, set())
-                            subscribers = la_for_match_tokens(mid, comp_name)
+                            subscribers = for_game_or_team_subscribers(mid, comp_name, ht, at)
 
                             def _queue_alert(title, body, _subscribers=subscribers):
-                                """Queue a regular alert push to match subscribers only."""
+                                """Queue a push alert to match & team subscribers, and record into feed."""
+                                from notifications import _apns_notification_queue
                                 for token in _subscribers:
-                                    from notifications import _apns_notification_queue
                                     _apns_notification_queue.append({
                                         "token": token,
                                         "title": title,
@@ -1428,9 +1431,10 @@ def _live_score_poller_loop():
                                         "match_id": mid,
                                         "competition": comp_name,
                                     })
-
-                            ht = g.get("home_team", "")
-                            at = g.get("away_team", "")
+                                try:
+                                    record_notification_event(title, body, match_id=mid, competition=comp_name)
+                                except Exception:
+                                    pass
                             hs = g.get("home_score", "-")
                             as_ = g.get("away_score", "-")
                             state_base = _la_content_state(g, comp_name)

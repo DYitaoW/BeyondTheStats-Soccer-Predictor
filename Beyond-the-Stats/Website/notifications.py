@@ -11,6 +11,15 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
+try:
+    from shared import sqlite_store
+except Exception:
+    try:
+        import sqlite_store  # type: ignore
+    except Exception:
+        sqlite_store = None
+
+
 # ── In-memory queues and registrations ────────────────────────────
 
 _apns_notification_queue: deque = deque()
@@ -26,6 +35,16 @@ _live_activities_lock = threading.Lock()
 # value = set of device tokens that asked to be notified about that match.
 _match_notification_subscriptions: dict[str, set[str]] = {}
 _match_notification_subscriptions_lock = threading.Lock()
+
+# Team push subscription store: key = normalized_team_name (str),
+# value = set of device tokens that asked to be notified about any game for that team.
+_team_notification_subscriptions: dict[str, set[str]] = {}
+_team_notification_subscriptions_lock = threading.Lock()
+
+
+def normalize_team_name(team: str) -> str:
+    """Canonical team key for subscription lookups (lowercase, stripped)."""
+    return str(team or "").strip().lower()
 
 
 def normalize_live_competition(competition: str) -> str:
@@ -68,24 +87,33 @@ def subscribe_match(device_token: str, match_id: str, competition: str) -> bool:
     key = _match_key(match_id, competition)
     with _match_notification_subscriptions_lock:
         subs = _match_notification_subscriptions.setdefault(key, set())
-        if device_token in subs:
-            return False
         subs.add(device_token)
         ios_device_tokens.add(device_token)
-        return True
+    if sqlite_store is not None:
+        try:
+            sqlite_store.save_notification_sub(device_token, "match", key, competition=competition)
+        except Exception as exc:
+            logger.warning(f"[notifications] failed to save match sub to SQLite: {exc}")
+    return True
 
 
 def unsubscribe_match(device_token: str, match_id: str, competition: str) -> bool:
     """Remove a device token from one match's regular-push list."""
     key = _match_key(match_id, competition)
+    deleted = False
     with _match_notification_subscriptions_lock:
         subs = _match_notification_subscriptions.get(key)
-        if not subs:
-            return False
-        subs.discard(device_token)
-        if not subs:
-            del _match_notification_subscriptions[key]
-        return True
+        if subs and device_token in subs:
+            subs.discard(device_token)
+            if not subs:
+                del _match_notification_subscriptions[key]
+            deleted = True
+    if sqlite_store is not None:
+        try:
+            sqlite_store.remove_notification_sub(device_token, "match", key)
+        except Exception as exc:
+            logger.warning(f"[notifications] failed to remove match sub from SQLite: {exc}")
+    return deleted
 
 
 def for_match_tokens(match_id: str, competition: str) -> list[str]:
@@ -109,7 +137,159 @@ def clear_match_subscriptions(match_id: str, competition: str) -> int:
             subs = _match_notification_subscriptions.pop(key, None)
             if subs:
                 removed += len(subs)
+    if sqlite_store is not None:
+        try:
+            sqlite_store.remove_match_notification_subs(match_id, competition=competition)
+        except Exception as exc:
+            logger.warning(f"[notifications] failed to clear match subs from SQLite: {exc}")
     return removed
+
+
+def subscribe_team(device_token: str, team: str, competition: str = "") -> bool:
+    """Register a device token to receive push alerts for any game involving team."""
+    norm = normalize_team_name(team)
+    if not norm or not device_token:
+        return False
+    with _team_notification_subscriptions_lock:
+        subs = _team_notification_subscriptions.setdefault(norm, set())
+        subs.add(device_token)
+        ios_device_tokens.add(device_token)
+    if sqlite_store is not None:
+        try:
+            sqlite_store.save_notification_sub(device_token, "team", norm, competition=competition)
+        except Exception as exc:
+            logger.warning(f"[notifications] failed to save team sub to SQLite: {exc}")
+    return True
+
+
+def unsubscribe_team(device_token: str, team: str) -> bool:
+    """Remove a device token from team notifications."""
+    norm = normalize_team_name(team)
+    if not norm or not device_token:
+        return False
+    deleted = False
+    with _team_notification_subscriptions_lock:
+        subs = _team_notification_subscriptions.get(norm)
+        if subs and device_token in subs:
+            subs.discard(device_token)
+            if not subs:
+                del _team_notification_subscriptions[norm]
+            deleted = True
+    if sqlite_store is not None:
+        try:
+            sqlite_store.remove_notification_sub(device_token, "team", norm)
+        except Exception as exc:
+            logger.warning(f"[notifications] failed to remove team sub from SQLite: {exc}")
+    return deleted
+
+
+def for_team_tokens(team: str) -> list[str]:
+    """Return all device tokens subscribed to a specific team."""
+    norm = normalize_team_name(team)
+    if not norm:
+        return []
+    with _team_notification_subscriptions_lock:
+        return list(_team_notification_subscriptions.get(norm, ()))
+
+
+def for_game_or_team_subscribers(
+    match_id: str,
+    competition: str,
+    home_team: str = "",
+    away_team: str = "",
+) -> list[str]:
+    """Return unified, deduplicated list of tokens subscribed to match OR either team."""
+    seen: set[str] = set()
+    tokens: list[str] = []
+    # 1. Match-level subscribers
+    for tok in for_match_tokens(match_id, competition):
+        if tok not in seen:
+            seen.add(tok)
+            tokens.append(tok)
+    # 2. Home team subscribers
+    if home_team:
+        for tok in for_team_tokens(home_team):
+            if tok not in seen:
+                seen.add(tok)
+                tokens.append(tok)
+    # 3. Away team subscribers
+    if away_team:
+        for tok in for_team_tokens(away_team):
+            if tok not in seen:
+                seen.add(tok)
+                tokens.append(tok)
+    return tokens
+
+
+def get_device_subscriptions(token: str) -> dict:
+    """Return all matches and teams a device token is subscribed to."""
+    t = str(token or "").strip()
+    if not t:
+        return {"matches": [], "teams": []}
+    matches = []
+    teams = []
+    with _match_notification_subscriptions_lock:
+        for k, tokens in _match_notification_subscriptions.items():
+            if t in tokens:
+                matches.append(k)
+    with _team_notification_subscriptions_lock:
+        for team_norm, tokens in _team_notification_subscriptions.items():
+            if t in tokens:
+                teams.append(team_norm)
+    return {"matches": sorted(matches), "teams": sorted(teams)}
+
+
+def record_notification_event(
+    title: str,
+    body: str,
+    match_id: str = "",
+    competition: str = "",
+    notif_type: str = "live_event",
+) -> None:
+    """Record an event notification in the in-memory feed for GET /api/notifications."""
+    _notifications.append({
+        "id": len(_notifications),
+        "title": title,
+        "body": body,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "type": notif_type,
+        "match_id": match_id,
+        "competition": normalize_live_competition(competition),
+    })
+    if len(_notifications) > 500:
+        del _notifications[:-500]
+
+
+def init_subscriptions_from_sqlite() -> dict:
+    """Preload active subscriptions from SQLite store into memory."""
+    if sqlite_store is None:
+        return {"loaded": 0, "matches": 0, "teams": 0}
+    try:
+        rows = sqlite_store.load_all_notification_subs()
+        loaded_matches = 0
+        loaded_teams = 0
+        with _match_notification_subscriptions_lock, _team_notification_subscriptions_lock:
+            for r in rows:
+                token = r.get("token")
+                sub_type = r.get("sub_type")
+                target = r.get("sub_target")
+                if not token or not target:
+                    continue
+                ios_device_tokens.add(token)
+                if sub_type == "team":
+                    k = normalize_team_name(target)
+                    _team_notification_subscriptions.setdefault(k, set()).add(token)
+                    loaded_teams += 1
+                elif sub_type == "match":
+                    comp = r.get("competition") or ""
+                    key = target if "|" in target else _match_key(target, comp)
+                    _match_notification_subscriptions.setdefault(key, set()).add(token)
+                    loaded_matches += 1
+        return {"loaded": len(rows), "matches": loaded_matches, "teams": loaded_teams}
+    except Exception as exc:
+        logger.warning(f"[notifications] failed to preload subscriptions from SQLite: {exc}")
+        return {"loaded": 0, "error": str(exc)}
+
 
 
 def send_match_notification(match_id: str, competition: str, title: str, body: str) -> int:
@@ -384,3 +564,10 @@ def send_live_activity_end(match_id: str, competition: str, content_state: dict 
         })
     unregister_by_match(match_id, competition)
     return len(activities)
+
+# Preload existing subscriptions from SQLite store on module initialization
+try:
+    init_subscriptions_from_sqlite()
+except Exception:
+    pass
+

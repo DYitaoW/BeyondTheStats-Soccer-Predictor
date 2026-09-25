@@ -76,12 +76,15 @@ from notifications import (
     _apns_notification_queue,
     _notifications,
     device_tokens,
+    get_device_subscriptions,
     ios_device_tokens,
     send_live_activity_update,
     send_live_activity_end,
     start_apns_worker,
     subscribe_match,
+    subscribe_team,
     unsubscribe_match,
+    unsubscribe_team,
 )
 import notifications as live_activities
 from predictions import (
@@ -1040,8 +1043,11 @@ def api_help():
         ("/api/notifications", "GET", "List recent notifications"),
         ("/api/notifications/register", "POST", "Register a device push token"),
         ("/api/notifications/unregister", "POST", "Remove a device push token"),
-        ("/api/notifications/subscribe", "POST", "Subscribe a device to a match's live-event alerts"),
-        ("/api/notifications/unsubscribe", "POST", "Unsubscribe a device from a match's live-event alerts"),
+        ("/api/notifications/subscribe", "POST", "Subscribe a device to a match or team's live-event alerts"),
+        ("/api/notifications/unsubscribe", "POST", "Unsubscribe a device from a match or team's live-event alerts"),
+        ("/api/notifications/subscribe-team", "POST", "Subscribe a device to a team's live-event alerts"),
+        ("/api/notifications/unsubscribe-team", "POST", "Unsubscribe a device from a team's live-event alerts"),
+        ("/api/notifications/subscriptions", "GET", "List active subscriptions for a device token"),
         ("/api/live-activities/register", "POST", "Register a Live Activity push token for a match"),
         ("/api/live-activities/unregister", "POST", "Remove a Live Activity registration"),
         ("/api/live-activities/update", "POST", "Push a content-state update to Live Activities for a match"),
@@ -2390,44 +2396,122 @@ def api_unregister_device():
 
 @app.post("/api/notifications/subscribe")
 def api_subscribe_match_notifications():
-    """Subscribe a device to live-event alerts for a specific match.
+    """Subscribe a device to live-event alerts for a specific match or team.
 
     Body params:
         token       (str, required) — device push token
-        match_id    (str, required) — match identifier
-        competition (str, required) — competition name
+        match_id    (str, optional) — match identifier (if subscribing to match)
+        team        (str, optional) — team name (if subscribing to team)
+        competition (str, optional) — competition name
     """
     payload = request.get_json(silent=True) or {}
     token = str(payload.get("token", "")).strip()
+    team = str(payload.get("team", "")).strip()
     match_id = str(payload.get("match_id", "")).strip()
     competition = str(payload.get("competition", "")).strip()
-    if not token or not match_id or not competition:
-        return jsonify({"ok": False, "error": "token, match_id, and competition required"}), 400
-    if len(token) > 512 or len(match_id) > 256 or len(competition) > 256:
+
+    if not token:
+        return jsonify({"ok": False, "error": "token required"}), 400
+    if len(token) > 512:
+        return jsonify({"ok": False, "error": "token too long"}), 400
+
+    if team:
+        if len(team) > 256:
+            return jsonify({"ok": False, "error": "team name too long"}), 400
+        ok = subscribe_team(token, team, competition=competition)
+        return jsonify({"ok": True, "subscribed": ok, "type": "team", "team": team})
+
+    if not match_id or not competition:
+        return jsonify({"ok": False, "error": "either team or (match_id and competition) required"}), 400
+    if len(match_id) > 256 or len(competition) > 256:
         return jsonify({"ok": False, "error": "input too long"}), 400
     ok = subscribe_match(token, match_id, competition)
-    return jsonify({"ok": True, "subscribed": ok})
+    return jsonify({"ok": True, "subscribed": ok, "type": "match", "match_id": match_id})
 
 
 @app.post("/api/notifications/unsubscribe")
 def api_unsubscribe_match_notifications():
-    """Remove a device from a match's live-event alert list.
+    """Remove a device from a match or team live-event alert list.
 
     Body params:
         token       (str, required) — device push token
-        match_id    (str, required) — match identifier
-        competition (str, required) — competition name
+        match_id    (str, optional) — match identifier
+        team        (str, optional) — team name
+        competition (str, optional) — competition name
     """
     payload = request.get_json(silent=True) or {}
     token = str(payload.get("token", "")).strip()
+    team = str(payload.get("team", "")).strip()
     match_id = str(payload.get("match_id", "")).strip()
     competition = str(payload.get("competition", "")).strip()
-    if not token or not match_id or not competition:
-        return jsonify({"ok": False, "error": "token, match_id, and competition required"}), 400
-    if len(token) > 512 or len(match_id) > 256 or len(competition) > 256:
+
+    if not token:
+        return jsonify({"ok": False, "error": "token required"}), 400
+    if len(token) > 512:
+        return jsonify({"ok": False, "error": "token too long"}), 400
+
+    if team:
+        ok = unsubscribe_team(token, team)
+        return jsonify({"ok": True, "unsubscribed": ok, "type": "team", "team": team})
+
+    if not match_id or not competition:
+        return jsonify({"ok": False, "error": "either team or (match_id and competition) required"}), 400
+    if len(match_id) > 256 or len(competition) > 256:
         return jsonify({"ok": False, "error": "input too long"}), 400
     ok = unsubscribe_match(token, match_id, competition)
-    return jsonify({"ok": True, "unsubscribed": ok})
+    return jsonify({"ok": True, "unsubscribed": ok, "type": "match", "match_id": match_id})
+
+
+@app.post("/api/notifications/subscribe-team")
+def api_subscribe_team_notifications():
+    """Subscribe a device to live-event alerts for a specific team.
+
+    Body params:
+        token       (str, required) — device push token
+        team        (str, required) — team name
+        competition (str, optional) — competition name
+    """
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get("token", "")).strip()
+    team = str(payload.get("team", "")).strip()
+    competition = str(payload.get("competition", "")).strip()
+    if not token or not team:
+        return jsonify({"ok": False, "error": "token and team required"}), 400
+    if len(token) > 512 or len(team) > 256:
+        return jsonify({"ok": False, "error": "input too long"}), 400
+    ok = subscribe_team(token, team, competition=competition)
+    return jsonify({"ok": True, "subscribed": ok, "team": team})
+
+
+@app.post("/api/notifications/unsubscribe-team")
+def api_unsubscribe_team_notifications():
+    """Remove a device from team live-event notifications.
+
+    Body params:
+        token (str, required) — device push token
+        team  (str, required) — team name
+    """
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get("token", "")).strip()
+    team = str(payload.get("team", "")).strip()
+    if not token or not team:
+        return jsonify({"ok": False, "error": "token and team required"}), 400
+    ok = unsubscribe_team(token, team)
+    return jsonify({"ok": True, "unsubscribed": ok, "team": team})
+
+
+@app.get("/api/notifications/subscriptions")
+def api_get_device_subscriptions():
+    """Return all active subscriptions (matches and teams) for a device token.
+
+    Query params:
+        token (str, required) — device push token
+    """
+    token = request.args.get("token", "").strip()
+    if not token:
+        return jsonify({"ok": False, "error": "token required"}), 400
+    subs = get_device_subscriptions(token)
+    return jsonify({"ok": True, "token": token, **subs})
 
 
 # ── Live Activity endpoints (iOS 16.1+) ────────────────────────────

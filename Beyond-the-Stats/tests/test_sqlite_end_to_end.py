@@ -54,7 +54,7 @@ class SqliteEndToEndTests(unittest.TestCase):
         info = self.store.store_info()
         self.assertEqual(
             set(info["tables"]),
-            {"past_games", "live_score_history", "upcoming_games", "squad_values"},
+            {"past_games", "live_score_history", "upcoming_games", "squad_values", "notification_subscriptions"},
         )
 
         # National training CSV migrates into past_games on first ensure_store.
