@@ -1,10 +1,16 @@
 """Redis and in-memory caching utilities for API responses."""
-import hashlib
+from __future__ import annotations
+
 import functools
+import hashlib
+import inspect
 import threading
 import time
-from flask import request
+from typing import Any, Callable
+
 import config
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
 _redis_client = None
 if config.REDIS_URL:
@@ -76,31 +82,71 @@ def _cache_clear_pattern(pattern: str = "api:*") -> None:
         _mem_cache.clear()
 
 
+def _extract_request(args: tuple, kwargs: dict) -> Request | None:
+    for a in args:
+        if isinstance(a, Request):
+            return a
+    for v in kwargs.values():
+        if isinstance(v, Request):
+            return v
+    return None
+
+
 def _cached_response(ttl: int = config.CACHE_TTL_DEFAULT):
     """Decorator that caches a route's JSON response in Redis (or in-memory).
 
     The cache key is ``api:{md5(endpoint + query_string)}``.
     Skips caching when ``?no_cache=1`` or ``?refresh=1`` is present.
+    Supports both sync and async FastAPI route handlers.
     """
-    def decorator(f):
-        @functools.wraps(f)
-        def wrapper(*args, **kwargs):
-            if request.args.get("no_cache", "").strip() in ("1", "true"):
+    def decorator(f: Callable) -> Callable:
+        if inspect.iscoroutinefunction(f):
+            @functools.wraps(f)
+            async def async_wrapper(*args, **kwargs):
+                req = _extract_request(args, kwargs)
+                if req is not None:
+                    if req.query_params.get("no_cache", "").strip() in ("1", "true"):
+                        return await f(*args, **kwargs)
+                    if req.query_params.get("refresh", "").strip() in ("1", "true"):
+                        return await f(*args, **kwargs)
+                    key = _cache_key(req.url.path, str(req.url.query))
+                    cached = _cache_get(key)
+                    if cached is not None:
+                        return Response(
+                            content=cached,
+                            status_code=200,
+                            media_type="application/json",
+                            headers={"X-Cache": "redis" if _redis_client else "memory"},
+                        )
+                    result = await f(*args, **kwargs)
+                    if isinstance(result, Response) and result.status_code == 200:
+                        _cache_set(key, result.body.decode("utf-8", errors="replace"), ttl=ttl)
+                    return result
+                return await f(*args, **kwargs)
+            return async_wrapper
+        else:
+            @functools.wraps(f)
+            def sync_wrapper(*args, **kwargs):
+                req = _extract_request(args, kwargs)
+                if req is not None:
+                    if req.query_params.get("no_cache", "").strip() in ("1", "true"):
+                        return f(*args, **kwargs)
+                    if req.query_params.get("refresh", "").strip() in ("1", "true"):
+                        return f(*args, **kwargs)
+                    key = _cache_key(req.url.path, str(req.url.query))
+                    cached = _cache_get(key)
+                    if cached is not None:
+                        return Response(
+                            content=cached,
+                            status_code=200,
+                            media_type="application/json",
+                            headers={"X-Cache": "redis" if _redis_client else "memory"},
+                        )
+                    result = f(*args, **kwargs)
+                    if isinstance(result, Response) and result.status_code == 200:
+                        _cache_set(key, result.body.decode("utf-8", errors="replace"), ttl=ttl)
+                    return result
                 return f(*args, **kwargs)
-            if request.args.get("refresh", "").strip() in ("1", "true"):
-                return f(*args, **kwargs)
-            from app import app  # Lazy import to avoid circular dep
-            key = _cache_key(request.path, request.query_string.decode("utf-8", errors="replace"))
-            cached = _cache_get(key)
-            if cached is not None:
-                resp = app.response_class(
-                    response=cached, status=200, mimetype="application/json"
-                )
-                resp.headers["X-Cache"] = "redis" if _redis_client else "memory"
-                return resp
-            result = f(*args, **kwargs)
-            if isinstance(result, app.response_class) and result.status_code == 200:
-                _cache_set(key, result.get_data(as_text=True), ttl=ttl)
-            return result
-        return wrapper
+            return sync_wrapper
     return decorator
+

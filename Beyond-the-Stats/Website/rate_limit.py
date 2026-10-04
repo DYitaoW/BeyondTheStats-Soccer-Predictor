@@ -1,16 +1,16 @@
 """Per-client API rate limiting (sliding window).
 
 Uses Redis when ``REDIS_URL`` is configured; otherwise an in-process
-memory store (correct for the single gunicorn worker + gthread setup).
+memory store (correct for the single worker setup).
 """
 from __future__ import annotations
 
 import threading
 import time
 from collections import defaultdict, deque
+from typing import Optional
 
-from flask import request
-
+from starlette.requests import Request
 import config
 
 _memory_hits: dict[str, deque[float]] = defaultdict(deque)
@@ -27,18 +27,21 @@ if getattr(config, "REDIS_URL", ""):
         _redis = None
 
 
-def client_identifier() -> str:
+def client_identifier(request: Optional[Request] = None) -> str:
     """Best-effort client IP behind Cloudflare / reverse proxies."""
-    cf = (request.headers.get("CF-Connecting-IP") or "").strip()
-    if cf:
-        return cf
-    forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
-    if forwarded:
-        return forwarded
-    real_ip = (request.headers.get("X-Real-IP") or "").strip()
-    if real_ip:
-        return real_ip
-    return request.remote_addr or "unknown"
+    if request is not None:
+        cf = (request.headers.get("CF-Connecting-IP") or "").strip()
+        if cf:
+            return cf
+        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        if forwarded:
+            return forwarded
+        real_ip = (request.headers.get("X-Real-IP") or "").strip()
+        if real_ip:
+            return real_ip
+        if getattr(request, "client", None) and request.client.host:
+            return request.client.host
+    return "unknown"
 
 
 def _check_memory(key: str, limit: int, window_seconds: int) -> tuple[bool, int]:
@@ -81,6 +84,7 @@ def check_rate_limit(
     window_seconds: int = 60,
     *,
     client_id: str | None = None,
+    request: Optional[Request] = None,
 ) -> tuple[bool, int]:
     """Return ``(allowed, retry_after_seconds)``.
 
@@ -88,9 +92,10 @@ def check_rate_limit(
     """
     if limit <= 0:
         return True, 0
-    cid = client_id if client_id is not None else client_identifier()
+    cid = client_id if client_id is not None else client_identifier(request)
     key = f"{cid}:{bucket}"
     redis_result = _check_redis(key, limit, window_seconds)
     if redis_result is not None:
         return redis_result
     return _check_memory(key, limit, window_seconds)
+
