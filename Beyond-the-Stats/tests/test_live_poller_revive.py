@@ -16,7 +16,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
-WEBSITE = Path(__file__).resolve().parent
+WEBSITE = ROOT / "Website"
 
 
 def _load_config():

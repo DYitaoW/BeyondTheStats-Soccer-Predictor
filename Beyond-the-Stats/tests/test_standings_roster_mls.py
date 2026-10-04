@@ -11,7 +11,8 @@ from pathlib import Path
 from unittest import mock
 
 
-WEBSITE_DIR = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
+WEBSITE_DIR = ROOT / "Website"
 if str(WEBSITE_DIR) not in sys.path:
     sys.path.insert(0, str(WEBSITE_DIR))
 

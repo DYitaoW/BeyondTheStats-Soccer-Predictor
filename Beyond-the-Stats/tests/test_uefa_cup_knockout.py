@@ -8,7 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
-WEBSITE_DIR = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
+WEBSITE_DIR = ROOT / "Website"
 ROOT_DIR = WEBSITE_DIR.parent
 FILES_DIR = ROOT_DIR / "pipelines" / "europe" / "files"
 for path in (WEBSITE_DIR, FILES_DIR, ROOT_DIR):

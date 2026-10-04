@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-09-13T02:09:14+00:00",
+  "generated_at_utc": "2026-10-04T06:02:53+00:00",
   "global": {
     "England/Championship": [],
     "England/Premier League": [],
@@ -10,21 +10,14 @@
     "Spain/La Liga": []
   },
   "mls": {
-    "United States/MLS": [
-      "Atlanta United FC",
-      "Charlotte FC",
-      "Columbus Crew",
-      "D.C. United",
-      "FC Cincinnati",
-      "Inter Miami CF",
-      "Nashville SC",
-      "Orlando City SC",
-      "Red Bull New York",
-      "Toronto FC"
-    ]
+    "United States/MLS": []
   },
   "extra": {},
   "cup": {},
-  "national": {},
-  "friendlies": {}
+  "national": {
+    "International/Friendly": []
+  },
+  "friendlies": {
+    "International/Friendly": []
+  }
 }

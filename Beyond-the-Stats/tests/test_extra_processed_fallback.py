@@ -98,7 +98,7 @@ class ExtraProcessedFallbackTests(unittest.TestCase):
             pm.SHARED_PROCESSED_DIR = str(shared)
             matches, season_files = pm.load_training_matches()
             self.assertEqual(len(matches), 1)
-            self.assertEqual(season_files, ["Japan/J1 League/jpnstat2026.csv"])
+            self.assertEqual([f.replace("\\", "/") for f in season_files], ["Japan/J1 League/jpnstat2026.csv"])
 
     def test_project_merges_global_raw_for_extra_competitions(self):
         plt = _load_project_league_table()
