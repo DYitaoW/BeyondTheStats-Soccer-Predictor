@@ -8,7 +8,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from flask import Blueprint, Response, current_app, jsonify, request
+from .compat import Blueprint, Response, current_app, jsonify, request
 
 import config
 import pipeline_log
@@ -467,3 +467,8 @@ def api_info_roadmap():
 def api_info_upcoming():
     return _serve_info_file("upcoming")
 
+
+@admin_bp.get("/api/test-sync")
+def api_test_sync():
+    """Diagnostic endpoint to verify file synchronization and FastAPI compatibility."""
+    return jsonify({"status": "ok", "sync_test": True, "server": "FastAPI"})

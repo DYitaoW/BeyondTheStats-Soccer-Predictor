@@ -1,19 +1,31 @@
-fastapi>=0.110.0
-uvicorn[standard]>=0.28.0
-pydantic>=2.0
-jinja2>=3.1
-python-multipart>=0.0.9
-pyjwt>=2.0
-cryptography>=41
-requests>=2.31
-pandas>=2.0
-joblib>=1.3
-httpx>=0.27,<1.0
-h2>=4.1,<5.0
-hyperframe>=6.1,<7.0
-scikit-learn>=1.3
-numpy>=1.24
-xgboost>=1.7
-psutil>=5.9
-beautifulsoup4>=4.11
+# Web serving & ASGI framework (FastAPI)
+fastapi>=0.110.0,<1.0
+uvicorn[standard]>=0.28.0,<1.0
+gunicorn>=21.2,<24.0  # Production process manager on Linux (uses uvicorn.workers.UvicornWorker)
+pydantic>=2.0,<3.0
+jinja2>=3.1,<4.0
+python-multipart>=0.0.9,<1.0
 
+# HTTP & Protocol tools
+requests>=2.31,<3.0
+httpx[http2]>=0.27,<1.0  # HTTP/2 client for ESPN fallback, APNs, webhooks
+h2>=4.1,<5.0  # HTTP/2 protocol support
+hyperframe>=6.1,<7.0  # HTTP/2 framing (Python 3.13+ compatibility)
+
+# Data Processing & ML Pipeline
+pandas>=2.0,<3.0
+numpy>=1.24,<2.0
+scikit-learn>=1.3,<2.0
+joblib>=1.3,<2.0
+xgboost>=1.7,<3.0  # Optional: model training
+
+# Auth & Cryptography
+pyjwt>=2.8,<3.0  # Apple Sign-In & APNs token authentication
+cryptography>=41,<50  # Key support for PyJWT / Apple identity token verification
+
+# System Monitoring & Web Scraping
+psutil>=5.9,<7.0  # Per-process RSS memory monitoring
+beautifulsoup4>=4.11,<5.0
+
+# Optional caching & storage
+redis>=5.0,<9.0  # Optional: API response caching when REDIS_URL is configured

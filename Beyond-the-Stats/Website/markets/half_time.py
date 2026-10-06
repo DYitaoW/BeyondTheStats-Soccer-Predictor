@@ -76,7 +76,7 @@ def compute_half_time_markets(
     if total_ht_p > 0:
         ht_prob_h /= total_ht_p
         ht_prob_d /= total_ht_p
-        ht_prob_a /= total_ht_a = total_ht_p
+        ht_prob_a /= total_ht_p
         for s in ht_scores:
             s["prob"] = round(s["prob"] / total_ht_p, 4)
 
@@ -94,6 +94,7 @@ def compute_half_time_markets(
     for h in range(max_ht_goals + 1):
         ph = _poisson_pmf(h, hg_sh)
         for a in range(max_ht_goals + 1):
+            pa = _poisson_pmf(a, ag_sh)
             p = ph * pa
             total_sh_p += p
             if h > a:

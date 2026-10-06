@@ -1,19 +1,28 @@
 """ESPN HTTP requests (schedule, teams, standings, leaders, event summaries)."""
+from __future__ import annotations
+
 import json
+import threading
 import time
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
+from typing import Any, Optional
 
 import config
 from espn_parser import _parse_espn_live_event
 
+try:
+    import httpx
+except ImportError:
+    httpx = None  # type: ignore
+
 LIVE_SCORE_FETCH_TIMEOUT = 15
 
 # ESPN's site API currently 403s browser-like User-Agent strings from many
-# datacenter IPs. Use urllib's default UA (or a non-Mozilla token) so live
-# scoreboard / standings / teams fetches succeed.
+# datacenter IPs. Use a clean Accept header and standard HTTP compression.
 ESPN_REQUEST_HEADERS = {
     "Accept": "application/json",
+    "Accept-Encoding": "gzip, deflate, br",
 }
 
 _TEAMS_CACHE: dict[str, tuple[float, list[dict]]] = {}
@@ -37,6 +46,57 @@ _STANDINGS_STAT_NAMES = {
     "streak": "streak",
 }
 
+# Persistent HTTP Client with Connection Pooling & Keep-Alive
+_http_client: Optional[Any] = None
+_http_client_lock = threading.Lock()
+
+
+def _get_http_client():
+    """Return a shared persistent httpx.Client with connection pooling and keep-alive."""
+    global _http_client
+    if httpx is None:
+        return None
+    if _http_client is None:
+        with _http_client_lock:
+            if _http_client is None:
+                try:
+                    limits = httpx.Limits(
+                        max_keepalive_connections=25,
+                        max_connections=50,
+                        keepalive_expiry=60.0,
+                    )
+                    _http_client = httpx.Client(
+                        headers=ESPN_REQUEST_HEADERS,
+                        timeout=LIVE_SCORE_FETCH_TIMEOUT,
+                        limits=limits,
+                        follow_redirects=True,
+                    )
+                except Exception:
+                    _http_client = None
+    return _http_client
+
+
+def _fetch_espn_json(url: str, *, timeout: float = LIVE_SCORE_FETCH_TIMEOUT) -> Any:
+    """Fetch and parse JSON from an ESPN API URL using pooled HTTP/keep-alive with urllib fallback."""
+    # 1. Try persistent pooled client first (reuses TCP sockets and TLS sessions)
+    client = _get_http_client()
+    if client is not None:
+        try:
+            resp = client.get(url, timeout=timeout)
+            if resp.is_success:
+                return resp.json()
+        except Exception:
+            pass
+
+    # 2. Resilient fallback to urllib if pooled client fails or httpx is absent
+    try:
+        req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode())
+    except Exception:
+        return None
+
+
 def _scoreboard_cache_fallback(espn_id: str, today_str: str):
     """Return cached ESPN scoreboard JSON when live fetch fails."""
     try:
@@ -56,14 +116,10 @@ def _fetch_competition_scores(comp_name, espn_id, today_str, *, log_failures=Fal
         f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/scoreboard"
         f"?dates={today_str}&limit=1000"
     )
-    req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
-    data = None
-    try:
-        with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
-            data = json.loads(resp.read().decode())
-    except Exception as exc:
+    data = _fetch_espn_json(url)
+    if data is None:
         if log_failures:
-            print(f"[espn] scoreboard fetch failed for {comp_name} ({espn_id}, {today_str}): {exc}")
+            print(f"[espn] scoreboard fetch failed for {comp_name} ({espn_id}, {today_str})")
         data = _scoreboard_cache_fallback(espn_id, today_str)
         if data is None:
             return []
@@ -76,14 +132,6 @@ def _fetch_competition_scores(comp_name, espn_id, today_str, *, log_failures=Fal
             games.append(parsed)
     return games
 
-def _fetch_espn_json(url):
-    """Fetch and parse JSON from an ESPN API URL. Returns None on failure."""
-    req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
-    try:
-        with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
-            return json.loads(resp.read().decode())
-    except Exception:
-        return None
 
 def _fetch_competition_teams(comp_name, espn_id):
     """Return list of teams in a competition from ESPN."""
@@ -108,6 +156,7 @@ def _fetch_competition_teams(comp_name, espn_id):
             })
     _TEAMS_CACHE[cache_key] = (now, teams)
     return teams
+
 
 def _fetch_team_info(comp_name, espn_id, team_id):
     """Return full team info including roster from ESPN."""
@@ -165,6 +214,7 @@ def _fetch_team_info(comp_name, espn_id, team_id):
     _ROSTER_CACHE[cache_key] = (now, result)
     return result
 
+
 def _parse_espn_team_record(team):
     """Extract win/loss/draw record from an ESPN team response."""
     record_summary = str(team.get("recordSummary", ""))
@@ -180,6 +230,7 @@ def _parse_espn_team_record(team):
         "summary": record_summary,
         "details": record_data,
     }
+
 
 def _fetch_competition_schedule(comp_name, espn_id, days_forward=90):
     """Fetch full schedule for a competition from today to *days_forward* out.
@@ -233,6 +284,7 @@ def _fetch_competition_schedule(comp_name, espn_id, days_forward=90):
     _SCHEDULE_CACHE[cache_key] = (now, games)
     return games
 
+
 def _parse_standings_entry(entry):
     """Parse a single ESPN standings entry into a normalized dict."""
     team = entry.get("team") or {}
@@ -247,6 +299,7 @@ def _parse_standings_entry(entry):
                 result[our_name] = str(val)
     return result
 
+
 def _fetch_standings(comp_name, espn_id):
     """Fetch and parse ESPN standings for a competition.
 
@@ -255,8 +308,6 @@ def _fetch_standings(comp_name, espn_id):
     etc.).  Returns a normalized dict or None.
     """
     now = datetime.now()
-    # Derive candidate season years: current year, then the most recent
-    # European season start (current_year-1 if before August, else current_year).
     candidate_seasons = [str(now.year)]
     if now.month < 8:
         candidate_seasons.append(str(now.year - 1))
@@ -268,14 +319,9 @@ def _fetch_standings(comp_name, espn_id):
 
     data = None
     for url in candidate_urls:
-        req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
-        try:
-            with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
-                data = json.loads(resp.read().decode())
-            if data.get("standings"):
-                break
-        except Exception:
-            continue
+        data = _fetch_espn_json(url)
+        if data and data.get("standings"):
+            break
 
     if data is None:
         return None
@@ -315,6 +361,7 @@ def _fetch_standings(comp_name, espn_id):
         "groups": groups,
     }
 
+
 def _fetch_leaders(comp_name, espn_id):
     """Fetch ESPN statistical leaders for a competition.
 
@@ -334,14 +381,9 @@ def _fetch_leaders(comp_name, espn_id):
 
     data = None
     for url in candidate_urls:
-        req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
-        try:
-            with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
-                data = json.loads(resp.read().decode())
-            if data.get("leaders"):
-                break
-        except Exception:
-            continue
+        data = _fetch_espn_json(url)
+        if data and data.get("leaders"):
+            break
 
     if data is None:
         return None
@@ -391,12 +433,8 @@ def _fetch_leaders(comp_name, espn_id):
         "categories": categories,
     }
 
+
 def _fetch_event_summary(comp_name, espn_id, event_id):
-    """Fetch ESPN summary for a single event to get lineups."""
-    url = "%s/%s/summary?event=%s" % (config.LIVE_SCORE_ESPN_BASE, espn_id, event_id)
-    req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
-    try:
-        with urllib.request.urlopen(req, timeout=LIVE_SCORE_FETCH_TIMEOUT) as resp:
-            return json.loads(resp.read().decode())
-    except Exception:
-        return None
+    """Fetch ESPN summary for a single event using pooled HTTP/keep-alive."""
+    url = f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/summary?event={event_id}"
+    return _fetch_espn_json(url)

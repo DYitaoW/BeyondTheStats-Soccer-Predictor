@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, jsonify, request
+from .compat import Blueprint, redirect, render_template, send_from_directory, request, jsonify
 import pandas as pd
 
 import config
@@ -327,6 +327,15 @@ def api_upcoming(mode):
         window_include_past = False
     is_filtered = bool(month or window)
 
+    limit = None
+    offset = 0
+    raw_limit = request.args.get("limit", "").strip()
+    raw_offset = request.args.get("offset", "").strip()
+    if raw_limit.isdigit():
+        limit = max(1, int(raw_limit))
+    if raw_offset.isdigit():
+        offset = max(0, int(raw_offset))
+
     def _match_window(date_iso: str) -> bool:
         if month:
             if not str(date_iso).startswith(month):
@@ -414,9 +423,12 @@ def api_upcoming(mode):
             {"name": name, "live_score_tier": config.get_live_score_tier(name)}
             for name in league_names
         ]
+
+        paged_rows = all_rows[offset : (offset + limit) if limit else None] if (limit or offset) else all_rows
         return jsonify({
             "ok": True,
-            "rows": all_rows,
+            "total": len(all_rows),
+            "rows": paged_rows,
             "stats": combined_stats,
             "league_stats": list(combined_league_stats.values()),
             "available_leagues": available_leagues,
@@ -436,9 +448,11 @@ def api_upcoming(mode):
         {"name": name, "live_score_tier": config.get_live_score_tier(name)}
         for name in league_names
     ]
+    paged_rows = rows[offset : (offset + limit) if limit else None] if (limit or offset) else rows
     return jsonify({
         "ok": True,
-        "rows": rows,
+        "total": len(rows),
+        "rows": paged_rows,
         "stats": stats,
         "league_stats": league_stats,
         "available_leagues": available_leagues,
@@ -540,10 +554,21 @@ def api_past_games():
     """Return completed games persisted across pipeline runs grouped by week."""
     league = request.args.get("league", "").strip()
     target_date = request.args.get("week_start", "").strip() or request.args.get("date", "").strip()
+    from_date = request.args.get("from", "").strip()
+    to_date = request.args.get("to", "").strip()
     try:
         page = max(1, int(request.args.get("page", "1")))
     except (ValueError, TypeError):
         page = 1
+
+    limit = None
+    offset = 0
+    raw_limit = request.args.get("limit", "").strip()
+    raw_offset = request.args.get("offset", "").strip()
+    if raw_limit.isdigit():
+        limit = max(1, int(raw_limit))
+    if raw_offset.isdigit():
+        offset = max(0, int(raw_offset))
 
     prediction_lookup = _build_past_game_prediction_lookup()
     by_key = {}
@@ -589,9 +614,18 @@ def api_past_games():
         from shared import sqlite_store as _sqlite_store
         _sqlite_store.ensure_store()
         if _sqlite_store.count_rows("past_games") > 0:
-            archive = _sqlite_store.load_past_games(competition_substr=league)
+            archive = _sqlite_store.load_past_games(
+                competition_substr=league,
+                from_date=from_date,
+                to_date=to_date,
+            )
         if _sqlite_store.count_rows("upcoming_games") > 0:
-            for r in _sqlite_store.load_upcoming_games(competition_substr=league, status="settled"):
+            for r in _sqlite_store.load_upcoming_games(
+                competition_substr=league,
+                status="settled",
+                from_date=from_date,
+                to_date=to_date,
+            ):
                 _put_past_row(r)
     except Exception:
         archive = None
@@ -627,8 +661,23 @@ def api_past_games():
     if league:
         league_lower = league.lower()
         all_rows = [r for r in all_rows if league_lower in r.get("competition", "").lower()]
+    if from_date:
+        all_rows = [r for r in all_rows if _past_row_date_iso(r) >= from_date]
+    if to_date:
+        all_rows = [r for r in all_rows if _past_row_date_iso(r) <= to_date]
 
     all_rows.sort(key=lambda r: _past_row_date_iso(r), reverse=True)
+
+    # Direct limit / offset pagination mode for high performance
+    if limit is not None or offset > 0:
+        paged_rows = all_rows[offset : (offset + limit) if limit else None]
+        return jsonify({
+            "ok": True,
+            "total": len(all_rows),
+            "limit": limit,
+            "offset": offset,
+            "rows": paged_rows,
+        })
 
     weeks_map = {}
     for r in all_rows:
@@ -880,4 +929,3 @@ def api_scorers():
         "competitions": competitions,
         "available_leagues": sorted(competitions.keys()),
     })
-

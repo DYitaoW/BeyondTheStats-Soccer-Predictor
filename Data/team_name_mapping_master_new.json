@@ -22,7 +22,9 @@
     "Bolton Wanderers FC": "Bolton",
     "Bradford City": "Bradford",
     "Peterborough United": "Peterboro",
-    "Fleetwood Town": ""
+    "Fleetwood Town": "",
+    "Halesowen Town": "",
+    "Stafford Rangers": ""
   },
   "Spain/La Liga": {
     "RC Deportivo La Coruña": "La Coruna",
@@ -68,7 +70,9 @@
     "Manchester City": "Man City",
     "Brighton & Hove Albion": "Brighton",
     "Everton": "Everton",
-    "Newcastle United": "Newcastle"
+    "Newcastle United": "Newcastle",
+    "Halesowen Town": "",
+    "Stafford Rangers": ""
   },
   "Portugal/Liga Portugal": {
     "FC Arouca": "Arouca",
@@ -120,7 +124,8 @@
     "Sporting de Alcázar": "",
     "CP Talayuela": "",
     "Tavernes de la Valldigna": "",
-    "Maracena": ""
+    "Maracena": "",
+    "Real Oviedo": "Oviedo"
   },
   "Italy/Serie B": {
     "Arezzo": "Arezzo",
@@ -239,7 +244,9 @@
     "Sunderland": "Sunderland",
     "Brentford": "Brentford",
     "Everton": "Everton",
-    "Newcastle United": "Newcastle"
+    "Newcastle United": "Newcastle",
+    "Halesowen Town": "",
+    "Stafford Rangers": ""
   },
   "England/League Cup": {
     "Bradford City": "Bradford",
@@ -257,7 +264,9 @@
     "Sunderland": "Sunderland",
     "Brentford": "Brentford",
     "Everton": "Everton",
-    "Newcastle United": "Newcastle"
+    "Newcastle United": "Newcastle",
+    "Halesowen Town": "",
+    "Stafford Rangers": ""
   },
   "Spain/Copa del Rey": {
     "AE Prat": "",
@@ -271,7 +280,9 @@
     "Sporting de Alcázar": "",
     "CP Talayuela": "",
     "Tavernes de la Valldigna": "",
-    "Maracena": ""
+    "Maracena": "",
+    "Numancia": "Numancia",
+    "Real Oviedo": "Oviedo"
   },
   "France/Coupe de France": {},
   "Italy/Coppa Italia": {
