@@ -226,14 +226,13 @@ class BackendServer:
             return False
 
     def _run_gunicorn(self) -> None:
-        """Run gunicorn in-process via ``gunicorn.app.base.BaseApplication``."""
+        """Run gunicorn with uvicorn worker in-process via ``gunicorn.app.base.BaseApplication``."""
         from gunicorn.app.base import BaseApplication
 
-        # Single worker with 4 threads — sufficient for this load and avoids
-        # having 4 redundant poller threads (threads don't survive os.fork).
+        # Single worker with uvicorn.workers.UvicornWorker for ASGI FastAPI
         workers = 1
 
-        class FlaskApp(BaseApplication):
+        class FastAPIApp(BaseApplication):
             def __init__(inner_self, app, options=None):
                 inner_self.options = options or {}
                 inner_self.application = app
@@ -249,8 +248,7 @@ class BackendServer:
         options = {
             "bind": f"{self.config.host}:{self.config.port}",
             "workers": workers,
-            "worker_class": "gthread",
-            "threads": 4,
+            "worker_class": "uvicorn.workers.UvicornWorker",
             "timeout": 120,
             "graceful_timeout": 30,
             "accesslog": "-",
@@ -261,17 +259,12 @@ class BackendServer:
             import app as website_app
 
             website_app.app.config["_backend_refresh"] = self._run_pipeline_in_background
-            # Start the poller inside the worker (after fork) — threading.Thread
-            # objects do not survive os.fork(), so starting it here in the arbiter
-            # would leave every worker with an empty _live_scores dict.
             options["post_worker_init"] = lambda _worker: (
-                website_app.start_live_score_poller(),
-                website_app.start_apns_worker(),
                 _warm_website_caches(),
             )
-            FlaskApp(website_app.app, options).run()
+            FastAPIApp(website_app.app, options).run()
         except Exception as exc:
-            LOG.exception("[flask] gunicorn crashed: %s -- falling back to dev", exc)
+            LOG.exception("[web] gunicorn crashed: %s -- falling back to direct uvicorn", exc)
             self._run_flask_dev()
 
     def _run_flask_dev(self) -> None:
@@ -279,23 +272,20 @@ class BackendServer:
         try:
             import app as website_app
         except Exception as exc:
-            LOG.error("[flask] failed to import website app: %s", exc)
+            LOG.error("[web] failed to import website app: %s", exc)
             return
-        # Disable the website's own scheduler thread -- the backend owns
-        # scheduling, so we don't want the in-process loop firing concurrently.
+
         website_app.app.config["_backend_refresh"] = self._run_pipeline_in_background
-        if hasattr(website_app, "start_daily_refresh_scheduler"):
-            website_app.start_daily_refresh_scheduler = lambda *a, **kw: None
         try:
-            website_app.app.run(
+            import uvicorn
+            uvicorn.run(
+                website_app.app,
                 host=self.config.host,
                 port=self.config.port,
-                debug=False,
-                use_reloader=False,
-                threaded=True,
+                log_level="info",
             )
         except Exception as exc:
-            LOG.exception("[flask] dev server crashed: %s", exc)
+            LOG.exception("[web] uvicorn server crashed: %s", exc)
 
     # ------------------------------------------------------------------
     # Memory
