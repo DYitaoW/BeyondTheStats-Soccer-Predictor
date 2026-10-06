@@ -5,7 +5,7 @@ HTML page rendering routes and static page redirects.
 from __future__ import annotations
 
 import os
-from flask import Blueprint, redirect, render_template, send_from_directory
+from .compat import Blueprint, redirect, render_template, send_from_directory, request, jsonify
 
 import config
 from team_utils import _team_name_for_display

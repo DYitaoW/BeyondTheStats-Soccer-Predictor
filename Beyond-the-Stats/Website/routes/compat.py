@@ -11,6 +11,8 @@ from __future__ import annotations
 import functools
 import inspect
 import json
+import os
+import re
 from contextvars import ContextVar
 from typing import Any, Callable, Optional
 
@@ -78,6 +80,14 @@ class AppProxy:
         req = _request_ctx.get()
         if req is not None and hasattr(req, "app"):
             return getattr(req.app, name)
+        try:
+            import app as website_app
+            if hasattr(website_app, "app"):
+                return getattr(website_app.app, name)
+        except Exception:
+            pass
+        if name == "config":
+            return {}
         raise RuntimeError("Working outside of application context.")
 
 
@@ -152,6 +162,15 @@ class FlaskCompatRoute(APIRoute):
         super().__init__(path, _wrap_compat_endpoint(endpoint), **kwargs)
 
 
+def _flask_to_fastapi_path(path: str) -> str:
+    """Convert Flask-style path parameters (<path:x>, <int:x>, <x>) to FastAPI ({x:path}, {x:int}, {x})."""
+    path = re.sub(r"<path:([^>]+)>", r"{\1:path}", path)
+    path = re.sub(r"<int:([^>]+)>", r"{\1:int}", path)
+    path = re.sub(r"<float:([^>]+)>", r"{\1:float}", path)
+    path = re.sub(r"<(?:string:)?([^>]+)>", r"{\1}", path)
+    return path
+
+
 class FlaskCompatRouter(_FastAPIRouter):
     """APIRouter configured with FlaskCompatRoute by default."""
 
@@ -159,8 +178,15 @@ class FlaskCompatRouter(_FastAPIRouter):
         # Ignore Flask-specific Blueprint kwargs like template_folder, static_folder
         kwargs.pop("template_folder", None)
         kwargs.pop("static_folder", None)
+        kwargs.pop("static_url_path", None)
+        if "url_prefix" in kwargs:
+            kwargs.setdefault("prefix", kwargs.pop("url_prefix"))
         kwargs.setdefault("route_class", FlaskCompatRoute)
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
+
+    def add_api_route(self, path: str, endpoint: Callable[..., Any], **kwargs):
+        converted_path = _flask_to_fastapi_path(path)
+        return super().add_api_route(converted_path, endpoint, **kwargs)
 
     def route(self, path: str, methods: list[str] | None = None, **kwargs):
         """Flask-compatible route decorator."""

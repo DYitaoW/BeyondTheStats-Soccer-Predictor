@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timezone
-from flask import Blueprint, jsonify, request
+from .compat import Blueprint, redirect, render_template, send_from_directory, request, jsonify
 import pandas as pd
 
 import config

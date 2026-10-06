@@ -26,7 +26,6 @@ try:
 except Exception:  # pragma: no cover - script bootstrap fallback
     _paths = None  # type: ignore
 
-_SCHEMA_VERSION = 2
 _SCHEMA_VERSION = 3
 _WRITE_LOCK = threading.RLock()
 
@@ -278,11 +277,18 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             sub_type TEXT NOT NULL,
             sub_target TEXT NOT NULL,
             competition TEXT,
+            events TEXT,
             created_at TEXT NOT NULL,
             PRIMARY KEY (token, sub_type, sub_target)
         )
         """
     )
+    try:
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({_NOTIF_SUBS_TABLE})").fetchall()}
+        if cols and "events" not in cols:
+            conn.execute(f"ALTER TABLE {_NOTIF_SUBS_TABLE} ADD COLUMN events TEXT")
+    except Exception:
+        pass
     conn.execute(
         f"""
         CREATE INDEX IF NOT EXISTS idx_notif_subs_target
@@ -481,6 +487,7 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
             }
         finally:
             conn.close()
+
 
 def _national_row_from_csv(raw: dict) -> Optional[dict]:
     """Normalize one national training CSV row into a past_games payload."""
@@ -752,9 +759,11 @@ def load_past_games(
     competition_substr: str = "",
     from_date: str = "",
     to_date: str = "",
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
     db_path: Optional[Path] = None,
 ) -> list[dict]:
-    """Return past-games payloads, newest first."""
+    """Return past-games payloads, newest first, with optional SQL-level pagination."""
     ensure_store(db_path)
     conn = _open_ready(db_path)
     try:
@@ -770,11 +779,17 @@ def load_past_games(
             clauses.append("COALESCE(match_date_iso, '') <= ?")
             params.append(to_date[:10])
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        limit_clause = ""
+        if limit is not None and int(limit) > 0:
+            limit_clause = f" LIMIT {int(limit)}"
+            if offset is not None and int(offset) > 0:
+                limit_clause += f" OFFSET {int(offset)}"
         rows = conn.execute(
             f"""
             SELECT payload_json FROM {_PAST_TABLE}
             {where}
             ORDER BY COALESCE(match_date_iso, '') DESC, updated_at DESC
+            {limit_clause}
             """,
             params,
         ).fetchall()
@@ -788,9 +803,11 @@ def load_live_score_history(
     competition_substr: str = "",
     from_date: str = "",
     to_date: str = "",
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
     db_path: Optional[Path] = None,
 ) -> list[dict]:
-    """Return live-score history payloads, newest kickoff first."""
+    """Return live-score history payloads, newest kickoff first, with optional SQL-level pagination."""
     ensure_store(db_path)
     conn = _open_ready(db_path)
     try:
@@ -810,11 +827,17 @@ def load_live_score_history(
             )
             params.append(to_date[:10])
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        limit_clause = ""
+        if limit is not None and int(limit) > 0:
+            limit_clause = f" LIMIT {int(limit)}"
+            if offset is not None and int(offset) > 0:
+                limit_clause += f" OFFSET {int(offset)}"
         rows = conn.execute(
             f"""
             SELECT payload_json FROM {_LIVE_TABLE}
             {where}
             ORDER BY COALESCE(kickoff_utc, game_date, '') DESC, updated_at DESC
+            {limit_clause}
             """,
             params,
         ).fetchall()
@@ -964,9 +987,11 @@ def load_upcoming_games(
     status: str = "",
     from_date: str = "",
     to_date: str = "",
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
     db_path: Optional[Path] = None,
 ) -> list[dict]:
-    """Return upcoming/predicted game payloads, soonest first."""
+    """Return upcoming/predicted game payloads, soonest first, with optional SQL-level pagination."""
     ensure_store(db_path)
     conn = _open_ready(db_path)
     try:
@@ -985,11 +1010,17 @@ def load_upcoming_games(
             clauses.append("COALESCE(match_date_iso, '') <= ?")
             params.append(to_date[:10])
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        limit_clause = ""
+        if limit is not None and int(limit) > 0:
+            limit_clause = f" LIMIT {int(limit)}"
+            if offset is not None and int(offset) > 0:
+                limit_clause += f" OFFSET {int(offset)}"
         rows = conn.execute(
             f"""
             SELECT payload_json FROM {_UPCOMING_TABLE}
             {where}
             ORDER BY COALESCE(match_date_iso, '') ASC, updated_at DESC
+            {limit_clause}
             """,
             params,
         ).fetchall()
@@ -1432,14 +1463,16 @@ def migrate_squad_values_from_json(
         print(f"[sqlite-store] failed to migrate squad values from {path}: {exc}")
         return {"upserted": 0, "skipped": 0, "error": str(exc)}
 
+
 def save_notification_sub(
     token: str,
     sub_type: str,
     sub_target: str,
     competition: str = "",
+    events: Optional[Iterable[str] | str] = None,
     db_path: Optional[Path] = None,
 ) -> bool:
-    """Persist a notification subscription (match or team) to SQLite."""
+    """Persist a notification subscription (match or team) to SQLite with event filters."""
     t = str(token or "").strip()
     st = str(sub_type or "").strip().lower()
     tgt = str(sub_target or "").strip()
@@ -1447,6 +1480,15 @@ def save_notification_sub(
         return False
     ensure_store(db_path)
     now = _utc_now()
+    events_str = None
+    if events is not None:
+        if isinstance(events, str):
+            ev_list = [x.strip().lower() for x in events.split(",") if x.strip()]
+        else:
+            ev_list = [str(x).strip().lower() for x in events if str(x).strip()]
+        if ev_list:
+            events_str = ",".join(sorted(set(ev_list)))
+
     with _WRITE_LOCK:
         conn = _open_ready(db_path)
         try:
@@ -1454,13 +1496,14 @@ def save_notification_sub(
             conn.execute(
                 f"""
                 INSERT INTO {_NOTIF_SUBS_TABLE}(
-                    token, sub_type, sub_target, competition, created_at
-                ) VALUES (?, ?, ?, ?, ?)
+                    token, sub_type, sub_target, competition, events, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(token, sub_type, sub_target) DO UPDATE SET
                     competition = excluded.competition,
+                    events = excluded.events,
                     created_at = excluded.created_at
                 """,
-                (t, st, tgt, str(competition or "").strip() or None, now),
+                (t, st, tgt, str(competition or "").strip() or None, events_str, now),
             )
             _durable_commit(conn)
             return True
@@ -1537,7 +1580,7 @@ def load_all_notification_subs(db_path: Optional[Path] = None) -> list[dict]:
     try:
         rows = conn.execute(
             f"""
-            SELECT token, sub_type, sub_target, competition, created_at
+            SELECT token, sub_type, sub_target, competition, events, created_at
             FROM {_NOTIF_SUBS_TABLE}
             ORDER BY created_at ASC
             """
@@ -1548,10 +1591,14 @@ def load_all_notification_subs(db_path: Optional[Path] = None) -> list[dict]:
                 "sub_type": r["sub_type"],
                 "sub_target": r["sub_target"],
                 "competition": r["competition"] or "",
+                "events": (
+                    [e.strip() for e in r["events"].split(",") if e.strip()]
+                    if "events" in r.keys() and r["events"]
+                    else None
+                ),
                 "created_at": r["created_at"],
             }
             for r in rows
         ]
     finally:
         conn.close()
-

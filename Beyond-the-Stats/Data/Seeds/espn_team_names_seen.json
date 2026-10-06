@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-10-04T06:02:53+00:00",
+  "generated_at_utc": "2026-10-06T17:03:07+00:00",
   "global": {
     "England/Championship": [],
     "England/Premier League": [],
@@ -15,9 +15,23 @@
   "extra": {},
   "cup": {},
   "national": {
-    "International/Friendly": []
+    "International/Friendly": [
+      "China",
+      "India",
+      "South Korea",
+      "Tajikistan",
+      "Uruguay",
+      "Uzbekistan"
+    ]
   },
   "friendlies": {
-    "International/Friendly": []
+    "International/Friendly": [
+      "China",
+      "India",
+      "South Korea",
+      "Tajikistan",
+      "Uruguay",
+      "Uzbekistan"
+    ]
   }
 }
