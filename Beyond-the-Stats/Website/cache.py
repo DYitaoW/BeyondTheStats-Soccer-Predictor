@@ -33,41 +33,47 @@ def _cache_key(endpoint: str, query_str: str = "") -> str:
 
 
 def _cache_get(key: str) -> str | None:
-    """Return cached JSON string or None."""
-    if _redis_client is not None:
-        try:
-            return _redis_client.get(key)
-        except Exception:
-            pass
-    now = time.monotonic()
-    with _mem_cache_lock:
-        item = _mem_cache.get(key)
-        if item is not None:
-            expires_at, val = item
-            if now < expires_at:
-                return val
-            _mem_cache.pop(key, None)
+    """Return cached JSON string or None. Never raises exceptions."""
+    try:
+        if _redis_client is not None:
+            try:
+                return _redis_client.get(key)
+            except Exception:
+                pass
+        now = time.monotonic()
+        with _mem_cache_lock:
+            item = _mem_cache.get(key)
+            if item is not None:
+                expires_at, val = item
+                if now < expires_at:
+                    return val
+                _mem_cache.pop(key, None)
+    except Exception:
+        pass
     return None
 
 
 def _cache_set(key: str, value: str, ttl: int = config.CACHE_TTL_DEFAULT) -> None:
-    """Store a JSON string in cache with TTL."""
-    if _redis_client is not None:
-        try:
-            _redis_client.setex(key, ttl, value)
-            return
-        except Exception:
-            pass
-    now = time.monotonic()
-    with _mem_cache_lock:
-        if len(_mem_cache) >= _MAX_MEM_CACHE_ENTRIES:
-            expired = [k for k, (exp, _) in _mem_cache.items() if now >= exp]
-            for k in expired:
-                _mem_cache.pop(k, None)
+    """Store a JSON string in cache with TTL. Never raises exceptions."""
+    try:
+        if _redis_client is not None:
+            try:
+                _redis_client.setex(key, ttl, value)
+                return
+            except Exception:
+                pass
+        now = time.monotonic()
+        with _mem_cache_lock:
             if len(_mem_cache) >= _MAX_MEM_CACHE_ENTRIES:
-                for k in list(_mem_cache.keys())[:_MAX_MEM_CACHE_ENTRIES // 5]:
+                expired = [k for k, (exp, _) in _mem_cache.items() if now >= exp]
+                for k in expired:
                     _mem_cache.pop(k, None)
-        _mem_cache[key] = (now + max(1, int(ttl)), value)
+                if len(_mem_cache) >= _MAX_MEM_CACHE_ENTRIES:
+                    for k in list(_mem_cache.keys())[:_MAX_MEM_CACHE_ENTRIES // 5]:
+                        _mem_cache.pop(k, None)
+            _mem_cache[key] = (now + max(1, int(ttl)), value)
+    except Exception:
+        pass
 
 
 def _cache_clear_pattern(pattern: str = "api:*") -> None:

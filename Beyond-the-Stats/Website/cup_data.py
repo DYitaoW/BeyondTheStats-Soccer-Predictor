@@ -650,7 +650,37 @@ def build_cup_data_payload(comp_name: str) -> dict:
         cached = _load_cup_data_from_cache(comp)
         if cached is not None:
             return cached
-        return _build_cup_data_payload_uncached(comp)
+        try:
+            return _build_cup_data_payload_uncached(comp)
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            fmt = _cup_format_block(comp)
+            return {
+                "ok": True,
+                "competition": comp,
+                "format": fmt,
+                "predicted": {
+                    "table": [],
+                    "winner": {"champion": None, "probabilities": {}, "simulations_run": 0},
+                    "winners_odds": [],
+                    "winners_odds_simple": [],
+                    "position_odds": {"simple": {}, "detailed": [], "stages": [], "semantics": "reach"},
+                },
+                "real": {"standings": None},
+                "bracket": {},
+                "fixtures": _load_fixtures(comp) if "_load_fixtures" in globals() else [],
+                "predicted_table": [],
+                "position_odds": {"simple": {}, "detailed": [], "stages": [], "semantics": "reach"},
+                "winners_odds": [],
+                "winners_odds_simple": [],
+                "real_table": None,
+                "champion": None,
+                "winner_probabilities": {},
+                "simulations_run": 0,
+                "fallback": True,
+                "error": str(exc),
+            }
 
 
 def _build_cup_data_payload_uncached(comp: str) -> dict:

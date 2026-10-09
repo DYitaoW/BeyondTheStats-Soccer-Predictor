@@ -452,6 +452,14 @@ def api_upcoming(mode):
                     comp = ls.get("competition", "")
                     if comp and comp not in combined_league_stats:
                         combined_league_stats[comp] = ls
+        if not all_rows:
+            try:
+                from shared import sqlite_store
+                db_rows = sqlite_store.load_upcoming_games()
+                if db_rows:
+                    all_rows = list(db_rows)
+            except Exception:
+                pass
 
         all_rows = regional_espn_schedule_fallback(all_rows)
         seen_keys = set()
@@ -497,6 +505,14 @@ def api_upcoming(mode):
         return jsonify({"ok": False, "error": f"Unknown mode: {mode}"}), 400
     csv_path, source_mode = entry
     rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode, date_range=date_range, window_days=window_days)
+    if not rows:
+        try:
+            from shared import sqlite_store
+            db_rows = sqlite_store.load_upcoming_games(mode=source_mode)
+            if db_rows:
+                rows = list(db_rows)
+        except Exception:
+            pass
     if mode == "mls":
         rows = regional_espn_schedule_fallback(rows)
     if is_filtered:
@@ -561,6 +577,15 @@ def api_home_upcoming():
                     continue
                 seen_keys.add(key)
                 feed.append(row)
+
+        if not feed:
+            try:
+                from shared import sqlite_store
+                db_rows = sqlite_store.load_upcoming_games()
+                if db_rows:
+                    feed = list(db_rows)
+            except Exception:
+                pass
 
     feed = regional_espn_schedule_fallback(feed)
 
