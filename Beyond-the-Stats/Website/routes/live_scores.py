@@ -19,10 +19,13 @@ from live_poller import (
     _live_score_poller_loop,
     _live_scores,
     _live_scores_lock,
+    get_cached_compact_live_scores_payload,
     get_cached_live_scores_payload,
     get_live_poller_status,
     refresh_live_scores_now,
     register_sse_subscriber,
+    to_compact_live_game,
+    to_compact_live_scores_data,
     unregister_sse_subscriber,
 )
 from espn_api import _fetch_competition_scores
@@ -51,10 +54,15 @@ live_scores_router = live_scores_bp
 
 
 @live_scores_bp.get("/api/live-scores")
+@live_scores_bp.get("/api/live-scores/compact")
 def api_live_scores():
     """Return live scores for active competitions (polled from ESPN)."""
     comp_filter = request.args.get("competition", "").strip()
     force_refresh = request.args.get("refresh", "").strip().lower() in {"1", "true", "yes"}
+    compact = (
+        request.args.get("compact", "").strip().lower() in {"1", "true", "yes"}
+        or request.path.endswith("/compact")
+    )
 
     with _live_scores_lock:
         empty = not _live_scores
@@ -67,7 +75,11 @@ def api_live_scores():
 
     # Fast path: unfiltered requests serve pre-serialized JSON with ETag / 304 Not Modified
     if not comp_filter:
-        raw_bytes, etag = get_cached_live_scores_payload()
+        raw_bytes, etag = (
+            get_cached_compact_live_scores_payload()
+            if compact
+            else get_cached_live_scores_payload()
+        )
         if_none_match = request.headers.get("if-none-match", "").strip()
         if if_none_match and (if_none_match == etag or if_none_match == etag.strip('"')):
             return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
@@ -85,21 +97,34 @@ def api_live_scores():
                 "competitions": {},
                 "message": "No live games at this time.",
                 "poller": poller_status,
+                "compact": compact,
             })
         wanted = {c.strip() for c in comp_filter.split(",") if c.strip()}
         filtered = {k: v for k, v in _live_scores.items() if k in wanted}
-        return jsonify({"ok": True, "competitions": filtered, "poller": poller_status})
+        if compact:
+            filtered = to_compact_live_scores_data(filtered)
+        return jsonify({
+            "ok": True,
+            "competitions": filtered,
+            "poller": poller_status,
+            "compact": compact,
+        })
 
 
 @live_scores_bp.get("/api/live-scores/stream")
 def api_live_scores_stream():
     """Real-time Server-Sent Events (SSE) stream broadcasting live score updates."""
-    q = register_sse_subscriber()
+    compact = request.args.get("compact", "").strip().lower() in {"1", "true", "yes"}
+    q = register_sse_subscriber(compact=compact)
 
     def event_generator():
         try:
             # Send initial snapshot immediately
-            raw_bytes, _ = get_cached_live_scores_payload()
+            raw_bytes, _ = (
+                get_cached_compact_live_scores_payload()
+                if compact
+                else get_cached_live_scores_payload()
+            )
             if raw_bytes:
                 yield f"data: {raw_bytes.decode('utf-8')}\n\n"
             while True:
@@ -129,6 +154,7 @@ def api_live_scores_stream():
 @live_scores_bp.get("/api/past-live-scores")
 def api_live_score_history():
     """Return historical completed games, grouped by competition."""
+    compact = request.args.get("compact", "").strip().lower() in {"1", "true", "yes"}
     league = request.args.get("league", "").strip()
     from_date = request.args.get("from", "").strip()
     to_date = request.args.get("to", "").strip()
@@ -189,12 +215,15 @@ def api_live_score_history():
                 "games": [],
                 "last_polled_utc": datetime.now(timezone.utc).isoformat(),
             }
-        competitions[comp]["games"].append(g)
+        competitions[comp]["games"].append(to_compact_live_game(g) if compact else g)
 
-    return jsonify({
+    res = {
         "ok": True,
         "competitions": competitions,
-    })
+    }
+    if compact:
+        res["compact"] = True
+    return jsonify(res)
 
 
 @live_scores_bp.get("/api/debug/live-score-sources")

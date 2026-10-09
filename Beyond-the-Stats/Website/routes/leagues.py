@@ -163,7 +163,47 @@ def api_tournament(key):
     if comp_name == "International/World Cup":
         return api_world_cup()
 
-    # Call api_competition_data directly with competition parameter
+    # For UEFA tournaments (Champions League, Europa League, Conference League),
+    # use build_cup_data_payload to properly handle the 36-team Swiss League Phase + Knockout structure.
+    if comp_name in _UEFA_COMPETITIONS or config._CUP_FORMATS.get(comp_name, {}).get("format") == "league_phase_then_knockout":
+        cup_payload = build_cup_data_payload(comp_name)
+        if isinstance(cup_payload, dict) and cup_payload.get("ok"):
+            # Provide compatibility aliases so both World Cup format parsers and cup-data parsers work
+            bracket_obj = cup_payload.get("bracket") or {}
+            projected = bracket_obj.get("projected") or {}
+            pred = cup_payload.get("predicted") or {}
+            table_entries = pred.get("table") or cup_payload.get("predicted_table") or []
+            
+            # Map table to group_tables format expected by World Cup / tournament views
+            cup_payload["group_tables"] = [{
+                "group": "League Phase",
+                "teams": [
+                    {
+                        "team": row.get("team"),
+                        "P": row.get("P") or row.get("played") or 0,
+                        "W": row.get("W") or row.get("won") or 0,
+                        "D": row.get("D") or row.get("drawn") or 0,
+                        "L": row.get("L") or row.get("lost") or 0,
+                        "GF": row.get("GF") or row.get("goals_for") or 0,
+                        "GA": row.get("GA") or row.get("goals_against") or 0,
+                        "GD": row.get("GD") or row.get("goal_diff") or 0,
+                        "Pts": row.get("Pts") or row.get("points") or 0,
+                        "position": row.get("position"),
+                    }
+                    for row in table_entries if row.get("team")
+                ]
+            }] if table_entries else []
+            cup_payload["group_fixtures"] = cup_payload.get("fixtures") or []
+            cup_payload["simulations"] = {
+                "winner_probabilities": cup_payload.get("winner_probabilities") or (pred.get("winner") or {}).get("probabilities") or {},
+                "simulations_run": cup_payload.get("simulations_run") or (pred.get("winner") or {}).get("simulations_run") or 0,
+            }
+            # Knockout bracket structure
+            if "rounds" in projected:
+                cup_payload["rounds"] = projected.get("rounds") or []
+            return jsonify(cup_payload)
+
+    # Call api_competition_data directly with competition parameter for traditional domestic cups
     data = _build_competition_data_payload(comp_name)
     if not isinstance(data, dict) or data.get("ok") is False:
         return jsonify(data), (400 if not isinstance(data, dict) else 200)

@@ -2107,6 +2107,21 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
                 print(f"  Preseason fallback: {len(fixtures)} fixtures for {cup_name}.", flush=True)
 
         if fixtures.empty:
+            # Fallback to persistent SQLite upcoming fixtures if ESPN returns 0 during off-weeks
+            try:
+                from shared import sqlite_store
+                sqlite_fixtures = sqlite_store.load_upcoming_fixtures_dataframe(
+                    competitions=[comp_name],
+                    reference_date=pd.Timestamp(datetime.now(UTC).date()),
+                    window_days=cup_window_days,
+                )
+                if sqlite_fixtures is not None and not sqlite_fixtures.empty:
+                    fixtures = sqlite_fixtures
+                    print(f"  SQLite fallback: {len(fixtures)} fixtures for {cup_name}.", flush=True)
+            except Exception:
+                pass
+
+        if fixtures.empty:
             if comp_name in skip_synthetic:
                 print(f"[cups] DONE  load fixtures {cup_name} — no real fixtures", flush=True)
             else:

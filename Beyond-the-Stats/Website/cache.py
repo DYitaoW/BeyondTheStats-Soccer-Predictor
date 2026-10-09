@@ -89,17 +89,33 @@ def _extract_request(args: tuple, kwargs: dict) -> Request | None:
     for v in kwargs.values():
         if isinstance(v, Request):
             return v
+    try:
+        from routes.compat import _request_ctx
+        ctx_req = _request_ctx.get()
+        if ctx_req is not None:
+            return ctx_req
+    except Exception:
+        pass
     return None
 
 
-def _cached_response(ttl: int = config.CACHE_TTL_DEFAULT):
+def _cached_response(ttl: int | Callable[[Request], int] = config.CACHE_TTL_DEFAULT):
     """Decorator that caches a route's JSON response in Redis (or in-memory).
 
     The cache key is ``api:{md5(endpoint + query_string)}``.
     Skips caching when ``?no_cache=1`` or ``?refresh=1`` is present.
     Supports both sync and async FastAPI route handlers.
+    ``ttl`` can be an integer in seconds or a callable taking ``request`` and returning seconds.
     """
     def decorator(f: Callable) -> Callable:
+        def _resolve_ttl(req: Request) -> int:
+            if callable(ttl):
+                try:
+                    return max(1, int(ttl(req)))
+                except Exception:
+                    return config.CACHE_TTL_DEFAULT
+            return max(1, int(ttl))
+
         if inspect.iscoroutinefunction(f):
             @functools.wraps(f)
             async def async_wrapper(*args, **kwargs):
@@ -111,16 +127,21 @@ def _cached_response(ttl: int = config.CACHE_TTL_DEFAULT):
                         return await f(*args, **kwargs)
                     key = _cache_key(req.url.path, str(req.url.query))
                     cached = _cache_get(key)
+                    effective_ttl = _resolve_ttl(req)
                     if cached is not None:
                         return Response(
                             content=cached,
                             status_code=200,
                             media_type="application/json",
-                            headers={"X-Cache": "redis" if _redis_client else "memory"},
+                            headers={
+                                "X-Cache": "redis" if _redis_client else "memory",
+                                "Cache-Control": f"public, max-age={effective_ttl}",
+                            },
                         )
                     result = await f(*args, **kwargs)
                     if isinstance(result, Response) and result.status_code == 200:
-                        _cache_set(key, result.body.decode("utf-8", errors="replace"), ttl=ttl)
+                        _cache_set(key, result.body.decode("utf-8", errors="replace"), ttl=effective_ttl)
+                        result.headers["Cache-Control"] = f"public, max-age={effective_ttl}"
                     return result
                 return await f(*args, **kwargs)
             return async_wrapper
@@ -135,16 +156,21 @@ def _cached_response(ttl: int = config.CACHE_TTL_DEFAULT):
                         return f(*args, **kwargs)
                     key = _cache_key(req.url.path, str(req.url.query))
                     cached = _cache_get(key)
+                    effective_ttl = _resolve_ttl(req)
                     if cached is not None:
                         return Response(
                             content=cached,
                             status_code=200,
                             media_type="application/json",
-                            headers={"X-Cache": "redis" if _redis_client else "memory"},
+                            headers={
+                                "X-Cache": "redis" if _redis_client else "memory",
+                                "Cache-Control": f"public, max-age={effective_ttl}",
+                            },
                         )
                     result = f(*args, **kwargs)
                     if isinstance(result, Response) and result.status_code == 200:
-                        _cache_set(key, result.body.decode("utf-8", errors="replace"), ttl=ttl)
+                        _cache_set(key, result.body.decode("utf-8", errors="replace"), ttl=effective_ttl)
+                        result.headers["Cache-Control"] = f"public, max-age={effective_ttl}"
                     return result
                 return f(*args, **kwargs)
             return sync_wrapper
