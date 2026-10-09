@@ -822,41 +822,104 @@ def get_live_poller_status() -> dict:
 
 # ── Pre-serialized payload cache and Server-Sent Events (SSE) ────────
 
+_COMPACT_LIVE_EXCLUDED_KEYS = frozenset({
+    "lineups",
+    "key_events",
+    "events",
+    "goalscorers",
+    "assists",
+    "yellow_cards",
+    "red_cards",
+    "boxscore_stats",
+    "shot_mapping",
+    "shot_origins",
+    "goal_locations",
+    "_shot_origins_len",
+    "_goal_locations_len",
+    "injuries_availability",
+    "head_to_head",
+    "h2h",
+    "last_five",
+    "game_info",
+    "situation",
+    "team_stats",
+    "home_stats",
+    "away_stats",
+    "cumulative_momentum",
+    "momentum",
+    "broadcasts",
+    "weather",
+    "officials",
+})
+
+
+def to_compact_live_game(game: dict) -> dict:
+    """Return a compact representation of a live match with scores and status,
+
+    omitting heavy fields such as lineups, key_events, boxscore stats, and shot maps.
+    """
+    if not isinstance(game, dict):
+        return {}
+    return {
+        k: v
+        for k, v in game.items()
+        if k not in _COMPACT_LIVE_EXCLUDED_KEYS and v is not None
+    }
+
+
+def to_compact_live_scores_data(data: dict) -> dict:
+    """Transform a full competitions live-scores dictionary into its compact variant."""
+    if not isinstance(data, dict):
+        return {}
+    compact_comps = {}
+    for comp_name, comp_data in data.items():
+        if not isinstance(comp_data, dict):
+            continue
+        entry = dict(comp_data)
+        games = comp_data.get("games") or []
+        entry["games"] = [to_compact_live_game(g) for g in games]
+        compact_comps[comp_name] = entry
+    return compact_comps
+
+
 _cached_live_scores_bytes: bytes = b""
 _cached_live_scores_etag: str = ""
+_cached_compact_live_scores_bytes: bytes = b""
+_cached_compact_live_scores_etag: str = ""
 _cached_live_scores_lock = threading.Lock()
 
-_sse_subscribers: set[queue.Queue] = set()
+_sse_subscribers: dict[queue.Queue, bool] = {}
 _sse_lock = threading.Lock()
 
 
-def register_sse_subscriber() -> queue.Queue:
-    """Register a new SSE client queue."""
+def register_sse_subscriber(compact: bool = False) -> queue.Queue:
+    """Register a new SSE client queue (optionally receiving compact payloads)."""
     q: queue.Queue = queue.Queue(maxsize=30)
     with _sse_lock:
-        _sse_subscribers.add(q)
+        _sse_subscribers[q] = bool(compact)
     return q
 
 
 def unregister_sse_subscriber(q: queue.Queue) -> None:
     """Unregister an SSE client queue."""
     with _sse_lock:
-        _sse_subscribers.discard(q)
+        _sse_subscribers.pop(q, None)
 
 
-def _broadcast_sse_update(raw_bytes: bytes) -> None:
+def _broadcast_sse_update(raw_bytes: bytes, compact_bytes: bytes | None = None) -> None:
     """Broadcast pre-serialized live scores payload to all active SSE subscriber queues."""
     with _sse_lock:
         if not _sse_subscribers:
             return
-        subs = list(_sse_subscribers)
-    for q in subs:
+        subs = list(_sse_subscribers.items())
+    for q, is_compact in subs:
+        msg = compact_bytes if (is_compact and compact_bytes is not None) else raw_bytes
         try:
-            q.put_nowait(raw_bytes)
+            q.put_nowait(msg)
         except queue.Full:
             try:
                 q.get_nowait()
-                q.put_nowait(raw_bytes)
+                q.put_nowait(msg)
             except Exception:
                 pass
         except Exception:
@@ -864,11 +927,14 @@ def _broadcast_sse_update(raw_bytes: bytes) -> None:
 
 
 def _update_cached_live_scores_payload() -> None:
-    """Serialize current live scores into UTF-8 JSON bytes, compute ETag, and notify SSE clients."""
+    """Serialize current live scores into UTF-8 JSON bytes (both full and compact), compute ETags, and notify SSE clients."""
     global _cached_live_scores_bytes, _cached_live_scores_etag
+    global _cached_compact_live_scores_bytes, _cached_compact_live_scores_etag
     status = get_live_poller_status()
     with _live_scores_lock:
         data = dict(_live_scores)
+
+    # 1. Full payload
     payload = {
         "ok": True,
         "competitions": data,
@@ -876,10 +942,25 @@ def _update_cached_live_scores_payload() -> None:
     }
     raw_bytes = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     etag = f'"{hashlib.md5(raw_bytes).hexdigest()}"'
+
+    # 2. Compact payload (scores & status only, omitting lineups/events/stats)
+    compact_data = to_compact_live_scores_data(data)
+    compact_payload = {
+        "ok": True,
+        "competitions": compact_data,
+        "poller": status,
+        "compact": True,
+    }
+    compact_bytes = json.dumps(compact_payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    compact_etag = f'"{hashlib.md5(compact_bytes).hexdigest()}"'
+
     with _cached_live_scores_lock:
         _cached_live_scores_bytes = raw_bytes
         _cached_live_scores_etag = etag
-    _broadcast_sse_update(raw_bytes)
+        _cached_compact_live_scores_bytes = compact_bytes
+        _cached_compact_live_scores_etag = compact_etag
+
+    _broadcast_sse_update(raw_bytes, compact_bytes)
 
 
 def get_cached_live_scores_payload() -> tuple[bytes, str]:
@@ -890,6 +971,16 @@ def get_cached_live_scores_payload() -> tuple[bytes, str]:
     _update_cached_live_scores_payload()
     with _cached_live_scores_lock:
         return _cached_live_scores_bytes, _cached_live_scores_etag
+
+
+def get_cached_compact_live_scores_payload() -> tuple[bytes, str]:
+    """Return pre-serialized compact (payload_bytes, etag) for ultra-fast, zero-re-serialization responses."""
+    with _cached_live_scores_lock:
+        if _cached_compact_live_scores_bytes:
+            return _cached_compact_live_scores_bytes, _cached_compact_live_scores_etag
+    _update_cached_live_scores_payload()
+    with _cached_live_scores_lock:
+        return _cached_compact_live_scores_bytes, _cached_compact_live_scores_etag
 
 
 def get_live_scores_snapshot() -> dict:

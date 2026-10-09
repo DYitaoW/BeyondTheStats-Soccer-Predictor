@@ -259,6 +259,78 @@ class TestSQLiteSubscriptionPersistence(unittest.TestCase):
         self.assertEqual(sorted(sub_t["events"]), ["goal", "red_card"])
 
 
+class TestCompactLiveScores(unittest.TestCase):
+    def test_to_compact_live_game_strips_heavy_fields(self):
+        from live_poller import to_compact_live_game
+
+        full_game = {
+            "match_id": "700123",
+            "competition": "England/Premier League",
+            "home_team": "Arsenal",
+            "away_team": "Chelsea",
+            "home_score": 2,
+            "away_score": 1,
+            "status": "in",
+            "status_type": "in",
+            "period": "2nd Half",
+            "period_number": 2,
+            "clock": "68'",
+            "kickoff_utc": "2026-10-08T19:00:00Z",
+            "match_date": "2026-10-08",
+            "round": "Matchweek 8",
+            # Heavy fields to be stripped:
+            "lineups": {"home": {"startXI": [{"name": "Saka"}]}, "away": {}},
+            "key_events": [{"type": "goal", "text": "Goal by Saka"}],
+            "goalscorers": [{"scorer": "Saka", "minute": "23'"}],
+            "boxscore_stats": {"passes": 340},
+            "shot_mapping": {"shot_origins": [{"x": 10, "y": 20}]},
+            "injuries_availability": [{"player": "Odegaard"}],
+            "head_to_head": [{"date": "2025-01-01"}],
+            "last_five": [{"result": "W"}],
+            "team_stats": {"possession": "55%"},
+            "home_stats": {"shots": 12},
+            "away_stats": {"shots": 8},
+        }
+
+        compact = to_compact_live_game(full_game)
+
+        # Retained fields
+        self.assertEqual(compact["match_id"], "700123")
+        self.assertEqual(compact["competition"], "England/Premier League")
+        self.assertEqual(compact["home_team"], "Arsenal")
+        self.assertEqual(compact["away_team"], "Chelsea")
+        self.assertEqual(compact["home_score"], 2)
+        self.assertEqual(compact["away_score"], 1)
+        self.assertEqual(compact["status"], "in")
+        self.assertEqual(compact["clock"], "68'")
+
+        # Excluded heavy fields
+        self.assertNotIn("lineups", compact)
+        self.assertNotIn("key_events", compact)
+        self.assertNotIn("goalscorers", compact)
+        self.assertNotIn("boxscore_stats", compact)
+        self.assertNotIn("shot_mapping", compact)
+        self.assertNotIn("injuries_availability", compact)
+        self.assertNotIn("head_to_head", compact)
+        self.assertNotIn("last_five", compact)
+        self.assertNotIn("team_stats", compact)
+        self.assertNotIn("home_stats", compact)
+        self.assertNotIn("away_stats", compact)
+
+    def test_compact_cache_payload(self):
+        import json
+        from live_poller import get_cached_compact_live_scores_payload
+
+        raw_bytes, etag = get_cached_compact_live_scores_payload()
+        self.assertIsInstance(raw_bytes, bytes)
+        self.assertTrue(len(raw_bytes) > 0)
+        self.assertTrue(etag.startswith('"') and etag.endswith('"'))
+
+        payload = json.loads(raw_bytes.decode("utf-8"))
+        self.assertTrue(payload.get("ok"))
+        self.assertTrue(payload.get("compact"))
+
+
 if __name__ == "__main__":
     unittest.main()
 
