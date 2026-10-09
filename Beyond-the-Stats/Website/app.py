@@ -63,16 +63,17 @@ class SecurityAndCacheHeadersMiddleware(BaseHTTPMiddleware):
                 )
         response: Response = await call_next(request)
         if path.startswith("/api/"):
-            if any(path.startswith(p) for p in (
-                "/api/past-games", "/api/scorers", "/api/stats",
-                "/api/league-leaders", "/api/pipeline/status", "/api/key-errors",
-                "/api/help", "/api/legal",
-            )):
-                response.headers["Cache-Control"] = "public, max-age=60"
-            elif path.startswith("/api/live"):
-                response.headers["Cache-Control"] = "public, max-age=15"
-            else:
-                response.headers["Cache-Control"] = "public, max-age=30"
+            if "Cache-Control" not in response.headers:
+                if any(path.startswith(p) for p in (
+                    "/api/past-games", "/api/scorers", "/api/stats",
+                    "/api/league-leaders", "/api/pipeline/status", "/api/key-errors",
+                    "/api/help", "/api/legal",
+                )):
+                    response.headers["Cache-Control"] = "public, max-age=60"
+                elif path.startswith("/api/live"):
+                    response.headers["Cache-Control"] = "public, max-age=15"
+                else:
+                    response.headers["Cache-Control"] = "public, max-age=30"
         elif any(path.endswith(ext) for ext in (".js", ".css", ".png", ".jpg", ".svg", ".ico", ".woff2")):
             response.headers["Cache-Control"] = "public, max-age=86400"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -95,6 +96,38 @@ _static_dir = os.path.join(_website_dir, "static")
 if os.path.isdir(_static_dir):
     app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 register_all_routers(app)
+def invalidate_caches() -> None:
+    """Clear API response caches in Redis/memory when the pipeline finishes."""
+    try:
+        from cache import _cache_clear_pattern
+        _cache_clear_pattern("api:*")
+    except Exception:
+        pass
+
+def _invalidate_prediction_caches(reload_contexts: bool = False) -> None:
+    invalidate_caches()
+
+def set_last_pipeline_run(dt) -> None:
+    try:
+        from predictions import set_last_pipeline_run as _set_lpr
+        _set_lpr(dt)
+    except Exception:
+        pass
+
+def _save_last_refresh() -> None:
+    try:
+        from predictions import _save_last_refresh as _slr
+        _slr()
+    except Exception:
+        pass
+
+def _save_last_data_refresh() -> None:
+    try:
+        from predictions import _save_last_data_refresh as _sldr
+        _sldr()
+    except Exception:
+        pass
+
 def _run_app(host: str = "0.0.0.0", port: int = 5000, **kwargs):
     import uvicorn
     uvicorn.run(app, host=host, port=port)

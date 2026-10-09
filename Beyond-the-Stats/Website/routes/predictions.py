@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from .compat import Blueprint, redirect, render_template, send_from_directory, request, jsonify
+from .compat import Blueprint, Request, redirect, render_template, send_from_directory, request, jsonify
 import pandas as pd
 
 import config
@@ -82,6 +82,43 @@ def _to_float(val):
         return round(float(val), 1)
     except (ValueError, TypeError):
         return None
+
+
+def _to_compact_upcoming_row(r: dict) -> dict:
+    """Strip bulky secondary markets, last-5 match logs, and verbose reasoning for lightweight web/list views."""
+    return {
+        "competition": r.get("competition", ""),
+        "match_date": r.get("match_date", ""),
+        "match_date_iso": r.get("match_date_iso", ""),
+        "match_datetime_et": r.get("match_datetime_et", ""),
+        "match_datetime_utc": r.get("match_datetime_utc", ""),
+        "weekday": r.get("weekday", ""),
+        "date_label": r.get("date_label", ""),
+        "time_label": r.get("time_label", ""),
+        "home_team": r.get("home_team", ""),
+        "away_team": r.get("away_team", ""),
+        "match_id": r.get("match_id"),
+        "predicted_result": r.get("predicted_result", ""),
+        "winner_label": r.get("winner_label", ""),
+        "prob_home": r.get("prob_home"),
+        "prob_draw": r.get("prob_draw"),
+        "prob_away": r.get("prob_away"),
+        "pred_home_goals": r.get("pred_home_goals"),
+        "pred_away_goals": r.get("pred_away_goals"),
+        "actual_home_goals": r.get("actual_home_goals"),
+        "actual_away_goals": r.get("actual_away_goals"),
+        "actual_result": r.get("actual_result", ""),
+        "is_correct": r.get("is_correct", ""),
+        "has_prediction": r.get("has_prediction", True),
+        "prediction_quality": r.get("prediction_quality", ""),
+        "schedule_only": r.get("schedule_only", False),
+        "source": r.get("source", ""),
+        # Live overlay fields when game is active
+        "live_status": r.get("live_status"),
+        "live_clock": r.get("live_clock"),
+        "live_period": r.get("live_period"),
+        "live_updates": r.get("live_updates", False),
+    }
 
 
 def _resolve_team_api_payload(team_input: str, mode: str):
@@ -310,8 +347,25 @@ def api_team_mappings_predictor_teams():
     return jsonify(build_predictor_teams_payload())
 
 
+def _upcoming_cache_ttl(req: Request) -> int:
+    """Cache upcoming predictions until the next scheduled daily pipeline run (default 02:00 AM ET)."""
+    if req.query_params.get("window", "").strip() == "4week":
+        try:
+            tz = ZoneInfo("America/New_York")
+            now_et = datetime.now(tz)
+            # Daily pipeline tick (02:00 AM America/New_York)
+            target = now_et.replace(hour=2, minute=0, second=0, microsecond=0)
+            if target <= now_et:
+                target = target + timedelta(days=1)
+            remaining_seconds = int((target - now_et).total_seconds())
+            return max(60, min(remaining_seconds, 86400))
+        except Exception:
+            return 86400
+    return config.CACHE_TTL_LIVE
+
+
 @predictions_bp.get("/api/upcoming/<mode>")
-@_cached_response(ttl=config.CACHE_TTL_LIVE)
+@_cached_response(ttl=_upcoming_cache_ttl)
 def api_upcoming(mode):
     """Return upcoming prediction rows for the given source mode."""
     month = str(request.args.get("month", "")).strip()
@@ -326,6 +380,8 @@ def api_upcoming(mode):
         window_days = None
         window_include_past = False
     is_filtered = bool(month or window)
+
+    compact = str(request.args.get("compact", "")).strip().lower() in {"1", "true", "yes"}
 
     limit = None
     offset = 0
@@ -425,6 +481,8 @@ def api_upcoming(mode):
         ]
 
         paged_rows = all_rows[offset : (offset + limit) if limit else None] if (limit or offset) else all_rows
+        if compact:
+            paged_rows = [_to_compact_upcoming_row(r) for r in paged_rows]
         return jsonify({
             "ok": True,
             "total": len(all_rows),
@@ -449,6 +507,8 @@ def api_upcoming(mode):
         for name in league_names
     ]
     paged_rows = rows[offset : (offset + limit) if limit else None] if (limit or offset) else rows
+    if compact:
+        paged_rows = [_to_compact_upcoming_row(r) for r in paged_rows]
     return jsonify({
         "ok": True,
         "total": len(rows),
@@ -537,14 +597,16 @@ def api_home_upcoming():
         str(row.get("match_datetime_et") or row.get("match_datetime_utc") or ""),
         str(row.get("home_team") or ""),
     ))
+    compact = str(request.args.get("compact", "")).strip().lower() in {"1", "true", "yes"}
+    out_rows = [_to_compact_upcoming_row(r) for r in all_rows] if compact else all_rows
     return jsonify({
         "ok": True,
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "window_start": window_start.isoformat(),
         "window_end": window_end.isoformat(),
-        "groups": group_rows_by_league(all_rows),
-        "rows": all_rows,
+        "groups": group_rows_by_league(out_rows),
+        "rows": out_rows,
     })
 
 
