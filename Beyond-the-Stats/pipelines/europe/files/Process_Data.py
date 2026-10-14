@@ -369,19 +369,27 @@ def main():
 
     workers = max(1, PROCESS_WORKERS)
     processed_comps = set()
+    processed_count = 0
+    unchanged_count = 0
+    insufficient_count = 0
+    invalid_count = 0
+
+    print(f"[global-process] START — processing {len(target_files)} raw data files...")
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(process_one_file, rel_path): rel_path for rel_path in target_files}
         for future in as_completed(futures):
             ok, rel_path, status = future.result()
             if status == "processed":
-                print(f"Processed {rel_path}...")
+                processed_count += 1
                 processed_comps.add(os.path.dirname(rel_path).replace("\\", "/"))
             elif status == "kept_content_unchanged":
+                unchanged_count += 1
                 processed_comps.add(os.path.dirname(rel_path).replace("\\", "/"))
             elif status == "skipped_insufficient_data":
-                print(f"Skipped {rel_path} (insufficient data)...")
+                insufficient_count += 1
             elif status == "skipped_invalid_name":
-                print(f"Skipped {rel_path} (invalid season name)...")
+                invalid_count += 1
+                print(f"[WARN] Skipped {rel_path} (invalid season name)")
 
     # If every season for a competition failed the normal bar, still keep the
     # latest raw file with at least one valid row so cup/projection fallbacks
@@ -398,11 +406,12 @@ def main():
             continue
         ok, _, status = process_one_file(rel_path, force_min_rows=CURRENT_SEASON_MIN_ROWS)
         if ok:
-            print(f"Processed {rel_path} (fallback: only sparse raw data for {comp})...")
+            processed_count += 1
+            processed_comps.add(comp)
         else:
-            print(f"Skipped {rel_path} (fallback still insufficient for {comp})...")
+            print(f"[ERROR] {comp}: failed to process even fallback raw data ({rel_path})")
 
-    print(f"All files processed. ({time.monotonic() - _t0:.1f}s)")
+    print(f"[global-process] DONE — {processed_count} processed, {unchanged_count} unchanged, {insufficient_count} skipped insufficient ({time.monotonic() - _t0:.1f}s)")
 
 
 if __name__ == "__main__":

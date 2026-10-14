@@ -539,9 +539,9 @@ def sort_all_seasons():
 
     files = get_target_season_files()
     latest_year = max(parse_season_start_year(os.path.basename(file)) for file in files) if files else MIN_START_YEAR
+    print(f"[global-sort] START — sorting {len(files)} season files into team and H2H records...")
 
     for rel_path in files:
-        print(f"Processing {rel_path}")
         competition = os.path.dirname(rel_path).replace("\\", "/") or "Unknown"
         competitions.add(competition)
         path = os.path.join(PROCESSED_DIR, rel_path)
@@ -625,7 +625,7 @@ def sort_all_seasons():
         with open(league_strength_path, "w") as f:
             json.dump(league_strength, f, indent=4)
 
-    print(f"\nDone! ({time.monotonic() - _t0:.1f}s)\n")
+    print(f"[global-sort] DONE — sorted {len(files)} files into {len(overall_teams)} teams ({time.monotonic() - _t0:.1f}s)")
 
 
 # testing
