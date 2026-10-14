@@ -207,7 +207,7 @@ def api_live_score_history():
             games = games[:limit]
 
     competitions = {}
-    for g in games:
+    for g in (games or []):
         comp = g.get("competition", "Unknown")
         if comp not in competitions:
             competitions[comp] = {

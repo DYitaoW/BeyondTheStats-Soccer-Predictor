@@ -964,23 +964,59 @@ def _update_cached_live_scores_payload() -> None:
 
 
 def get_cached_live_scores_payload() -> tuple[bytes, str]:
-    """Return pre-serialized (payload_bytes, etag) for ultra-fast, zero-re-serialization responses."""
+    """Return pre-serialized (payload_bytes, etag) for ultra-fast, zero-re-serialization responses.
+    
+    If the cache is empty on cold boot or miss, actively sources fresh scores from ESPN
+    before serializing, ensuring callers receive live data without crashing.
+    """
     with _cached_live_scores_lock:
         if _cached_live_scores_bytes:
             return _cached_live_scores_bytes, _cached_live_scores_etag
+    
+    # Cold boot or empty cache: actively source from ESPN
+    with _live_scores_lock:
+        is_empty = not _live_scores
+    if is_empty:
+        try:
+            refresh_live_scores_now()
+        except Exception:
+            pass
+
     _update_cached_live_scores_payload()
     with _cached_live_scores_lock:
-        return _cached_live_scores_bytes, _cached_live_scores_etag
+        if _cached_live_scores_bytes:
+            return _cached_live_scores_bytes, _cached_live_scores_etag
+        # Emergency fallback if serialization failed
+        empty_payload = json.dumps({"ok": True, "competitions": {}, "poller": get_live_poller_status()}).encode("utf-8")
+        return empty_payload, f'"{hashlib.md5(empty_payload).hexdigest()}"'
 
 
 def get_cached_compact_live_scores_payload() -> tuple[bytes, str]:
-    """Return pre-serialized compact (payload_bytes, etag) for ultra-fast, zero-re-serialization responses."""
+    """Return pre-serialized compact (payload_bytes, etag) for ultra-fast, zero-re-serialization responses.
+    
+    If the cache is empty on cold boot or miss, actively sources fresh scores from ESPN
+    before serializing, ensuring callers receive live data without crashing.
+    """
     with _cached_live_scores_lock:
         if _cached_compact_live_scores_bytes:
             return _cached_compact_live_scores_bytes, _cached_compact_live_scores_etag
+            
+    # Cold boot or empty cache: actively source from ESPN
+    with _live_scores_lock:
+        is_empty = not _live_scores
+    if is_empty:
+        try:
+            refresh_live_scores_now()
+        except Exception:
+            pass
+
     _update_cached_live_scores_payload()
     with _cached_live_scores_lock:
-        return _cached_compact_live_scores_bytes, _cached_compact_live_scores_etag
+        if _cached_compact_live_scores_bytes:
+            return _cached_compact_live_scores_bytes, _cached_compact_live_scores_etag
+        # Emergency fallback if serialization failed
+        empty_compact = json.dumps({"ok": True, "competitions": {}, "poller": get_live_poller_status(), "compact": True}).encode("utf-8")
+        return empty_compact, f'"{hashlib.md5(empty_compact).hexdigest()}"'
 
 
 def get_live_scores_snapshot() -> dict:

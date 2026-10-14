@@ -1320,7 +1320,49 @@ def build_league_data_payload(comp_name: str) -> dict:
         cached = _load_league_data_from_cache(comp)
         if cached is not None:
             return cached
-        return _build_league_data_payload_uncached(comp)
+        try:
+            return _build_league_data_payload_uncached(comp)
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            fmt = competition_format_spec(comp)
+            real_standings = None
+            try:
+                real_standings = _load_real_standings(comp)
+            except Exception:
+                pass
+            fixtures = []
+            try:
+                fixtures = _load_fixtures(comp)
+            except Exception:
+                pass
+            return {
+                "ok": True,
+                "competition": comp,
+                "format": fmt,
+                "predicted": {
+                    "table": [],
+                    "groups": None,
+                    "winner": {"champion": None, "probabilities": {}, "simulations_run": 0},
+                    "winners_odds": [],
+                    "winners_odds_simple": [],
+                    "position_odds": {"simple": {}, "detailed": []},
+                    "table_position_odds": {"simple": {}, "detailed": []},
+                },
+                "real": {"standings": real_standings},
+                "bracket": {},
+                "fixtures": fixtures,
+                "predicted_table": [],
+                "position_odds": {"simple": {}, "detailed": []},
+                "winners_odds": [],
+                "winners_odds_simple": [],
+                "real_table": real_standings,
+                "champion": None,
+                "winner_probabilities": {},
+                "simulations_run": 0,
+                "fallback": True,
+                "error": str(exc),
+            }
 
 
 def _build_league_data_payload_uncached(comp: str) -> dict:
