@@ -48,6 +48,20 @@ class RequestProxy:
         return req.query_params
 
     @property
+    def path(self) -> str:
+        req = _request_ctx.get()
+        if req is None:
+            return ""
+        return getattr(req, "path", getattr(getattr(req, "url", None), "path", ""))
+
+    @property
+    def full_path(self) -> str:
+        req = _request_ctx.get()
+        if req is None:
+            return ""
+        return getattr(req, "full_path", str(getattr(req, "url", "")))
+
+    @property
     def form(self) -> dict:
         req = _request_ctx.get()
         if req is None:
@@ -95,9 +109,17 @@ request = RequestProxy()
 current_app = AppProxy()
 
 
-# Attach .args and .get_json directly to Starlette Request class as well
+# Attach Flask-compatible properties directly to Starlette Request class as well
 if not hasattr(Request, "args"):
     Request.args = property(lambda self: self.query_params)
+
+if not hasattr(Request, "path"):
+    Request.path = property(lambda self: self.url.path)
+
+if not hasattr(Request, "full_path"):
+    Request.full_path = property(
+        lambda self: f"{self.url.path}?{self.url.query}" if self.url.query else self.url.path
+    )
 
 if not hasattr(Request, "get_json"):
     def _req_get_json(self: Request, silent: bool = True) -> Any:
