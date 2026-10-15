@@ -147,10 +147,67 @@ if not hasattr(Request, "get_json"):
     Request.get_json = _req_get_json
 
 
-def jsonify(content: Any = None, status_code: int = 200, **kwargs) -> JSONResponse:
-    """FastAPI equivalent of Flask's jsonify, returning a Starlette JSONResponse."""
+import math
+
+def _sanitize_nan_inf(value: Any) -> Any:
+    """Recursively convert float/numpy NaN and Inf values to None (null in JSON).
+    Ensures strict RFC 8259 compliance across all API responses.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, bool, str)):
+        return value
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+    if isinstance(value, dict):
+        return {str(k): _sanitize_nan_inf(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_sanitize_nan_inf(x) for x in value]
+    try:
+        import numpy as np
+
+        if isinstance(value, np.floating):
+            flt = float(value)
+            return None if (math.isnan(flt) or math.isinf(flt)) else flt
+        if isinstance(value, np.integer):
+            return int(value)
+        if isinstance(value, np.ndarray):
+            return [_sanitize_nan_inf(x) for x in value.tolist()]
+    except Exception:
+        pass
+    try:
+        import pandas as pd
+
+        if pd.isna(value):
+            return None
+        if isinstance(value, (pd.Timestamp, datetime)):
+            return value.isoformat()
+    except Exception:
+        pass
+    return value
+
+
+class SafeJSONResponse(JSONResponse):
+    """Starlette JSONResponse that cleans out-of-range float values (NaN, Inf, -Inf) into null."""
+
+    def render(self, content: Any) -> bytes:
+        clean_content = _sanitize_nan_inf(content)
+        return json.dumps(
+            clean_content,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+            default=getattr(self, "default", None),
+        ).encode("utf-8")
+
+
+def jsonify(content: Any = None, status_code: int = 200, **kwargs) -> SafeJSONResponse:
+    """FastAPI equivalent of Flask's jsonify, returning a SafeJSONResponse with NaN sanitization."""
     payload = content if content is not None else kwargs
-    return JSONResponse(content=payload, status_code=status_code)
+    return SafeJSONResponse(content=payload, status_code=status_code)
 
 
 def _wrap_compat_endpoint(endpoint: Callable[..., Any]) -> Callable[..., Any]:
@@ -166,7 +223,7 @@ def _wrap_compat_endpoint(endpoint: Callable[..., Any]) -> Callable[..., Any]:
                     return body
                 if isinstance(body, str):
                     return HTMLResponse(content=body, status_code=code)
-                return JSONResponse(content=body, status_code=code)
+                return SafeJSONResponse(content=body, status_code=code)
             return res
         return async_wrapper
     else:
@@ -180,7 +237,7 @@ def _wrap_compat_endpoint(endpoint: Callable[..., Any]) -> Callable[..., Any]:
                     return body
                 if isinstance(body, str):
                     return HTMLResponse(content=body, status_code=code)
-                return JSONResponse(content=body, status_code=code)
+                return SafeJSONResponse(content=body, status_code=code)
             return res
         return sync_wrapper
 

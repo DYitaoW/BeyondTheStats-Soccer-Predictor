@@ -1145,7 +1145,16 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
     return rows
 
 
-def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=None, fixtures_only=False, competition_filter=None):
+def _load_upcoming_rows(
+    csv_path,
+    mode=None,
+    date_range="upcoming",
+    window_days=None,
+    fixtures_only=False,
+    competition_filter=None,
+    from_date=None,
+    to_date=None,
+):
     """Load prediction rows from CSV filtered by date range.
     
     Args:
@@ -1153,10 +1162,9 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
         mode: Source mode ("global", "mls", "extra", "cups", "national").
         date_range: ``"upcoming"`` — today onward, all future fixtures (default).
                     ``"completed"`` — previous 30 days through today.
-        window_days: If set, only load rows within ``window_days`` from today
-                     (e.g. ``14`` for a 2-week window).  Applied after the
-                     ``date_range`` lower bound to create a tight window,
-                     reducing the number of rows that need form/strength processing.
+        window_days: If set, only load rows within ``window_days`` from today.
+        from_date: Optional lower date bound (YYYY-MM-DD). If provided, rows before this are dropped early.
+        to_date: Optional upper date bound (YYYY-MM-DD). If provided, rows after this are dropped early.
     """
     from accuracy_tracker import _compute_accuracy_stats, _compute_league_accuracy_stats
 
@@ -1243,8 +1251,6 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
     )
     if "schedule_only" not in frame.columns:
         frame["schedule_only"] = "0"
-    # Projected-future CSVs (and some older merges) omit kickoff columns.
-    # sort_values below requires them to exist even when blank.
     if "match_datetime_utc" not in frame.columns:
         frame["match_datetime_utc"] = ""
     if "match_datetime_et" not in frame.columns:
@@ -1254,17 +1260,35 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
         if col not in frame.columns:
             frame[col] = ""
 
-    # Drop past fixtures so stale upcoming rows never show on the website.
-    # CRITICAL: Must reset index after each filter to avoid index alignment issues
     frame = frame.copy()
     frame["parsed_date"] = pd.to_datetime(frame["match_date"], errors="coerce").dt.normalize()
     frame = frame[frame["parsed_date"].notna()].reset_index(drop=True)
     
     if frame.empty:
         return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
-    
+
+    # Fast slicing if explicit from_date or to_date were requested
+    if from_date:
+        try:
+            lo_parsed = pd.to_datetime(str(from_date)[:10]).normalize()
+            frame = frame[frame["parsed_date"] >= lo_parsed].reset_index(drop=True)
+        except Exception:
+            pass
+    if to_date:
+        try:
+            hi_parsed = pd.to_datetime(str(to_date)[:10]).normalize()
+            frame = frame[frame["parsed_date"] <= hi_parsed].reset_index(drop=True)
+        except Exception:
+            pass
+
+    if frame.empty:
+        return [], _compute_accuracy_stats(frame), _compute_league_accuracy_stats(frame)
+
     today_et = datetime.now(ZoneInfo("America/New_York")).date()
-    if date_range == "completed":
+    if from_date or to_date:
+        # Date bounds already applied directly above
+        pass
+    elif date_range == "completed":
         # Previous 30 days → today
         lo = pd.Timestamp(today_et - timedelta(days=30))
         hi = pd.Timestamp(today_et + timedelta(days=1))
@@ -1278,7 +1302,7 @@ def _load_upcoming_rows(csv_path, mode=None, date_range="upcoming", window_days=
         frame = frame[frame["parsed_date"] >= lo].reset_index(drop=True)
 
     # Optional tight window: only keep rows within window_days of today
-    if window_days and not frame.empty:
+    if window_days and not frame.empty and not (from_date or to_date):
         hi = pd.Timestamp(today_et + timedelta(days=int(window_days)))
         frame = frame[frame["parsed_date"] <= hi].reset_index(drop=True)
     
@@ -2587,6 +2611,7 @@ def _build_past_game_prediction_lookup() -> dict[str, dict]:
             return
         lookup[ck] = row
 
+    has_sqlite = False
     try:
         from shared import sqlite_store as store
 
@@ -2595,24 +2620,27 @@ def _build_past_game_prediction_lookup() -> dict[str, dict]:
             for row in store.load_upcoming_games():
                 if isinstance(row, dict):
                     _index_row(row)
+            has_sqlite = True
         if store.count_rows("past_games") > 0:
             for row in store.load_past_games():
                 if isinstance(row, dict):
                     _index_row(row)
+            has_sqlite = True
     except Exception:
-        pass
+        has_sqlite = False
 
-    for source, csv_path in (
-        ("global", config.GLOBAL_UPCOMING_FILE),
-        ("mls", config.MLS_UPCOMING_FILE),
-        ("extra", config.EXTRA_UPCOMING_FILE),
-        ("cups", config.CUP_UPCOMING_FILE),
-        ("national", config.NATIONAL_UPCOMING_FILE),
-        ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
-    ):
-        pred_rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="completed")
-        for row in pred_rows:
-            _index_row(row)
+    if not has_sqlite or not lookup:
+        for source, csv_path in (
+            ("global", config.GLOBAL_UPCOMING_FILE),
+            ("mls", config.MLS_UPCOMING_FILE),
+            ("extra", config.EXTRA_UPCOMING_FILE),
+            ("cups", config.CUP_UPCOMING_FILE),
+            ("national", config.NATIONAL_UPCOMING_FILE),
+            ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
+        ):
+            pred_rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="completed", fixtures_only=True)
+            for row in pred_rows:
+                _index_row(row)
 
     with _PAST_GAME_PREDICTION_LOOKUP_LOCK:
         _PAST_GAME_PREDICTION_LOOKUP_CACHE = lookup

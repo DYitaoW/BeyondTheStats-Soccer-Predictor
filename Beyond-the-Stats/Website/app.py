@@ -19,7 +19,7 @@ from rate_limit import check_rate_limit, client_identifier
 from live_poller import start_live_score_poller
 from notifications import start_apns_worker
 from routes.helpers import log_key_error
-from routes.compat import RequestContextMiddleware, jsonify
+from routes.compat import RequestContextMiddleware, jsonify, SafeJSONResponse
 from routes import register_all_routers
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,6 +34,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url=None,
     lifespan=lifespan,
+    default_response_class=SafeJSONResponse,
 )
 app.config: dict[str, Any] = {
     "MAX_CONTENT_LENGTH": 1024 * 1024,
@@ -42,12 +43,12 @@ app.config: dict[str, Any] = {
 @app.exception_handler(KeyError)
 async def _handle_key_error(request: Request, exc: KeyError):
     log_key_error("unhandled", exc)
-    return JSONResponse(status_code=500, content={"error": f"KeyError: {exc}"})
+    return SafeJSONResponse(status_code=500, content={"error": f"KeyError: {exc}"})
 @app.exception_handler(Exception)
 async def _handle_general_exception(request: Request, exc: Exception):
     import logging
     logging.getLogger("app").exception("Unhandled error on %s: %s", request.url.path, exc)
-    return JSONResponse(status_code=500, content={"error": "Internal server error"})
+    return SafeJSONResponse(status_code=500, content={"error": "Internal server error"})
 class SecurityAndCacheHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -56,7 +57,7 @@ class SecurityAndCacheHeadersMiddleware(BaseHTTPMiddleware):
             limit = getattr(config, "API_RATE_LIMIT_PER_MINUTE", 120)
             allowed, retry_after = check_rate_limit("api", limit, 60, client_id=client_ip)
             if not allowed:
-                return JSONResponse(
+                return SafeJSONResponse(
                     status_code=429,
                     content={"error": "Rate limit exceeded. Try again in a minute."},
                     headers={"Retry-After": str(retry_after or 60)},
