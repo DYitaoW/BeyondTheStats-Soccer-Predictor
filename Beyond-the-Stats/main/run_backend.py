@@ -7,12 +7,12 @@ until SIGINT / SIGTERM. This is what you launch on the host that powers
 the website (and the future iOS app feed).
 
 Usage (from Beyond-the-Stats/):
-    python main/run_backend.py                     # full backend
+    python main/run_backend.py                     # full backend (waits for scheduled run)
+    python main/run_backend.py --run-on-start      # run pipeline immediately on start
     python main/run_backend.py --no-website        # scheduler + watcher only
     python main/run_backend.py --host 127.0.0.1    # local-only
     python main/run_backend.py --port 8080         # custom port
     python main/run_backend.py --memory-limit-gb 8 # tighter cap
-    python main/run_backend.py --no-run-on-start   # wait for the 2am ET run
     python main/run_backend.py --refresh-time 03:30 --timezone America/New_York
 
 What "multiple cores" means here:
@@ -105,9 +105,16 @@ def parse_args() -> argparse.Namespace:
         help="IANA timezone for --refresh-time (default America/New_York).",
     )
     parser.add_argument(
-        "--no-run-on-start",
+        "--run-on-start",
         action="store_true",
-        help="Don't run the full pipeline at startup; wait for the scheduled tick.",
+        default=os.environ.get("PIPELINE_RUN_ON_START", "0").strip().lower() in {"1", "true", "yes"},
+        help="Run the full pipeline immediately at startup (default false; waits for scheduled tick).",
+    )
+    parser.add_argument(
+        "--no-run-on-start",
+        dest="run_on_start",
+        action="store_false",
+        help="Explicitly disable running the pipeline at startup (default behavior).",
     )
 
     # Pipeline parallelism
@@ -235,7 +242,7 @@ def main() -> int:
         pipeline_skip_mls=args.skip_mls,
         pipeline_skip_extra=args.skip_extra,
         pipeline_skip_global=args.skip_global,
-        run_on_start=not args.no_run_on_start,
+        run_on_start=args.run_on_start,
         enable_watcher=not args.no_watcher,
         watcher_interval_s=float(args.watcher_interval),
         memory_limit_gb=float(args.memory_limit_gb),

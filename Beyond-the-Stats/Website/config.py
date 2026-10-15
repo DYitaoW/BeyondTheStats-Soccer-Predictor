@@ -672,6 +672,37 @@ MLS_TABLE_VIEW_ALIASES = {
     MLS_CUP_COMPETITION,
 }
 
+# ── Load .env file if present ──────────────────────────────────────
+try:
+    from dotenv import load_dotenv  # type: ignore
+    for _env_candidate in (
+        os.path.join(PROJECT_DIR, ".env"),
+        os.path.join(os.path.dirname(PROJECT_DIR), ".env"),
+    ):
+        if os.path.isfile(_env_candidate):
+            load_dotenv(_env_candidate)
+            break
+except Exception:
+    # Fallback lightweight parser if python-dotenv is not installed
+    for _env_candidate in (
+        os.path.join(PROJECT_DIR, ".env"),
+        os.path.join(os.path.dirname(PROJECT_DIR), ".env"),
+    ):
+        if os.path.isfile(_env_candidate):
+            try:
+                with open(_env_candidate, "r", encoding="utf-8") as _efh:
+                    for _line in _efh:
+                        _line = _line.strip()
+                        if _line and not _line.startswith("#") and "=" in _line:
+                            _k, _v = _line.split("=", 1)
+                            _k = _k.strip()
+                            _v = _v.strip().strip("'\"")
+                            if _k not in os.environ:
+                                os.environ[_k] = _v
+                break
+            except Exception:
+                pass
+
 # ── API Authentication ────────────────────────────────────────────
 
 MUTATION_API_TOKEN = os.environ.get("MUTATION_API_TOKEN", "").strip()
@@ -681,7 +712,13 @@ MUTATION_API_TOKEN = os.environ.get("MUTATION_API_TOKEN", "").strip()
 # APNs key from Apple Developer → Certificates → Keys
 APNS_KEY_ID = os.environ.get("APNS_KEY_ID", "").strip()
 APNS_TEAM_ID = os.environ.get("APNS_TEAM_ID", "").strip()
-APNS_AUTH_KEY_PATH = os.environ.get("APNS_AUTH_KEY_PATH", "").strip()
+APNS_AUTH_KEY_PATH = (
+    os.environ.get("APNS_AUTH_KEY_PATH")
+    or os.environ.get("APNS_AUTH_KEY_FILE")
+    or os.environ.get("APNS_KEY_FILE")
+    or os.environ.get("APNS_KEY_PATH")
+    or ""
+).strip()
 APNS_TOPIC = os.environ.get("APNS_TOPIC", "Yitao.BeyondTheStatsApp").strip()
 APNS_LIVE_ACTIVITY_TOPIC = os.environ.get("APNS_LIVE_ACTIVITY_TOPIC", f"{APNS_TOPIC}.push-type.liveactivity").strip()
 APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "0").strip().lower() in {"1", "true", "yes"}

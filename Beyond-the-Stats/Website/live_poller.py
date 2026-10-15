@@ -1863,3 +1863,101 @@ def start_live_score_poller(*, force: bool = False) -> None:
         "[startup] Live score poller started "
         "(60s live / 60s 3min pre-kickoff / 15min pre-match / 30min idle)."
     )
+
+
+# ── Testing & Simulation Helpers ─────────────────────────────────
+
+def inject_simulated_live_game(game: dict, comp_name: str = "Test/Simulation") -> dict:
+    """Inject a test/simulated match into _live_scores for end-to-end testing."""
+    mid = str(game.get("match_id", "sim-999")).strip()
+    with _live_scores_lock:
+        comp_entry = _live_scores.setdefault(comp_name, {
+            "competition": comp_name,
+            "last_polled_utc": datetime.now(timezone.utc).isoformat(),
+            "games": [],
+        })
+        games = comp_entry.setdefault("games", [])
+        idx = next((i for i, g in enumerate(games) if g.get("match_id") == mid), None)
+        entry = dict(game)
+        entry["match_id"] = mid
+        entry.setdefault("competition", comp_name)
+        entry.setdefault("home_team", "Arsenal")
+        entry.setdefault("away_team", "Chelsea")
+        entry.setdefault("home_score", 0)
+        entry.setdefault("away_score", 0)
+        entry.setdefault("status", "in")
+        entry.setdefault("clock", "0'")
+        entry.setdefault("period", 1)
+        entry.setdefault("kickoff_utc", datetime.now(timezone.utc).isoformat())
+        entry.setdefault("goalscorers", [])
+        entry.setdefault("red_cards", [])
+        entry.setdefault("yellow_cards", [])
+        entry.setdefault("live_prediction", {"prob_home": 52.0, "prob_draw": 26.0, "prob_away": 22.0})
+        entry["simulated"] = True
+
+        if idx is not None:
+            games[idx] = entry
+        else:
+            games.append(entry)
+        comp_entry["last_polled_utc"] = datetime.now(timezone.utc).isoformat()
+
+    try:
+        _update_cached_live_scores_payload()
+    except Exception:
+        pass
+    return entry
+
+
+def get_simulated_live_game(match_id: str = "sim-999", comp_name: str = "Test/Simulation") -> dict | None:
+    with _live_scores_lock:
+        comp = _live_scores.get(comp_name)
+        if not comp:
+            return None
+        for g in comp.get("games", []):
+            if g.get("match_id") == match_id:
+                return dict(g)
+    return None
+
+
+def update_simulated_live_game(match_id: str = "sim-999", updates: dict = None, comp_name: str = "Test/Simulation") -> dict | None:
+    if updates is None:
+        updates = {}
+    with _live_scores_lock:
+        comp = _live_scores.get(comp_name)
+        if not comp:
+            return None
+        target = None
+        for g in comp.get("games", []):
+            if g.get("match_id") == match_id:
+                target = g
+                break
+        if target is None:
+            return None
+        target.update(updates)
+        comp["last_polled_utc"] = datetime.now(timezone.utc).isoformat()
+        res = dict(target)
+
+    try:
+        _update_cached_live_scores_payload()
+    except Exception:
+        pass
+    return res
+
+
+def remove_simulated_live_game(match_id: str = "sim-999", comp_name: str = "Test/Simulation") -> bool:
+    with _live_scores_lock:
+        comp = _live_scores.get(comp_name)
+        if not comp:
+            return False
+        games = comp.get("games", [])
+        before = len(games)
+        comp["games"] = [g for g in games if g.get("match_id") != match_id]
+        after = len(comp["games"])
+        if not comp["games"]:
+            _live_scores.pop(comp_name, None)
+    try:
+        _update_cached_live_scores_payload()
+    except Exception:
+        pass
+    return after < before
+

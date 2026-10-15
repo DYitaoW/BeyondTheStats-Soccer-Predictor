@@ -15,6 +15,7 @@ from .predictions import predictions_bp, predictions_router
 from .leagues import leagues_bp, leagues_router
 from .live_scores import live_scores_bp, live_scores_router
 from .admin import admin_bp, admin_router
+from .testing import testing_bp, testing_router
 
 __all__ = [
     "pages_bp",
@@ -27,6 +28,8 @@ __all__ = [
     "live_scores_router",
     "admin_bp",
     "admin_router",
+    "testing_bp",
+    "testing_router",
     "register_all_routers",
     "register_all_blueprints",
 ]
@@ -39,6 +42,7 @@ def register_all_routers(app: FastAPI) -> None:
     app.include_router(leagues_router)
     app.include_router(live_scores_router)
     app.include_router(admin_router)
+    app.include_router(testing_router)
 
 
 # Alias for backwards compatibility
