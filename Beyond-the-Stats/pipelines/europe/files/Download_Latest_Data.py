@@ -229,16 +229,15 @@ def download_new_format_competition(source, current_year):
     prefix = source["file_prefix"]
     target_dir = os.path.join(RAW_DATA_DIR, country, league)
     os.makedirs(target_dir, exist_ok=True)
-    print(f"\nDownloading {country} - {league} ({source['code']}, new format)")
 
     url = NEW_FORMAT_BASE_URL.format(code=source["code"])
     try:
         df = fetch_new_format_dataframe(url)
     except Exception as exc:
-        print(f"  Failed to download {url}: {exc}")
+        print(f"[ERROR] Failed to download {country} - {league} ({url}): {exc}")
         return 0
     if any(col not in df.columns for col in NEW_FORMAT_REQUIRED_COLUMNS):
-        print("  Source CSV missing required columns; skipping.")
+        print(f"[ERROR] {country} - {league}: source CSV missing required columns; skipping.")
         return 0
 
     df = df.copy()
@@ -278,7 +277,6 @@ def download_new_format_competition(source, current_year):
 
         season_rows.to_csv(out_path, index=False)
         updated_count += 1
-        print(f"  {out_name} ({len(season_rows)} rows)")
 
     return updated_count
 
@@ -290,6 +288,7 @@ def main():
     kept_count = 0
     skipped_existing_count = 0
 
+    print(f"[global-download] START — downloading raw fixtures for {len(COMPETITIONS) + len(NEW_FORMAT_COMPETITIONS)} competitions...")
     for comp in COMPETITIONS:
         country = comp["country"]
         league = comp["league"]
@@ -298,7 +297,6 @@ def main():
 
         target_dir = os.path.join(RAW_DATA_DIR, country, league)
         os.makedirs(target_dir, exist_ok=True)
-        print(f"\nDownloading {country} - {league} ({league_code})")
 
         for start_year in range(MIN_START_YEAR, current_year + 1):
             season_code = make_season_code(start_year)
@@ -320,7 +318,7 @@ def main():
 
             try:
                 csv_bytes = download_bytes(url)
-            except Exception:
+            except Exception as exc:
                 continue
 
             if not has_required_general_data(csv_bytes, start_year, current_year, file_prefix=prefix):
@@ -328,15 +326,17 @@ def main():
 
             write_bytes(out_path, csv_bytes)
             kept_count += 1
-            print(f"Downloaded/Updated {name}")
 
     for source in NEW_FORMAT_COMPETITIONS:
-        kept_count += download_new_format_competition(source, current_year)
+        try:
+            kept_count += download_new_format_competition(source, current_year)
+        except Exception as exc:
+            print(f"[ERROR] Failed downloading {source.get('country')} {source.get('league')}: {exc}")
 
-    print(f"\nDone. Updated {kept_count} CSV files, kept {skipped_existing_count} existing unchanged, across all configured competitions. ({time.monotonic() - _t0:.1f}s)")
+    print(f"[global-download] DONE — updated {kept_count} CSV files, {skipped_existing_count} unchanged ({time.monotonic() - _t0:.1f}s)")
 
     _t1 = time.monotonic()
-    print("\nProcessing raw data files...")
+    print("[global-process] START — processing raw data files...")
     process_data.main()
 
     if _sort_data_needed():

@@ -174,7 +174,6 @@ def main():
 
         season_rows.to_csv(out_path, index=False)
         updated_count += 1
-        print(f"Downloaded/Updated {out_name} ({len(season_rows)} rows)")
         if os.path.exists(legacy_path):
             os.remove(legacy_path)
 

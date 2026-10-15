@@ -304,22 +304,29 @@ def main():
         return
 
     workers = max(1, PROCESS_WORKERS)
+    processed_count = 0
+    unchanged_count = 0
+    insufficient_count = 0
+    invalid_count = 0
+
+    print(f"[extra-process] START — processing {len(target_files)} extra season files...")
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(process_one_file, rel_path): rel_path for rel_path in target_files}
         for future in as_completed(futures):
             _, rel_path, status = future.result()
             if status == "processed":
-                print(f"Processed {rel_path}...")
+                processed_count += 1
             elif status == "kept_content_unchanged":
-                pass
+                unchanged_count += 1
             elif status == "skipped_insufficient_data":
-                print(f"Skipped {rel_path} (insufficient data)...")
+                insufficient_count += 1
             elif status == "skipped_empty_processed":
-                print(f"Skipped {rel_path} (no usable rows after normalization)...")
+                print(f"[ERROR] {rel_path}: no usable rows after normalization")
             elif status == "skipped_invalid_name":
-                print(f"Skipped {rel_path} (invalid season name)...")
+                invalid_count += 1
+                print(f"[WARN] Skipped {rel_path} (invalid season name)")
 
-    print("All extra-league files processed.")
+    print(f"[extra-process] DONE — {processed_count} processed, {unchanged_count} unchanged, {insufficient_count} skipped insufficient.")
 
 
 if __name__ == "__main__":

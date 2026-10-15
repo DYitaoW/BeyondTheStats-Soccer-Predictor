@@ -19,6 +19,8 @@ from live_poller import (
     _live_score_poller_loop,
     _live_scores,
     _live_scores_lock,
+    _live_summary_cache,
+    _live_summary_cache_lock,
     get_cached_compact_live_scores_payload,
     get_cached_live_scores_payload,
     get_live_poller_status,
@@ -150,14 +152,84 @@ def api_live_scores_stream():
     )
 
 
+@live_scores_bp.get("/api/match/<match_id>")
+def api_match_detail(match_id: str):
+    """Return complete detailed information for a single match (on-demand drilldown)."""
+    mid = str(match_id or "").strip()
+    if not mid:
+        return jsonify({"ok": False, "error": "match_id required"}), 400
+
+    # 1. Check live in-memory games first
+    with _live_scores_lock:
+        for comp_name, comp_data in _live_scores.items():
+            for g in comp_data.get("games", []):
+                if str(g.get("match_id", "")).strip() == mid:
+                    game_dict = dict(g)
+                    game_dict.setdefault("competition", comp_name)
+                    with _live_summary_cache_lock:
+                        cached = _live_summary_cache.get(mid)
+                        if cached:
+                            for k, v in cached.items():
+                                if v not in (None, "", [], {}):
+                                    game_dict[k] = v
+                    return jsonify({"ok": True, "source": "live", "game": game_dict})
+
+    # 2. Check SQLite live_score_history / past_games
+    try:
+        from shared import sqlite_store as _sqlite_store
+        _sqlite_store.ensure_store()
+        all_hist = _sqlite_store.load_live_score_history() or []
+        for g in all_hist:
+            if str(g.get("match_id", "")).strip() == mid:
+                return jsonify({"ok": True, "source": "history", "game": g})
+
+        all_past = _sqlite_store.load_past_games() or []
+        for g in all_past:
+            if str(g.get("match_id", "")).strip() == mid:
+                return jsonify({"ok": True, "source": "past_games", "game": g})
+    except Exception:
+        pass
+
+    # 3. Check JSON history fallback
+    try:
+        for g in (_load_live_score_history() or []):
+            if str(g.get("match_id", "")).strip() == mid:
+                return jsonify({"ok": True, "source": "history_json", "game": g})
+    except Exception:
+        pass
+
+    return jsonify({"ok": False, "error": f"Match {mid} not found"}), 404
+
+
 @live_scores_bp.get("/api/live-score-history")
 @live_scores_bp.get("/api/past-live-scores")
 def api_live_score_history():
     """Return historical completed games, grouped by competition."""
     compact = request.args.get("compact", "").strip().lower() in {"1", "true", "yes"}
     league = request.args.get("league", "").strip()
+    match_id = request.args.get("match_id", "").strip()
+    target_date = request.args.get("date", "").strip()
     from_date = request.args.get("from", "").strip()
     to_date = request.args.get("to", "").strip()
+
+    today_iso = ""
+    try:
+        today_iso = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    except Exception:
+        today_iso = datetime.now(timezone.utc).date().isoformat()
+
+    if target_date.lower() == "today":
+        target_date = today_iso
+    if from_date.lower() == "today":
+        from_date = today_iso
+    if to_date.lower() == "today":
+        to_date = today_iso
+
+    # If single exact date is provided (date=YYYY-MM-DD or date=today), scope both from and to
+    if target_date and not from_date and not to_date:
+        from_date = target_date
+        to_date = target_date
+
     limit = None
     offset = 0
     raw_limit = request.args.get("limit", "").strip()
@@ -183,8 +255,8 @@ def api_live_score_history():
                 competition_substr=league,
                 from_date=from_date,
                 to_date=to_date,
-                limit=limit,
-                offset=offset,
+                limit=limit if not match_id else None,
+                offset=offset if not match_id else 0,
             )
             used_sqlite = True
     except Exception:
@@ -201,6 +273,16 @@ def api_live_score_history():
         if to_date:
             games = [g for g in games if g.get("kickoff_utc", "") <= to_date]
         games.sort(key=lambda g: g.get("kickoff_utc", ""), reverse=True)
+
+    if match_id and games:
+        games = [g for g in games if str(g.get("match_id", "")).strip() == match_id]
+
+    if not used_sqlite:
+        if offset:
+            games = games[offset:]
+        if limit:
+            games = games[:limit]
+    elif match_id and games:
         if offset:
             games = games[offset:]
         if limit:
@@ -346,6 +428,11 @@ def api_push_notification():
             "body": body,
             "badge": badge,
         })
+    try:
+        from notifications import _notify_apns_queue
+        _notify_apns_queue()
+    except Exception:
+        pass
     return jsonify({"ok": True})
 
 
@@ -592,3 +679,74 @@ def api_end_live_activity():
         content_state = {}
     sent = send_live_activity_end(match_id, competition, content_state, alert=alert)
     return jsonify({"ok": True, "sent": sent, "deregistered": True})
+
+
+@live_scores_bp.get("/api/startup")
+@live_scores_bp.get("/api/bootstrap")
+def api_startup():
+    """Unified application launch endpoint.
+
+    Bundles in a single call (< 25 KB):
+      - today's compact live scores (including realtime live odds, goalscorers, cards)
+      - today's compact upcoming predictions & scheduled matches
+      - poller status and server timestamp
+    """
+    # 1. Today's live scores (compact)
+    with _live_scores_lock:
+        live_data = dict(_live_scores)
+    compact_live = to_compact_live_scores_data(live_data)
+    poller_status = get_live_poller_status()
+
+    # 2. Today's upcoming games (compact)
+    today_et = datetime.now(ZoneInfo("America/New_York")).date()
+    today_str = today_et.isoformat()
+    upcoming_today = []
+    try:
+        from routes.helpers import _ALL_UPCOMING_SOURCES, _load_upcoming_rows, exclude_upcoming_only_rows, regional_espn_schedule_fallback
+        from routes.predictions import _to_compact_upcoming_row
+
+        feed = []
+        seen_keys = set()
+        for source, csv_path in _ALL_UPCOMING_SOURCES:
+            rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
+            for row in rows:
+                key = "|".join(
+                    str(row.get(f, "")).strip().lower()
+                    for f in ("match_date_iso", "competition", "home_team", "away_team")
+                )
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    feed.append(row)
+
+        if not feed:
+            from shared import sqlite_store
+            db_rows = sqlite_store.load_upcoming_games()
+            if db_rows:
+                feed = list(db_rows)
+
+        feed = regional_espn_schedule_fallback(feed)
+        for r in feed:
+            d_iso = str(r.get("match_date_iso", "")).strip()
+            if d_iso == today_str:
+                upcoming_today.append(_to_compact_upcoming_row(r))
+    except Exception:
+        upcoming_today = []
+
+    # 3. Count summary
+    total_live_games = sum(len(c.get("games", [])) for c in compact_live.values())
+
+    return jsonify({
+        "ok": True,
+        "server_time_utc": datetime.now(timezone.utc).isoformat(),
+        "today_date": today_str,
+        "poller": poller_status,
+        "live_scores": {
+            "total_games": total_live_games,
+            "competitions": compact_live,
+        },
+        "upcoming_today": {
+            "total_games": len(upcoming_today),
+            "games": upcoming_today,
+        },
+    })
+

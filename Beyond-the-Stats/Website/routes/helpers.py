@@ -319,6 +319,62 @@ def week_bounds_from_iso(date_str: str) -> Optional[Tuple[str, str, str]]:
     return monday.isoformat(), sunday.isoformat(), label
 
 
+def _apply_live_scores_to_table_entries(comp: str, entries: list[dict]) -> list[dict]:
+    """Dynamically adjust standings points, GD, and P for in-progress or recently concluded live matches."""
+    if not entries or not isinstance(entries, list):
+        return entries
+    try:
+        from live_poller import _live_scores, _live_scores_lock
+        with _live_scores_lock:
+            comp_data = _live_scores.get(comp)
+            if not comp_data:
+                return entries
+            games = list(comp_data.get("games") or [])
+        if not games:
+            return entries
+
+        # Track teams present in table
+        by_team = {str(r.get("team", "")).strip().lower(): dict(r) for r in entries if r.get("team")}
+
+        for g in games:
+            status = str(g.get("status", "")).strip().lower()
+            if status not in ("in", "post"):
+                continue
+            ht_key = str(g.get("home_team", "")).strip().lower()
+            at_key = str(g.get("away_team", "")).strip().lower()
+            if ht_key not in by_team or at_key not in by_team:
+                continue
+            try:
+                hs = int(g.get("home_score", 0))
+                as_ = int(g.get("away_score", 0))
+            except (ValueError, TypeError):
+                continue
+
+            # We mark that this match's live/post delta is applied
+            h_row = by_team[ht_key]
+            a_row = by_team[at_key]
+
+            # In a live match, increment GF, GA, GD live
+            if status == "in":
+                h_row["live_gf"] = hs
+                h_row["live_ga"] = as_
+                a_row["live_gf"] = as_
+                a_row["live_ga"] = hs
+                if hs > as_:
+                    h_row["live_pts"] = 3
+                    a_row["live_pts"] = 0
+                elif hs == as_:
+                    h_row["live_pts"] = 1
+                    a_row["live_pts"] = 1
+                else:
+                    h_row["live_pts"] = 0
+                    a_row["live_pts"] = 3
+
+        return list(by_team.values())
+    except Exception:
+        return entries
+
+
 def merge_projected_with_season_tables(projected: dict, season_data: Optional[dict], dataset_competitions: tuple[str, ...]) -> dict:
     """Prefer projected CSV rows; fill gaps from season rosters and placeholders."""
     from standings import _fill_placeholder_tables
@@ -333,6 +389,10 @@ def merge_projected_with_season_tables(projected: dict, season_data: Optional[di
         leagues.add(comp)
     data = {"leagues": sorted(leagues), "tables": tables}
     _fill_placeholder_tables(data)
+    # Apply live adjustments to real-time table entries
+    if isinstance(data.get("tables"), dict):
+        for comp_name in list(data["tables"].keys()):
+            data["tables"][comp_name] = _apply_live_scores_to_table_entries(comp_name, data["tables"][comp_name])
     data["leagues"] = sorted(set(data.get("leagues") or []) | set(dataset_competitions))
     return filter_league_tables_payload(data)
 

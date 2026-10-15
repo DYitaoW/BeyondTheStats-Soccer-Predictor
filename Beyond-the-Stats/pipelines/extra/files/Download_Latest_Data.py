@@ -190,6 +190,10 @@ def main():
             os.rename(legacy, modern)
             print(f"Renamed legacy folder: {legacy} → {modern}")
 
+    print(f"[extra-download] START — downloading raw fixtures for {len(SOURCES)} extra competitions...")
+    total_updated = 0
+    total_skipped = 0
+
     for source in SOURCES:
         country = source["country"]
         league = source["league"]
@@ -197,7 +201,6 @@ def main():
         src_type = source.get("type", "new")
         target_dir = os.path.join(RAW_DATA_DIR, country, league)
         os.makedirs(target_dir, exist_ok=True)
-        print(f"\nDownloading {country} - {league} ({src_type})")
 
         if src_type == "new":
             # Single CSV — all seasons in one file with a Season column
@@ -205,10 +208,10 @@ def main():
             try:
                 df = fetch_source_dataframe(url)
             except Exception as exc:
-                print(f"  Failed to download {url}: {exc}")
+                print(f"[ERROR] Failed to download {country} - {league} ({url}): {exc}")
                 continue
             if any(col not in df.columns for col in NEW_REQUIRED_COLUMNS):
-                print("  Source CSV missing required columns; skipping.")
+                print(f"[ERROR] {country} - {league}: Source CSV missing required columns; skipping.")
                 continue
             df = df.copy()
             df["SeasonInt"] = df["Season"].map(normalize_season)
@@ -221,8 +224,6 @@ def main():
             # mmz4281 — one CSV per season, downloaded individually
             valid_years = list(range(MIN_START_YEAR, current_year + 1))
 
-        updated_count = 0
-        skipped_existing_count = 0
         refresh_cutoff = current_year - REFRESH_RECENT_SEASONS
 
         for start_year in valid_years:
@@ -231,7 +232,7 @@ def main():
 
             should_refresh = start_year >= refresh_cutoff
             if os.path.exists(out_path) and not should_refresh:
-                skipped_existing_count += 1
+                total_skipped += 1
                 continue
 
             if src_type == "new":
@@ -241,17 +242,13 @@ def main():
             else:
                 season_df = _download_mmz4281_season(source, start_year, current_year)
                 if season_df is None or season_df.empty:
-                    print(f"  No data for {out_name} (HTTP 404 / empty)")
                     continue
                 season_rows = season_df
 
             season_rows.to_csv(out_path, index=False)
-            updated_count += 1
-            print(f"  {out_name} ({len(season_rows)} rows)")
+            total_updated += 1
 
-        print(f"  Done: updated {updated_count}, skipped {skipped_existing_count} historical.")
-
-    print(f"\nExtra leagues download complete. ({time.monotonic() - _t0:.1f}s)")
+    print(f"[extra-download] DONE — updated {total_updated} files, skipped {total_skipped} unchanged ({time.monotonic() - _t0:.1f}s)")
 
     _t1 = time.monotonic()
     print("\nProcessing extra-league files...")

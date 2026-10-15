@@ -106,11 +106,10 @@ def main():
 
         season_rows.to_csv(out_path, index=False)
         updated_count += 1
-        print(f"Saved {out_name} ({len(season_rows)} rows)")
 
     print(
-        f"\nDownload stage done. Updated {updated_count} season files, "
-        f"skipped {skipped_existing_count} existing historical files."
+        f"Liga MX download done: updated {updated_count} files, "
+        f"skipped {skipped_existing_count} unchanged."
     )
 
 

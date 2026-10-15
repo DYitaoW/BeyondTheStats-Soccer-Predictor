@@ -13,6 +13,7 @@ import inspect
 import json
 import os
 import re
+import time
 from contextvars import ContextVar
 from typing import Any, Callable, Optional
 
@@ -46,6 +47,13 @@ class RequestProxy:
         if req is None:
             return {}
         return req.query_params
+
+    @property
+    def headers(self) -> Any:
+        req = _request_ctx.get()
+        if req is None:
+            return {}
+        return getattr(req, "headers", {})
 
     @property
     def path(self) -> str:
@@ -219,7 +227,7 @@ Blueprint = FlaskCompatRouter
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
-    """Middleware that sets the current Request in ContextVar and caches raw body."""
+    """Middleware that sets the current Request in ContextVar, caches raw body, and logs API calls."""
 
     async def dispatch(self, req: Request, call_next: Callable) -> Response:
         try:
@@ -237,9 +245,22 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             req._cached_json = {}
 
         token = _request_ctx.set(req)
+        start_time = time.monotonic()
+        path = req.url.path
+        is_api = path.startswith("/api/")
+        query_str = f"?{req.url.query}" if req.url.query else ""
+
         try:
             response = await call_next(req)
+            if is_api:
+                elapsed_ms = (time.monotonic() - start_time) * 1000.0
+                print(f"[API] {req.method} {path}{query_str} -> {response.status_code} ({elapsed_ms:.1f}ms)", flush=True)
             return response
+        except Exception as exc:
+            if is_api:
+                elapsed_ms = (time.monotonic() - start_time) * 1000.0
+                print(f"[API] {req.method} {path}{query_str} -> ERROR: {exc} ({elapsed_ms:.1f}ms)", flush=True)
+            raise
         finally:
             _request_ctx.reset(token)
 
