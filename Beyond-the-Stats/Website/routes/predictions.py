@@ -41,6 +41,7 @@ from predictions import (
     _past_row_date_iso,
     _past_row_looks_api_complete,
     _predict,
+    _sanitize_for_json,
     _utc_to_et,
     get_context,
     get_last_pipeline_run,
@@ -86,46 +87,47 @@ def _to_float(val):
 
 def _to_compact_upcoming_row(r: dict) -> dict:
     """Strip bulky secondary markets, last-5 match logs, and verbose reasoning for lightweight web/list views."""
+    clean = _sanitize_for_json(r) if isinstance(r, dict) else {}
     return {
-        "competition": r.get("competition", ""),
-        "match_date": r.get("match_date", ""),
-        "match_date_iso": r.get("match_date_iso", ""),
-        "match_datetime_et": r.get("match_datetime_et", ""),
-        "match_datetime_utc": r.get("match_datetime_utc", ""),
-        "weekday": r.get("weekday", ""),
-        "date_label": r.get("date_label", ""),
-        "time_label": r.get("time_label", ""),
-        "home_team": r.get("home_team", ""),
-        "away_team": r.get("away_team", ""),
-        "match_id": r.get("match_id"),
-        "predicted_result": r.get("predicted_result", ""),
-        "winner_label": r.get("winner_label", ""),
-        "prob_home": r.get("prob_home"),
-        "prob_draw": r.get("prob_draw"),
-        "prob_away": r.get("prob_away"),
-        "pred_home_goals": r.get("pred_home_goals"),
-        "pred_away_goals": r.get("pred_away_goals"),
-        "actual_home_goals": r.get("actual_home_goals"),
-        "actual_away_goals": r.get("actual_away_goals"),
-        "actual_result": r.get("actual_result", ""),
-        "is_correct": r.get("is_correct", ""),
-        "has_prediction": r.get("has_prediction", True),
-        "prediction_quality": r.get("prediction_quality", ""),
-        "schedule_only": r.get("schedule_only", False),
-        "source": r.get("source", ""),
+        "competition": clean.get("competition", ""),
+        "match_date": clean.get("match_date", ""),
+        "match_date_iso": clean.get("match_date_iso", ""),
+        "match_datetime_et": clean.get("match_datetime_et", ""),
+        "match_datetime_utc": clean.get("match_datetime_utc", ""),
+        "weekday": clean.get("weekday", ""),
+        "date_label": clean.get("date_label", ""),
+        "time_label": clean.get("time_label", ""),
+        "home_team": clean.get("home_team", ""),
+        "away_team": clean.get("away_team", ""),
+        "match_id": clean.get("match_id"),
+        "predicted_result": clean.get("predicted_result", ""),
+        "winner_label": clean.get("winner_label", ""),
+        "prob_home": clean.get("prob_home"),
+        "prob_draw": clean.get("prob_draw"),
+        "prob_away": clean.get("prob_away"),
+        "pred_home_goals": clean.get("pred_home_goals"),
+        "pred_away_goals": clean.get("pred_away_goals"),
+        "actual_home_goals": clean.get("actual_home_goals"),
+        "actual_away_goals": clean.get("actual_away_goals"),
+        "actual_result": clean.get("actual_result", ""),
+        "is_correct": clean.get("is_correct", ""),
+        "has_prediction": clean.get("has_prediction", True),
+        "prediction_quality": clean.get("prediction_quality", ""),
+        "schedule_only": clean.get("schedule_only", False),
+        "source": clean.get("source", ""),
         # Betting / moneyline odds
-        "odds_home": r.get("odds_home") or r.get("home_odds"),
-        "odds_draw": r.get("odds_draw") or r.get("draw_odds"),
-        "odds_away": r.get("odds_away") or r.get("away_odds"),
+        "odds_home": clean.get("odds_home") or clean.get("home_odds"),
+        "odds_draw": clean.get("odds_draw") or clean.get("draw_odds"),
+        "odds_away": clean.get("odds_away") or clean.get("away_odds"),
         # Live overlay fields and events when game is active or completed
-        "live_status": r.get("live_status"),
-        "live_clock": r.get("live_clock"),
-        "live_period": r.get("live_period"),
-        "live_updates": r.get("live_updates", False),
-        "goalscorers": r.get("goalscorers") or [],
-        "red_cards": r.get("red_cards") or [],
-        "yellow_cards": r.get("yellow_cards") or [],
-        "live_prediction": r.get("live_prediction"),
+        "live_status": clean.get("live_status"),
+        "live_clock": clean.get("live_clock"),
+        "live_period": clean.get("live_period"),
+        "live_updates": clean.get("live_updates", False),
+        "goalscorers": clean.get("goalscorers") or [],
+        "red_cards": clean.get("red_cards") or [],
+        "yellow_cards": clean.get("yellow_cards") or [],
+        "live_prediction": clean.get("live_prediction"),
     }
 
 
@@ -440,15 +442,18 @@ def api_upcoming(mode):
     four_week_mode = window_include_past
     date_range = "all" if four_week_mode else "upcoming"
 
+    target_from = target_date or None
+    target_to = target_date or None
+
     if mode == "global":
         if four_week_mode and merged_upcoming_file_is_fresh(config.FOUR_WEEK_WINDOW_FILE):
             all_rows, combined_stats, combined_league_stats = \
-                _load_upcoming_rows(config.FOUR_WEEK_WINDOW_FILE, "global", date_range="all")
+                _load_upcoming_rows(config.FOUR_WEEK_WINDOW_FILE, "global", date_range="all", from_date=target_from, to_date=target_to)
             combined_stats = dict(combined_stats or {})
             combined_league_stats = {ls.get("competition", ""): ls for ls in (combined_league_stats or []) if ls.get("competition")}
         elif (not four_week_mode) and merged_upcoming_file_is_fresh(config.ALL_UPCOMING_FILE):
             all_rows, combined_stats, combined_league_stats = \
-                _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", date_range=date_range, window_days=window_days)
+                _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to)
             combined_stats = dict(combined_stats or {})
             combined_league_stats = {ls.get("competition", ""): ls for ls in (combined_league_stats or []) if ls.get("competition")}
         else:
@@ -457,7 +462,7 @@ def api_upcoming(mode):
             combined_league_stats = {}
             seen_keys = set()
             for source, csv_path in _ALL_UPCOMING_SOURCES:
-                rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range=date_range, window_days=window_days)
+                rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to)
                 for r in rows:
                     ck = "|".join(
                         str(r.get(k, "")).strip().lower()
@@ -476,7 +481,7 @@ def api_upcoming(mode):
         if not all_rows:
             try:
                 from shared import sqlite_store
-                db_rows = sqlite_store.load_upcoming_games()
+                db_rows = sqlite_store.load_upcoming_games(from_date=target_from, to_date=target_to)
                 if db_rows:
                     all_rows = list(db_rows)
             except Exception:
@@ -525,11 +530,11 @@ def api_upcoming(mode):
     if not entry:
         return jsonify({"ok": False, "error": f"Unknown mode: {mode}"}), 400
     csv_path, source_mode = entry
-    rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode, date_range=date_range, window_days=window_days)
+    rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode, date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to)
     if not rows:
         try:
             from shared import sqlite_store
-            db_rows = sqlite_store.load_upcoming_games(mode=source_mode)
+            db_rows = sqlite_store.load_upcoming_games(mode=source_mode, from_date=target_from, to_date=target_to)
             if db_rows:
                 rows = list(db_rows)
         except Exception:
@@ -581,32 +586,45 @@ def api_home_upcoming():
     start_date = min(max(start_date, window_start), window_end)
     end_date = min(max(end_date, window_start), window_end)
 
-    if merged_upcoming_file_is_fresh(config.ALL_UPCOMING_FILE):
-        merged_rows, _, _ = _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", date_range="all")
-        feed = merged_rows
-    else:
-        feed = []
-        seen_keys = set()
-        for source, csv_path in _ALL_UPCOMING_SOURCES:
-            rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
-            for row in rows:
-                key = "|".join(
-                    str(row.get(field, "")).strip().lower()
-                    for field in ("match_date_iso", "competition", "home_team", "away_team")
-                )
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-                feed.append(row)
+    start_iso = start_date.isoformat()
+    end_iso = end_date.isoformat()
 
-        if not feed:
-            try:
-                from shared import sqlite_store
-                db_rows = sqlite_store.load_upcoming_games()
-                if db_rows:
-                    feed = list(db_rows)
-            except Exception:
-                pass
+    feed = []
+    try:
+        from shared import sqlite_store
+        db_rows = sqlite_store.load_upcoming_games(from_date=start_iso, to_date=end_iso)
+        if db_rows:
+            feed = list(db_rows)
+    except Exception:
+        feed = []
+
+    if not feed:
+        if merged_upcoming_file_is_fresh(config.ALL_UPCOMING_FILE):
+            merged_rows, _, _ = _load_upcoming_rows(
+                config.ALL_UPCOMING_FILE, "global",
+                date_range="all",
+                from_date=start_iso,
+                to_date=end_iso,
+            )
+            feed = merged_rows
+        else:
+            seen_keys = set()
+            for source, csv_path in _ALL_UPCOMING_SOURCES:
+                rows, _, _ = _load_upcoming_rows(
+                    csv_path, source,
+                    date_range="all",
+                    from_date=start_iso,
+                    to_date=end_iso,
+                )
+                for row in rows:
+                    key = "|".join(
+                        str(row.get(field, "")).strip().lower()
+                        for field in ("match_date_iso", "competition", "home_team", "away_team")
+                    )
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    feed.append(row)
 
     feed = regional_espn_schedule_fallback(feed)
 
@@ -667,6 +685,19 @@ def api_past_games():
     to_date = request.args.get("to", "").strip()
     compact = str(request.args.get("compact", "")).strip().lower() in {"1", "true", "yes"}
 
+    # Handle common query typo keys such as ?from2-26-10-05 or ?from=2-26-10-05
+    if not from_date:
+        for k in request.args.keys():
+            if k.startswith("from") and k != "from":
+                raw_val = k[4:].lstrip("=-: ")
+                if raw_val:
+                    from_date = raw_val
+                    break
+    if from_date.startswith("2-26") and len(from_date) == 10:
+        from_date = "2026" + from_date[4:]
+    if to_date.startswith("2-26") and len(to_date) == 10:
+        to_date = "2026" + to_date[4:]
+
     today_iso = ""
     try:
         today_iso = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
@@ -706,11 +737,21 @@ def api_past_games():
     def _put_past_row(r, *, overwrite_incomplete_only: bool = False):
         if not isinstance(r, dict) or _is_placeholder_game(r):
             return
+        d_iso = _past_row_date_iso(r)
+        if from_date and d_iso and d_iso < from_date:
+            return
+        if to_date and d_iso and d_iso > to_date:
+            return
+        if match_id and str(r.get("match_id", "")).strip() != match_id:
+            return
+        if league and league.lower() not in str(r.get("competition", "")).lower():
+            return
         row = dict(r)
         _enrich_json_past_row(row)
+        row = _sanitize_for_json(row)
         ck = "|".join(
             [
-                _past_row_date_iso(row),
+                d_iso,
                 str(row.get("competition", "")).strip().lower(),
                 str(row.get("home_team", "")).strip().lower(),
                 str(row.get("away_team", "")).strip().lower(),
@@ -740,6 +781,7 @@ def api_past_games():
         by_key[ck] = row
 
     archive = None
+    has_db_rows = False
     try:
         from shared import sqlite_store as _sqlite_store
         _sqlite_store.ensure_store()
@@ -749,43 +791,65 @@ def api_past_games():
                 from_date=from_date,
                 to_date=to_date,
             )
+            if archive:
+                has_db_rows = True
         if _sqlite_store.count_rows("upcoming_games") > 0:
-            for r in _sqlite_store.load_upcoming_games(
+            settled_rows = _sqlite_store.load_upcoming_games(
                 competition_substr=league,
                 status="settled",
                 from_date=from_date,
                 to_date=to_date,
-            ):
+            )
+            for r in settled_rows:
                 _put_past_row(r)
+            if settled_rows:
+                has_db_rows = True
     except Exception:
         archive = None
 
-    if archive is None:
+    if archive is None and not has_db_rows:
         archive = _load_json_payload(config.PAST_GAMES_FILE)
     if isinstance(archive, list):
         for r in archive:
             _put_past_row(r)
 
+    # Collect live completed games only for the relevant date range
     live_cutoff = (datetime.now(timezone.utc).date() - timedelta(days=60)).isoformat()
-    for r in _collect_live_past_game_rows(live_cutoff):
-        r = _merge_prediction_onto_past_row(r, prediction_lookup)
-        _put_past_row(r, overwrite_incomplete_only=True)
+    if from_date and from_date > live_cutoff:
+        live_cutoff = from_date
 
-    for source, csv_path in (
-        ("global", config.GLOBAL_UPCOMING_FILE),
-        ("mls", config.MLS_UPCOMING_FILE),
-        ("extra", config.EXTRA_UPCOMING_FILE),
-        ("cups", config.CUP_UPCOMING_FILE),
-        ("national", config.NATIONAL_UPCOMING_FILE),
-        ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
-    ):
-        rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range="completed")
-        for r in rows:
-            if str(r.get("actual_result", "")).strip().upper() not in {"H", "D", "A"}:
-                continue
-            if _is_placeholder_game(r):
-                continue
-            _put_past_row(r)
+    live_games = _collect_live_past_game_rows(live_cutoff)
+    if from_date:
+        live_games = [g for g in live_games if _past_row_date_iso(g) >= from_date]
+    if to_date:
+        live_games = [g for g in live_games if _past_row_date_iso(g) <= to_date]
+    if live_games:
+        prediction_lookup = _build_past_game_prediction_lookup()
+        for r in live_games:
+            r = _merge_prediction_onto_past_row(r, prediction_lookup)
+            _put_past_row(r, overwrite_incomplete_only=True)
+
+    # Only parse upcoming completed CSV files if SQLite didn't return rows for this range
+    # or if an open-ended history query without from_date was made.
+    if not has_db_rows or not from_date:
+        for source, csv_path in (
+            ("global", config.GLOBAL_UPCOMING_FILE),
+            ("mls", config.MLS_UPCOMING_FILE),
+            ("extra", config.EXTRA_UPCOMING_FILE),
+            ("cups", config.CUP_UPCOMING_FILE),
+            ("national", config.NATIONAL_UPCOMING_FILE),
+            ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
+        ):
+            rows, _st, _ls = _load_upcoming_rows(
+                csv_path, source, date_range="completed",
+                from_date=from_date, to_date=to_date
+            )
+            for r in rows:
+                if str(r.get("actual_result", "")).strip().upper() not in {"H", "D", "A"}:
+                    continue
+                if _is_placeholder_game(r):
+                    continue
+                _put_past_row(r)
 
     all_rows = list(by_key.values())
     if match_id:
@@ -803,7 +867,7 @@ def api_past_games():
     # Direct limit / offset pagination mode for high performance
     if limit is not None or offset > 0:
         paged_rows = all_rows[offset : (offset + limit) if limit else None]
-        out_rows = [_to_compact_upcoming_row(r) for r in paged_rows] if compact else paged_rows
+        out_rows = [_to_compact_upcoming_row(r) for r in paged_rows] if compact else [_sanitize_for_json(r) for r in paged_rows]
         return jsonify({
             "ok": True,
             "total": len(all_rows),
@@ -886,7 +950,7 @@ def api_past_games():
         for idx, m in enumerate(sorted_mondays, start=1)
     ]
 
-    out_page_rows = [_to_compact_upcoming_row(r) for r in page_rows] if compact else page_rows
+    out_page_rows = [_to_compact_upcoming_row(r) for r in page_rows] if compact else [_sanitize_for_json(r) for r in page_rows]
 
     return jsonify({
         "ok": True,
