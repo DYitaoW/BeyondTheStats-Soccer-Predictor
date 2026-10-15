@@ -49,6 +49,13 @@ class RequestProxy:
         return req.query_params
 
     @property
+    def headers(self) -> Any:
+        req = _request_ctx.get()
+        if req is None:
+            return {}
+        return getattr(req, "headers", {})
+
+    @property
     def path(self) -> str:
         req = _request_ctx.get()
         if req is None:

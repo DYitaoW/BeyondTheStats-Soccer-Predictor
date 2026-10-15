@@ -113,11 +113,19 @@ def _to_compact_upcoming_row(r: dict) -> dict:
         "prediction_quality": r.get("prediction_quality", ""),
         "schedule_only": r.get("schedule_only", False),
         "source": r.get("source", ""),
-        # Live overlay fields when game is active
+        # Betting / moneyline odds
+        "odds_home": r.get("odds_home") or r.get("home_odds"),
+        "odds_draw": r.get("odds_draw") or r.get("draw_odds"),
+        "odds_away": r.get("odds_away") or r.get("away_odds"),
+        # Live overlay fields and events when game is active or completed
         "live_status": r.get("live_status"),
         "live_clock": r.get("live_clock"),
         "live_period": r.get("live_period"),
         "live_updates": r.get("live_updates", False),
+        "goalscorers": r.get("goalscorers") or [],
+        "red_cards": r.get("red_cards") or [],
+        "yellow_cards": r.get("yellow_cards") or [],
+        "live_prediction": r.get("live_prediction"),
     }
 
 
@@ -370,6 +378,14 @@ def api_upcoming(mode):
     """Return upcoming prediction rows for the given source mode."""
     month = str(request.args.get("month", "")).strip()
     window = str(request.args.get("window", "")).strip()
+    target_date = str(request.args.get("date", "")).strip()
+    match_id = str(request.args.get("match_id", "")).strip()
+    if target_date.lower() == "today":
+        try:
+            target_date = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+        except Exception:
+            target_date = datetime.now(timezone.utc).date().isoformat()
+
     if window == "4week":
         window_days = 28
         window_include_past = True
@@ -379,7 +395,7 @@ def api_upcoming(mode):
     else:
         window_days = None
         window_include_past = False
-    is_filtered = bool(month or window)
+    is_filtered = bool(month or window or target_date or match_id)
 
     compact = str(request.args.get("compact", "")).strip().lower() in {"1", "true", "yes"}
 
@@ -392,7 +408,12 @@ def api_upcoming(mode):
     if raw_offset.isdigit():
         offset = max(0, int(raw_offset))
 
-    def _match_window(date_iso: str) -> bool:
+    def _match_window(row: dict) -> bool:
+        if match_id and str(row.get("match_id", "")).strip() != match_id:
+            return False
+        date_iso = str(row.get("match_date_iso", ""))
+        if target_date:
+            return str(date_iso).startswith(target_date)
         if month:
             if not str(date_iso).startswith(month):
                 return False
@@ -474,7 +495,7 @@ def api_upcoming(mode):
                 deduped_rows.append(row)
         all_rows = deduped_rows
         if is_filtered:
-            all_rows = [r for r in all_rows if _match_window(str(r.get("match_date_iso", "")))]
+            all_rows = [r for r in all_rows if _match_window(r)]
 
         all_rows.sort(key=lambda r: (
             row_date_iso(r),
@@ -516,7 +537,7 @@ def api_upcoming(mode):
     if mode == "mls":
         rows = regional_espn_schedule_fallback(rows)
     if is_filtered:
-        rows = [r for r in rows if _match_window(str(r.get("match_date_iso", "")))]
+        rows = [r for r in rows if _match_window(r)]
     league_names = sorted({r.get("competition", "") for r in rows if r.get("competition")})
     available_leagues = [
         {"name": name, "live_score_tier": config.get_live_score_tier(name)}
@@ -640,9 +661,31 @@ def api_home_upcoming():
 def api_past_games():
     """Return completed games persisted across pipeline runs grouped by week."""
     league = request.args.get("league", "").strip()
+    match_id = request.args.get("match_id", "").strip()
     target_date = request.args.get("week_start", "").strip() or request.args.get("date", "").strip()
     from_date = request.args.get("from", "").strip()
     to_date = request.args.get("to", "").strip()
+    compact = str(request.args.get("compact", "")).strip().lower() in {"1", "true", "yes"}
+
+    today_iso = ""
+    try:
+        today_iso = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    except Exception:
+        today_iso = datetime.now(timezone.utc).date().isoformat()
+
+    if target_date.lower() == "today":
+        target_date = today_iso
+    if from_date.lower() == "today":
+        from_date = today_iso
+    if to_date.lower() == "today":
+        to_date = today_iso
+
+    # If an exact single date is queried via `date=YYYY-MM-DD` (without explicit from/to),
+    # treat it as an exact date filter: from_date = to_date = target_date
+    if target_date and not from_date and not to_date and not request.args.get("week_start"):
+        from_date = target_date
+        to_date = target_date
+
     try:
         page = max(1, int(request.args.get("page", "1")))
     except (ValueError, TypeError):
@@ -745,6 +788,8 @@ def api_past_games():
             _put_past_row(r)
 
     all_rows = list(by_key.values())
+    if match_id:
+        all_rows = [r for r in all_rows if str(r.get("match_id", "")).strip() == match_id]
     if league:
         league_lower = league.lower()
         all_rows = [r for r in all_rows if league_lower in r.get("competition", "").lower()]
@@ -758,12 +803,14 @@ def api_past_games():
     # Direct limit / offset pagination mode for high performance
     if limit is not None or offset > 0:
         paged_rows = all_rows[offset : (offset + limit) if limit else None]
+        out_rows = [_to_compact_upcoming_row(r) for r in paged_rows] if compact else paged_rows
         return jsonify({
             "ok": True,
             "total": len(all_rows),
             "limit": limit,
             "offset": offset,
-            "rows": paged_rows,
+            "compact": compact,
+            "rows": out_rows,
         })
 
     weeks_map = {}
@@ -839,6 +886,8 @@ def api_past_games():
         for idx, m in enumerate(sorted_mondays, start=1)
     ]
 
+    out_page_rows = [_to_compact_upcoming_row(r) for r in page_rows] if compact else page_rows
+
     return jsonify({
         "ok": True,
         "page": page,
@@ -847,9 +896,10 @@ def api_past_games():
         "week_start": week_start,
         "week_end": week_end,
         "week_label": week_label,
-        "rows": page_rows,
+        "compact": compact,
+        "rows": out_page_rows,
         "total": len(all_rows),
-        "per_page": len(page_rows),
+        "per_page": len(out_page_rows),
         "available_weeks": available_weeks,
     })
 

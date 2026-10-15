@@ -81,7 +81,7 @@ class SecurityAndCacheHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(GZipMiddleware, minimum_size=getattr(config, "GZIP_MINIMUM_SIZE", 1000))
 app.add_middleware(SecurityAndCacheHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,

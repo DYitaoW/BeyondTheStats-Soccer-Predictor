@@ -530,6 +530,23 @@ def _generate_apns_jwt() -> str | None:
 
 _APNS_PRODUCTION = "https://api.push.apple.com"
 _APNS_SANDBOX = "https://api.development.push.apple.com"
+_apns_http2_client = None
+_apns_http2_client_lock = threading.Lock()
+
+
+def _get_apns_client():
+    global _apns_http2_client
+    if _apns_http2_client is not None:
+        return _apns_http2_client
+    with _apns_http2_client_lock:
+        if _apns_http2_client is None:
+            import httpx
+            _apns_http2_client = httpx.Client(
+                http2=True,
+                timeout=10.0,
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+            )
+        return _apns_http2_client
 
 
 def _apns_send(push_token: str, payload: dict, topic: str, live_activity: bool = False) -> bool:
@@ -538,7 +555,6 @@ def _apns_send(push_token: str, payload: dict, topic: str, live_activity: bool =
         return False
 
     import config
-    import httpx
 
     base = _APNS_SANDBOX if config.APNS_USE_SANDBOX else _APNS_PRODUCTION
     endpoint = f"{base}/3/device/{push_token}"
@@ -553,8 +569,8 @@ def _apns_send(push_token: str, payload: dict, topic: str, live_activity: bool =
         headers["apns-expiration"] = "0"
 
     try:
-        with httpx.Client(http2=True) as client:
-            resp = client.post(endpoint, json=payload, headers=headers, timeout=10)
+        client = _get_apns_client()
+        resp = client.post(endpoint, json=payload, headers=headers)
         if not resp.is_success:
             logger.warning(
                 "APNs %s push failed: status=%s body=%s token_prefix=%s topic=%s",
@@ -577,8 +593,15 @@ def _apns_send(push_token: str, payload: dict, topic: str, live_activity: bool =
 
 # ── Queue worker ─────────────────────────────────────────────────
 
+_apns_queue_event = threading.Event()
+
+
+def _notify_apns_queue() -> None:
+    _apns_queue_event.set()
+
+
 def start_apns_worker() -> None:
-    threading.Thread(target=_worker_loop, daemon=True).start()
+    threading.Thread(target=_worker_loop, daemon=True, name="apns-worker").start()
 
 
 def _worker_loop() -> None:
@@ -587,7 +610,8 @@ def _worker_loop() -> None:
             _drain_queue()
         except Exception:
             pass
-        time.sleep(5)
+        _apns_queue_event.wait(timeout=1.0)
+        _apns_queue_event.clear()
 
 
 def _drain_queue() -> None:
@@ -664,6 +688,7 @@ def send_live_activity_update(
             "match_id": match_id,
             "competition": normalize_live_competition(competition),
         })
+    _notify_apns_queue()
     return len(activities)
 
 
@@ -690,6 +715,7 @@ def send_live_activity_end(
             "match_id": match_id,
             "competition": normalize_live_competition(competition),
         })
+    _notify_apns_queue()
     unregister_by_match(match_id, competition)
     return len(activities)
 

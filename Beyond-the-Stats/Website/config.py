@@ -687,6 +687,9 @@ APNS_LIVE_ACTIVITY_TOPIC = os.environ.get("APNS_LIVE_ACTIVITY_TOPIC", f"{APNS_TO
 APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "0").strip().lower() in {"1", "true", "yes"}
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
+# ── Compression ───────────────────────────────────────────────────
+GZIP_MINIMUM_SIZE = int(os.environ.get("GZIP_MINIMUM_SIZE", "1000"))
+
 # ── Redeem Codes ──────────────────────────────────────────────────
 # Same folder as team_name_mapping_master.json: <repo>/Data/redeem_codes.json
 # Format: [{"code": "CODEHERE", "value": true}, ...]

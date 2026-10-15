@@ -1862,7 +1862,9 @@ def main():
     combined = combined[RESULT_COLUMNS].sort_values(["match_date", "competition", "home_team", "away_team"])
 
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
-    combined.to_csv(PREDICTIONS_FILE, index=False)
+    tmp_pred_file = f"{PREDICTIONS_FILE}.tmp.{os.getpid()}"
+    combined.to_csv(tmp_pred_file, index=False)
+    os.replace(tmp_pred_file, PREDICTIONS_FILE)
 
     # Fetch and save current season top scorers if API token is available
     scorers_saved = 0

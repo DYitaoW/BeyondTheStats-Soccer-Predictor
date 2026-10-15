@@ -351,8 +351,10 @@ def process_one_file(rel_path, *, force_min_rows=None):
     except OSError:
         pass
     if write_needed:
-        with open(output_path, "w", encoding="utf-8", newline="") as out:
+        tmp_output = f"{output_path}.tmp.{os.getpid()}"
+        with open(tmp_output, "w", encoding="utf-8", newline="") as out:
             out.write(new_csv)
+        os.replace(tmp_output, output_path)
         return True, rel_path, "processed"
     return True, rel_path, "kept_content_unchanged"
 
