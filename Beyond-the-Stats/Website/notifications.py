@@ -532,6 +532,10 @@ _APNS_PRODUCTION = "https://api.push.apple.com"
 _APNS_SANDBOX = "https://api.development.push.apple.com"
 _apns_http2_client = None
 _apns_http2_client_lock = threading.Lock()
+_apns_recent_logs: deque[dict] = deque(maxlen=50)
+_apns_recent_logs_lock = threading.Lock()
+_token_environment_cache: dict[str, bool] = {}
+_token_environment_lock = threading.Lock()
 
 
 def _get_apns_client():
@@ -549,19 +553,132 @@ def _get_apns_client():
         return _apns_http2_client
 
 
-def _apns_send(push_token: str, payload: dict, topic: str, live_activity: bool = False) -> bool:
-    jwt_token = _generate_apns_jwt()
-    if not jwt_token:
-        return False
-
+def _derive_apns_hint(status_code: int | None, reason: str | None, is_la: bool, sandbox: bool) -> str:
+    """Provide human-actionable guidance for APNs error responses."""
     import config
 
-    base = _APNS_SANDBOX if config.APNS_USE_SANDBOX else _APNS_PRODUCTION
-    endpoint = f"{base}/3/device/{push_token}"
+    if status_code == 200:
+        return (
+            "APNs successfully accepted the push notification. If not visible on the device, check: "
+            "(1) App notification permissions in iOS Settings -> Notifications. "
+            "(2) Do Not Disturb / Focus filter status. "
+            "(3) If app is in foreground, UNUserNotificationCenterDelegate willPresent must be implemented to show banners."
+        )
+    if status_code == 400:
+        if reason == "BadDeviceToken":
+            env_name = "Sandbox (Development)" if sandbox else "Production"
+            return (
+                f"Apple rejected this token as invalid for the {env_name} APNs server. "
+                "Common causes: "
+                "(1) If your app was installed directly from Xcode to your phone or simulator, it generates a Sandbox token. "
+                "(2) If installed via TestFlight or App Store, it generates a Production token. "
+                "(3) The backend automatically tests both environments when BadDeviceToken occurs; if both fail, the token string may be truncated or belongs to another Team ID / Bundle ID."
+            )
+        if reason == "DeviceTokenNotForTopic":
+            if is_la:
+                return (
+                    f"DeviceTokenNotForTopic: For Live Activities, apns-topic MUST be '{config.APNS_LIVE_ACTIVITY_TOPIC}'. "
+                    "Ensure your widget extension and app bundle identifier match."
+                )
+            return (
+                f"DeviceTokenNotForTopic: The device token does not match topic '{config.APNS_TOPIC}'. "
+                "Check your Xcode project Bundle Identifier."
+            )
+        if reason == "TopicDisallowed":
+            return (
+                "TopicDisallowed: Pushing to this topic is not permitted for your APNs authentication key. "
+                "Verify in Apple Developer Portal that Push Notifications capability is enabled for your App ID."
+            )
+        return f"APNs returned HTTP 400 with reason: {reason or 'Unknown'}. Verify token format and topic."
+    if status_code == 403:
+        if reason in ("InvalidProviderToken", "ExpiredProviderToken"):
+            return (
+                "InvalidProviderToken: The APNs authentication JWT was rejected. "
+                "Verify APNS_KEY_ID (10-char Key ID), APNS_TEAM_ID (10-char Team ID), "
+                "and ensure the .p8 file at APNS_AUTH_KEY_PATH is correct and downloaded from Apple Developer -> Keys."
+            )
+        return f"Forbidden (403): {reason or 'Authentication failure'}."
+    if status_code == 410:
+        return "Unregistered (410): The device has uninstalled the app or this Live Activity has expired."
+    if status_code == 413:
+        return "PayloadTooLarge (413): Payload exceeds APNs maximum size limit (4096 bytes)."
+    if status_code is None:
+        return "Network or client failure connecting to Apple APNs server."
+    return f"APNs responded with HTTP status {status_code}: {reason or ''}"
+
+
+def _record_apns_log(result: dict, token: str) -> None:
+    entry = {
+        "timestamp_utc": result.get("timestamp_utc"),
+        "push_type": result.get("push_type"),
+        "token_preview": (token[:8] + "..." + token[-6:]) if len(token) > 14 else token,
+        "status_code": result.get("status_code"),
+        "apns_id": result.get("apns_id"),
+        "reason": result.get("reason"),
+        "sandbox": result.get("sandbox"),
+        "ok": result.get("ok"),
+        "error": result.get("error"),
+    }
+    with _apns_recent_logs_lock:
+        _apns_recent_logs.append(entry)
+
+
+def apns_send_detailed(
+    push_token: str,
+    payload: dict,
+    topic: Optional[str] = None,
+    live_activity: bool = False,
+    sandbox: Optional[bool] = None,
+) -> dict:
+    """Send an APNs push notification and return detailed status, headers, and diagnostic hints.
+    Automatically detects and handles Sandbox (Xcode / Simulator) vs Production (TestFlight / App Store) tokens.
+    """
+    import config
+
+    jwt_token = _generate_apns_jwt()
+    clean_token = str(push_token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
+
+    explicit_sandbox = sandbox is not None
+    if explicit_sandbox:
+        use_sandbox = bool(sandbox)
+    else:
+        with _token_environment_lock:
+            cached_env = _token_environment_cache.get(clean_token)
+        if cached_env is not None:
+            use_sandbox = cached_env
+        else:
+            use_sandbox = config.APNS_USE_SANDBOX
+
+    base = _APNS_SANDBOX if use_sandbox else _APNS_PRODUCTION
+    endpoint = f"{base}/3/device/{clean_token}"
+
+    eff_topic = topic or (config.APNS_LIVE_ACTIVITY_TOPIC if live_activity else config.APNS_TOPIC) or ""
+
+    result: dict[str, Any] = {
+        "ok": False,
+        "status_code": None,
+        "apns_id": None,
+        "reason": None,
+        "raw_response": None,
+        "endpoint": endpoint,
+        "topic": eff_topic,
+        "sandbox": use_sandbox,
+        "push_type": "liveactivity" if live_activity else "alert",
+        "jwt_generated": bool(jwt_token),
+        "error": None,
+        "hint": None,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if not jwt_token:
+        result["error"] = "Failed to generate APNs JWT (check APNS_KEY_ID, APNS_TEAM_ID, and APNS_AUTH_KEY_PATH)"
+        result["hint"] = "JWT signing key is missing or invalid. Check server status at /api/test/notifications/status"
+        _record_apns_log(result, clean_token)
+        return result
 
     headers = {
         "apns-push-type": "liveactivity" if live_activity else "alert",
-        "apns-topic": topic,
+        "apns-topic": eff_topic,
         "apns-priority": "10",
         "authorization": f"bearer {jwt_token}",
     }
@@ -571,24 +688,162 @@ def _apns_send(push_token: str, payload: dict, topic: str, live_activity: bool =
     try:
         client = _get_apns_client()
         resp = client.post(endpoint, json=payload, headers=headers)
-        if not resp.is_success:
+        result["status_code"] = resp.status_code
+        result["apns_id"] = resp.headers.get("apns-id")
+        result["raw_response"] = resp.text[:500] if resp.text else None
+        result["ok"] = resp.is_success
+
+        reason = None
+        if resp.text:
+            try:
+                data = resp.json()
+                reason = data.get("reason")
+            except Exception:
+                reason = resp.text[:100]
+        result["reason"] = reason
+
+        # Automatic fallback between Sandbox and Production:
+        # If Apple returns BadDeviceToken and caller didn't explicitly force sandbox,
+        # retry against the opposite environment (Xcode Simulator/Debug vs TestFlight Beta)
+        if not resp.is_success and resp.status_code == 400 and reason == "BadDeviceToken" and not explicit_sandbox:
+            alt_sandbox = not use_sandbox
+            alt_base = _APNS_SANDBOX if alt_sandbox else _APNS_PRODUCTION
+            alt_endpoint = f"{alt_base}/3/device/{clean_token}"
+            try:
+                alt_resp = client.post(alt_endpoint, json=payload, headers=headers)
+                if alt_resp.is_success:
+                    resp = alt_resp
+                    use_sandbox = alt_sandbox
+                    endpoint = alt_endpoint
+                    result["status_code"] = resp.status_code
+                    result["apns_id"] = resp.headers.get("apns-id")
+                    result["raw_response"] = resp.text[:500] if resp.text else None
+                    result["ok"] = True
+                    result["reason"] = None
+                    result["sandbox"] = use_sandbox
+                    result["endpoint"] = endpoint
+                    with _token_environment_lock:
+                        _token_environment_cache[clean_token] = use_sandbox
+                    logger.info(
+                        "APNs auto-detected %s environment for token %s... (switched from %s)",
+                        "Sandbox" if use_sandbox else "Production",
+                        clean_token[:10],
+                        "Sandbox" if not use_sandbox else "Production",
+                    )
+            except Exception as alt_exc:
+                logger.debug(f"APNs fallback attempt failed: {alt_exc}")
+
+        if resp.is_success:
+            with _token_environment_lock:
+                _token_environment_cache[clean_token] = use_sandbox
+
+        result["hint"] = _derive_apns_hint(result["status_code"], result["reason"], live_activity, use_sandbox)
+
+        if not result["ok"]:
             logger.warning(
-                "APNs %s push failed: status=%s body=%s token_prefix=%s topic=%s",
+                "APNs %s push failed: status=%s reason=%s token_prefix=%s topic=%s sandbox=%s",
                 "live-activity" if live_activity else "alert",
-                resp.status_code,
-                resp.text[:300],
-                push_token[:10],
-                topic,
+                result["status_code"],
+                result["reason"],
+                clean_token[:10],
+                eff_topic,
+                use_sandbox,
             )
-        return resp.is_success
     except Exception as exc:
+        result["error"] = str(exc)
+        result["hint"] = f"Connection error to Apple APNs: {exc}"
         logger.warning(
             "APNs %s push error: %s token_prefix=%s",
             "live-activity" if live_activity else "alert",
             exc,
-            push_token[:10],
+            clean_token[:10],
         )
-        return False
+
+    _record_apns_log(result, clean_token)
+    return result
+
+
+def _apns_send(push_token: str, payload: dict, topic: str, live_activity: bool = False) -> bool:
+    res = apns_send_detailed(push_token, payload, topic=topic, live_activity=live_activity)
+    return bool(res.get("ok"))
+
+
+def get_apns_diagnostic_status() -> dict:
+    """Return comprehensive health and configuration status for APNs delivery."""
+    import config
+
+    kid = config.APNS_KEY_ID or ""
+    iss = config.APNS_TEAM_ID or ""
+    key_path = config.APNS_AUTH_KEY_PATH or ""
+    key_exists = bool(key_path and os.path.exists(key_path))
+    key_readable = False
+    key_size = 0
+    if key_exists:
+        try:
+            key_size = os.path.getsize(key_path)
+            with open(key_path, "r") as f:
+                head = f.read(27)
+                key_readable = "BEGIN PRIVATE KEY" in head or "BEGIN EC PRIVATE KEY" in head
+        except Exception:
+            key_readable = False
+
+    jwt_test_ok = False
+    jwt_error = None
+    try:
+        jwt_token = _generate_apns_jwt()
+        jwt_test_ok = bool(jwt_token)
+        if not jwt_token:
+            jwt_error = "Missing APNS_KEY_ID, APNS_TEAM_ID, or invalid .p8 file"
+    except Exception as exc:
+        jwt_error = str(exc)
+
+    with _match_notification_subscriptions_lock:
+        match_subs_count = sum(len(toks) for toks in _match_notification_subscriptions.values())
+        match_keys = list(_match_notification_subscriptions.keys())
+    with _team_notification_subscriptions_lock:
+        team_subs_count = sum(len(toks) for toks in _team_notification_subscriptions.values())
+        team_keys = list(_team_notification_subscriptions.keys())
+    with _live_activities_lock:
+        la_count = sum(len(acts) for acts in _live_activities.values())
+        la_matches = list(_live_activities.keys())
+    with _apns_recent_logs_lock:
+        logs_copy = list(_apns_recent_logs)
+
+    return {
+        "ok": True,
+        "configured": bool(kid and iss and key_exists and jwt_test_ok),
+        "credentials": {
+            "key_id": (kid[:3] + "***" + kid[-2:]) if len(kid) > 5 else (kid or None),
+            "key_id_set": bool(kid),
+            "team_id": (iss[:3] + "***" + iss[-2:]) if len(iss) > 5 else (iss or None),
+            "team_id_set": bool(iss),
+            "key_path": key_path or None,
+            "key_path_exists": key_exists,
+            "key_file_readable": key_readable,
+            "key_file_size_bytes": key_size,
+        },
+        "apns_settings": {
+            "topic": config.APNS_TOPIC or None,
+            "live_activity_topic": config.APNS_LIVE_ACTIVITY_TOPIC or None,
+            "sandbox": bool(config.APNS_USE_SANDBOX),
+            "target_server": _APNS_SANDBOX if config.APNS_USE_SANDBOX else _APNS_PRODUCTION,
+        },
+        "jwt": {
+            "signing_successful": jwt_test_ok,
+            "error": jwt_error,
+        },
+        "in_memory_state": {
+            "total_registered_device_tokens": len(ios_device_tokens),
+            "match_subscriptions_count": match_subs_count,
+            "active_matches": match_keys,
+            "team_subscriptions_count": team_subs_count,
+            "active_teams": team_keys,
+            "active_live_activities_count": la_count,
+            "live_activity_matches": la_matches,
+            "pending_queue_size": len(_apns_notification_queue),
+        },
+        "recent_dispatches": logs_copy[-15:],
+    }
 
 
 # ── Queue worker ─────────────────────────────────────────────────
