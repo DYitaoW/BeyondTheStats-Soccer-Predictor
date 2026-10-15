@@ -111,10 +111,10 @@ class BackendConfig:
     pipeline_skip_extra: bool = False
     pipeline_skip_global: bool = False
     pipeline_timeout_s: int = DEFAULT_PIPELINE_TIMEOUT_S
-    # Manual backend/DB restarts should always kick a full retrain + season
-    # projections (not the light Tue/Fri-off refresh). Override with
-    # PIPELINE_FULL_RETRAIN_ON_START=0 if needed.
-    run_on_start: bool = True
+    # Manual backend/DB restarts do NOT kick a full pipeline by default.
+    # Scheduled runs trigger at daily_refresh_hour/minute. Override with
+    # PIPELINE_RUN_ON_START=1 or --run-on-start if an immediate run is desired.
+    run_on_start: bool = False
 
     # Future-games watcher
     enable_watcher: bool = True
@@ -162,12 +162,8 @@ class BackendServer:
         if self.config.run_on_start:
             pipeline_enabled = os.environ.get("PIPELINE_ENABLED", "1").strip().lower() in {"1", "true", "yes"}
             if pipeline_enabled:
-                # Always full-retrain on manual restart so new-season league
-                # tables, position odds, brackets, and full-season fixtures are
-                # rebuilt — light refreshes alone left most leagues empty/stale
-                # into September.
                 full_on_start = os.environ.get(
-                    "PIPELINE_FULL_RETRAIN_ON_START", "1"
+                    "PIPELINE_FULL_RETRAIN_ON_START", "0"
                 ).strip().lower() in {"1", "true", "yes"}
                 self._run_pipeline_in_background(
                     trigger="startup",
@@ -175,6 +171,13 @@ class BackendServer:
                 )
             else:
                 LOG.warning("[startup] PIPELINE_ENABLED=0 — skipping startup pipeline run")
+        else:
+            LOG.info(
+                "[startup] run_on_start=False — skipping startup pipeline run (waiting for scheduled refresh at %02d:%02d %s)",
+                self.config.daily_refresh_hour,
+                self.config.daily_refresh_minute,
+                self.config.daily_refresh_tz,
+            )
 
         self._scheduler_thread = threading.Thread(
             target=self._scheduler_loop, name="daily-scheduler", daemon=True
@@ -774,13 +777,14 @@ class BackendServer:
         cfg = self.config
         LOG.info(
             "[backend] starting: host=%s:%d serve_website=%s refresh=%02d:%02d %s "
-            "workers=%d comp_workers=%d memory=%.1fGB watcher=%.0fs",
+            "run_on_start=%s workers=%d comp_workers=%d memory=%.1fGB watcher=%.0fs",
             cfg.host,
             cfg.port,
             cfg.serve_website,
             cfg.daily_refresh_hour,
             cfg.daily_refresh_minute,
             cfg.daily_refresh_tz,
+            cfg.run_on_start,
             cfg.pipeline_workers,
             cfg.pipeline_competition_workers,
             cfg.memory_limit_gb,
