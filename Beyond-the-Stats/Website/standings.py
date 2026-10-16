@@ -1618,6 +1618,11 @@ def _clear_all_real_data_caches():
         _real_tables.clear()
     with _real_leaders_lock:
         _real_leaders.clear()
+    try:
+        from routes.leagues import clear_league_leaders_cache
+        clear_league_leaders_cache()
+    except Exception:
+        pass
 
 def _fill_placeholder_tables(data):
     """Fill ``data["tables"]`` with zero-stat team entries from league_teams.json

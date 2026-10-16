@@ -15,6 +15,7 @@ from .compat import Blueprint, Request, redirect, render_template, send_from_dir
 import pandas as pd
 
 import config
+from competition_rules import canonical_team_name, make_match_sync_key
 from cache import _cached_response
 from team_utils import _team_name_for_db, _team_name_for_display
 from espn_api import _fetch_team_info, _ROSTER_CACHE
@@ -88,8 +89,19 @@ def _to_float(val):
 def _to_compact_upcoming_row(r: dict) -> dict:
     """Strip bulky secondary markets, last-5 match logs, and verbose reasoning for lightweight web/list views."""
     clean = _sanitize_for_json(r) if isinstance(r, dict) else {}
+    comp = clean.get("competition", "")
+    ht = clean.get("home_team", "")
+    at = clean.get("away_team", "")
+    c_home = clean.get("canonical_home_team") or canonical_team_name(ht, comp) or ht
+    c_away = clean.get("canonical_away_team") or canonical_team_name(at, comp) or at
+    sync_k = clean.get("sync_key") or make_match_sync_key(
+        clean.get("match_date_iso") or clean.get("match_date"),
+        comp,
+        c_home,
+        c_away,
+    )
     return {
-        "competition": clean.get("competition", ""),
+        "competition": comp,
         "match_date": clean.get("match_date", ""),
         "match_date_iso": clean.get("match_date_iso", ""),
         "match_datetime_et": clean.get("match_datetime_et", ""),
@@ -97,8 +109,11 @@ def _to_compact_upcoming_row(r: dict) -> dict:
         "weekday": clean.get("weekday", ""),
         "date_label": clean.get("date_label", ""),
         "time_label": clean.get("time_label", ""),
-        "home_team": clean.get("home_team", ""),
-        "away_team": clean.get("away_team", ""),
+        "home_team": ht,
+        "away_team": at,
+        "canonical_home_team": c_home,
+        "canonical_away_team": c_away,
+        "sync_key": sync_k,
         "match_id": clean.get("match_id"),
         "predicted_result": clean.get("predicted_result", ""),
         "winner_label": clean.get("winner_label", ""),

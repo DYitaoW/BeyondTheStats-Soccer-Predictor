@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 import config
+from competition_rules import canonical_team_name, make_match_sync_key
 from accuracy_tracker import _track_prediction_results
 from espn_api import _fetch_competition_scores, _fetch_event_summary, LIVE_SCORE_FETCH_TIMEOUT
 from espn_parser import (
@@ -281,6 +282,22 @@ def _game_et_calendar_date(game):
             except Exception:
                 continue
     return None
+
+
+def _stamp_game_sync_fields(game: dict, comp_name: str) -> None:
+    """Attach canonical team names and deterministic sync_key to a live game object."""
+    if not isinstance(game, dict):
+        return
+    home_raw = game.get("home_team", "")
+    away_raw = game.get("away_team", "")
+    c_home = canonical_team_name(home_raw, comp_name) or str(home_raw or "")
+    c_away = canonical_team_name(away_raw, comp_name) or str(away_raw or "")
+    game["canonical_home_team"] = c_home
+    game["canonical_away_team"] = c_away
+
+    game_date = _game_et_calendar_date(game)
+    date_val = game_date.isoformat() if game_date else (game.get("match_date") or game.get("scoreboard_date"))
+    game["sync_key"] = make_match_sync_key(date_val, comp_name, c_home, c_away)
 
 
 def _keep_game_for_poll_window(game, allowed_dates):
@@ -1309,11 +1326,12 @@ def _merge_poll_results_into_live_scores(results, poll_date, allowed_dates=None)
         _flush_completed_live_scores_to_history()
         _prune_live_scores_to_dates(allowed)
         with _live_summary_cache_lock:
-            for comp_data in _live_scores.values():
+            for comp_name, comp_data in _live_scores.items():
                 for g in comp_data.get("games", []):
                     mid = g.get("match_id")
                     if mid and mid in _live_summary_cache:
                         g.update(_live_summary_cache[mid])
+                    _stamp_game_sync_fields(g, comp_name)
         _poller_last_cycle_utc = datetime.now(ZoneInfo("UTC")).isoformat()
         _poller_last_cycle_games = sum(len(v.get("games", [])) for v in _live_scores.values())
 
@@ -1894,6 +1912,7 @@ def inject_simulated_live_game(game: dict, comp_name: str = "Test/Simulation") -
         entry.setdefault("yellow_cards", [])
         entry.setdefault("live_prediction", {"prob_home": 52.0, "prob_draw": 26.0, "prob_away": 22.0})
         entry["simulated"] = True
+        _stamp_game_sync_fields(entry, comp_name)
 
         if idx is not None:
             games[idx] = entry
