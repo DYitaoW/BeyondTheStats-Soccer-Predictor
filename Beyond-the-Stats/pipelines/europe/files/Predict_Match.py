@@ -1268,6 +1268,15 @@ def resolve_team_name(raw_name, valid_names):
     raw = str(raw_name).strip()
     lower = raw.lower()
 
+    # Disambiguate Real Sociedad vs Real Sociedad B
+    raw_parts = set(re.findall(r"\b\w+\b", lower))
+    if "sociedad" in raw_parts:
+        is_reserve = bool(raw_parts & {"b", "ii", "2"}) or raw.endswith(" B") or raw.endswith(" II")
+        if is_reserve and "Sociedad B" in valid_set:
+            return "Sociedad B"
+        if not is_reserve and "Sociedad" in valid_set:
+            return "Sociedad"
+
     for key in (lower, normalize(raw)):
         hit = from_candidate(mapping.get(key))
         if hit:

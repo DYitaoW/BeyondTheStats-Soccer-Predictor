@@ -127,6 +127,9 @@
     "Rayo Vallecano": "Vallecano",
     "Real Betis": "Betis",
     "Real Sociedad": "Sociedad",
+    "Real Sociedad de Fútbol": "Sociedad",
+    "Real Sociedad de Futbol": "Sociedad",
+    "R. Sociedad": "Sociedad",
     "Almeria": "Almeria",
     "Cadiz": "Cadiz",
     "Cordoba": "Cordoba",
@@ -755,6 +758,11 @@
     "Vallecano": "Vallecano",
     "Leganés": "Leganes",
     "Real Sociedad II": "Sociedad B",
+    "Real Sociedad B": "Sociedad B",
+    "Real Sociedad de Fútbol B": "Sociedad B",
+    "Real Sociedad de Futbol B": "Sociedad B",
+    "R. Sociedad B": "Sociedad B",
+    "Sanse": "Sociedad B",
     "Real Valladolid": "Valladolid",
     "Sporting Gijón": "Sp Gijon",
     "UD Almería": "Almeria"
@@ -1454,7 +1462,13 @@
   "Bulgaria/First League": {},
   "England/FA Cup": {},
   "England/League Cup": {},
-  "Spain/Copa del Rey": {},
+  "Spain/Copa del Rey": {
+    "Sociedad": "Sociedad",
+    "Real Sociedad": "Sociedad",
+    "Real Sociedad de Fútbol": "Sociedad",
+    "Real Sociedad de Futbol": "Sociedad",
+    "R. Sociedad": "Sociedad"
+  },
   "France/Coupe de France": {},
   "Italy/Coppa Italia": {},
   "United States/US Open Cup": {},
@@ -1473,9 +1487,27 @@
     "Atlanta United": "Atlanta Utd",
     "Atlanta United FC": "Atlanta Utd"
   },
-  "Europe/Champions League": {},
-  "Europe/Europa League": {},
-  "Europe/Conference League": {},
+  "Europe/Champions League": {
+    "Sociedad": "Sociedad",
+    "Real Sociedad": "Sociedad",
+    "Real Sociedad de Fútbol": "Sociedad",
+    "Real Sociedad de Futbol": "Sociedad",
+    "R. Sociedad": "Sociedad"
+  },
+  "Europe/Europa League": {
+    "Sociedad": "Sociedad",
+    "Real Sociedad": "Sociedad",
+    "Real Sociedad de Fútbol": "Sociedad",
+    "Real Sociedad de Futbol": "Sociedad",
+    "R. Sociedad": "Sociedad"
+  },
+  "Europe/Conference League": {
+    "Sociedad": "Sociedad",
+    "Real Sociedad": "Sociedad",
+    "Real Sociedad de Fútbol": "Sociedad",
+    "Real Sociedad de Futbol": "Sociedad",
+    "R. Sociedad": "Sociedad"
+  },
   "International/World Cup": {},
   "International/Friendly": {},
   "Club Friendlies": {},

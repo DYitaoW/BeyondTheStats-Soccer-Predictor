@@ -245,6 +245,18 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         f"""
+        CREATE INDEX IF NOT EXISTS idx_upcoming_home
+        ON {_UPCOMING_TABLE}(home_team)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_upcoming_away
+        ON {_UPCOMING_TABLE}(away_team)
+        """
+    )
+    conn.execute(
+        f"""
         CREATE TABLE IF NOT EXISTS {_SQUAD_VALUES_TABLE} (
             storage_key TEXT PRIMARY KEY,
             team_name TEXT NOT NULL,

@@ -7,6 +7,9 @@ from __future__ import annotations
 import json
 import os
 import random as _random
+import threading
+import time
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -19,6 +22,7 @@ from competition_rules import canonical_team_name, make_match_sync_key
 from cache import _cached_response
 from team_utils import _team_name_for_db, _team_name_for_display
 from espn_api import _fetch_team_info, _ROSTER_CACHE
+from live_poller import _live_scores, _live_scores_lock
 from team_mappings import (
     build_app_teams_catalog_payload,
     build_predictor_teams_payload,
@@ -146,6 +150,364 @@ def _to_compact_upcoming_row(r: dict) -> dict:
     }
 
 
+def _clean_float(val: Any) -> Optional[float]:
+    if val is None:
+        return None
+    try:
+        import math
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return None
+        return f
+    except (TypeError, ValueError):
+        return None
+
+
+# In-memory index of next upcoming fixtures per team
+_TEAM_NEXT_GAME_INDEX: dict[str, tuple[dict, bool]] = {}
+_TEAM_NEXT_GAME_INDEX_TS: float = 0.0
+_TEAM_NEXT_GAME_INDEX_LOCK = threading.Lock()
+_TEAM_NEXT_GAME_INDEX_TTL = 30.0  # seconds
+
+
+def _invalidate_team_next_game_index() -> None:
+    global _TEAM_NEXT_GAME_INDEX_TS
+    _TEAM_NEXT_GAME_INDEX_TS = 0.0
+
+
+def _build_team_next_game_index() -> dict[str, tuple[dict, bool]]:
+    try:
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+    except Exception:
+        now_et = datetime.now(timezone.utc)
+    today_iso = now_et.date().isoformat()
+
+    all_rows: list[dict] = []
+    # 1. Try SQLite store first for fast indexed retrieval
+    try:
+        from shared import sqlite_store
+        db_rows = sqlite_store.load_upcoming_games(from_date=today_iso, status="upcoming")
+        if not db_rows:
+            db_rows = sqlite_store.load_upcoming_games(from_date=today_iso)
+        if db_rows:
+            all_rows = list(db_rows)
+    except Exception:
+        all_rows = []
+
+    # 2. Fall back to upcoming CSV sources if SQLite has no rows
+    if not all_rows:
+        seen_keys = set()
+        for source, csv_path in _ALL_UPCOMING_SOURCES:
+            if not csv_path or not os.path.exists(csv_path):
+                continue
+            try:
+                rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="upcoming")
+                for r in rows:
+                    ck = "|".join(
+                        str(r.get(k, "")).strip().lower()
+                        for k in ("match_date_iso", "competition", "home_team", "away_team")
+                    )
+                    if ck and ck not in seen_keys:
+                        seen_keys.add(ck)
+                        all_rows.append(r)
+            except Exception:
+                pass
+
+    # Filter out completed/settled fixtures and fixtures in the past
+    valid_fixtures: list[dict] = []
+    for r in all_rows:
+        if not isinstance(r, dict):
+            continue
+        actual = str(r.get("actual_result", "") or "").strip().upper()
+        if actual in {"H", "D", "A"}:
+            continue
+        st = str(r.get("status", "") or "").strip().lower()
+        if st in {"settled", "post"}:
+            continue
+        m_date = str(r.get("match_date_iso") or r.get("match_date") or "").strip()[:10]
+        if m_date and m_date < today_iso:
+            continue
+        home = str(r.get("home_team", "") or "").strip()
+        away = str(r.get("away_team", "") or "").strip()
+        if not home or not away:
+            continue
+        valid_fixtures.append(r)
+
+    # Sort chronological (soonest match first)
+    def _fixture_sort_key(r):
+        return str(
+            r.get("match_datetime_utc")
+            or r.get("kickoff_utc")
+            or r.get("match_datetime_et")
+            or r.get("match_date_iso")
+            or r.get("match_date")
+            or "9999-99-99"
+        )
+
+    valid_fixtures.sort(key=_fixture_sort_key)
+
+    next_game_by_team: dict[str, tuple[dict, bool]] = {}
+
+    for r in valid_fixtures:
+        home = str(r.get("home_team", "") or "").strip()
+        away = str(r.get("away_team", "") or "").strip()
+        comp = str(r.get("competition", "") or "").strip()
+
+        # Home team variations
+        home_canon = canonical_team_name(home, comp)
+        home_db = _team_name_for_db(home)
+        home_keys = {home.lower(), home_canon.lower(), home_db.lower()}
+        home_keys.discard("")
+
+        # Away team variations
+        away_canon = canonical_team_name(away, comp)
+        away_db = _team_name_for_db(away)
+        away_keys = {away.lower(), away_canon.lower(), away_db.lower()}
+        away_keys.discard("")
+
+        for hk in home_keys:
+            if hk not in next_game_by_team:
+                next_game_by_team[hk] = (r, True)
+
+        for ak in away_keys:
+            if ak not in next_game_by_team:
+                next_game_by_team[ak] = (r, False)
+
+    return next_game_by_team
+
+
+def _get_or_build_team_next_game_index() -> dict[str, tuple[dict, bool]]:
+    global _TEAM_NEXT_GAME_INDEX, _TEAM_NEXT_GAME_INDEX_TS
+    now = time.time()
+    if _TEAM_NEXT_GAME_INDEX and (now - _TEAM_NEXT_GAME_INDEX_TS < _TEAM_NEXT_GAME_INDEX_TTL):
+        return _TEAM_NEXT_GAME_INDEX
+    with _TEAM_NEXT_GAME_INDEX_LOCK:
+        if _TEAM_NEXT_GAME_INDEX and (time.time() - _TEAM_NEXT_GAME_INDEX_TS < _TEAM_NEXT_GAME_INDEX_TTL):
+            return _TEAM_NEXT_GAME_INDEX
+        _TEAM_NEXT_GAME_INDEX = _build_team_next_game_index()
+        _TEAM_NEXT_GAME_INDEX_TS = time.time()
+        return _TEAM_NEXT_GAME_INDEX
+
+
+def _format_next_game_payload(
+    game_dict: dict,
+    is_home: bool,
+    target_team: str,
+    status: str,  # "live" or "upcoming"
+) -> dict:
+    home_team = str(game_dict.get("home_team", "") or "").strip()
+    away_team = str(game_dict.get("away_team", "") or "").strip()
+    competition = str(game_dict.get("competition", "") or "").strip()
+
+    canon_home = canonical_team_name(home_team, competition) or home_team
+    canon_away = canonical_team_name(away_team, competition) or away_team
+
+    opponent = away_team if is_home else home_team
+    canon_opponent = canon_away if is_home else canon_home
+    opponent_display = _team_name_for_display(canon_opponent or opponent)
+
+    m_date = str(game_dict.get("match_date") or game_dict.get("match_date_iso") or "")[:10]
+    dt_utc = str(game_dict.get("match_datetime_utc") or game_dict.get("kickoff_utc") or "")
+    dt_et = str(game_dict.get("match_datetime_et") or "")
+    if not dt_et and dt_utc:
+        dt_et = _utc_to_et(dt_utc)
+
+    home_score = game_dict.get("home_score")
+    away_score = game_dict.get("away_score")
+    if home_score is None:
+        home_score = game_dict.get("actual_home_goals")
+    if away_score is None:
+        away_score = game_dict.get("actual_away_goals")
+
+    score_dict = None
+    if home_score is not None and away_score is not None:
+        try:
+            score_dict = {
+                "home": int(float(home_score)),
+                "away": int(float(away_score)),
+            }
+        except (ValueError, TypeError):
+            pass
+
+    live_status_raw = str(game_dict.get("status") or game_dict.get("live_status") or "").strip().lower()
+    if status == "live":
+        live_status = live_status_raw or "in"
+    else:
+        live_status = live_status_raw or "scheduled"
+
+    return {
+        "match_id": str(game_dict.get("match_id", "") or "").strip(),
+        "competition": competition,
+        "match_date": m_date,
+        "match_date_iso": m_date,
+        "match_datetime_utc": dt_utc,
+        "match_datetime_et": dt_et,
+        "home_team": home_team,
+        "away_team": away_team,
+        "canonical_home_team": canon_home,
+        "canonical_away_team": canon_away,
+        "is_home": bool(is_home),
+        "opponent": opponent,
+        "opponent_display": opponent_display,
+        "venue": str(game_dict.get("venue", "") or "").strip(),
+        "predicted_result": game_dict.get("predicted_result"),
+        "prob_home": _clean_float(game_dict.get("prob_home")),
+        "prob_draw": _clean_float(game_dict.get("prob_draw")),
+        "prob_away": _clean_float(game_dict.get("prob_away")),
+        "pred_home_goals": _clean_float(game_dict.get("pred_home_goals")),
+        "pred_away_goals": _clean_float(game_dict.get("pred_away_goals")),
+        "live_status": live_status,
+        "live_clock": game_dict.get("clock") or game_dict.get("live_clock"),
+        "live_period": game_dict.get("period") or game_dict.get("live_period"),
+        "score": score_dict,
+        "goalscorers": game_dict.get("goalscorers") or [],
+        "red_cards": game_dict.get("red_cards") or [],
+        "yellow_cards": game_dict.get("yellow_cards") or [],
+    }
+
+
+def _get_team_next_game_payload(team_input: str) -> dict:
+    raw_input = urllib.parse.unquote_plus(str(team_input or "")).strip()
+    if not raw_input:
+        return {"ok": False, "error": "Missing team"}
+
+    team_db = _team_name_for_db(raw_input)
+    team_canon = canonical_team_name(raw_input)
+    team_display = _team_name_for_display(team_canon or team_db or raw_input)
+
+    lookup_keys = {
+        raw_input.lower(),
+        team_db.lower(),
+        team_canon.lower(),
+    }
+    lookup_keys.discard("")
+
+    def _matches_team(name: str) -> bool:
+        nl = str(name or "").strip().lower()
+        if not nl:
+            return False
+        if nl in lookup_keys:
+            return True
+        c_name = canonical_team_name(nl)
+        if c_name and c_name.lower() in lookup_keys:
+            return True
+        db_name = _team_name_for_db(nl)
+        if db_name and db_name.lower() in lookup_keys:
+            return True
+        return False
+
+    # 1. Check live matches first under _live_scores_lock
+    today_pre_game = None
+    today_pre_is_home = False
+
+    try:
+        with _live_scores_lock:
+            for comp_name, comp_data in _live_scores.items():
+                if not isinstance(comp_data, dict):
+                    continue
+                games = comp_data.get("games") or []
+                for g in games:
+                    if not isinstance(g, dict):
+                        continue
+                    h_team = str(g.get("home_team", "") or "").strip()
+                    a_team = str(g.get("away_team", "") or "").strip()
+                    h_match = _matches_team(h_team)
+                    a_match = _matches_team(a_team)
+                    if not (h_match or a_match):
+                        continue
+
+                    st = str(g.get("status", "")).strip().lower()
+                    if st == "in":
+                        # Match is active right now! Return immediately!
+                        formatted_game = _format_next_game_payload(
+                            g,
+                            is_home=h_match,
+                            target_team=team_display,
+                            status="live",
+                        )
+                        return {
+                            "ok": True,
+                            "team": team_canon or team_db or raw_input,
+                            "display_team": team_display,
+                            "has_game": True,
+                            "status": "live",
+                            "is_live": True,
+                            "game": formatted_game,
+                        }
+                    elif st == "pre" and today_pre_game is None:
+                        today_pre_game = g
+                        today_pre_is_home = h_match
+    except Exception:
+        pass
+
+    # 2. Check cached upcoming index
+    index = _get_or_build_team_next_game_index()
+    upcoming_hit = None
+    upcoming_is_home = False
+
+    for k in lookup_keys:
+        if k in index:
+            upcoming_hit, upcoming_is_home = index[k]
+            break
+
+    # If neither today_pre_game nor upcoming_hit was found:
+    if today_pre_game is None and upcoming_hit is None:
+        return {
+            "ok": True,
+            "team": team_canon or team_db or raw_input,
+            "display_team": team_display,
+            "has_game": False,
+            "status": None,
+            "is_live": False,
+            "game": None,
+        }
+
+    # Decide between today_pre_game and upcoming_hit (or merge them)
+    selected_game = None
+    selected_is_home = True
+
+    if today_pre_game and upcoming_hit:
+        # Check if they are the same match
+        h_pre = str(today_pre_game.get("home_team", "")).lower()
+        h_up = str(upcoming_hit.get("home_team", "")).lower()
+        if _matches_team(h_pre) and _matches_team(h_up):
+            merged = dict(upcoming_hit)
+            merged.update(today_pre_game)
+            selected_game = merged
+            selected_is_home = today_pre_is_home
+        else:
+            pre_dt = str(today_pre_game.get("kickoff_utc") or today_pre_game.get("match_date") or "")
+            up_dt = str(upcoming_hit.get("match_datetime_utc") or upcoming_hit.get("match_date_iso") or "")
+            if pre_dt and (not up_dt or pre_dt <= up_dt):
+                selected_game = today_pre_game
+                selected_is_home = today_pre_is_home
+            else:
+                selected_game = upcoming_hit
+                selected_is_home = upcoming_is_home
+    elif today_pre_game:
+        selected_game = today_pre_game
+        selected_is_home = today_pre_is_home
+    else:
+        selected_game = upcoming_hit
+        selected_is_home = upcoming_is_home
+
+    formatted_game = _format_next_game_payload(
+        selected_game,
+        is_home=selected_is_home,
+        target_team=team_display,
+        status="upcoming",
+    )
+    return {
+        "ok": True,
+        "team": team_canon or team_db or raw_input,
+        "display_team": team_display,
+        "has_game": True,
+        "status": "upcoming",
+        "is_live": False,
+        "game": formatted_game,
+    }
+
+
 def _resolve_team_api_payload(team_input: str, mode: str):
     """Build the single-team API payload used by ``/api/team``."""
     mode = (mode or "global").strip().lower()
@@ -218,6 +580,9 @@ def _resolve_team_api_payload(team_input: str, mode: str):
     from features import compute_weighted_team_form
     weighted_form = compute_weighted_team_form(recent_matches, team)
 
+    next_game_payload = _get_team_next_game_payload(team_input)
+    next_game = next_game_payload.get("game") if next_game_payload.get("has_game") else None
+
     return {
         "ok": True,
         "team": team,
@@ -227,6 +592,7 @@ def _resolve_team_api_payload(team_input: str, mode: str):
         "weighted_form": weighted_form,
         "recent_matches": recent_matches,
         "upcoming_games": upcoming,
+        "next_game": next_game,
         "head_to_head": all_h2h,
         "prediction_accuracy": team_pred_data,
     }
@@ -308,6 +674,30 @@ def api_teams_catalog():
     return jsonify(payload)
 
 
+@predictions_bp.get("/api/team/next-game")
+def api_team_next_game_query():
+    """Return next upcoming scheduled or current live game for a team via ?team=..."""
+    team_input = request.args.get("team", "").strip()
+    if not team_input:
+        return jsonify({"ok": False, "error": "Missing team"}), 400
+    if request.args.get("refresh", "").strip().lower() in ("1", "true"):
+        _invalidate_team_next_game_index()
+    payload = _get_team_next_game_payload(team_input)
+    return jsonify(payload)
+
+
+@predictions_bp.get("/api/team/<team_name>/next-game")
+def api_team_next_game(team_name: str):
+    """Return next upcoming scheduled or current live game for a team via path parameter."""
+    team_input = str(team_name or "").strip()
+    if not team_input:
+        return jsonify({"ok": False, "error": "Missing team"}), 400
+    if request.args.get("refresh", "").strip().lower() in ("1", "true"):
+        _invalidate_team_next_game_index()
+    payload = _get_team_next_game_payload(team_input)
+    return jsonify(payload)
+
+
 @predictions_bp.get("/api/team")
 @_cached_response(ttl=config.CACHE_TTL_DEFAULT)
 def api_team():
@@ -323,10 +713,15 @@ def api_team():
 @_cached_response(ttl=config.CACHE_TTL_DEFAULT)
 def api_team_by_path(team_name):
     """Path-style alias for ``/api/team?team=...`` (e.g. ``/api/team/Arsenal``)."""
-    mode = request.args.get("mode", "global").strip().lower()
     team_input = str(team_name or "").strip()
     if not team_input:
         return jsonify({"ok": False, "error": "Missing team"}), 400
+    if team_input.endswith("/next-game"):
+        actual_team = team_input[:-10].strip()
+        if request.args.get("refresh", "").strip().lower() in ("1", "true"):
+            _invalidate_team_next_game_index()
+        return jsonify(_get_team_next_game_payload(actual_team))
+    mode = request.args.get("mode", "global").strip().lower()
     return jsonify(_resolve_team_api_payload(team_input, mode))
 
 

@@ -266,6 +266,7 @@ def normalize_team_key(name):
         "weds": "wednesday",
         "utd": "united",
         "st": "saint",
+        "ii": "b",
     }
     parts = [token_aliases.get(p, p) for p in parts]
     stop_words = {
@@ -284,7 +285,6 @@ def normalize_team_key(name):
         "calcio",
         "team",
         "football",
-        "sociedad",
         "and",
         "town",
         "athletic",
@@ -412,9 +412,26 @@ def resolve_live_team_name(raw_name, competition, context, mapping=None):
     valid_names = tmg.candidate_teams_for_competition(competition, context)
 
     raw = str(raw_name).strip()
+
+    # Disambiguate Real Sociedad vs Real Sociedad B
+    raw_lower = raw.lower()
+    raw_parts = set(re.findall(r"\b\w+\b", raw_lower))
+    is_reserve = bool(raw_parts & {"b", "ii", "2"}) or raw.endswith(" B") or raw.endswith(" II")
+    if "sociedad" in raw_parts:
+        if competition == "Spain/La Liga 2":
+            if "Sociedad B" in valid_names or "Sociedad B" in context.get("available_teams", []):
+                return "Sociedad B"
+        elif not is_reserve or competition in {"Spain/La Liga", "Spain/Copa del Rey"} or str(competition).startswith("Europe/"):
+            if "Sociedad" in valid_names or "Sociedad" in context.get("available_teams", []):
+                return "Sociedad"
+
     flat_map = _load_name_mapping_flat()
     mapped = flat_map.get(raw.lower())
     if mapped:
+        if mapped == "Sociedad B" and competition != "Spain/La Liga 2" and not is_reserve:
+            mapped = "Sociedad"
+        elif mapped == "Sociedad" and competition == "Spain/La Liga 2":
+            mapped = "Sociedad B"
         if mapped in valid_names:
             return mapped
         if mapped in context["available_teams"]:
