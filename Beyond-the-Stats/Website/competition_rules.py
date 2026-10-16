@@ -552,6 +552,16 @@ def canonical_team_name(name: str, competition: str = "") -> str:
         mapped = _load_mls_canonical_names().get(normalize_team_key(text))
         if mapped:
             return mapped
+
+    # Disambiguate Real Sociedad (senior, La Liga/Copa/UEFA) vs Real Sociedad B (La Liga 2)
+    lower = text.lower()
+    raw_parts = set(re.findall(r"\b\w+\b", lower))
+    if "sociedad" in raw_parts:
+        is_reserve = bool(raw_parts & {"b", "ii", "2"}) or lower.endswith(" b") or lower.endswith(" ii")
+        if base_comp == "Spain/La Liga 2" or competition == "Spain/La Liga 2":
+            return "Sociedad B"
+        elif not is_reserve or base_comp in {"Spain/La Liga", "Spain/Copa del Rey"} or str(base_comp).startswith("Europe/"):
+            return "Sociedad"
     # Competition mapping: exact alias match first; key match only when unique
     # (aggressive token stripping can collide, e.g. Man United vs Man City).
     payload = _load_display_mapping()

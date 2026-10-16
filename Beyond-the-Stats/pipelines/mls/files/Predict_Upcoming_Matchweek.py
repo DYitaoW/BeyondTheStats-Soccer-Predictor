@@ -239,6 +239,13 @@ def normalize_team_key(name):
     text = text.replace("'", "").replace(".", " ")
     text = text.replace("-", " ")
     parts = [p for p in text.split() if p]
+    token_aliases = {
+        "weds": "wednesday",
+        "utd": "united",
+        "st": "saint",
+        "ii": "b",
+    }
+    parts = [token_aliases.get(p, p) for p in parts]
     stop_words = {
         "fc",
         "cf",
@@ -255,7 +262,6 @@ def normalize_team_key(name):
         "calcio",
         "team",
         "football",
-        "sociedad",
         "city",
         "united",
         "town",

@@ -4,6 +4,7 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import re
 import unicodedata
 
 INTERNATIONAL_PREFIXES = (
@@ -47,6 +48,7 @@ def normalize_team_key(name) -> str:
         "weds": "wednesday",
         "utd": "united",
         "st": "saint",
+        "ii": "b",
     }
     parts = [token_aliases.get(p, p) for p in parts]
     stop_words = {
@@ -65,7 +67,6 @@ def normalize_team_key(name) -> str:
         "calcio",
         "team",
         "football",
-        "sociedad",
         "and",
         "town",
         "athletic",
@@ -148,6 +149,13 @@ def lookup_mapped_name(api_name: str, competition: str, mapping: dict) -> tuple[
         return "", ""
 
     api_key = normalize_team_key(api_name)
+    raw_lower = api_name.lower()
+    is_sociedad_ref = (
+        "sociedad" in raw_lower
+        or api_key in {"sociedad", "realsociedad", "sociedadb", "realsociedadb"}
+    )
+    is_explicit_b = bool(re.search(r"\b(b|ii|2)\b", raw_lower)) or api_name.strip().endswith(" B") or api_name.strip().endswith(" II")
+
     for source_comp in mapping_lookup_competitions(competition, mapping):
         comp_map = mapping.get(source_comp, {})
         if not isinstance(comp_map, dict):
@@ -155,6 +163,11 @@ def lookup_mapped_name(api_name: str, competition: str, mapping: dict) -> tuple[
 
         direct = str(comp_map.get(api_name, "")).strip()
         if direct:
+            if is_sociedad_ref or direct in {"Sociedad", "Sociedad B"}:
+                if competition == "Spain/La Liga 2":
+                    return "Sociedad B", source_comp
+                elif not is_explicit_b:
+                    return "Sociedad", source_comp
             return direct, source_comp
 
         if api_key:
@@ -162,6 +175,11 @@ def lookup_mapped_name(api_name: str, competition: str, mapping: dict) -> tuple[
                 if normalize_team_key(map_key) == api_key:
                     mapped = str(map_val).strip()
                     if mapped:
+                        if is_sociedad_ref or mapped in {"Sociedad", "Sociedad B"}:
+                            if competition == "Spain/La Liga 2":
+                                return "Sociedad B", source_comp
+                            elif not is_explicit_b:
+                                return "Sociedad", source_comp
                         return mapped, source_comp
     return "", ""
 
@@ -173,7 +191,12 @@ def candidate_teams_for_competition(competition: str, context: dict) -> list[str
     comp = str(competition or "").strip()
 
     if is_international_competition(comp):
-        return available
+        # International competitions (Champions League, Europa League, Conference League, World Cup, etc.)
+        # never feature domestic reserve / "B" teams.
+        return [
+            team for team in available
+            if not re.search(r"\b(B|II|2)\b$", team) and not team.endswith(" B") and not team.endswith(" II")
+        ]
 
     country = competition_country(comp)
     if country:
@@ -182,6 +205,12 @@ def candidate_teams_for_competition(competition: str, context: dict) -> list[str
             for team in available
             if competition_country(str(team_competition_map.get(team, ""))) == country
         ]
+        if comp == "Spain/La Liga":
+            # Real Sociedad B is in La Liga 2, not La Liga
+            country_teams = [t for t in country_teams if t != "Sociedad B"]
+        elif comp == "Spain/La Liga 2":
+            # Real Sociedad is in La Liga, not La Liga 2
+            country_teams = [t for t in country_teams if t != "Sociedad"]
         if country_teams:
             return country_teams
 
@@ -195,6 +224,16 @@ def fuzzy_resolve_team_name(raw_name: str, valid_names: list[str]) -> str | None
     if not raw_name or not valid_names:
         return None
 
+    # Explicit Real Sociedad vs Real Sociedad B disambiguation if both or either is present
+    raw_lower = raw_name.lower()
+    raw_parts = set(re.findall(r"\b\w+\b", raw_lower))
+    if "sociedad" in raw_parts:
+        is_reserve = bool(raw_parts & {"b", "ii", "2"}) or raw_lower.endswith(" b") or raw_lower.endswith(" ii")
+        if is_reserve and "Sociedad B" in valid_names:
+            return "Sociedad B"
+        if not is_reserve and "Sociedad" in valid_names:
+            return "Sociedad"
+
     key = normalize_team_key(raw_name)
     if not key:
         return None
@@ -203,8 +242,13 @@ def fuzzy_resolve_team_name(raw_name: str, valid_names: list[str]) -> str | None
     if key in by_key:
         return by_key[key]
 
+    # Require minimum normalized key length of 4 characters to prevent 1-3 char tokens
+    # (like "b" or "sc") from erroneously matching inside unrelated team names.
     contained_by_raw = [
-        team for team in valid_names if normalize_team_key(team) and normalize_team_key(team) in key
+        team for team in valid_names
+        if normalize_team_key(team)
+        and len(normalize_team_key(team)) >= 4
+        and normalize_team_key(team) in key
     ]
     if contained_by_raw:
         # Prefer the longest key so "Inter" never beats "Inter Miami" when the
@@ -228,7 +272,10 @@ def fuzzy_resolve_team_name(raw_name: str, valid_names: list[str]) -> str | None
         ):
             return best
 
-    contains = [team for team in valid_names if key in normalize_team_key(team)]
+    contains = [
+        team for team in valid_names
+        if len(key) >= 4 and key in normalize_team_key(team)
+    ]
     if contains:
         contains.sort(key=lambda t: len(normalize_team_key(t) or ""), reverse=True)
         return contains[0]
@@ -258,14 +305,25 @@ def store_team_mapping(
     mapping.setdefault(competition, {})[api_name] = canonical
     country = competition_country(competition)
 
+    is_reserve = canonical in {"Sociedad B", "Celta B", "Barcelona B", "Villarreal B", "Sevilla B", "Real Madrid B"} or canonical.endswith(" B") or canonical.endswith(" II")
+
     if propagate_country and country:
         for comp_key in list(mapping.keys()):
             if competition_country(comp_key) == country:
+                # Do NOT propagate reserve teams to top-tier leagues or cups where reserve teams are banned
+                if is_reserve and comp_key in {"Spain/La Liga", "Spain/Copa del Rey"}:
+                    continue
+                # Do NOT propagate senior team to lower reserve divisions
+                if canonical == "Sociedad" and comp_key == "Spain/La Liga 2":
+                    continue
                 mapping.setdefault(comp_key, {})[api_name] = canonical
 
     if propagate_international and country and not competition.startswith("North America/"):
         for comp_key in list(mapping.keys()):
             if is_international_competition(comp_key):
+                # Do NOT propagate reserve teams to UEFA or international competitions
+                if is_reserve:
+                    continue
                 mapping.setdefault(comp_key, {})[api_name] = canonical
 
 
