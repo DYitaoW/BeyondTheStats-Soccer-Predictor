@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from datetime import datetime, timezone
 from .compat import Blueprint, redirect, render_template, send_from_directory, request, jsonify
 import pandas as pd
@@ -664,10 +666,32 @@ def api_stats():
     })
 
 
+_LEAGUE_LEADERS_MEMO_CACHE: dict = {"data": None, "expires_at": 0.0}
+_LEAGUE_LEADERS_MEMO_LOCK = threading.Lock()
+_LEAGUE_LEADERS_MEMO_TTL = 300.0  # 5 minutes
+
+
+def clear_league_leaders_cache() -> None:
+    """Invalidate in-memory league-leaders cache (e.g. after pipeline or standings refresh)."""
+    with _LEAGUE_LEADERS_MEMO_LOCK:
+        _LEAGUE_LEADERS_MEMO_CACHE["data"] = None
+        _LEAGUE_LEADERS_MEMO_CACHE["expires_at"] = 0.0
+
+
 @leagues_bp.get("/api/league-leaders")
 @_cached_response(ttl=config.CACHE_TTL_LONG)
 def api_league_leaders():
     """Return predicted and real (live) leaders for every league and cup."""
+    force_refresh = (
+        request.args.get("refresh", "").strip().lower() in {"1", "true", "yes"}
+        or request.args.get("no_cache", "").strip().lower() in {"1", "true", "yes"}
+    )
+    now = time.time()
+    if not force_refresh:
+        with _LEAGUE_LEADERS_MEMO_LOCK:
+            if _LEAGUE_LEADERS_MEMO_CACHE["data"] is not None and now < _LEAGUE_LEADERS_MEMO_CACHE["expires_at"]:
+                return jsonify(_LEAGUE_LEADERS_MEMO_CACHE["data"])
+
     leagues = []
     cups = []
 
@@ -856,9 +880,14 @@ def api_league_leaders():
 
     leagues = [e for e in leagues if is_league_api_competition(e.get("competition"))]
 
-    return jsonify({
+    res_data = {
         "ok": True,
         "leagues": leagues,
         "cups": cups,
-    })
+    }
+    with _LEAGUE_LEADERS_MEMO_LOCK:
+        _LEAGUE_LEADERS_MEMO_CACHE["data"] = res_data
+        _LEAGUE_LEADERS_MEMO_CACHE["expires_at"] = time.time() + _LEAGUE_LEADERS_MEMO_TTL
+
+    return jsonify(res_data)
 

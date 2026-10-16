@@ -1,4 +1,4 @@
-﻿"""Competition-specific rules for real standings and cup tables."""
+"""Competition-specific rules for real standings and cup tables."""
 from __future__ import annotations
 
 import json
@@ -6,6 +6,7 @@ import os
 import re
 import time
 from collections import defaultdict, deque
+from typing import Any
 
 import pandas as pd
 
@@ -612,6 +613,60 @@ def cup_format(comp_name: str) -> dict | None:
         uefa_key = "Europe/" + comp_name.split("/", 1)[1]
         return config._CUP_FORMATS.get(uefa_key)
     return None
+
+
+def _clean_team_slug(name: str) -> str:
+    text = re.sub(r"[^a-z0-9]+", "", str(name or "").lower())
+    for suffix in ("afc", "cfc", "fc", "cf", "sc"):
+        if text.endswith(suffix) and len(text) > len(suffix) + 2:
+            text = text[:-len(suffix)]
+            break
+        if text.startswith(suffix) and len(text) > len(suffix) + 2:
+            text = text[len(suffix):]
+            break
+    return text
+
+
+def make_match_sync_key(
+    date_val: Any,
+    comp_name: str,
+    home_team: str,
+    away_team: str,
+) -> str:
+    """Generate a deterministic, collision-free canonical match sync key.
+
+    Format: YYYY-MM-DD|home_slug|away_slug
+
+    Team sides are canonicalized first via ``canonical_team_name`` so aliases like
+    'Man United' and 'Manchester United', 'Inter Milan' and 'Internazionale',
+    or 'Wolves' and 'Wolverhampton Wanderers' yield the exact same key.
+    Dates are normalized to YYYY-MM-DD in America/New_York (ET calendar date).
+    """
+    raw_date = str(date_val or "").strip()
+    date_str = ""
+    if len(raw_date) == 10 and raw_date.count("-") == 2:
+        date_str = raw_date
+    elif len(raw_date) == 8 and raw_date.isdigit():
+        date_str = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+    elif raw_date:
+        try:
+            from zoneinfo import ZoneInfo
+            dt = pd.to_datetime(raw_date, utc=True, errors="coerce")
+            if pd.notna(dt):
+                date_str = dt.tz_convert(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+        if not date_str and len(raw_date) >= 10:
+            date_str = raw_date[:10]
+
+    base_comp, _ = resolve_competition_query(comp_name)
+    c_home = canonical_team_name(home_team, base_comp) or str(home_team or "")
+    c_away = canonical_team_name(away_team, base_comp) or str(away_team or "")
+
+    h_slug = _clean_team_slug(c_home)
+    a_slug = _clean_team_slug(c_away)
+
+    return f"{date_str}|{h_slug}|{a_slug}"
 
 
 def _game_match_key(game: dict) -> tuple:

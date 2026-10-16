@@ -23,6 +23,7 @@ try:
 except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     import competition_ids
+from competition_rules import canonical_team_name, make_match_sync_key
 from math_utils import (
     _compute_asian_handicap,
     _compute_clean_sheet,
@@ -1007,23 +1008,27 @@ def _live_updates_eligible(competition: str, schedule_only: bool = False) -> boo
     return config.resolve_live_competition(comp) is not None
 
 
-def _build_live_games_index() -> tuple[dict[tuple[str, str, str], dict], dict[str, dict]]:
-    """Index in-memory live games by team pair and by ESPN match_id."""
+def _build_live_games_index() -> tuple[dict[tuple[str, str, str], dict], dict[str, dict], dict[str, dict]]:
+    """Index in-memory live games by team pair, ESPN match_id, and sync_key."""
     try:
-        from competition_rules import canonical_team_name
+        from competition_rules import canonical_team_name, make_match_sync_key
         from live_prediction import _normalize_team_for_live
         from live_poller import _live_scores, _live_scores_lock
     except Exception:
-        return {}, {}
+        return {}, {}, {}
 
     team_index: dict[tuple[str, str, str], dict] = {}
     id_index: dict[str, dict] = {}
+    sync_index: dict[str, dict] = {}
     with _live_scores_lock:
         for comp_name, comp_data in _live_scores.items():
             for game in comp_data.get("games", []) or []:
                 match_id = str(game.get("match_id") or "").strip()
                 if match_id:
                     id_index[match_id] = game
+                sync_key = str(game.get("sync_key") or "").strip()
+                if sync_key:
+                    sync_index[sync_key] = game
                 home = _normalize_team_for_live(
                     canonical_team_name(game.get("home_team"), comp_name)
                 )
@@ -1034,16 +1039,17 @@ def _build_live_games_index() -> tuple[dict[tuple[str, str, str], dict], dict[st
                     continue
                 for alias in config.competition_live_aliases(comp_name):
                     team_index[(home, away, alias)] = game
-    return team_index, id_index
+    return team_index, id_index, sync_index
 
 
 def _find_live_game_for_row(
     row: dict,
     live_index: dict[tuple[str, str, str], dict],
     live_id_index: dict[str, dict] | None = None,
+    sync_index: dict[str, dict] | None = None,
 ) -> dict | None:
     try:
-        from competition_rules import canonical_team_name
+        from competition_rules import canonical_team_name, make_match_sync_key
         from live_prediction import _normalize_team_for_live
     except Exception:
         return None
@@ -1052,11 +1058,27 @@ def _find_live_game_for_row(
     if match_id and live_id_index and match_id in live_id_index:
         return live_id_index[match_id]
 
+    # Fast O(1) sync_key matching
+    row_sync_key = str(row.get("sync_key") or "").strip()
+    if row_sync_key and sync_index and row_sync_key in sync_index:
+        return sync_index[row_sync_key]
+
     comp = str(row.get("competition", "")).strip()
     home = _normalize_team_for_live(canonical_team_name(row.get("home_team"), comp))
     away = _normalize_team_for_live(canonical_team_name(row.get("away_team"), comp))
     if not home or not away:
         return None
+
+    # Fallback to computing sync key if row did not have it stored
+    if sync_index:
+        calc_sync_key = make_match_sync_key(
+            row.get("match_date_iso") or row.get("match_date"),
+            comp,
+            row.get("home_team", ""),
+            row.get("away_team", ""),
+        )
+        if calc_sync_key and calc_sync_key in sync_index:
+            return sync_index[calc_sync_key]
 
     for alias in config.competition_live_aliases(comp):
         game = live_index.get((home, away, alias))
@@ -1121,7 +1143,7 @@ def _apply_live_scores_to_row(row: dict, live_game: dict, eligible: bool, comp: 
 
 
 def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
-    team_index, id_index = _build_live_games_index()
+    team_index, id_index, sync_index = _build_live_games_index()
     for row in rows:
         comp = str(row.get("competition", "")).strip()
         schedule_only = bool(row.get("schedule_only"))
@@ -1134,7 +1156,7 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
 
         eligible = _live_updates_eligible(comp, schedule_only=schedule_only)
         row["live_updates_eligible"] = eligible
-        live_game = _find_live_game_for_row(row, team_index, id_index)
+        live_game = _find_live_game_for_row(row, team_index, id_index, sync_index)
         if not live_game:
             row["live_updates"] = False
             row["live_status"] = None
@@ -1330,12 +1352,18 @@ def _load_upcoming_rows(
             comp = str(row.get("competition", "")).strip()
             home = _team_name_for_display(str(row.get("display_home_team", row["home_team"])).strip())
             away = _team_name_for_display(str(row.get("display_away_team", row["away_team"])).strip())
+            c_home = canonical_team_name(home, comp) or home
+            c_away = canonical_team_name(away, comp) or away
+            sync_k = make_match_sync_key(str(row["match_date"]), comp, c_home, c_away)
             rows.append({
                 "match_date": str(row["match_date"]),
                 "match_date_iso": str(row["match_date"]),
                 "competition": comp,
                 "home_team": home,
                 "away_team": away,
+                "canonical_home_team": c_home,
+                "canonical_away_team": c_away,
+                "sync_key": sync_k,
                 "predicted_result": str(row.get("predicted_result", "")).strip(),
                 "prob_home": _to_float(row.get("prob_home")),
                 "prob_draw": _to_float(row.get("prob_draw")),
@@ -1353,6 +1381,10 @@ def _load_upcoming_rows(
         # Prefer display labels so provisional cup teams can be marked without affecting tracking keys.
         home = _team_name_for_display(str(row.get("display_home_team", row["home_team"])).strip())
         away = _team_name_for_display(str(row.get("display_away_team", row["away_team"])).strip())
+        comp_str = str(row["competition"]).strip()
+        c_home = canonical_team_name(home, comp_str) or home
+        c_away = canonical_team_name(away, comp_str) or away
+        sync_k = make_match_sync_key(str(row["match_date"]), comp_str, c_home, c_away)
         raw_date = str(row["match_date"])
         time_label = ""
         mls_dt_raw = str(row.get("match_datetime_et", "")).strip() if "match_datetime_et" in frame.columns else ""
@@ -1417,9 +1449,12 @@ def _load_upcoming_rows(
                 "weekday": weekday,
                 "date_label": date_label,
                 "time_label": time_label,
-                "competition": str(row["competition"]),
+                "competition": comp_str,
                 "home_team": home,
                 "away_team": away,
+                "canonical_home_team": c_home,
+                "canonical_away_team": c_away,
+                "sync_key": sync_k,
                 "unmapped_teams": str(row.get("unmapped_teams", "")).strip(),
                 "schedule_only": schedule_only,
                 "prediction_quality": quality,

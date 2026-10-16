@@ -729,6 +729,18 @@ def api_startup():
             d_iso = str(r.get("match_date_iso", "")).strip()
             if d_iso == today_str:
                 upcoming_today.append(_to_compact_upcoming_row(r))
+
+        # Ensure match_id from active live games is propagated onto upcoming_today
+        live_id_by_sync = {}
+        for c_data in compact_live.values():
+            for lg in c_data.get("games", []):
+                sk = lg.get("sync_key")
+                mid = lg.get("match_id")
+                if sk and mid:
+                    live_id_by_sync[sk] = mid
+        for ur in upcoming_today:
+            if not ur.get("match_id") and ur.get("sync_key") in live_id_by_sync:
+                ur["match_id"] = live_id_by_sync[ur["sync_key"]]
     except Exception:
         upcoming_today = []
 
