@@ -40,29 +40,42 @@ def _render_site_page(template_name: str, active_page: str):
     upcoming_leagues = {"global": [], "mls": [], "extra": [], "cups": [], "friendlies": []}
     table_leagues = {"global": [], "mls": [], "extra": [], "cups": []}
 
+    def _safe_teams(raw_teams):
+        if not raw_teams:
+            return set()
+        clean = set()
+        for t in raw_teams:
+            if isinstance(t, dict):
+                val = _team_name_for_display(t)
+                if val:
+                    clean.add(val)
+            elif t:
+                clean.add(_team_name_for_display(t))
+        return clean
+
     if config.STATIC_PREDICTIONS:
         _, global_teams = _get_static_predictions("global")
         _, mls_teams = _get_static_predictions("mls")
         _, extra_teams = _get_static_predictions("extra")
         if not global_teams:
-            global_teams = set(_load_teams_from_team_data(pm_global))
+            global_teams = _load_teams_from_team_data(pm_global)
         if not mls_teams:
-            mls_teams = set(_load_teams_from_team_data(pm_mls))
+            mls_teams = _load_teams_from_team_data(pm_mls)
         if not extra_teams:
-            extra_teams = set(_load_teams_from_team_data(pm_extra))
-        global_display_teams = sorted({_team_name_for_display(team) for team in global_teams})
-        mls_display_teams = sorted({_team_name_for_display(team) for team in mls_teams})
-        extra_display_teams = sorted({_team_name_for_display(team) for team in extra_teams})
+            extra_teams = _load_teams_from_team_data(pm_extra)
+        global_display_teams = sorted(_safe_teams(global_teams))
+        mls_display_teams = sorted(_safe_teams(mls_teams))
+        extra_display_teams = sorted(_safe_teams(extra_teams))
     else:
         global_ctx = get_context("global")
         mls_ctx = get_context("mls")
-        global_display_teams = sorted({_team_name_for_display(team) for team in global_ctx.available_teams})
-        mls_display_teams = sorted({_team_name_for_display(team) for team in mls_ctx.available_teams})
+        global_display_teams = sorted(_safe_teams(getattr(global_ctx, "available_teams", [])))
+        mls_display_teams = sorted(_safe_teams(getattr(mls_ctx, "available_teams", [])))
         try:
             extra_ctx = get_context("extra")
-            extra_display_teams = sorted({_team_name_for_display(team) for team in extra_ctx.available_teams})
+            extra_display_teams = sorted(_safe_teams(getattr(extra_ctx, "available_teams", [])))
         except Exception:
-            extra_display_teams = sorted({_team_name_for_display(team) for team in _load_teams_from_team_data(pm_extra)})
+            extra_display_teams = sorted(_safe_teams(_load_teams_from_team_data(pm_extra)))
 
     return render_template(
         template_name,
