@@ -26,7 +26,9 @@ from live_poller import (
     _live_summary_cache,
     _live_summary_cache_lock,
     get_cached_compact_live_scores_payload,
+    get_cached_compact_sse_frame,
     get_cached_live_scores_payload,
+    get_cached_sse_frame,
     get_live_poller_status,
     refresh_live_scores_now,
     register_sse_subscriber,
@@ -70,9 +72,7 @@ def api_live_scores():
         or request.path.endswith("/compact")
     )
 
-    with _live_scores_lock:
-        empty = not _live_scores
-    if empty or force_refresh:
+    if force_refresh:
         try:
             refresh_live_scores_now(force=force_refresh)
         except Exception:
@@ -125,18 +125,28 @@ def api_live_scores_stream():
 
     def event_generator():
         try:
-            # Send initial snapshot immediately
-            raw_bytes, _ = (
-                get_cached_compact_live_scores_payload()
+            # 1. Immediately yield initial connection confirmation so client finishes handshake in <1ms
+            yield ": stream-connected\n\n"
+
+            # 2. Yield current cached snapshot immediately without decoding/reformatting
+            snapshot = (
+                get_cached_compact_sse_frame()
                 if compact
-                else get_cached_live_scores_payload()
+                else get_cached_sse_frame()
             )
-            if raw_bytes:
-                yield f"data: {raw_bytes.decode('utf-8')}\n\n"
+            if snapshot:
+                yield snapshot
+
+            # 3. Stream ongoing frames from the queue
             while True:
                 try:
-                    update_bytes = q.get(timeout=25.0)
-                    yield f"data: {update_bytes.decode('utf-8')}\n\n"
+                    update = q.get(timeout=20.0)
+                    if isinstance(update, bytes):
+                        update = update.decode("utf-8")
+                    if not update.startswith("data:"):
+                        yield f"data: {update}\n\n"
+                    else:
+                        yield update
                 except queue.Empty:
                     # Heartbeat comment to keep persistent connection open
                     yield ": keep-alive\n\n"
@@ -500,9 +510,22 @@ def api_subscribe_match_notifications():
     if not token:
         return jsonify({"ok": False, "error": "token required"}), 400
     if not match_id and not team:
-        return jsonify({"ok": False, "error": "either match_id (with competition) or team required"}), 400
+        return jsonify({"ok": False, "error": "either match_id or team required"}), 400
     if match_id and not competition:
-        return jsonify({"ok": False, "error": "competition required when subscribing by match_id"}), 400
+        try:
+            from live_poller import _live_scores, _live_scores_lock
+            with _live_scores_lock:
+                for c_name, comp_data in _live_scores.items():
+                    game_list = comp_data.get("games", []) if isinstance(comp_data, dict) else comp_data
+                    for g in (game_list or []):
+                        if isinstance(g, dict) and (str(g.get("match_id", "")).strip() == match_id or str(g.get("id", "")).strip() == match_id):
+                            competition = c_name
+                            break
+                    if competition:
+                        break
+        except Exception:
+            pass
+        competition = competition or ""
     if len(token) > 512 or len(match_id) > 256 or len(competition) > 256 or len(team) > 256:
         return jsonify({"ok": False, "error": "input too long"}), 400
 
@@ -622,8 +645,23 @@ def api_register_live_activity():
     competition = str(payload.get("competition", "")).strip()
     events = payload.get("events")
 
-    if not activity_token or not match_id or not competition:
-        return jsonify({"ok": False, "error": "activity_token, match_id, and competition required"}), 400
+    if not activity_token or not match_id:
+        return jsonify({"ok": False, "error": "activity_token and match_id required"}), 400
+    if not competition:
+        try:
+            from live_poller import _live_scores, _live_scores_lock
+            with _live_scores_lock:
+                for c_name, comp_data in _live_scores.items():
+                    game_list = comp_data.get("games", []) if isinstance(comp_data, dict) else comp_data
+                    for g in (game_list or []):
+                        if isinstance(g, dict) and (str(g.get("match_id", "")).strip() == match_id or str(g.get("id", "")).strip() == match_id):
+                            competition = c_name
+                            break
+                    if competition:
+                        break
+        except Exception:
+            pass
+        competition = competition or ""
     if len(activity_token) > 1024 or len(match_id) > 256 or len(competition) > 256:
         return jsonify({"ok": False, "error": "input too long"}), 400
     device_token = str(payload.get("device_token", "")).strip()

@@ -46,6 +46,8 @@ def normalize_events(events: Any) -> set[str]:
     """Normalize input event list or comma-separated string to canonical event types.
 
     If empty or None, defaults to ALL_EVENT_TYPES.
+    By default, selecting or including 'start' time notifications enables all in-game
+    activity for the match or team (goals, start, end, ht, red_card).
     """
     if not events:
         return set(ALL_EVENT_TYPES)
@@ -60,6 +62,10 @@ def normalize_events(events: Any) -> set[str]:
         norm = normalize_event_type(p)
         if norm in ALL_EVENT_TYPES:
             normalized.add(norm)
+    # The default notification for start time now does all activity for a team
+    # like goals, start, end, red cards for push notifications.
+    if "start" in normalized or not normalized:
+        normalized.update(ALL_EVENT_TYPES)
     return normalized or set(ALL_EVENT_TYPES)
 
 
@@ -124,6 +130,10 @@ def _match_lookup_keys(match_id: str, competition: str) -> list[str]:
     canonical = _match_key(mid, competition)
     if canonical and canonical not in seen:
         keys.insert(0, canonical)
+    for extra in (f"{mid}|", mid):
+        if extra not in seen:
+            seen.add(extra)
+            keys.append(extra)
     return keys
 
 
@@ -180,18 +190,32 @@ def for_match_tokens(match_id: str, competition: str, event: Optional[str] = Non
     norm_event = normalize_event_type(event) if event else None
     tokens: list[str] = []
     seen: set[str] = set()
+    mid = str(match_id or "").strip()
     with _match_notification_subscriptions_lock:
-        for key in _match_lookup_keys(match_id, competition):
+        for key in _match_lookup_keys(mid, competition):
             ev_map = _match_subscription_events.get(key, {})
             for token in _match_notification_subscriptions.get(key, ()):
                 if token in seen:
                     continue
                 if norm_event:
                     token_events = ev_map.get(token, ALL_EVENT_TYPES)
-                    if norm_event not in token_events:
+                    if norm_event not in token_events and "start" not in token_events:
                         continue
                 seen.add(token)
                 tokens.append(token)
+        if not tokens and mid:
+            for key, subs in _match_notification_subscriptions.items():
+                if key == mid or key.startswith(f"{mid}|"):
+                    ev_map = _match_subscription_events.get(key, {})
+                    for token in subs:
+                        if token in seen:
+                            continue
+                        if norm_event:
+                            token_events = ev_map.get(token, ALL_EVENT_TYPES)
+                            if norm_event not in token_events and "start" not in token_events:
+                                continue
+                        seen.add(token)
+                        tokens.append(token)
     return tokens
 
 
@@ -272,13 +296,24 @@ def for_team_tokens(team: str, event: Optional[str] = None) -> list[str]:
     norm_event = normalize_event_type(event) if event else None
     tokens: list[str] = []
     with _team_notification_subscriptions_lock:
-        ev_map = _team_subscription_events.get(norm, {})
-        for token in _team_notification_subscriptions.get(norm, ()):
-            if norm_event:
-                token_events = ev_map.get(token, ALL_EVENT_TYPES)
-                if norm_event not in token_events:
+        lookup_names = [norm]
+        for k in _team_notification_subscriptions.keys():
+            if k != norm and (
+                k == norm.removesuffix(" fc").removesuffix(" cf")
+                or norm == k.removesuffix(" fc").removesuffix(" cf")
+            ):
+                lookup_names.append(k)
+
+        for name in lookup_names:
+            ev_map = _team_subscription_events.get(name, {})
+            for token in _team_notification_subscriptions.get(name, ()):
+                if token in tokens:
                     continue
-            tokens.append(token)
+                if norm_event:
+                    token_events = ev_map.get(token, ALL_EVENT_TYPES)
+                    if norm_event not in token_events and "start" not in token_events:
+                        continue
+                tokens.append(token)
     return tokens
 
 
@@ -461,23 +496,40 @@ def for_match(match_id: str, competition: str) -> list[dict]:
     """Return Live Activity registrations for a match across competition aliases."""
     out: list[dict] = []
     seen_tokens: set[str] = set()
+    mid = str(match_id or "").strip()
     with _live_activities_lock:
-        for key in _match_lookup_keys(match_id, competition):
+        for key in _match_lookup_keys(mid, competition):
             for entry in _live_activities.get(key, []):
                 token = entry.get("activity_token")
                 if not token or token in seen_tokens:
                     continue
                 seen_tokens.add(token)
                 out.append(dict(entry))
+        # Fallback: if no entries found via competition keys, search by match_id directly
+        if not out and mid:
+            for key, entries in _live_activities.items():
+                if key == mid or key.startswith(f"{mid}|"):
+                    for entry in entries:
+                        token = entry.get("activity_token")
+                        if not token or token in seen_tokens:
+                            continue
+                        seen_tokens.add(token)
+                        out.append(dict(entry))
     return out
 
 
 def unregister_by_match(match_id: str, competition: str) -> bool:
     removed = False
+    mid = str(match_id or "").strip()
     with _live_activities_lock:
-        for key in _match_lookup_keys(match_id, competition):
+        for key in _match_lookup_keys(mid, competition):
             if _live_activities.pop(key, None) is not None:
                 removed = True
+        if mid:
+            to_remove = [k for k in _live_activities if k == mid or k.startswith(f"{mid}|")]
+            for k in to_remove:
+                if _live_activities.pop(k, None) is not None:
+                    removed = True
     return removed
 
 
@@ -653,6 +705,8 @@ def apns_send_detailed(
     endpoint = f"{base}/3/device/{clean_token}"
 
     eff_topic = topic or (config.APNS_LIVE_ACTIVITY_TOPIC if live_activity else config.APNS_TOPIC) or ""
+    if live_activity and eff_topic and not eff_topic.endswith(".push-type.liveactivity"):
+        eff_topic = f"{eff_topic}.push-type.liveactivity"
 
     result: dict[str, Any] = {
         "ok": False,
