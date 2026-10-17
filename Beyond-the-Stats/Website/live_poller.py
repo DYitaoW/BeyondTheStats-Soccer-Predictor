@@ -900,8 +900,10 @@ def to_compact_live_scores_data(data: dict) -> dict:
 
 _cached_live_scores_bytes: bytes = b""
 _cached_live_scores_etag: str = ""
+_cached_sse_frame: str = ""
 _cached_compact_live_scores_bytes: bytes = b""
 _cached_compact_live_scores_etag: str = ""
+_cached_compact_sse_frame: str = ""
 _cached_live_scores_lock = threading.Lock()
 
 _sse_subscribers: dict[queue.Queue, bool] = {}
@@ -922,14 +924,28 @@ def unregister_sse_subscriber(q: queue.Queue) -> None:
         _sse_subscribers.pop(q, None)
 
 
-def _broadcast_sse_update(raw_bytes: bytes, compact_bytes: bytes | None = None) -> None:
+def _broadcast_sse_update(
+    raw_bytes: bytes,
+    compact_bytes: bytes | None = None,
+    sse_frame: str | None = None,
+    compact_sse_frame: str | None = None,
+) -> None:
     """Broadcast pre-serialized live scores payload to all active SSE subscriber queues."""
     with _sse_lock:
         if not _sse_subscribers:
             return
         subs = list(_sse_subscribers.items())
+
+    # Pre-compute frames if not provided
+    if sse_frame is None and raw_bytes:
+        sse_frame = f"data: {raw_bytes.decode('utf-8')}\n\n"
+    if compact_sse_frame is None and compact_bytes is not None:
+        compact_sse_frame = f"data: {compact_bytes.decode('utf-8')}\n\n"
+
     for q, is_compact in subs:
-        msg = compact_bytes if (is_compact and compact_bytes is not None) else raw_bytes
+        msg = compact_sse_frame if (is_compact and compact_sse_frame is not None) else sse_frame
+        if msg is None:
+            msg = compact_bytes if (is_compact and compact_bytes is not None) else raw_bytes
         try:
             q.put_nowait(msg)
         except queue.Full:
@@ -946,6 +962,7 @@ def _update_cached_live_scores_payload() -> None:
     """Serialize current live scores into UTF-8 JSON bytes (both full and compact), compute ETags, and notify SSE clients."""
     global _cached_live_scores_bytes, _cached_live_scores_etag
     global _cached_compact_live_scores_bytes, _cached_compact_live_scores_etag
+    global _cached_sse_frame, _cached_compact_sse_frame
     status = get_live_poller_status()
     with _live_scores_lock:
         data = dict(_live_scores)
@@ -956,8 +973,10 @@ def _update_cached_live_scores_payload() -> None:
         "competitions": data,
         "poller": status,
     }
-    raw_bytes = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    raw_str = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    raw_bytes = raw_str.encode("utf-8")
     etag = f'"{hashlib.md5(raw_bytes).hexdigest()}"'
+    sse_frame = f"data: {raw_str}\n\n"
 
     # 2. Compact payload (scores & status only, omitting lineups/events/stats)
     compact_data = to_compact_live_scores_data(data)
@@ -967,36 +986,56 @@ def _update_cached_live_scores_payload() -> None:
         "poller": status,
         "compact": True,
     }
-    compact_bytes = json.dumps(compact_payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    compact_str = json.dumps(compact_payload, ensure_ascii=False, separators=(",", ":"))
+    compact_bytes = compact_str.encode("utf-8")
     compact_etag = f'"{hashlib.md5(compact_bytes).hexdigest()}"'
+    compact_sse_frame = f"data: {compact_str}\n\n"
 
     with _cached_live_scores_lock:
         _cached_live_scores_bytes = raw_bytes
         _cached_live_scores_etag = etag
+        _cached_sse_frame = sse_frame
         _cached_compact_live_scores_bytes = compact_bytes
         _cached_compact_live_scores_etag = compact_etag
+        _cached_compact_sse_frame = compact_sse_frame
 
-    _broadcast_sse_update(raw_bytes, compact_bytes)
+    _broadcast_sse_update(raw_bytes, compact_bytes, sse_frame, compact_sse_frame)
+
+
+def get_cached_sse_frame() -> str:
+    """Return pre-formatted SSE frame ('data: {...}\\n\\n') for full live scores."""
+    with _cached_live_scores_lock:
+        if _cached_sse_frame:
+            return _cached_sse_frame
+    raw_bytes, _ = get_cached_live_scores_payload()
+    return f"data: {raw_bytes.decode('utf-8')}\n\n"
+
+
+def get_cached_compact_sse_frame() -> str:
+    """Return pre-formatted SSE frame ('data: {...}\\n\\n') for compact live scores."""
+    with _cached_live_scores_lock:
+        if _cached_compact_sse_frame:
+            return _cached_compact_sse_frame
+    compact_bytes, _ = get_cached_compact_live_scores_payload()
+    return f"data: {compact_bytes.decode('utf-8')}\n\n"
 
 
 def get_cached_live_scores_payload() -> tuple[bytes, str]:
-    """Return pre-serialized (payload_bytes, etag) for ultra-fast, zero-re-serialization responses.
-    
-    If the cache is empty on cold boot or miss, actively sources fresh scores from ESPN
-    before serializing, ensuring callers receive live data without crashing.
-    """
+    """Return pre-serialized (payload_bytes, etag) for ultra-fast, zero-re-serialization responses."""
     with _cached_live_scores_lock:
         if _cached_live_scores_bytes:
             return _cached_live_scores_bytes, _cached_live_scores_etag
-    
-    # Cold boot or empty cache: actively source from ESPN
+
+    # Cold boot or empty cache: trigger background refresh without blocking calling thread
     with _live_scores_lock:
         is_empty = not _live_scores
     if is_empty:
-        try:
-            refresh_live_scores_now()
-        except Exception:
-            pass
+        def _bg_refresh():
+            try:
+                refresh_live_scores_now()
+            except Exception:
+                pass
+        threading.Thread(target=_bg_refresh, daemon=True, name="bg-live-scores-refresh").start()
 
     _update_cached_live_scores_payload()
     with _cached_live_scores_lock:
@@ -1008,23 +1047,21 @@ def get_cached_live_scores_payload() -> tuple[bytes, str]:
 
 
 def get_cached_compact_live_scores_payload() -> tuple[bytes, str]:
-    """Return pre-serialized compact (payload_bytes, etag) for ultra-fast, zero-re-serialization responses.
-    
-    If the cache is empty on cold boot or miss, actively sources fresh scores from ESPN
-    before serializing, ensuring callers receive live data without crashing.
-    """
+    """Return pre-serialized compact (payload_bytes, etag) for ultra-fast, zero-re-serialization responses."""
     with _cached_live_scores_lock:
         if _cached_compact_live_scores_bytes:
             return _cached_compact_live_scores_bytes, _cached_compact_live_scores_etag
-            
-    # Cold boot or empty cache: actively source from ESPN
+
+    # Cold boot or empty cache: trigger background refresh without blocking calling thread
     with _live_scores_lock:
         is_empty = not _live_scores
     if is_empty:
-        try:
-            refresh_live_scores_now()
-        except Exception:
-            pass
+        def _bg_refresh():
+            try:
+                refresh_live_scores_now()
+            except Exception:
+                pass
+        threading.Thread(target=_bg_refresh, daemon=True, name="bg-live-scores-refresh").start()
 
     _update_cached_live_scores_payload()
     with _cached_live_scores_lock:
@@ -1678,6 +1715,8 @@ def _live_score_poller_loop():
                                         "competition": comp_name,
                                         "event": event_type,
                                     })
+                                from notifications import _notify_apns_queue
+                                _notify_apns_queue()
                                 return len(tokens)
 
                             # Key events: goals (incl. own goal / penalty) + red cards.
@@ -1730,8 +1769,8 @@ def _live_score_poller_loop():
                                 }
                                 if text:
                                     la_state["event_text"] = text
-                                # Live Activities: any goal should send notifications (alert banner & sound)
-                                la_alert = {"title": title, "body": body} if is_scoring else None
+                                # Live Activities: goals and red cards send notifications (alert banner & sound)
+                                la_alert = {"title": title, "body": body}
                                 send_live_activity_update(mid, comp_name, la_state, event=la_event_label, alert=la_alert)
 
                             # Fallback goal alert if key_events is not populated but the score changed
@@ -1750,6 +1789,13 @@ def _live_score_poller_loop():
                                         goal_title = "Goal"
                                         goal_body = f"{ht} {hs}-{as_} {at}"
                                         _queue_event_alert("goal", goal_title, goal_body)
+                                        send_live_activity_update(
+                                            mid,
+                                            comp_name,
+                                            {**state_base, "event": "goal"},
+                                            event="goal",
+                                            alert={"title": goal_title, "body": goal_body},
+                                        )
 
                             # Halftime: detected when period string first contains "halftime"
                             period_raw = str(g.get("period", "") or g.get("clock", "") or "").lower()
@@ -1800,6 +1846,7 @@ def _live_score_poller_loop():
                                     send_live_activity_update(
                                         mid, comp_name, {**state_base, "event": "kickoff"},
                                         event="kickoff",
+                                        alert={"title": start_title, "body": start_body},
                                     )
             except Exception:
                 import traceback

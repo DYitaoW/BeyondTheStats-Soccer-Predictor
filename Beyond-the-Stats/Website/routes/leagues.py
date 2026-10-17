@@ -4,12 +4,14 @@ League tables, projected standings, cup brackets, and leader API routes.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import os
 import threading
 import time
 from datetime import datetime, timezone
-from .compat import Blueprint, redirect, render_template, send_from_directory, request, jsonify
+from .compat import Blueprint, redirect, render_template, send_from_directory, request, jsonify, Response
 import pandas as pd
 
 import config
@@ -31,6 +33,8 @@ from standings import (
     _clear_standings_cache,
     _compute_standings_from_history,
     _load_live_score_history,
+    _real_tables,
+    _real_tables_lock,
     _sanitize_real_standings,
 )
 from predictions import (
@@ -666,32 +670,56 @@ def api_stats():
     })
 
 
-_LEAGUE_LEADERS_MEMO_CACHE: dict = {"data": None, "expires_at": 0.0}
+_LEAGUE_LEADERS_CACHE_FILE = os.path.join(config.PROJECT_DIR, "Output", "Status", "league_leaders_cache.json")
+_LEAGUE_LEADERS_MEMO_CACHE: dict = {
+    "data": None,
+    "bytes": None,
+    "etag": None,
+    "expires_at": 0.0,
+    "computing": False,
+}
 _LEAGUE_LEADERS_MEMO_LOCK = threading.Lock()
 _LEAGUE_LEADERS_MEMO_TTL = 300.0  # 5 minutes
 
 
-def clear_league_leaders_cache() -> None:
-    """Invalidate in-memory league-leaders cache (e.g. after pipeline or standings refresh)."""
-    with _LEAGUE_LEADERS_MEMO_LOCK:
-        _LEAGUE_LEADERS_MEMO_CACHE["data"] = None
-        _LEAGUE_LEADERS_MEMO_CACHE["expires_at"] = 0.0
+def _load_persisted_league_leaders() -> None:
+    """Load pre-computed league leaders from disk cache on startup."""
+    if not os.path.exists(_LEAGUE_LEADERS_CACHE_FILE):
+        return
+    try:
+        with open(_LEAGUE_LEADERS_CACHE_FILE, "rb") as fh:
+            raw_bytes = fh.read()
+        if not raw_bytes:
+            return
+        data = json.loads(raw_bytes.decode("utf-8"))
+        if isinstance(data, dict) and "leagues" in data and "cups" in data:
+            etag = f'"{hashlib.md5(raw_bytes).hexdigest()}"'
+            with _LEAGUE_LEADERS_MEMO_LOCK:
+                _LEAGUE_LEADERS_MEMO_CACHE["data"] = data
+                _LEAGUE_LEADERS_MEMO_CACHE["bytes"] = raw_bytes
+                _LEAGUE_LEADERS_MEMO_CACHE["etag"] = etag
+                _LEAGUE_LEADERS_MEMO_CACHE["expires_at"] = time.time() + _LEAGUE_LEADERS_MEMO_TTL
+    except Exception:
+        pass
 
 
-@leagues_bp.get("/api/league-leaders")
-@_cached_response(ttl=config.CACHE_TTL_LONG)
-def api_league_leaders():
-    """Return predicted and real (live) leaders for every league and cup."""
-    force_refresh = (
-        request.args.get("refresh", "").strip().lower() in {"1", "true", "yes"}
-        or request.args.get("no_cache", "").strip().lower() in {"1", "true", "yes"}
-    )
-    now = time.time()
-    if not force_refresh:
-        with _LEAGUE_LEADERS_MEMO_LOCK:
-            if _LEAGUE_LEADERS_MEMO_CACHE["data"] is not None and now < _LEAGUE_LEADERS_MEMO_CACHE["expires_at"]:
-                return jsonify(_LEAGUE_LEADERS_MEMO_CACHE["data"])
+_load_persisted_league_leaders()
 
+
+def _format_odds(val) -> float | None:
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return None
+        return round(f, 1)
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def _build_league_leaders_data() -> dict:
+    """Compile predicted and real (live) leaders for every league and cup."""
     leagues = []
     cups = []
 
@@ -752,7 +780,7 @@ def api_league_leaders():
             entry = {
                 "competition": comp_name,
                 "predicted_winner": predicted["winner"] if predicted else "—",
-                "predicted_winner_odds": round(predicted["odds"], 1) if predicted and predicted["odds"] is not None else None,
+                "predicted_winner_odds": _format_odds(predicted["odds"]) if predicted else None,
             }
             if source_mode == "cups" or is_cup_comp:
                 if comp_name in seen_cup_comps:
@@ -773,7 +801,7 @@ def api_league_leaders():
     mls_entry = {
         "competition": "United States/MLS",
         "predicted_winner": (mls_supporters.get("team") if mls_supporters else None) or "—",
-        "predicted_winner_odds": round(mls_supporters.get("win_league_pct"), 1) if mls_supporters and mls_supporters.get("win_league_pct") is not None else None,
+        "predicted_winner_odds": _format_odds(mls_supporters.get("win_league_pct")) if mls_supporters else None,
         "east_leader": (mls_east.get("team") if mls_east else None) or None,
         "west_leader": (mls_west.get("team") if mls_west else None) or None,
         "mls_cup_winner": mls_cup_winner or None,
@@ -798,14 +826,14 @@ def api_league_leaders():
                     cups.append({
                         "competition": comp_name,
                         "predicted_winner": champion or "—",
-                        "predicted_winner_odds": round(prob * 100, 1) if prob is not None else None,
+                        "predicted_winner_odds": _format_odds(prob * 100) if prob is not None else None,
                     })
                 else:
                     if prob is not None:
                         for c in cups:
                             if c["competition"] == comp_name and champion:
                                 c["predicted_winner"] = champion
-                                c["predicted_winner_odds"] = round(prob * 100, 1)
+                                c["predicted_winner_odds"] = _format_odds(prob * 100)
 
     cup_set = set(c["competition"] for c in cups)
     league_names = set(e["competition"] for e in leagues)
@@ -838,7 +866,10 @@ def api_league_leaders():
         if comp in cup_set:
             continue
         if comp == "United States/MLS":
-            real = _compute_standings_from_history("United States/MLS")
+            with _real_tables_lock:
+                real = _real_tables.get("United States/MLS")
+            if not real:
+                real = _compute_standings_from_history("United States/MLS")
             if real and isinstance(real, dict):
                 for g in (real.get("groups") or []):
                     name = str(g.get("name", "")).strip()
@@ -856,7 +887,11 @@ def api_league_leaders():
                 entry["current_leader"] = entry.get("predicted_winner") if entry.get("predicted_winner") and entry["predicted_winner"] != "—" else None
                 entry["leader_source"] = "predicted"
             continue
-        real = _compute_standings_from_history(comp)
+
+        with _real_tables_lock:
+            real = _real_tables.get(comp)
+        if not real:
+            real = _compute_standings_from_history(comp)
         if real and isinstance(real, dict):
             for g in (real.get("groups") or []):
                 if g.get("entries"):
@@ -880,14 +915,131 @@ def api_league_leaders():
 
     leagues = [e for e in leagues if is_league_api_competition(e.get("competition"))]
 
-    res_data = {
+    return {
         "ok": True,
         "leagues": leagues,
         "cups": cups,
     }
-    with _LEAGUE_LEADERS_MEMO_LOCK:
-        _LEAGUE_LEADERS_MEMO_CACHE["data"] = res_data
-        _LEAGUE_LEADERS_MEMO_CACHE["expires_at"] = time.time() + _LEAGUE_LEADERS_MEMO_TTL
 
-    return jsonify(res_data)
+
+def _refresh_league_leaders_cache(force: bool = False) -> dict:
+    """Rebuild league leaders data, persist to disk, and update in-memory cache."""
+    with _LEAGUE_LEADERS_MEMO_LOCK:
+        if _LEAGUE_LEADERS_MEMO_CACHE.get("computing"):
+            return _LEAGUE_LEADERS_MEMO_CACHE.get("data") or {}
+        _LEAGUE_LEADERS_MEMO_CACHE["computing"] = True
+
+    try:
+        data = _build_league_leaders_data()
+        raw_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        etag = f'"{hashlib.md5(raw_bytes).hexdigest()}"'
+        now = time.time()
+
+        with _LEAGUE_LEADERS_MEMO_LOCK:
+            _LEAGUE_LEADERS_MEMO_CACHE["data"] = data
+            _LEAGUE_LEADERS_MEMO_CACHE["bytes"] = raw_bytes
+            _LEAGUE_LEADERS_MEMO_CACHE["etag"] = etag
+            _LEAGUE_LEADERS_MEMO_CACHE["expires_at"] = now + _LEAGUE_LEADERS_MEMO_TTL
+            _LEAGUE_LEADERS_MEMO_CACHE["computing"] = False
+
+        # Persist to disk
+        try:
+            os.makedirs(os.path.dirname(_LEAGUE_LEADERS_CACHE_FILE), exist_ok=True)
+            with open(_LEAGUE_LEADERS_CACHE_FILE, "wb") as f:
+                f.write(raw_bytes)
+        except Exception:
+            pass
+
+        return data
+    except Exception:
+        with _LEAGUE_LEADERS_MEMO_LOCK:
+            _LEAGUE_LEADERS_MEMO_CACHE["computing"] = False
+        raise
+
+
+def clear_league_leaders_cache() -> None:
+    """Invalidate in-memory league-leaders cache and trigger background recomputation."""
+    with _LEAGUE_LEADERS_MEMO_LOCK:
+        _LEAGUE_LEADERS_MEMO_CACHE["expires_at"] = 0.0
+    threading.Thread(
+        target=_refresh_league_leaders_cache,
+        kwargs={"force": True},
+        daemon=True,
+        name="league-leaders-clear-refresh",
+    ).start()
+
+
+@leagues_bp.get("/api/league-leaders")
+def api_league_leaders():
+    """Return predicted and real (live) leaders for every league and cup."""
+    force_refresh = (
+        request.args.get("refresh", "").strip().lower() in {"1", "true", "yes"}
+        or request.args.get("no_cache", "").strip().lower() in {"1", "true", "yes"}
+    )
+    now = time.time()
+
+    with _LEAGUE_LEADERS_MEMO_LOCK:
+        cached_data = _LEAGUE_LEADERS_MEMO_CACHE.get("data")
+        cached_bytes = _LEAGUE_LEADERS_MEMO_CACHE.get("bytes")
+        etag = _LEAGUE_LEADERS_MEMO_CACHE.get("etag")
+        expires_at = _LEAGUE_LEADERS_MEMO_CACHE.get("expires_at", 0.0)
+        is_computing = _LEAGUE_LEADERS_MEMO_CACHE.get("computing", False)
+
+    # Force refresh: compute synchronously
+    if force_refresh:
+        _refresh_league_leaders_cache(force=True)
+        with _LEAGUE_LEADERS_MEMO_LOCK:
+            raw_bytes = _LEAGUE_LEADERS_MEMO_CACHE.get("bytes")
+            etag = _LEAGUE_LEADERS_MEMO_CACHE.get("etag", "")
+        return Response(
+            content=raw_bytes,
+            media_type="application/json",
+            headers={
+                "ETag": etag,
+                "Cache-Control": "public, max-age=60",
+            },
+        )
+
+    # Fast path: serve cached bytes immediately
+    if cached_bytes is not None:
+        if now >= expires_at and not is_computing:
+            threading.Thread(
+                target=_refresh_league_leaders_cache,
+                kwargs={"force": False},
+                daemon=True,
+                name="league-leaders-bg-refresh",
+            ).start()
+
+        if_none_match = request.headers.get("if-none-match", "").strip()
+        if etag and if_none_match and (if_none_match == etag or if_none_match == etag.strip('"')):
+            return Response(
+                status_code=304,
+                headers={
+                    "ETag": etag,
+                    "Cache-Control": "public, max-age=60",
+                },
+            )
+
+        return Response(
+            content=cached_bytes,
+            media_type="application/json",
+            headers={
+                "ETag": etag,
+                "Cache-Control": "public, max-age=60",
+            },
+        )
+
+    # Cold start with empty cache: compute synchronously once
+    _refresh_league_leaders_cache(force=False)
+    with _LEAGUE_LEADERS_MEMO_LOCK:
+        raw_bytes = _LEAGUE_LEADERS_MEMO_CACHE.get("bytes")
+        etag = _LEAGUE_LEADERS_MEMO_CACHE.get("etag", "")
+    return Response(
+        content=raw_bytes,
+        media_type="application/json",
+        headers={
+            "ETag": etag,
+            "Cache-Control": "public, max-age=60",
+        },
+    )
 

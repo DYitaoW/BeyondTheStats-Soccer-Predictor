@@ -68,11 +68,14 @@ class TestEventNormalization(unittest.TestCase):
         self.assertEqual(normalize_events([]), set(ALL_EVENT_TYPES))
         self.assertEqual(normalize_events(""), set(ALL_EVENT_TYPES))
 
-        # Comma-separated strings
-        self.assertEqual(normalize_events("goal, ht"), {"goal", "ht"})
-        self.assertEqual(normalize_events("goals, kickoff, ft"), {"goal", "start", "end"})
+        # "start" or kickoff default now expands to ALL_EVENT_TYPES (all match activity)
+        self.assertEqual(normalize_events("start"), set(ALL_EVENT_TYPES))
+        self.assertEqual(normalize_events(["start"]), set(ALL_EVENT_TYPES))
+        self.assertEqual(normalize_events("kickoff"), set(ALL_EVENT_TYPES))
+        self.assertEqual(normalize_events("goals, kickoff, ft"), set(ALL_EVENT_TYPES))
 
-        # Lists / Iterables
+        # Explicit non-start preferences retain specific filters
+        self.assertEqual(normalize_events("goal, ht"), {"goal", "ht"})
         self.assertEqual(normalize_events(["goal", "red_card"]), {"goal", "red_card"})
 
 
@@ -89,10 +92,10 @@ class TestSubscriptionFiltering(unittest.TestCase):
         subscribe_match("dev-1", "m123", "EPL", events=["goal"])
         # Device 2 wants only red cards and ht
         subscribe_match("dev-2", "m123", "EPL", events=["red_card", "ht"])
-        # Device 3 wants everything
-        subscribe_match("dev-3", "m123", "EPL", events=None)
+        # Device 3 wants start time (which now defaults to all in-game activity)
+        subscribe_match("dev-3", "m123", "EPL", events=["start"])
 
-        # Query for goal: dev-1 and dev-3
+        # Query for goal: dev-1 and dev-3 (dev-3 has start -> all events)
         goal_tokens = for_match_tokens("m123", "EPL", event="goal")
         self.assertIn("dev-1", goal_tokens)
         self.assertNotIn("dev-2", goal_tokens)
@@ -104,7 +107,7 @@ class TestSubscriptionFiltering(unittest.TestCase):
         self.assertIn("dev-2", ht_tokens)
         self.assertIn("dev-3", ht_tokens)
 
-        # Query for start: only dev-3
+        # Query for start: dev-3
         start_tokens = for_match_tokens("m123", "EPL", event="start")
         self.assertNotIn("dev-1", start_tokens)
         self.assertNotIn("dev-2", start_tokens)
@@ -221,6 +224,19 @@ class TestLiveActivityAlerts(unittest.TestCase):
         # 2. FT payload
         self.assertEqual(sent_payloads[1]["aps"]["event"], "end")
         self.assertEqual(sent_payloads[1]["aps"]["alert"], ft_alert)
+
+    def test_live_activity_match_id_fallback_across_competition_names(self):
+        # Register with simple competition name
+        register("act-fallback-1", "dev-fallback-1", "m888", "Premier League")
+
+        # Caller queries with different competition string (e.g. England/Premier League or empty)
+        acts = notifications.for_match("m888", "England/Premier League")
+        self.assertEqual(len(acts), 1)
+        self.assertEqual(acts[0]["activity_token"], "act-fallback-1")
+
+        # Unregister by match
+        notifications.unregister_by_match("m888", "Unknown Competition")
+        self.assertEqual(len(notifications.for_match("m888", "Premier League")), 0)
 
 
 class TestSQLiteSubscriptionPersistence(unittest.TestCase):
