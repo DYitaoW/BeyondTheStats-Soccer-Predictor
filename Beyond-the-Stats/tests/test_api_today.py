@@ -29,7 +29,7 @@ class TestApiToday(unittest.TestCase):
         _invalidate_today_cache()
 
     @patch("routes.live_scores.refresh_live_scores_now")
-    @patch("routes.helpers._load_upcoming_rows")
+    @patch("predictions._load_upcoming_rows")
     @patch("routes.helpers.regional_espn_schedule_fallback")
     @patch("shared.sqlite_store.load_live_score_history")
     def test_merged_upcoming_and_live_game(
@@ -117,7 +117,7 @@ class TestApiToday(unittest.TestCase):
         self.assertEqual(match["debug"]["matched_by"], "sync_key")
 
     @patch("routes.live_scores.refresh_live_scores_now")
-    @patch("routes.helpers._load_upcoming_rows")
+    @patch("predictions._load_upcoming_rows")
     @patch("routes.helpers.regional_espn_schedule_fallback")
     @patch("shared.sqlite_store.load_live_score_history")
     def test_upcoming_only_game(
@@ -172,7 +172,7 @@ class TestApiToday(unittest.TestCase):
         self.assertEqual(match["away_team"], "Barcelona")
 
     @patch("routes.live_scores.refresh_live_scores_now")
-    @patch("routes.helpers._load_upcoming_rows")
+    @patch("predictions._load_upcoming_rows")
     @patch("routes.helpers.regional_espn_schedule_fallback")
     @patch("shared.sqlite_store.load_live_score_history")
     def test_live_only_game(
@@ -224,7 +224,7 @@ class TestApiToday(unittest.TestCase):
         self.assertEqual(match["debug"]["live_match_id"], "800202")
 
     @patch("routes.live_scores.refresh_live_scores_now")
-    @patch("routes.helpers._load_upcoming_rows")
+    @patch("predictions._load_upcoming_rows")
     @patch("routes.helpers.regional_espn_schedule_fallback")
     @patch("shared.sqlite_store.load_live_score_history")
     def test_filter_by_competition(

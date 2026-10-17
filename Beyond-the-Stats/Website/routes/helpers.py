@@ -117,6 +117,8 @@ def load_redeem_code_entries() -> list[dict]:
     return entries
 
 
+from predictions import _load_upcoming_rows
+
 # ── Upcoming and Match Row Helpers ────────────────────────────────────
 _ALL_UPCOMING_SOURCES = [
     ("global", config.GLOBAL_UPCOMING_FILE),
