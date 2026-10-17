@@ -155,6 +155,7 @@ def _merge_completed_to_history():
                         for key, value in cached.items():
                             if value not in (None, "", [], {}):
                                 entry[key] = value
+                _stamp_game_sync_fields(entry, comp_name)
                 all_post.append(entry)
                 if mid and mid not in historic_ids:
                     new_games.append(entry)
@@ -188,6 +189,7 @@ def _persist_post_games_full_stats():
                 mid = entry.get("match_id")
                 if mid and mid in _live_summary_cache:
                     entry.update(_live_summary_cache[mid])
+                _stamp_game_sync_fields(entry, comp_name)
                 # Only rewrite when we actually have richer detail.
                 has_detail = any(
                     entry.get(key)
@@ -1297,6 +1299,8 @@ def _merge_poll_results_into_live_scores(results, poll_date, allowed_dates=None)
 
         for comp_name, comp_data in results.items():
             new_games = comp_data.get("games", [])
+            for g in new_games:
+                _stamp_game_sync_fields(g, comp_name)
             existing = _live_scores.get(comp_name, {"games": []})
             if not new_games and existing.get("games"):
                 continue

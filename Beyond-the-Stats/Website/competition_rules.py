@@ -6,6 +6,7 @@ import os
 import re
 import time
 from collections import defaultdict, deque
+from datetime import date, datetime
 from typing import Any
 
 import pandas as pd
@@ -654,7 +655,19 @@ def make_match_sync_key(
     """
     raw_date = str(date_val or "").strip()
     date_str = ""
-    if len(raw_date) == 10 and raw_date.count("-") == 2:
+    if isinstance(date_val, (datetime, pd.Timestamp)):
+        try:
+            from zoneinfo import ZoneInfo
+            if getattr(date_val, "tzinfo", None) is None:
+                dt = date_val.replace(tzinfo=ZoneInfo("UTC"))
+            else:
+                dt = date_val
+            date_str = dt.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    elif isinstance(date_val, date) and not isinstance(date_val, datetime):
+        date_str = date_val.isoformat()
+    elif len(raw_date) == 10 and raw_date.count("-") == 2:
         date_str = raw_date
     elif len(raw_date) == 8 and raw_date.isdigit():
         date_str = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"

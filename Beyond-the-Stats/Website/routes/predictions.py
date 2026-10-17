@@ -99,7 +99,7 @@ def _to_compact_upcoming_row(r: dict) -> dict:
     c_home = clean.get("canonical_home_team") or canonical_team_name(ht, comp) or ht
     c_away = clean.get("canonical_away_team") or canonical_team_name(at, comp) or at
     sync_k = clean.get("sync_key") or make_match_sync_key(
-        clean.get("match_date_iso") or clean.get("match_date"),
+        clean.get("match_datetime_et") or clean.get("match_datetime_utc") or clean.get("match_date_iso") or clean.get("match_date"),
         comp,
         c_home,
         c_away,
@@ -335,7 +335,15 @@ def _format_next_game_payload(
     else:
         live_status = live_status_raw or "scheduled"
 
+    sync_k = game_dict.get("sync_key") or make_match_sync_key(
+        dt_et or dt_utc or m_date,
+        competition,
+        canon_home,
+        canon_away,
+    )
+
     return {
+        "sync_key": sync_k,
         "match_id": str(game_dict.get("match_id", "") or "").strip(),
         "competition": competition,
         "match_date": m_date,

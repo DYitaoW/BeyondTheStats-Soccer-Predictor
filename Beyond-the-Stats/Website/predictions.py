@@ -1013,7 +1013,7 @@ def _build_live_games_index() -> tuple[dict[tuple[str, str, str], dict], dict[st
     try:
         from competition_rules import canonical_team_name, make_match_sync_key
         from live_prediction import _normalize_team_for_live
-        from live_poller import _live_scores, _live_scores_lock
+        from live_poller import _live_scores, _live_scores_lock, _stamp_game_sync_fields
     except Exception:
         return {}, {}, {}
 
@@ -1027,6 +1027,12 @@ def _build_live_games_index() -> tuple[dict[tuple[str, str, str], dict], dict[st
                 if match_id:
                     id_index[match_id] = game
                 sync_key = str(game.get("sync_key") or "").strip()
+                if not sync_key:
+                    try:
+                        _stamp_game_sync_fields(game, comp_name)
+                        sync_key = str(game.get("sync_key") or "").strip()
+                    except Exception:
+                        pass
                 if sync_key:
                     sync_index[sync_key] = game
                 home = _normalize_team_for_live(
@@ -1354,7 +1360,8 @@ def _load_upcoming_rows(
             away = _team_name_for_display(str(row.get("display_away_team", row["away_team"])).strip())
             c_home = canonical_team_name(home, comp) or home
             c_away = canonical_team_name(away, comp) or away
-            sync_k = make_match_sync_key(str(row["match_date"]), comp, c_home, c_away)
+            date_for_sync = str(row.get("match_datetime_et", "") or row.get("match_datetime_utc", "") or row["match_date"])
+            sync_k = make_match_sync_key(date_for_sync, comp, c_home, c_away)
             rows.append({
                 "match_date": str(row["match_date"]),
                 "match_date_iso": str(row["match_date"]),
@@ -1384,7 +1391,6 @@ def _load_upcoming_rows(
         comp_str = str(row["competition"]).strip()
         c_home = canonical_team_name(home, comp_str) or home
         c_away = canonical_team_name(away, comp_str) or away
-        sync_k = make_match_sync_key(str(row["match_date"]), comp_str, c_home, c_away)
         raw_date = str(row["match_date"])
         time_label = ""
         mls_dt_raw = str(row.get("match_datetime_et", "")).strip() if "match_datetime_et" in frame.columns else ""
@@ -1420,6 +1426,9 @@ def _load_upcoming_rows(
                     match_dt_et = date_val.strftime("%Y-%m-%dT%H:%M:%S%z")
                 except Exception:
                     pass
+
+        date_for_sync = match_dt_et or utc_dt_raw or mls_dt_raw or raw_date
+        sync_k = make_match_sync_key(date_for_sync, comp_str, c_home, c_away)
         if pd.isna(date_val):
             weekday = ""
             date_label = str(row["match_date"])
@@ -2394,9 +2403,24 @@ def _parse_utc_datetime_et(raw):
 
 def _enrich_json_past_row(r):
     """Add display fields to a raw past_games.json row so it matches upcoming format."""
-    pred = str(r.get("predicted_result", "")).strip().upper()
+    comp = str(r.get("competition", "")).strip()
     home = str(r.get("home_team", "")).strip()
     away = str(r.get("away_team", "")).strip()
+    c_home = r.get("canonical_home_team") or canonical_team_name(home, comp) or home
+    c_away = r.get("canonical_away_team") or canonical_team_name(away, comp) or away
+    r["canonical_home_team"] = c_home
+    r["canonical_away_team"] = c_away
+    if not r.get("sync_key"):
+        m_date = (
+            r.get("match_datetime_et")
+            or r.get("match_datetime_utc")
+            or r.get("match_date_iso")
+            or r.get("match_date")
+            or _past_row_date_iso(r)
+        )
+        r["sync_key"] = make_match_sync_key(m_date, comp, c_home, c_away)
+
+    pred = str(r.get("predicted_result", "")).strip().upper()
     r["winner_label"] = (
         f"Pred: {home}" if pred == "H" else
         f"Pred: {away}" if pred == "A" else
@@ -2534,15 +2558,29 @@ def _live_game_to_past_row(game: dict, competition: str | None = None) -> dict |
 
     home = str(game.get("home_team", "")).strip()
     away = str(game.get("away_team", "")).strip()
+    comp = str(competition or game.get("competition", "")).strip()
     if not home or not away:
         return None
+
+    c_home = game.get("canonical_home_team") or canonical_team_name(home, comp) or home
+    c_away = game.get("canonical_away_team") or canonical_team_name(away, comp) or away
+    sync_k = game.get("sync_key") or make_match_sync_key(
+        game.get("match_datetime_et") or game.get("kickoff_utc") or match_date_iso,
+        comp,
+        c_home,
+        c_away,
+    )
 
     row = {
         "match_date": match_date_iso,
         "match_date_iso": match_date_iso,
-        "competition": str(competition or game.get("competition", "")).strip(),
+        "competition": comp,
         "home_team": home,
         "away_team": away,
+        "canonical_home_team": c_home,
+        "canonical_away_team": c_away,
+        "sync_key": sync_k,
+        "match_id": str(game.get("match_id", "") or "").strip(),
         "actual_home_goals": hs,
         "actual_away_goals": aws,
         "actual_result": actual,
@@ -2631,20 +2669,27 @@ def _build_past_game_prediction_lookup() -> dict[str, dict]:
         date_iso = _past_row_date_iso(row)
         if not date_iso:
             return
-        ck = "|".join(
-            [
-                date_iso,
-                str(row.get("competition", "")).strip().lower(),
-                str(row.get("home_team", "")).strip().lower(),
-                str(row.get("away_team", "")).strip().lower(),
-            ]
-        )
-        if not ck.strip("|"):
-            return
-        existing = lookup.get(ck)
-        if existing and _past_row_looks_api_complete(existing) and not _past_row_looks_api_complete(row):
-            return
-        lookup[ck] = row
+        comp = str(row.get("competition", "")).strip()
+        home = str(row.get("home_team", "")).strip()
+        away = str(row.get("away_team", "")).strip()
+        c_home = row.get("canonical_home_team") or canonical_team_name(home, comp) or home
+        c_away = row.get("canonical_away_team") or canonical_team_name(away, comp) or away
+        sync_k = row.get("sync_key") or make_match_sync_key(date_iso, comp, c_home, c_away)
+
+        keys_to_index = []
+        if sync_k:
+            keys_to_index.append(sync_k)
+        if date_iso and c_home and c_away:
+            keys_to_index.append(f"{date_iso}|{c_home.lower()}|{c_away.lower()}")
+        legacy_ck = "|".join([date_iso, comp.lower(), home.lower(), away.lower()])
+        if legacy_ck.strip("|"):
+            keys_to_index.append(legacy_ck)
+
+        for k in keys_to_index:
+            existing = lookup.get(k)
+            if existing and _past_row_looks_api_complete(existing) and not _past_row_looks_api_complete(row):
+                continue
+            lookup[k] = row
 
     has_sqlite = False
     try:
@@ -2692,15 +2737,19 @@ def _merge_prediction_onto_past_row(row: dict, lookup: dict[str, dict]) -> dict:
     date_iso = _past_row_date_iso(row)
     if not date_iso:
         return row
-    ck = "|".join(
-        [
-            date_iso,
-            str(row.get("competition", "")).strip().lower(),
-            str(row.get("home_team", "")).strip().lower(),
-            str(row.get("away_team", "")).strip().lower(),
-        ]
-    )
-    pred = lookup.get(ck)
+    comp = str(row.get("competition", "")).strip()
+    home = str(row.get("home_team", "")).strip()
+    away = str(row.get("away_team", "")).strip()
+    c_home = row.get("canonical_home_team") or canonical_team_name(home, comp) or home
+    c_away = row.get("canonical_away_team") or canonical_team_name(away, comp) or away
+    sync_k = row.get("sync_key") or make_match_sync_key(date_iso, comp, c_home, c_away)
+
+    pred = lookup.get(sync_k) if sync_k else None
+    if not pred and date_iso and c_home and c_away:
+        pred = lookup.get(f"{date_iso}|{c_home.lower()}|{c_away.lower()}")
+    if not pred:
+        legacy_ck = "|".join([date_iso, comp.lower(), home.lower(), away.lower()])
+        pred = lookup.get(legacy_ck)
     if not pred:
         return row
     merged = dict(row)
