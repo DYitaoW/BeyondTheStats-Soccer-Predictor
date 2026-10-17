@@ -41,7 +41,16 @@ TEAM_DB_TO_DISPLAY, TEAM_DISPLAY_TO_DB = _load_team_display_mappings()
 
 def _team_name_for_display(name):
     """Map DB/canonical team names to UI display names."""
-    text = str(name or "").strip()
+    if isinstance(name, dict):
+        text = str(
+            name.get("name")
+            or name.get("team")
+            or name.get("team_name")
+            or name.get("display_name")
+            or ""
+        ).strip()
+    else:
+        text = str(name or "").strip()
     if not text:
         return ""
     if not config.USE_DISPLAY_NAME_MAPPING:
@@ -51,7 +60,16 @@ def _team_name_for_display(name):
 
 def _team_name_for_db(name):
     """Map UI display names back to DB/canonical team names."""
-    text = str(name or "").strip()
+    if isinstance(name, dict):
+        text = str(
+            name.get("name")
+            or name.get("team")
+            or name.get("team_name")
+            or name.get("display_name")
+            or ""
+        ).strip()
+    else:
+        text = str(name or "").strip()
     if not text:
         return ""
     if not config.USE_DISPLAY_NAME_MAPPING:
@@ -61,6 +79,15 @@ def _team_name_for_db(name):
 
 def _normalize_team_key(name):
     """Normalize team name for case-insensitive comparison."""
+    if isinstance(name, dict):
+        text = str(
+            name.get("name")
+            or name.get("team")
+            or name.get("team_name")
+            or name.get("display_name")
+            or ""
+        ).strip().lower()
+        return text
     return str(name or "").strip().lower()
 
 

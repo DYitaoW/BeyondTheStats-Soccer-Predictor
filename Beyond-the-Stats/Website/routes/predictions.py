@@ -652,6 +652,20 @@ def api_teams():
     mode = str(request.args.get("mode", "global")).strip().lower()
     if mode not in {"global", "mls", "extra"}:
         mode = "global"
+
+    def _safe_teams(raw_teams):
+        if not raw_teams:
+            return set()
+        clean = set()
+        for t in raw_teams:
+            if isinstance(t, dict):
+                val = _team_name_for_display(t)
+                if val:
+                    clean.add(val)
+            elif t:
+                clean.add(_team_name_for_display(t))
+        return clean
+
     if config.STATIC_PREDICTIONS:
         _, teams = _get_static_predictions(mode)
         if not teams:
@@ -661,11 +675,11 @@ def api_teams():
                 teams = _load_teams_from_team_data(pm_extra)
             else:
                 teams = _load_teams_from_team_data(pm_global)
-        display_teams = sorted({_team_name_for_display(team) for team in teams})
+        display_teams = sorted(_safe_teams(teams))
     else:
         try:
             teams = get_context(mode).available_teams
-            display_teams = sorted({_team_name_for_display(team) for team in teams})
+            display_teams = sorted(_safe_teams(teams))
         except Exception:
             display_teams = []
     return jsonify({"teams": display_teams})

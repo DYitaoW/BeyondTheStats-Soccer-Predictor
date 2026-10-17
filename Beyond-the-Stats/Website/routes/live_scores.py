@@ -933,7 +933,7 @@ def build_today_merged_payload(
         mid = str(up.get("match_id") or "").strip()
         if mid and mid not in upcoming_by_id:
             upcoming_by_id[mid] = up
-        pair_key = (c_home.strip().lower(), c_away.strip().lower())
+        pair_key = (str(c_home or "").strip().lower(), str(c_away or "").strip().lower())
         if pair_key not in upcoming_by_pair:
             upcoming_by_pair[pair_key] = up
 
@@ -965,7 +965,7 @@ def build_today_merged_payload(
             matched_up = upcoming_by_id[lg_mid]
             matched_method = "match_id"
         else:
-            pair_k = (c_home.strip().lower(), c_away.strip().lower())
+            pair_k = (str(c_home or "").strip().lower(), str(c_away or "").strip().lower())
             if pair_k in upcoming_by_pair:
                 matched_up = upcoming_by_pair[pair_k]
                 matched_method = "canonical_pair"
