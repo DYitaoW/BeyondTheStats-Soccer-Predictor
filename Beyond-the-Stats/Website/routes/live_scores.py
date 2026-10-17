@@ -6,7 +6,11 @@ from __future__ import annotations
 
 import os
 import queue
+import threading
+import time
+from collections import defaultdict
 from datetime import datetime, timezone
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 from starlette.responses import StreamingResponse
 from .compat import Blueprint, Response, jsonify, request
@@ -159,6 +163,13 @@ def api_match_detail(match_id: str):
     if not mid:
         return jsonify({"ok": False, "error": "match_id required"}), 400
 
+    def _ensure_game_sync(game: dict) -> dict:
+        entry = dict(game)
+        if not entry.get("sync_key") or not entry.get("canonical_home_team"):
+            from live_poller import _stamp_game_sync_fields
+            _stamp_game_sync_fields(entry, entry.get("competition", ""))
+        return entry
+
     # 1. Check live in-memory games first
     with _live_scores_lock:
         for comp_name, comp_data in _live_scores.items():
@@ -172,7 +183,7 @@ def api_match_detail(match_id: str):
                             for k, v in cached.items():
                                 if v not in (None, "", [], {}):
                                     game_dict[k] = v
-                    return jsonify({"ok": True, "source": "live", "game": game_dict})
+                    return jsonify({"ok": True, "source": "live", "game": _ensure_game_sync(game_dict)})
 
     # 2. Check SQLite live_score_history / past_games
     try:
@@ -181,12 +192,12 @@ def api_match_detail(match_id: str):
         all_hist = _sqlite_store.load_live_score_history() or []
         for g in all_hist:
             if str(g.get("match_id", "")).strip() == mid:
-                return jsonify({"ok": True, "source": "history", "game": g})
+                return jsonify({"ok": True, "source": "history", "game": _ensure_game_sync(g)})
 
         all_past = _sqlite_store.load_past_games() or []
         for g in all_past:
             if str(g.get("match_id", "")).strip() == mid:
-                return jsonify({"ok": True, "source": "past_games", "game": g})
+                return jsonify({"ok": True, "source": "past_games", "game": _ensure_game_sync(g)})
     except Exception:
         pass
 
@@ -194,7 +205,7 @@ def api_match_detail(match_id: str):
     try:
         for g in (_load_live_score_history() or []):
             if str(g.get("match_id", "")).strip() == mid:
-                return jsonify({"ok": True, "source": "history_json", "game": g})
+                return jsonify({"ok": True, "source": "history_json", "game": _ensure_game_sync(g)})
     except Exception:
         pass
 
@@ -761,4 +772,409 @@ def api_startup():
             "games": upcoming_today,
         },
     })
+
+
+# ── In-Memory Cache for /api/today ────────────────────────────────────
+_TODAY_CACHE: dict[str, Any] = {}
+_TODAY_CACHE_LOCK = threading.Lock()
+_TODAY_CACHE_TTL = 10.0  # seconds, matching live-scores freshness
+
+
+def _invalidate_today_cache() -> None:
+    with _TODAY_CACHE_LOCK:
+        _TODAY_CACHE.clear()
+
+
+def build_today_merged_payload(
+    target_date_iso: Optional[str] = None,
+    comp_filter: Optional[str] = None,
+    compact: bool = False,
+    force_refresh: bool = False,
+) -> dict:
+    """Pre-merge upcoming predictions and live-scores for today (or target_date).
+
+    Behaves with live-scores freshness:
+      - Automatically triggers on-demand live poll if memory is empty or force_refresh is requested.
+      - Pairs matches using sync_key, match_id, or canonical (home, away) pairs.
+      - Includes clear sync_status ('matched', 'upcoming_only', 'live_only') and rich debug info.
+    """
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    today_et_str = now_et.date().isoformat()
+    target_date = str(target_date_iso or today_et_str).strip()
+    is_today = (target_date == today_et_str)
+
+    # 1. Refresh live scores if empty or explicitly forced
+    if is_today:
+        with _live_scores_lock:
+            empty = not _live_scores
+        if empty or force_refresh:
+            try:
+                refresh_live_scores_now(force=force_refresh)
+            except Exception:
+                pass
+
+    from competition_rules import canonical_team_name, make_match_sync_key
+    from routes.helpers import (
+        _ALL_UPCOMING_SOURCES,
+        _load_upcoming_rows,
+        regional_espn_schedule_fallback,
+    )
+    from routes.predictions import _clean_float, _to_compact_upcoming_row
+
+    # 2. Collect Live Scores & Completed History for target_date
+    live_games_for_date = []
+    seen_live_ids = set()
+
+    with _live_scores_lock:
+        for comp_name, comp_data in _live_scores.items():
+            for g in comp_data.get("games", []):
+                g_dict = dict(g)
+                g_dict.setdefault("competition", comp_name)
+                # Attach latest summary if available
+                mid = g_dict.get("match_id")
+                if mid:
+                    with _live_summary_cache_lock:
+                        cached = _live_summary_cache.get(mid)
+                        if cached:
+                            for k, v in cached.items():
+                                if v not in (None, "", [], {}):
+                                    g_dict[k] = v
+                # Determine game date
+                from live_poller import _game_et_calendar_date, _stamp_game_sync_fields
+                _stamp_game_sync_fields(g_dict, comp_name)
+                g_date = _game_et_calendar_date(g_dict)
+                g_date_str = g_date.isoformat() if g_date else ""
+                if g_date_str == target_date or (is_today and not g_date_str):
+                    if mid:
+                        seen_live_ids.add(str(mid))
+                    live_games_for_date.append(g_dict)
+
+    # Check history (SQLite + JSON fallback) for completed games on target_date
+    try:
+        from shared import sqlite_store
+        hist_rows = sqlite_store.load_live_score_history() or []
+        for hg in hist_rows:
+            hg_mid = str(hg.get("match_id") or "")
+            if hg_mid and hg_mid in seen_live_ids:
+                continue
+            hg_comp = hg.get("competition", "")
+            from live_poller import _game_et_calendar_date, _stamp_game_sync_fields
+            hg_dict = dict(hg)
+            _stamp_game_sync_fields(hg_dict, hg_comp)
+            hg_date = _game_et_calendar_date(hg_dict)
+            hg_date_str = hg_date.isoformat() if hg_date else ""
+            if hg_date_str == target_date:
+                if hg_mid:
+                    seen_live_ids.add(hg_mid)
+                live_games_for_date.append(hg_dict)
+    except Exception:
+        pass
+
+    # 3. Collect Upcoming Fixtures for target_date
+    upcoming_for_date = []
+    feed = []
+    seen_upcoming_keys = set()
+    try:
+        for source, csv_path in _ALL_UPCOMING_SOURCES:
+            rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
+            for row in rows:
+                key = "|".join(
+                    str(row.get(f, "")).strip().lower()
+                    for f in ("match_date_iso", "competition", "home_team", "away_team")
+                )
+                if key not in seen_upcoming_keys:
+                    seen_upcoming_keys.add(key)
+                    feed.append(row)
+    except Exception:
+        pass
+
+    if not feed:
+        try:
+            from shared import sqlite_store
+            db_rows = sqlite_store.load_upcoming_games()
+            if db_rows:
+                feed = list(db_rows)
+        except Exception:
+            pass
+
+    try:
+        feed = regional_espn_schedule_fallback(feed)
+    except Exception:
+        pass
+
+    for r in feed:
+        d_iso = str(r.get("match_date_iso") or r.get("match_date") or "").strip()
+        if d_iso == target_date:
+            upcoming_for_date.append(dict(r))
+
+    # 4. Merge Upcoming and Live games using sync_key and fallbacks
+    # Index upcoming by sync_key, match_id, and canonical team pair
+    upcoming_by_sync: dict[str, dict] = {}
+    upcoming_by_id: dict[str, dict] = {}
+    upcoming_by_pair: dict[tuple[str, str], dict] = {}
+
+    for up in upcoming_for_date:
+        comp = up.get("competition", "")
+        ht = up.get("home_team", "")
+        at = up.get("away_team", "")
+        c_home = up.get("canonical_home_team") or canonical_team_name(ht, comp) or ht
+        c_away = up.get("canonical_away_team") or canonical_team_name(at, comp) or at
+        up["canonical_home_team"] = c_home
+        up["canonical_away_team"] = c_away
+        sk = up.get("sync_key") or make_match_sync_key(
+            up.get("match_datetime_et") or up.get("match_date_iso") or target_date,
+            comp,
+            c_home,
+            c_away,
+        )
+        up["sync_key"] = sk
+        if sk and sk not in upcoming_by_sync:
+            upcoming_by_sync[sk] = up
+        mid = str(up.get("match_id") or "").strip()
+        if mid and mid not in upcoming_by_id:
+            upcoming_by_id[mid] = up
+        pair_key = (c_home.strip().lower(), c_away.strip().lower())
+        if pair_key not in upcoming_by_pair:
+            upcoming_by_pair[pair_key] = up
+
+    matched_upcoming_keys = set()
+    merged_items = []
+
+    # First pass: Process all live games and match with upcoming
+    for lg in live_games_for_date:
+        comp = lg.get("competition", "")
+        ht = lg.get("home_team", "")
+        at = lg.get("away_team", "")
+        c_home = lg.get("canonical_home_team") or canonical_team_name(ht, comp) or ht
+        c_away = lg.get("canonical_away_team") or canonical_team_name(at, comp) or at
+        lg_mid = str(lg.get("match_id") or "").strip()
+        lg_sk = lg.get("sync_key") or make_match_sync_key(
+            lg.get("kickoff_et") or lg.get("match_date") or target_date,
+            comp,
+            c_home,
+            c_away,
+        )
+
+        matched_up = None
+        matched_method = None
+
+        if lg_sk and lg_sk in upcoming_by_sync:
+            matched_up = upcoming_by_sync[lg_sk]
+            matched_method = "sync_key"
+        elif lg_mid and lg_mid in upcoming_by_id:
+            matched_up = upcoming_by_id[lg_mid]
+            matched_method = "match_id"
+        else:
+            pair_k = (c_home.strip().lower(), c_away.strip().lower())
+            if pair_k in upcoming_by_pair:
+                matched_up = upcoming_by_pair[pair_k]
+                matched_method = "canonical_pair"
+
+        # Build merged match record
+        item = {}
+        if matched_up:
+            up_sk = matched_up.get("sync_key")
+            if up_sk:
+                matched_upcoming_keys.add(up_sk)
+            # Base is upcoming, overlay live scores
+            if compact:
+                item = _to_compact_upcoming_row(matched_up)
+            else:
+                item = dict(matched_up)
+
+            # Overlay live fields
+            item["match_id"] = lg.get("match_id") or item.get("match_id")
+            item["live_status"] = lg.get("status") or item.get("live_status")
+            item["status"] = lg.get("status")
+            item["status_detail"] = lg.get("status_detail")
+            item["live_clock"] = lg.get("clock") or item.get("live_clock")
+            item["live_period"] = lg.get("period") or item.get("live_period")
+            item["live_updates"] = (lg.get("status") in ("in", "post"))
+            item["home_score"] = lg.get("home_score")
+            item["away_score"] = lg.get("away_score")
+            item["goalscorers"] = lg.get("goalscorers") or item.get("goalscorers") or []
+            item["red_cards"] = lg.get("red_cards") or item.get("red_cards") or []
+            item["yellow_cards"] = lg.get("yellow_cards") or item.get("yellow_cards") or []
+            item["shootout"] = lg.get("shootout")
+            if not compact:
+                for full_key in ("boxscore_stats", "key_events", "lineups", "game_info", "h2h", "last_five", "odds"):
+                    if lg.get(full_key):
+                        item[full_key] = lg[full_key]
+
+            item["sync_status"] = "matched"
+            item["sources"] = ["upcoming", "live_scores"]
+            item["debug"] = {
+                "matched_by": matched_method,
+                "sync_key": lg_sk,
+                "upcoming_sync_key": matched_up.get("sync_key"),
+                "live_match_id": lg_mid,
+                "upcoming_match_id": matched_up.get("match_id"),
+                "live_teams": f"{ht} vs {at}",
+                "upcoming_teams": f"{matched_up.get('home_team')} vs {matched_up.get('away_team')}",
+                "canonical_teams": f"{c_home} vs {c_away}",
+            }
+        else:
+            # Live only game (no model prediction found)
+            if compact:
+                from live_poller import to_compact_live_game
+                item = to_compact_live_game(lg)
+            else:
+                item = dict(lg)
+
+            item["sync_status"] = "live_only"
+            item["sources"] = ["live_scores"]
+            item["sync_key"] = lg_sk
+            item["canonical_home_team"] = c_home
+            item["canonical_away_team"] = c_away
+            item["debug"] = {
+                "matched_by": None,
+                "sync_key": lg_sk,
+                "live_match_id": lg_mid,
+                "live_teams": f"{ht} vs {at}",
+                "canonical_teams": f"{c_home} vs {c_away}",
+            }
+
+        merged_items.append(item)
+
+    # Second pass: Include upcoming games that had no live counterpart (upcoming_only)
+    for up in upcoming_for_date:
+        up_sk = up.get("sync_key")
+        if up_sk and up_sk in matched_upcoming_keys:
+            continue
+        if compact:
+            item = _to_compact_upcoming_row(up)
+        else:
+            item = dict(up)
+
+        ht = up.get("home_team", "")
+        at = up.get("away_team", "")
+        c_home = up.get("canonical_home_team") or canonical_team_name(ht, up.get("competition", "")) or ht
+        c_away = up.get("canonical_away_team") or canonical_team_name(at, up.get("competition", "")) or at
+
+        item["status"] = "pre"
+        item["live_status"] = "pre"
+        item["sync_status"] = "upcoming_only"
+        item["sources"] = ["upcoming"]
+        item["debug"] = {
+            "matched_by": None,
+            "sync_key": up_sk,
+            "upcoming_match_id": up.get("match_id"),
+            "upcoming_teams": f"{ht} vs {at}",
+            "canonical_teams": f"{c_home} vs {c_away}",
+        }
+        merged_items.append(item)
+
+    # Filter by competition if requested
+    if comp_filter:
+        wanted_comps = {c.strip().lower() for c in comp_filter.split(",") if c.strip()}
+        merged_items = [
+            it for it in merged_items
+            if str(it.get("competition", "")).strip().lower() in wanted_comps
+        ]
+
+    # Sort merged matches:
+    # 1. In-progress matches first (status == "in" or live_status == "in")
+    # 2. Scheduled upcoming matches next (status == "pre" or live_status == "pre") ordered by kickoff
+    # 3. Completed matches last (status == "post" or live_status == "post")
+    def _sort_key(m: dict):
+        status = str(m.get("status") or m.get("live_status") or "").strip().lower()
+        if status == "in":
+            prio = 0
+        elif status == "pre":
+            prio = 1
+        else:
+            prio = 2
+        kickoff = str(
+            m.get("match_datetime_et")
+            or m.get("kickoff_et")
+            or m.get("match_datetime_utc")
+            or m.get("start_time")
+            or ""
+        )
+        return (prio, kickoff)
+
+    merged_items.sort(key=_sort_key)
+
+    # Group by competition
+    by_competition = defaultdict(list)
+    for m in merged_items:
+        c_name = m.get("competition") or "Other"
+        by_competition[c_name].append(m)
+
+    # Summary counts
+    total_games = len(merged_items)
+    in_progress_count = sum(1 for m in merged_items if str(m.get("status") or m.get("live_status")).strip().lower() == "in")
+    completed_count = sum(1 for m in merged_items if str(m.get("status") or m.get("live_status")).strip().lower() == "post")
+    scheduled_count = total_games - in_progress_count - completed_count
+    matched_count = sum(1 for m in merged_items if m.get("sync_status") == "matched")
+    upcoming_only_count = sum(1 for m in merged_items if m.get("sync_status") == "upcoming_only")
+    live_only_count = sum(1 for m in merged_items if m.get("sync_status") == "live_only")
+
+    return {
+        "ok": True,
+        "date": target_date,
+        "is_today": is_today,
+        "server_time_utc": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "total_games": total_games,
+            "live": in_progress_count,
+            "scheduled": scheduled_count,
+            "completed": completed_count,
+            "matched": matched_count,
+            "upcoming_only": upcoming_only_count,
+            "live_only": live_only_count,
+        },
+        "matches": merged_items,
+        "by_competition": dict(by_competition),
+    }
+
+
+@live_scores_bp.get("/api/today")
+@live_scores_bp.get("/api/today/compact")
+def api_today():
+    """Unified pre-merged upcoming predictions and live-scores for today.
+
+    Refreshes like /api/live-scores and provides deep synchronization debug metadata.
+    Query parameters:
+      - date=YYYY-MM-DD: override date (defaults to current date in America/New_York)
+      - competition: comma-separated competition names to filter by
+      - compact=1: lightweight rows without bulky rosters/boxscores
+      - refresh=1: force an immediate on-demand live poll cycle from ESPN
+    """
+    comp_filter = request.args.get("competition", "").strip()
+    force_refresh = request.args.get("refresh", "").strip().lower() in {"1", "true", "yes"}
+    compact = (
+        request.args.get("compact", "").strip().lower() in {"1", "true", "yes"}
+        or request.path.endswith("/compact")
+    )
+    date_arg = request.args.get("date", "").strip()
+
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    target_date = now_et.date().isoformat()
+    if date_arg:
+        if date_arg.lower() != "today":
+            if not _valid_date_iso(date_arg):
+                return jsonify({"ok": False, "error": "Invalid date format (use YYYY-MM-DD)"}), 400
+            target_date = date_arg
+
+    # Cache lookup if not force refreshing
+    cache_key = f"{target_date}:{comp_filter}:{compact}"
+    now_ts = time.time()
+    if not force_refresh:
+        with _TODAY_CACHE_LOCK:
+            entry = _TODAY_CACHE.get(cache_key)
+            if entry and (now_ts - entry["ts"]) < _TODAY_CACHE_TTL:
+                return jsonify(entry["payload"])
+
+    payload = build_today_merged_payload(
+        target_date_iso=target_date,
+        comp_filter=comp_filter,
+        compact=compact,
+        force_refresh=force_refresh,
+    )
+
+    with _TODAY_CACHE_LOCK:
+        _TODAY_CACHE[cache_key] = {"ts": now_ts, "payload": payload}
+
+    return jsonify(payload)
 
