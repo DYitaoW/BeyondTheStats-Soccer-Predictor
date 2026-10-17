@@ -713,7 +713,8 @@ def api_startup():
     today_str = today_et.isoformat()
     upcoming_today = []
     try:
-        from routes.helpers import _ALL_UPCOMING_SOURCES, _load_upcoming_rows, exclude_upcoming_only_rows, regional_espn_schedule_fallback
+        from predictions import _load_upcoming_rows
+        from routes.helpers import _ALL_UPCOMING_SOURCES, exclude_upcoming_only_rows, regional_espn_schedule_fallback
         from routes.predictions import _to_compact_upcoming_row
 
         feed = []
@@ -814,9 +815,9 @@ def build_today_merged_payload(
                 pass
 
     from competition_rules import canonical_team_name, make_match_sync_key
+    from predictions import _load_upcoming_rows
     from routes.helpers import (
         _ALL_UPCOMING_SOURCES,
-        _load_upcoming_rows,
         regional_espn_schedule_fallback,
     )
     from routes.predictions import _clean_float, _to_compact_upcoming_row
