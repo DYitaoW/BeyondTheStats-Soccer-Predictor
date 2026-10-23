@@ -167,6 +167,56 @@ def _write_cup_data_cache(comp_name: str, payload: dict) -> None:
     threading.Thread(target=_persist, name=f"cup-data-cache:{comp_name}", daemon=True).start()
 
 
+def _apply_real_table_patch(payload: dict, real_standings: dict) -> dict:
+    """Return a copy of *payload* with only real-standings fields updated."""
+    patched = dict(payload)
+    real = dict(patched.get("real") or {})
+    real["standings"] = real_standings
+    patched["real"] = real
+    if "real_table" in patched:
+        patched["real_table"] = real_standings
+    return patched
+
+
+def patch_cup_data_real_table(comp_name: str, real_standings: dict | None) -> None:
+    """Update only the real standings inside an existing cup-data cache entry.
+
+    Ensures that as live games finish, cup_data cache immediately serves
+    the updated real table without waiting for full Monte Carlo re-simulation.
+    """
+    if not isinstance(real_standings, dict) or not real_standings.get("groups"):
+        return
+
+    # In-memory cache
+    with _CUP_DATA_MEM_LOCK:
+        entry = _CUP_DATA_MEM.get(comp_name)
+        if entry:
+            expires_at, payload = entry
+            if isinstance(payload, dict):
+                _CUP_DATA_MEM[comp_name] = (
+                    expires_at,
+                    _apply_real_table_patch(payload, real_standings),
+                )
+
+    # On-disk cache
+    path = _cup_data_cache_path(comp_name)
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, dict):
+            return
+        patched = _apply_real_table_patch(payload, real_standings)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(patched, handle, ensure_ascii=False, separators=(",", ":"), default=str)
+        with _CUP_DATA_MEM_LOCK:
+            expires_at = time.time() + _cup_data_ttl_seconds()
+            _CUP_DATA_MEM[comp_name] = (expires_at, patched)
+    except Exception:
+        pass
+
+
 def clear_cup_data_caches() -> int:
     """Drop in-memory and on-disk CupData caches."""
     with _CUP_DATA_MEM_LOCK:

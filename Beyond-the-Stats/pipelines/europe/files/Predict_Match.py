@@ -23,6 +23,7 @@ Responsibilities
 
 import os as _os_paths_setup
 import sys as _sys_paths_setup
+_os_paths_setup.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
 _FILES_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.abspath(__file__))
 _REGION_DIR = _os_paths_setup.path.dirname(_FILES_DIR)  # pipelines/europe
 _SP_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.dirname(_REGION_DIR))  # Beyond-the-Stats
@@ -37,6 +38,7 @@ PROJECT_DIR = str(_bts_paths.SP_DIR)
 import json
 import math
 import os
+import platform
 import re
 import sys
 import hashlib
@@ -78,11 +80,14 @@ EU_RANDOMIZER_MAX_DELTA = 0.08
 DRAW_REDUCTION_FACTOR = 0.08
 HIGH_DRAW_THRESHOLD = 0.42
 HIGH_DRAW_EXTRA_REDUCTION_MAX = 0.18
-CPU_COUNT = max(1, (os.cpu_count() or 2) - 1)
+RESERVED_CORES = int(os.getenv("SOCCER_RESERVED_CORES", "2" if (os.cpu_count() or 4) >= 6 else "1"))
+CPU_COUNT = max(1, (os.cpu_count() or 2) - RESERVED_CORES)
 # Outer-level parallelism (train multiple regressors at once).
 TRAIN_WORKERS = int(os.getenv("SOCCER_TRAIN_WORKERS", str(max(1, min(4, CPU_COUNT // 2)))))
 # Inner model thread count to avoid oversubscription.
 MODEL_THREADS = int(os.getenv("SOCCER_MODEL_THREADS", str(max(1, CPU_COUNT // TRAIN_WORKERS))))
+_IS_DARWIN = platform.system() == "Darwin"
+_FORCE_CPU = _IS_DARWIN or os.getenv("SOCCER_DEVICE", "").strip().lower() == "cpu"
 
 # Early-season prior blending: blend prior-season position/standings into
 # predictions so sparse current-season data does not produce overconfident
@@ -1415,40 +1420,42 @@ def train_result_model(X_train, y_train):
     y_train_enc = label_encoder.fit_transform(y_train)
 
     if XGBClassifier is not None:
-        try:
-            model = XGBClassifier(
-                n_estimators=500,
-                max_depth=8,
-                learning_rate=0.05,
-                subsample=0.9,
-                colsample_bytree=0.9,
-                objective="multi:softprob",
-                num_class=len(label_encoder.classes_),
-                eval_metric="mlogloss",
-                random_state=42,
-                tree_method="hist",
-                device="cuda",
-                n_jobs=MODEL_THREADS,
-            )
-            model.fit(X_train, y_train_enc)
-            return model, label_encoder, "xgboost-gpu"
-        except Exception:
-            model = XGBClassifier(
-                n_estimators=500,
-                max_depth=8,
-                learning_rate=0.05,
-                subsample=0.9,
-                colsample_bytree=0.9,
-                objective="multi:softprob",
-                num_class=len(label_encoder.classes_),
-                eval_metric="mlogloss",
-                random_state=42,
-                tree_method="hist",
-                device="cpu",
-                n_jobs=MODEL_THREADS,
-            )
-            model.fit(X_train, y_train_enc)
-            return model, label_encoder, "xgboost-cpu"
+        if not _FORCE_CPU:
+            try:
+                model = XGBClassifier(
+                    n_estimators=500,
+                    max_depth=8,
+                    learning_rate=0.05,
+                    subsample=0.9,
+                    colsample_bytree=0.9,
+                    objective="multi:softprob",
+                    num_class=len(label_encoder.classes_),
+                    eval_metric="mlogloss",
+                    random_state=42,
+                    tree_method="hist",
+                    device="cuda",
+                    n_jobs=MODEL_THREADS,
+                )
+                model.fit(X_train, y_train_enc)
+                return model, label_encoder, "xgboost-gpu"
+            except Exception:
+                pass
+        model = XGBClassifier(
+            n_estimators=500,
+            max_depth=8,
+            learning_rate=0.05,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            objective="multi:softprob",
+            num_class=len(label_encoder.classes_),
+            eval_metric="mlogloss",
+            random_state=42,
+            tree_method="hist",
+            device="cpu",
+            n_jobs=MODEL_THREADS,
+        )
+        model.fit(X_train, y_train_enc)
+        return model, label_encoder, "xgboost-cpu"
 
     model = RandomForestClassifier(n_estimators=220, random_state=42, n_jobs=MODEL_THREADS)
     model.fit(X_train, y_train_enc)
@@ -1457,38 +1464,40 @@ def train_result_model(X_train, y_train):
 
 def train_regression_model(X_train, y_train, random_state):
     if XGBRegressor is not None:
-        try:
-            model = XGBRegressor(
-                n_estimators=450,
-                max_depth=8,
-                learning_rate=0.05,
-                subsample=0.9,
-                colsample_bytree=0.9,
-                objective="reg:squarederror",
-                eval_metric="rmse",
-                random_state=random_state,
-                tree_method="hist",
-                device="cuda",
-                n_jobs=MODEL_THREADS,
-            )
-            model.fit(X_train, y_train)
-            return model
-        except Exception:
-            model = XGBRegressor(
-                n_estimators=450,
-                max_depth=8,
-                learning_rate=0.05,
-                subsample=0.9,
-                colsample_bytree=0.9,
-                objective="reg:squarederror",
-                eval_metric="rmse",
-                random_state=random_state,
-                tree_method="hist",
-                device="cpu",
-                n_jobs=MODEL_THREADS,
-            )
-            model.fit(X_train, y_train)
-            return model
+        if not _FORCE_CPU:
+            try:
+                model = XGBRegressor(
+                    n_estimators=450,
+                    max_depth=8,
+                    learning_rate=0.05,
+                    subsample=0.9,
+                    colsample_bytree=0.9,
+                    objective="reg:squarederror",
+                    eval_metric="rmse",
+                    random_state=random_state,
+                    tree_method="hist",
+                    device="cuda",
+                    n_jobs=MODEL_THREADS,
+                )
+                model.fit(X_train, y_train)
+                return model
+            except Exception:
+                pass
+        model = XGBRegressor(
+            n_estimators=450,
+            max_depth=8,
+            learning_rate=0.05,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            objective="reg:squarederror",
+            eval_metric="rmse",
+            random_state=random_state,
+            tree_method="hist",
+            device="cpu",
+            n_jobs=MODEL_THREADS,
+        )
+        model.fit(X_train, y_train)
+        return model
 
     model = RandomForestRegressor(n_estimators=160, random_state=random_state, n_jobs=MODEL_THREADS)
     model.fit(X_train, y_train)

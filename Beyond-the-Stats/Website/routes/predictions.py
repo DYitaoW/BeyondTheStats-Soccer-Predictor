@@ -892,32 +892,36 @@ def api_upcoming(mode):
             all_rows = []
             combined_stats = {"correct_total": 0, "total_predictions": 0, "pending_total": 0, "accuracy_pct": 0.0}
             combined_league_stats = {}
-            seen_keys = set()
-            for source, csv_path in _ALL_UPCOMING_SOURCES:
-                rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to)
-                for r in rows:
-                    ck = "|".join(
-                        str(r.get(k, "")).strip().lower()
-                        for k in ("match_date_iso", "competition", "home_team", "away_team")
-                    )
-                    if ck and ck not in seen_keys:
-                        seen_keys.add(ck)
-                        all_rows.append(r)
-                for k, v in (_st or {}).items():
-                    if k not in combined_stats or isinstance(v, (int, float)):
-                        combined_stats[k] = (combined_stats.get(k, 0) if isinstance(v, (int, float)) else 0) + (v if isinstance(v, (int, float)) else 0)
-                for ls in (_ls or []):
-                    comp = ls.get("competition", "")
-                    if comp and comp not in combined_league_stats:
-                        combined_league_stats[comp] = ls
-        if not all_rows:
+            has_sqlite_rows = False
             try:
                 from shared import sqlite_store
-                db_rows = sqlite_store.load_upcoming_games(from_date=target_from, to_date=target_to)
-                if db_rows:
-                    all_rows = list(db_rows)
+                if sqlite_store.count_rows("upcoming_games") > 0:
+                    db_rows = sqlite_store.load_upcoming_games(from_date=target_from, to_date=target_to)
+                    if db_rows:
+                        all_rows = list(db_rows)
+                        has_sqlite_rows = True
             except Exception:
-                pass
+                has_sqlite_rows = False
+
+            if not has_sqlite_rows:
+                seen_keys = set()
+                for source, csv_path in _ALL_UPCOMING_SOURCES:
+                    rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to)
+                    for r in rows:
+                        ck = "|".join(
+                            str(r.get(k, "")).strip().lower()
+                            for k in ("match_date_iso", "competition", "home_team", "away_team")
+                        )
+                        if ck and ck not in seen_keys:
+                            seen_keys.add(ck)
+                            all_rows.append(r)
+                    for k, v in (_st or {}).items():
+                        if k not in combined_stats or isinstance(v, (int, float)):
+                            combined_stats[k] = (combined_stats.get(k, 0) if isinstance(v, (int, float)) else 0) + (v if isinstance(v, (int, float)) else 0)
+                    for ls in (_ls or []):
+                        comp = ls.get("competition", "")
+                        if comp and comp not in combined_league_stats:
+                            combined_league_stats[comp] = ls
 
         all_rows = regional_espn_schedule_fallback(all_rows)
         seen_keys = set()
@@ -1163,7 +1167,6 @@ def api_past_games():
     if raw_offset.isdigit():
         offset = max(0, int(raw_offset))
 
-    prediction_lookup = _build_past_game_prediction_lookup()
     by_key = {}
 
     def _put_past_row(r, *, overwrite_incomplete_only: bool = False):

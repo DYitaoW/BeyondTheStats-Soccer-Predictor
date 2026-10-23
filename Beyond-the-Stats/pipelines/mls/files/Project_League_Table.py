@@ -1,6 +1,7 @@
 
 import os as _os_paths_setup
 import sys as _sys_paths_setup
+_os_paths_setup.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
 _FILES_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.abspath(__file__))
 _REGION_DIR = _os_paths_setup.path.dirname(_FILES_DIR)  # pipelines/mls
 _SP_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.dirname(_REGION_DIR))

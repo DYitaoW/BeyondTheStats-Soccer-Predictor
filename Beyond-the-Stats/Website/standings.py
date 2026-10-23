@@ -920,6 +920,13 @@ def refresh_real_standings_after_live_final(comp_name: str) -> list[str]:
                 patch_league_data_real_table(name, table)
         except Exception:
             pass
+        try:
+            from cup_data import patch_cup_data_real_table
+
+            for name, table in tables_by_name.items():
+                patch_cup_data_real_table(name, table)
+        except Exception:
+            pass
         print(f"[live-standings] Updated real table(s) after final whistle: {', '.join(updated)}")
 
     return updated

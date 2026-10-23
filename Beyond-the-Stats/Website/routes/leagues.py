@@ -179,7 +179,13 @@ def api_tournament(key):
             projected = bracket_obj.get("projected") or {}
             pred = cup_payload.get("predicted") or {}
             table_entries = pred.get("table") or cup_payload.get("predicted_table") or []
-            
+            real_standings = cup_payload.get("real_table") or (cup_payload.get("real") or {}).get("standings")
+            real_entries = []
+            if isinstance(real_standings, dict):
+                groups = real_standings.get("groups") or []
+                if groups and isinstance(groups[0], dict):
+                    real_entries = groups[0].get("entries") or []
+
             # Map table to group_tables format expected by World Cup / tournament views
             cup_payload["group_tables"] = [{
                 "group": "League Phase",
@@ -199,6 +205,26 @@ def api_tournament(key):
                     for row in table_entries if row.get("team")
                 ]
             }] if table_entries else []
+
+            if real_entries:
+                cup_payload["real_group_tables"] = [{
+                    "group": "League Phase",
+                    "teams": [
+                        {
+                            "team": row.get("team"),
+                            "P": row.get("P") or row.get("played") or 0,
+                            "W": row.get("W") or row.get("won") or 0,
+                            "D": row.get("D") or row.get("drawn") or 0,
+                            "L": row.get("L") or row.get("lost") or 0,
+                            "GF": row.get("GF") or row.get("goals_for") or 0,
+                            "GA": row.get("GA") or row.get("goals_against") or 0,
+                            "GD": row.get("GD") or row.get("goal_diff") or 0,
+                            "Pts": row.get("Pts") or row.get("points") or 0,
+                            "position": row.get("position") or row.get("rank"),
+                        }
+                        for row in real_entries if row.get("team")
+                    ]
+                }]
             cup_payload["group_fixtures"] = cup_payload.get("fixtures") or []
             cup_payload["simulations"] = {
                 "winner_probabilities": cup_payload.get("winner_probabilities") or (pred.get("winner") or {}).get("probabilities") or {},
@@ -313,6 +339,7 @@ def api_cup_bracket():
 
 
 @leagues_bp.get("/api/real-cup-data")
+@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
 def api_real_cup_data():
     """Return real cup data in World Cup format."""
     comp = request.args.get("competition", "").strip()

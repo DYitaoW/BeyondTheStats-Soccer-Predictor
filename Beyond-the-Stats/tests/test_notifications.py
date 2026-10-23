@@ -39,6 +39,7 @@ from notifications import (
     unregister,
     unsubscribe_match,
     unsubscribe_team,
+    prune_dead_token,
 )
 from shared import sqlite_store
 
@@ -345,6 +346,79 @@ class TestCompactLiveScores(unittest.TestCase):
         payload = json.loads(raw_bytes.decode("utf-8"))
         self.assertTrue(payload.get("ok"))
         self.assertTrue(payload.get("compact"))
+
+
+class TestDeadTokenPruning(unittest.TestCase):
+    def test_prune_dead_token_cleans_all_stores(self):
+        token = "dead_token_abc_12345"
+        subscribe_match(token, "match_prune_99", "England/Premier League", events=["goal"])
+        subscribe_team(token, "Arsenal", events=["goal", "end"])
+        self.assertIn(token, for_match_tokens("match_prune_99", "England/Premier League"))
+        self.assertIn(token, for_team_tokens("Arsenal"))
+
+        # Prune the dead token
+        prune_dead_token(token)
+
+        # Verify completely pruned from in-memory match and team stores
+        self.assertNotIn(token, for_match_tokens("match_prune_99", "England/Premier League"))
+        self.assertNotIn(token, for_team_tokens("Arsenal"))
+
+    def test_remove_all_token_subscriptions_sqlite(self):
+        token = "dead_sqlite_token_xyz_6789"
+        sqlite_store.save_notification_sub(token, "match", "match_sql_1", competition="MLS")
+        sqlite_store.save_notification_sub(token, "team", "arsenal", competition="Premier League")
+
+        subs_before = [s for s in sqlite_store.load_all_notification_subs() if s["token"] == token]
+        self.assertTrue(len(subs_before) >= 2)
+
+        deleted = sqlite_store.remove_all_token_subscriptions(token)
+        self.assertTrue(deleted >= 2)
+
+        subs_after = [s for s in sqlite_store.load_all_notification_subs() if s["token"] == token]
+        self.assertEqual(len(subs_after), 0)
+
+
+class TestTokenEnvironmentAndDismissal(unittest.TestCase):
+    def test_token_environment_caching(self):
+        from notifications import set_token_environment, get_token_environment, prune_dead_token
+
+        tok_sand = "test_sand_token_111"
+        tok_prod = "test_prod_token_222"
+
+        set_token_environment(tok_sand, "sandbox")
+        set_token_environment(tok_prod, "production")
+
+        self.assertTrue(get_token_environment(tok_sand))
+        self.assertFalse(get_token_environment(tok_prod))
+
+        # subscribe with environment
+        subscribe_match("sub_tok_dev", "m100", "EPL", environment="development")
+        self.assertTrue(get_token_environment("sub_tok_dev"))
+
+        subscribe_team("sub_tok_prod", "Chelsea", environment="production")
+        self.assertFalse(get_token_environment("sub_tok_prod"))
+
+        # pruning should also clear environment cache
+        prune_dead_token("sub_tok_dev")
+        self.assertIsNone(get_token_environment("sub_tok_dev"))
+
+    def test_live_activity_end_dismissal_date(self):
+        from notifications import send_live_activity_end, register, unregister, _apns_notification_queue
+        import time
+
+        _apns_notification_queue.clear()
+        act_token = "act_token_test_dismissal"
+        register(act_token, "dev_tok", "m200", "EPL")
+
+        # End without explicit dismissal_date (defaults to now + 14400s)
+        sent = send_live_activity_end("m200", "EPL", content_state={"status": "FT"})
+        self.assertEqual(sent, 1)
+        self.assertEqual(len(_apns_notification_queue), 1)
+
+        entry = _apns_notification_queue.popleft()
+        self.assertEqual(entry["type"], "liveactivity")
+        self.assertEqual(entry["event"], "end")
+        self.assertIsNone(entry.get("dismissal_date"))  # None in queue entry, populated by _drain_queue as now+14400
 
 
 if __name__ == "__main__":

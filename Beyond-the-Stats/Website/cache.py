@@ -27,8 +27,18 @@ _MAX_MEM_CACHE_ENTRIES = 500
 
 
 def _cache_key(endpoint: str, query_str: str = "") -> str:
-    """Return a deterministic cache key for an API call."""
-    raw = f"{endpoint}:{query_str}"
+    """Return a deterministic cache key for an API call, normalizing query parameters."""
+    norm_query = query_str or ""
+    if norm_query:
+        try:
+            from urllib.parse import parse_qsl, urlencode
+            pairs = parse_qsl(norm_query, keep_blank_values=True)
+            if pairs:
+                pairs.sort(key=lambda x: (x[0], x[1]))
+                norm_query = urlencode(pairs)
+        except Exception:
+            pass
+    raw = f"{endpoint}:{norm_query}"
     return f"api:{hashlib.md5(raw.encode()).hexdigest()}"
 
 

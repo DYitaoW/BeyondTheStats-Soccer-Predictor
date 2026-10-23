@@ -98,7 +98,7 @@ _display_mapping_check: float = 0.0
 # Batch games cache: single-pass load avoids N× file I/O
 _ALL_GAMES_BY_COMPETITION: dict[str, list[dict]] | None = None
 _ALL_GAMES_CACHE_TIME: float = 0
-_ALL_GAMES_CACHE_TTL: float = 120  # seconds
+_ALL_GAMES_CACHE_TTL: float = 300  # seconds
 
 
 def _batch_load_all_games() -> dict[str, list[dict]]:
@@ -110,9 +110,14 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
     by_comp: dict[str, list[dict]] = defaultdict(list)
     seen_by_comp: dict[str, set] = defaultdict(set)
 
-    # ── 1. Live-score history file ───────────────────────────────
+    # ── 1. Live-score history (SQLite fast path with file fallback) ─────
     history = []
-    if os.path.exists(config.LIVE_SCORE_HISTORY_FILE):
+    try:
+        from shared import sqlite_store
+        history = sqlite_store.load_live_score_history()
+    except Exception:
+        history = []
+    if not history and os.path.exists(config.LIVE_SCORE_HISTORY_FILE):
         try:
             with open(config.LIVE_SCORE_HISTORY_FILE, "r", encoding="utf-8") as handle:
                 history = json.load(handle)
@@ -140,29 +145,35 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
     except Exception:
         pass
 
-    # ── 3. past_games.json ───────────────────────────────────────
-    if os.path.exists(config.PAST_GAMES_FILE):
+    # ── 3. past_games (SQLite fast path with file fallback) ────────
+    past = []
+    try:
+        from shared import sqlite_store
+        past = sqlite_store.load_past_games()
+    except Exception:
+        past = []
+    if not past and os.path.exists(config.PAST_GAMES_FILE):
         try:
             with open(config.PAST_GAMES_FILE, "r", encoding="utf-8-sig") as handle:
                 past = json.load(handle)
         except Exception:
             past = []
-        if isinstance(past, list):
-            for g in past:
-                comp = str(g.get("competition", "")).strip()
-                if not comp:
-                    continue
-                try:
-                    hs = int(float(g.get("actual_home_goals") or g.get("home_score")))
-                    aws = int(float(g.get("actual_away_goals") or g.get("away_score")))
-                except (TypeError, ValueError):
-                    continue
-                _append_game(by_comp[comp], seen_by_comp[comp], {
-                    "competition": comp,
-                    "home_team": str(g.get("home_team", "")).strip(),
-                    "away_team": str(g.get("away_team", "")).strip(),
-                    "home_score": hs,
-                    "away_score": aws,
+    if isinstance(past, list):
+        for g in past:
+            comp = str(g.get("competition", "")).strip()
+            if not comp:
+                continue
+            try:
+                hs = int(float(g.get("actual_home_goals") or g.get("home_score")))
+                aws = int(float(g.get("actual_away_goals") or g.get("away_score")))
+            except (TypeError, ValueError):
+                continue
+            _append_game(by_comp[comp], seen_by_comp[comp], {
+                "competition": comp,
+                "home_team": str(g.get("home_team", "")).strip(),
+                "away_team": str(g.get("away_team", "")).strip(),
+                "home_score": hs,
+                "away_score": aws,
                     "status": "post",
                     "round": str(g.get("round", "") or g.get("stage", "")).strip(),
                     "stage": str(g.get("stage", "")).strip(),
@@ -197,7 +208,7 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
         ):
             if not comp_name:
                 continue
-            for _, row in group.iterrows():
+            for row in group.to_dict(orient="records"):
                 actual = str(row.get("actual_result", "")).strip().upper()
                 if actual not in {"H", "D", "A"}:
                     continue
@@ -233,7 +244,7 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
             ):
                 if not comp_name:
                     continue
-                for _, row in group.iterrows():
+                for row in group.to_dict(orient="records"):
                     status = str(row.get("status", "")).upper()
                     if "FULL_TIME" not in status and "FINAL" not in status:
                         continue
@@ -369,7 +380,7 @@ def _batch_mls_or_liga_mx(
         return
 
     processed = "HomeTeam" in frame.columns and "FTHG" in frame.columns
-    for _, row in frame.iterrows():
+    for row in frame.to_dict(orient="records"):
         if processed:
             home_raw = row.get("HomeTeam")
             away_raw = row.get("AwayTeam")
@@ -914,7 +925,7 @@ def _mls_season_csv_games(comp_name: str) -> list[dict]:
 
     rows: list[dict] = []
     processed = "HomeTeam" in frame.columns and "FTHG" in frame.columns
-    for _, row in frame.iterrows():
+    for row in frame.to_dict(orient="records"):
         if processed:
             home_raw = row.get("HomeTeam")
             away_raw = row.get("AwayTeam")
@@ -977,7 +988,7 @@ def _liga_mx_season_csv_games(comp_name: str) -> list[dict]:
 
     rows: list[dict] = []
     processed = "HomeTeam" in frame.columns and "FTHG" in frame.columns
-    for _, row in frame.iterrows():
+    for row in frame.to_dict(orient="records"):
         if processed:
             home_raw = row.get("HomeTeam")
             away_raw = row.get("AwayTeam")
@@ -1047,7 +1058,7 @@ def _csv_settled_games(comp_name: str) -> list[dict]:
             continue
         mask = frame["competition"].astype(str).str.strip() == comp_name
         sub = frame[mask]
-        for _, row in sub.iterrows():
+        for row in sub.to_dict(orient="records"):
             actual = str(row.get("actual_result", "")).strip().upper()
             if actual not in {"H", "D", "A"}:
                 continue
@@ -1075,6 +1086,34 @@ def _csv_settled_games(comp_name: str) -> list[dict]:
 
 def _past_games(comp_name: str) -> list[dict]:
     rows = []
+    try:
+        from shared import sqlite_store
+        db_rows = sqlite_store.load_past_games(competition=comp_name)
+        if db_rows:
+            for g in db_rows:
+                try:
+                    hs = int(float(g.get("actual_home_goals") or g.get("home_score")))
+                    aws = int(float(g.get("actual_away_goals") or g.get("away_score")))
+                except (TypeError, ValueError):
+                    continue
+                rows.append({
+                    "competition": comp_name,
+                    "home_team": str(g.get("home_team", "")).strip(),
+                    "away_team": str(g.get("away_team", "")).strip(),
+                    "home_score": hs,
+                    "away_score": aws,
+                    "status": "post",
+                    "round": str(g.get("round", "") or g.get("stage", "")).strip(),
+                    "stage": str(g.get("stage", "")).strip(),
+                    "group": str(g.get("group", "")).strip(),
+                    "match_date": str(g.get("match_date", "")).strip()[:10],
+                    "match_datetime_utc": str(g.get("match_datetime_utc", "")).strip(),
+                    "source": "past_games",
+                })
+            return rows
+    except Exception:
+        pass
+
     if not os.path.exists(config.PAST_GAMES_FILE):
         return rows
     try:
@@ -1121,7 +1160,7 @@ def _national_csv_games(comp_name: str) -> list[dict]:
         return rows
     mask = frame["competition"].astype(str).str.strip() == comp_name
     sub = frame[mask]
-    for _, row in sub.iterrows():
+    for row in sub.to_dict(orient="records"):
         status = str(row.get("status", "")).upper()
         if "FULL_TIME" not in status and "FINAL" not in status:
             continue

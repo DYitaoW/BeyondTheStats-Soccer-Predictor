@@ -38,6 +38,9 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+# Apple Silicon fork safety for multiprocessing libraries
+os.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
+
 MAIN_DIR = Path(__file__).resolve().parent
 SP_DIR = MAIN_DIR.parent
 ROOT_DIR = SP_DIR.parent
@@ -420,6 +423,12 @@ def _system_ram_gb():
         return float(psutil.virtual_memory().total) / (1024 ** 3)
     except Exception:
         pass
+    if sys.platform == "darwin":
+        try:
+            out = subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip()
+            return float(out) / (1024 ** 3)
+        except Exception:
+            pass
     if sys.platform.startswith("linux"):
         try:
             return (

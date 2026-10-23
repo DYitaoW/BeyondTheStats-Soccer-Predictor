@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.beyondthestats.backend</string>
+
+    <!-- Update these paths to match your installation path on the M6 Mac Mini -->
+    <key>WorkingDirectory</key>
+    <string>/Users/Shared/BeyondTheStats/Soccer-Result-Predictor/Beyond-the-Stats</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Shared/BeyondTheStats/Soccer-Result-Predictor/Beyond-the-Stats/venv/bin/python</string>
+        <string>main/run_backend.py</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8000</string>
+        <string>--memory-limit-gb</string>
+        <string>12.0</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <!-- Apple Silicon fork safety for multiprocessing libraries -->
+        <key>OBJC_DISABLE_INITIALIZE_FORK_SAFETY</key>
+        <string>YES</string>
+        <!-- Optional APNs credentials path (defaults to Website/AuthKey_*.p8 if unset) -->
+        <!-- <key>APNS_AUTH_KEY_PATH</key> -->
+        <!-- <string>/Users/Shared/BeyondTheStats/Soccer-Result-Predictor/Beyond-the-Stats/Website/AuthKey.p8</string> -->
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <!-- Standard and Error logs -->
+    <key>StandardOutPath</key>
+    <string>/Users/Shared/BeyondTheStats/Soccer-Result-Predictor/Beyond-the-Stats/Output/Logs/launchd_stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Shared/BeyondTheStats/Soccer-Result-Predictor/Beyond-the-Stats/Output/Logs/launchd_stderr.log</string>
+
+    <!-- Graceful shutdown timeout before SIGKILL (30 seconds) -->
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+
+    <!-- Process niceness (courtesy to interactive desktop apps & co-hosted servers) -->
+    <key>Nice</key>
+    <integer>5</integer>
+
+    <!-- File descriptor limit to prevent socket exhaustion during concurrent traffic -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>8192</integer>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Standard</string>
+</dict>
+</plist>
+

@@ -178,6 +178,18 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         f"""
+        CREATE INDEX IF NOT EXISTS idx_past_games_home
+        ON {_PAST_TABLE}(home_team)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_past_games_away
+        ON {_PAST_TABLE}(away_team)
+        """
+    )
+    conn.execute(
+        f"""
         CREATE TABLE IF NOT EXISTS {_LIVE_TABLE} (
             storage_key TEXT PRIMARY KEY,
             match_id TEXT,
@@ -207,6 +219,18 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         f"""
         CREATE INDEX IF NOT EXISTS idx_live_hist_date
         ON {_LIVE_TABLE}(game_date)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_live_hist_home
+        ON {_LIVE_TABLE}(home_team)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_live_hist_away
+        ON {_LIVE_TABLE}(away_team)
         """
     )
     conn.execute(
@@ -305,6 +329,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         f"""
         CREATE INDEX IF NOT EXISTS idx_notif_subs_target
         ON {_NOTIF_SUBS_TABLE}(sub_type, sub_target)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_notif_subs_token
+        ON {_NOTIF_SUBS_TABLE}(token)
         """
     )
 
@@ -854,6 +884,74 @@ def load_live_score_history(
             params,
         ).fetchall()
         return _decode_rows(rows)
+    finally:
+        conn.close()
+
+
+def load_team_recent_matches(
+    team_name: str,
+    limit: int = 10,
+    db_path: Optional[Path] = None,
+) -> list[dict]:
+    """Return the most recent finished matches for a team from past_games and live_score_history."""
+    t = str(team_name or "").strip()
+    if not t:
+        return []
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    t_lower = t.lower()
+    try:
+        # Query past games where team was home or away using indexed lookups
+        fetch_limit = max(1, int(limit)) * 3
+        rows = conn.execute(
+            f"""
+            SELECT payload_json FROM {_PAST_TABLE}
+            WHERE LOWER(COALESCE(home_team, '')) = ? OR LOWER(COALESCE(away_team, '')) = ?
+            ORDER BY COALESCE(match_date_iso, '') DESC
+            LIMIT ?
+            """,
+            (t_lower, t_lower, fetch_limit),
+        ).fetchall()
+
+        matches: list[dict] = []
+        seen_keys: set[str] = set()
+        for r in rows:
+            payload = _json_loads(r["payload_json"])
+            if not isinstance(payload, dict):
+                continue
+            date_str = str(payload.get("match_date_iso") or payload.get("match_date") or "")
+            ht = str(payload.get("home_team", "")).strip()
+            at = str(payload.get("away_team", "")).strip()
+            comp = str(payload.get("competition", "")).strip()
+            ck = f"{date_str}|{ht.lower()}|{at.lower()}"
+            if ck in seen_keys:
+                continue
+            seen_keys.add(ck)
+            is_home = (ht.lower() == t_lower)
+            hs = payload.get("actual_home_goals") if payload.get("actual_home_goals") is not None else payload.get("home_score")
+            aws = payload.get("actual_away_goals") if payload.get("actual_away_goals") is not None else payload.get("away_score")
+            res = str(payload.get("actual_result", "")).strip().upper()
+            if not res and hs is not None and aws is not None:
+                try:
+                    hs_int = int(hs)
+                    aws_int = int(aws)
+                    res = "H" if hs_int > aws_int else ("A" if aws_int > hs_int else "D")
+                except Exception:
+                    pass
+            matches.append({
+                "date": date_str,
+                "competition": comp,
+                "home_team": ht,
+                "away_team": at,
+                "home_score": int(hs) if hs is not None and str(hs).isdigit() else None,
+                "away_score": int(aws) if aws is not None and str(aws).isdigit() else None,
+                "result": res,
+                "is_home": is_home,
+                "opponent": at if is_home else ht,
+            })
+            if len(matches) >= limit:
+                break
+        return matches
     finally:
         conn.close()
 
@@ -1574,6 +1672,33 @@ def remove_match_notification_subs(
             cur = conn.execute(
                 f"DELETE FROM {_NOTIF_SUBS_TABLE} WHERE sub_type = 'match' AND (sub_target = ? OR sub_target LIKE ?)",
                 (mid, f"{mid}|%"),
+            )
+            deleted = cur.rowcount
+            _durable_commit(conn)
+            return deleted
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def remove_all_token_subscriptions(
+    token: str,
+    db_path: Optional[Path] = None,
+) -> int:
+    """Remove all subscriptions for a specific device token (e.g. after APNs 410 Unregistered)."""
+    t = str(token or "").strip()
+    if not t:
+        return 0
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"DELETE FROM {_NOTIF_SUBS_TABLE} WHERE token = ?",
+                (t,),
             )
             deleted = cur.rowcount
             _durable_commit(conn)

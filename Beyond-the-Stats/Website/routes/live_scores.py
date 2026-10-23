@@ -469,24 +469,31 @@ def api_get_notifications():
 def api_register_device():
     """Register a device token for push notifications."""
     payload = request.get_json(silent=True) or {}
-    token = str(payload.get("token", "")).strip()
+    token = str(payload.get("token", "")).strip().replace(" ", "").replace("<", "").replace(">", "")
     if not token:
         return jsonify({"ok": False, "error": "token required"}), 400
     if len(token) > 512:
         return jsonify({"ok": False, "error": "token too long"}), 400
     platform = str(payload.get("platform", "generic")).strip().lower()
+    env = payload.get("environment") or request.headers.get("X-Apns-Environment")
+    if env:
+        try:
+            from notifications import set_token_environment
+            set_token_environment(token, env)
+        except Exception:
+            pass
     if platform == "ios":
         ios_device_tokens.add(token)
     else:
         device_tokens.add(token)
-    return jsonify({"ok": True, "registered": True})
+    return jsonify({"ok": True, "registered": True, "environment": env or "auto"})
 
 
 @live_scores_bp.post("/api/notifications/unregister")
 def api_unregister_device():
     """Remove a device token."""
     payload = request.get_json(silent=True) or {}
-    token = str(payload.get("token", "")).strip()
+    token = str(payload.get("token", "")).strip().replace(" ", "").replace("<", "").replace(">", "")
     if not token:
         return jsonify({"ok": False, "error": "token required"}), 400
     platform = str(payload.get("platform", "generic")).strip().lower()
@@ -501,11 +508,12 @@ def api_unregister_device():
 def api_subscribe_match_notifications():
     """Subscribe a device to live-event alerts for a specific match or team with event preferences."""
     payload = request.get_json(silent=True) or {}
-    token = str(payload.get("token", "")).strip()
+    token = str(payload.get("token", "")).strip().replace(" ", "").replace("<", "").replace(">", "")
     match_id = str(payload.get("match_id", "")).strip()
     team = str(payload.get("team", "") or payload.get("team_name", "")).strip()
     competition = str(payload.get("competition", "")).strip()
     events = payload.get("events")
+    env = payload.get("environment") or request.headers.get("X-Apns-Environment")
 
     if not token:
         return jsonify({"ok": False, "error": "token required"}), 400
@@ -533,12 +541,12 @@ def api_subscribe_match_notifications():
     subscribed_targets = []
 
     if match_id:
-        ok_m = subscribe_match(token, match_id, competition, events=norm_events)
+        ok_m = subscribe_match(token, match_id, competition, events=norm_events, environment=env)
         if ok_m:
             subscribed_targets.append(f"match:{match_id}")
 
     if team:
-        ok_t = subscribe_team(token, team, competition=competition, events=norm_events)
+        ok_t = subscribe_team(token, team, competition=competition, events=norm_events, environment=env)
         if ok_t:
             subscribed_targets.append(f"team:{team}")
 
@@ -547,6 +555,7 @@ def api_subscribe_match_notifications():
         "subscribed": bool(subscribed_targets),
         "targets": subscribed_targets,
         "events": sorted(list(norm_events)),
+        "environment": env or "auto",
     })
 
 
@@ -581,10 +590,11 @@ def api_unsubscribe_match_notifications():
 def api_subscribe_team():
     """Subscribe a device token to all matches involving a specific team with optional event preferences."""
     payload = request.get_json(silent=True) or {}
-    token = str(payload.get("token", "")).strip()
+    token = str(payload.get("token", "")).strip().replace(" ", "").replace("<", "").replace(">", "")
     team = str(payload.get("team", "") or payload.get("team_name", "")).strip()
     competition = str(payload.get("competition", "")).strip()
     events = payload.get("events")
+    env = payload.get("environment") or request.headers.get("X-Apns-Environment")
 
     if not token or not team:
         return jsonify({"ok": False, "error": "token and team required"}), 400
@@ -592,12 +602,13 @@ def api_subscribe_team():
         return jsonify({"ok": False, "error": "input too long"}), 400
 
     norm_events = normalize_events(events)
-    ok = subscribe_team(token, team, competition=competition, events=norm_events)
+    ok = subscribe_team(token, team, competition=competition, events=norm_events, environment=env)
     return jsonify({
         "ok": True,
         "subscribed": ok,
         "team": team,
         "events": sorted(list(norm_events)),
+        "environment": env or "auto",
     })
 
 
@@ -640,10 +651,11 @@ def api_get_notification_preferences():
 def api_register_live_activity():
     """Register a Live Activity push token for a specific match with optional event preferences."""
     payload = request.get_json(silent=True) or {}
-    activity_token = str(payload.get("activity_token", "")).strip()
+    activity_token = str(payload.get("activity_token", "")).strip().replace(" ", "").replace("<", "").replace(">", "")
     match_id = str(payload.get("match_id", "")).strip()
     competition = str(payload.get("competition", "")).strip()
     events = payload.get("events")
+    env = payload.get("environment") or request.headers.get("X-Apns-Environment")
 
     if not activity_token or not match_id:
         return jsonify({"ok": False, "error": "activity_token and match_id required"}), 400
@@ -664,16 +676,21 @@ def api_register_live_activity():
         competition = competition or ""
     if len(activity_token) > 1024 or len(match_id) > 256 or len(competition) > 256:
         return jsonify({"ok": False, "error": "input too long"}), 400
-    device_token = str(payload.get("device_token", "")).strip()
+    device_token = str(payload.get("device_token", "")).strip().replace(" ", "").replace("<", "").replace(">", "")
     if len(device_token) > 512:
         return jsonify({"ok": False, "error": "device_token too long"}), 400
 
     ok = live_activities.register(
-        activity_token, device_token, match_id, competition, events=events
+        activity_token, device_token, match_id, competition, events=events, environment=env
     )
     if ok and device_token:
-        subscribe_match(device_token, match_id, competition, events=events)
-    return jsonify({"ok": True, "registered": ok, "total": len(live_activities.all_activities())})
+        subscribe_match(device_token, match_id, competition, events=events, environment=env)
+    return jsonify({
+        "ok": True,
+        "registered": ok,
+        "total": len(live_activities.all_activities()),
+        "environment": env or "auto",
+    })
 
 
 @live_scores_bp.post("/live-activities/unregister")

@@ -86,11 +86,31 @@ _match_notification_subscriptions: dict[str, set[str]] = {}
 _match_subscription_events: dict[str, dict[str, set[str]]] = {}
 _match_notification_subscriptions_lock = threading.Lock()
 
-# Team push subscription store: key = normalized_team_name (str),
-# value = set of device tokens that asked to be notified about any game for that team.
-_team_notification_subscriptions: dict[str, set[str]] = {}
-_team_subscription_events: dict[str, dict[str, set[str]]] = {}
-_team_notification_subscriptions_lock = threading.Lock()
+# Token environment cache: maps clean token to bool (True = Sandbox, False = Production)
+_token_environment_cache: dict[str, bool] = {}
+_token_environment_lock = threading.Lock()
+
+
+def set_token_environment(token: str, env: str | bool) -> bool:
+    """Explicitly cache whether a device or Live Activity token is sandbox or production."""
+    clean = str(token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
+    if not clean:
+        return False
+    if isinstance(env, bool):
+        is_sandbox = env
+    else:
+        norm = str(env or "").strip().lower()
+        is_sandbox = norm in {"sandbox", "dev", "development", "debug", "1", "true"}
+    with _token_environment_lock:
+        _token_environment_cache[clean] = is_sandbox
+    return is_sandbox
+
+
+def get_token_environment(token: str) -> Optional[bool]:
+    """Get the cached environment (True = Sandbox, False = Production) for a token."""
+    clean = str(token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
+    with _token_environment_lock:
+        return _token_environment_cache.get(clean)
 
 
 def normalize_team_name(team: str) -> str:
@@ -142,19 +162,23 @@ def subscribe_match(
     match_id: str,
     competition: str,
     events: Optional[Iterable[str] | str] = None,
+    environment: Optional[str | bool] = None,
 ) -> bool:
     """Register a device token to receive regular push alerts for one match with event preferences."""
     key = _match_key(match_id, competition)
     norm_events = normalize_events(events)
+    clean_token = str(device_token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
+    if environment is not None and clean_token:
+        set_token_environment(clean_token, environment)
     with _match_notification_subscriptions_lock:
         subs = _match_notification_subscriptions.setdefault(key, set())
-        subs.add(device_token)
-        _match_subscription_events.setdefault(key, {})[device_token] = norm_events
-        ios_device_tokens.add(device_token)
+        subs.add(clean_token)
+        _match_subscription_events.setdefault(key, {})[clean_token] = norm_events
+        ios_device_tokens.add(clean_token)
     if sqlite_store is not None:
         try:
             sqlite_store.save_notification_sub(
-                device_token, "match", key, competition=competition, events=norm_events
+                clean_token, "match", key, competition=competition, events=norm_events
             )
         except Exception as exc:
             logger.warning(f"[notifications] failed to save match sub to SQLite: {exc}")
@@ -241,21 +265,25 @@ def subscribe_team(
     team: str,
     competition: str = "",
     events: Optional[Iterable[str] | str] = None,
+    environment: Optional[str | bool] = None,
 ) -> bool:
     """Register a device token to receive push alerts for any game involving team with event preferences."""
     norm = normalize_team_name(team)
     if not norm or not device_token:
         return False
     norm_events = normalize_events(events)
+    clean_token = str(device_token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
+    if environment is not None and clean_token:
+        set_token_environment(clean_token, environment)
     with _team_notification_subscriptions_lock:
         subs = _team_notification_subscriptions.setdefault(norm, set())
-        subs.add(device_token)
-        _team_subscription_events.setdefault(norm, {})[device_token] = norm_events
-        ios_device_tokens.add(device_token)
+        subs.add(clean_token)
+        _team_subscription_events.setdefault(norm, {})[clean_token] = norm_events
+        ios_device_tokens.add(clean_token)
     if sqlite_store is not None:
         try:
             sqlite_store.save_notification_sub(
-                device_token, "team", norm, competition=competition, events=norm_events
+                clean_token, "team", norm, competition=competition, events=norm_events
             )
         except Exception as exc:
             logger.warning(f"[notifications] failed to save team sub to SQLite: {exc}")
@@ -376,6 +404,53 @@ def get_device_subscriptions(token: str) -> dict:
     }
 
 
+def prune_dead_token(token: str, is_live_activity: bool = False) -> None:
+    """Purge an invalid or unregistered token (APNs 410 or fatal BadDeviceToken) from all stores."""
+    clean_token = str(token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
+    if not clean_token:
+        return
+    logger.info("Pruning dead APNs token: %s... (live_activity=%s)", clean_token[:12], is_live_activity)
+
+    with _token_environment_lock:
+        _token_environment_cache.pop(clean_token, None)
+
+    if is_live_activity:
+        unregister(clean_token)
+    else:
+        device_tokens.discard(clean_token)
+        ios_device_tokens.discard(clean_token)
+
+        with _match_notification_subscriptions_lock:
+            for k in list(_match_notification_subscriptions.keys()):
+                subs = _match_notification_subscriptions[k]
+                subs.discard(clean_token)
+                if not subs:
+                    del _match_notification_subscriptions[k]
+                ev_map = _match_subscription_events.get(k)
+                if ev_map and clean_token in ev_map:
+                    del ev_map[clean_token]
+                    if not ev_map:
+                        _match_subscription_events.pop(k, None)
+
+        with _team_notification_subscriptions_lock:
+            for team in list(_team_notification_subscriptions.keys()):
+                subs = _team_notification_subscriptions[team]
+                subs.discard(clean_token)
+                if not subs:
+                    del _team_notification_subscriptions[team]
+                ev_map = _team_subscription_events.get(team)
+                if ev_map and clean_token in ev_map:
+                    del ev_map[clean_token]
+                    if not ev_map:
+                        _team_subscription_events.pop(team, None)
+
+        if sqlite_store is not None:
+            try:
+                sqlite_store.remove_all_token_subscriptions(clean_token)
+            except Exception as exc:
+                logger.warning(f"[notifications] failed to remove dead token from SQLite: {exc}")
+
+
 def record_notification_event(
     title: str,
     body: str,
@@ -459,16 +534,24 @@ def register(
     match_id: str,
     competition: str,
     events: Optional[Iterable[str] | str] = None,
+    environment: Optional[str | bool] = None,
 ) -> bool:
     key = _match_key(match_id, competition)
     norm_events = normalize_events(events)
+    clean_activity = str(activity_token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
+    clean_device = str(device_token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
+    if environment is not None:
+        if clean_activity:
+            set_token_environment(clean_activity, environment)
+        if clean_device:
+            set_token_environment(clean_device, environment)
     with _live_activities_lock:
         existing = _live_activities.setdefault(key, [])
-        if any(e["activity_token"] == activity_token for e in existing):
+        if any(e["activity_token"] == clean_activity for e in existing):
             return False
         existing.append({
-            "activity_token": activity_token,
-            "device_token": device_token,
+            "activity_token": clean_activity,
+            "device_token": clean_device,
             "match_id": str(match_id or "").strip(),
             "competition": normalize_live_competition(competition),
             "events": norm_events,
@@ -586,8 +669,6 @@ _apns_http2_client = None
 _apns_http2_client_lock = threading.Lock()
 _apns_recent_logs: deque[dict] = deque(maxlen=50)
 _apns_recent_logs_lock = threading.Lock()
-_token_environment_cache: dict[str, bool] = {}
-_token_environment_lock = threading.Lock()
 
 
 def _get_apns_client():
@@ -794,6 +875,12 @@ def apns_send_detailed(
         result["hint"] = _derive_apns_hint(result["status_code"], result["reason"], live_activity, use_sandbox)
 
         if not result["ok"]:
+            # Auto-prune dead/expired tokens (APNs 410 Unregistered or fatal BadDeviceToken)
+            if result["status_code"] == 410 or (
+                result["status_code"] == 400 and result.get("reason") == "BadDeviceToken"
+            ):
+                prune_dead_token(clean_token, is_live_activity=live_activity)
+
             logger.warning(
                 "APNs %s push failed: status=%s reason=%s token_prefix=%s topic=%s sandbox=%s",
                 "live-activity" if live_activity else "alert",
@@ -948,7 +1035,13 @@ def _drain_queue() -> None:
                 aps["alert"] = entry["alert"]
                 aps["sound"] = entry.get("sound", "default")
             if event == "end":
-                aps["dismissal-date"] = int(entry.get("dismissal_date") or time.time())
+                # In ActivityKit, dismissal-date specifies when the ended Live Activity is removed
+                # from the user's Lock Screen. If not provided, retain for 4 hours (14400s)
+                # so the user can see the final score when picking up their phone.
+                d_date = entry.get("dismissal_date")
+                if d_date is None:
+                    d_date = int(time.time() + 14400)
+                aps["dismissal-date"] = int(d_date)
             payload = {"aps": aps}
         else:
             topic = config.APNS_TOPIC or ""
@@ -1006,8 +1099,13 @@ def send_live_activity_end(
     competition: str,
     content_state: dict | None = None,
     alert: Optional[dict] = None,
+    dismissal_date: Optional[int] = None,
 ) -> int:
-    """Queue an 'end' Live Activity push (dismisses the card) for a match with optional alert."""
+    """Queue an 'end' Live Activity push for a match with optional alert and dismissal date.
+
+    dismissal_date: Epoch timestamp (seconds) when iOS removes the ended activity from Lock Screen.
+    Defaults to 4 hours in the future to allow users to view the final score.
+    """
     activities = for_match(match_id, competition)
     if not activities:
         unregister_by_match(match_id, competition)
@@ -1021,6 +1119,7 @@ def send_live_activity_end(
             "content_state": state,
             "event": "end",
             "alert": alert,
+            "dismissal_date": dismissal_date,
             "match_id": match_id,
             "competition": normalize_live_competition(competition),
         })
