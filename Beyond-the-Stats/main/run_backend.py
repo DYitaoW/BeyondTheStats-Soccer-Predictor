@@ -50,6 +50,9 @@ import os
 import sys
 from pathlib import Path
 
+# Apple Silicon fork safety for multiprocessing libraries
+os.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
+
 MAIN_DIR = Path(__file__).resolve().parent
 SP_DIR = MAIN_DIR.parent  # Beyond-the-Stats/
 PROJECT_ROOT = SP_DIR.parent  # repo root
@@ -79,11 +82,13 @@ def parse_args() -> argparse.Namespace:
         default="0.0.0.0",
         help="Flask bind host (default 0.0.0.0).",
     )
+    # macOS Monterey+ reserves port 5000 for AirPlay Receiver (ControlCenter); default to 8000 on macOS
+    default_port = int(os.environ.get("PORT", "8000" if sys.platform == "darwin" else "5000"))
     parser.add_argument(
         "--port",
         type=int,
-        default=5000,
-        help="Flask bind port (default 5000).",
+        default=default_port,
+        help=f"Flask/FastAPI bind port (default {default_port}; set $PORT or pass --port).",
     )
     parser.add_argument(
         "--no-gunicorn",

@@ -1,6 +1,7 @@
 
 import os as _os_paths_setup
 import sys as _sys_paths_setup
+_os_paths_setup.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
 _FILES_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.abspath(__file__))
 _REGION_DIR = _os_paths_setup.path.dirname(_FILES_DIR)  # pipelines/extra
 _SP_DIR = _os_paths_setup.path.dirname(_os_paths_setup.path.dirname(_REGION_DIR))
@@ -778,10 +779,11 @@ def run_monte_carlo(teams, base_table, future_predictions, runs, competition=Non
     progress = min(1.0, least_played / float(pm.EARLY_SEASON_GAMES_THRESHOLD))
     jitter_scale = 0.05 * (1.0 - progress)
 
+    is_h2h = competition in H2H_LEAGUES
     for _ in range(max(1, int(runs))):
         sim_table = clone_table(base_table)
         # Reset each iteration — appending forever made H2H ranking O(runs^2).
-        sim_matches = list(real_matches)
+        sim_matches = list(real_matches) if is_h2h else None
         for fixture in future_predictions:
             probs = fixture["probs"]
             if jitter_scale > 0.0:
@@ -789,9 +791,10 @@ def run_monte_carlo(teams, base_table, future_predictions, runs, competition=Non
             result = sample_outcome(probs)
             hg, ag = coerce_scoreline(result, fixture["pred_home_goals"], fixture["pred_away_goals"])
             apply_result(sim_table, fixture["home_team"], fixture["away_team"], hg, ag, is_real=False)
-            sim_matches.append((fixture["home_team"], fixture["away_team"], hg, ag))
+            if is_h2h:
+                sim_matches.append((fixture["home_team"], fixture["away_team"], hg, ag))
 
-        ranked = rank_table(sim_table, competition=competition, all_matches=sim_matches if competition in H2H_LEAGUES else None)
+        ranked = rank_table(sim_table, competition=competition, all_matches=sim_matches if is_h2h else None)
         for pos, (team, stats) in enumerate(ranked, start=1):
             position_counts[team][pos] += 1
             for key, value in stats.items():

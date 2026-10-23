@@ -313,9 +313,20 @@ def main() -> None:
     tables = build_historical_tables(season_teams)
     team_prior = _team_prior_snapshot(tables)
     team_history = _build_team_history(tables)
+    new_sig = _season_teams_signature(season_teams)
+    if OUTPUT_FILE.exists():
+        try:
+            with open(OUTPUT_FILE, "r", encoding="utf-8") as fh:
+                existing_data = json.load(fh)
+            if existing_data.get("generated_season_signature") == new_sig:
+                print(f"[build-historical-tables] {OUTPUT_FILE.name} is already up to date (signature match); skipping rewrite.")
+                return
+        except Exception:
+            pass
+
     output = {
         "generated_utc": datetime.now(timezone.utc).isoformat(),
-        "generated_season_signature": _season_teams_signature(season_teams),
+        "generated_season_signature": new_sig,
         "league_tiers": {c: t for c, t in LEAGUE_TIERS.items() if _country_of(c) in team_history},
         "competitions": tables,
         "team_prior": team_prior,

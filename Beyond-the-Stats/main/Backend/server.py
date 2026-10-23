@@ -33,6 +33,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
+# Apple Silicon fork safety for multiprocessing libraries
+os.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
+
 from .memory import MemoryMonitor, MemoryReading
 from .scheduler import FutureGamesWatcher, next_run_after, seconds_until
 
@@ -42,7 +45,29 @@ DEFAULT_REFRESH_HOUR = 2
 DEFAULT_REFRESH_MINUTE = 0
 DEFAULT_REFRESH_TZ = "America/New_York"
 
-DEFAULT_MEMORY_LIMIT_GB = 12.0
+
+def _detect_safe_memory_limit_gb(fallback: float = 12.0) -> float:
+    """Auto-scale RAM ceiling so the backend leaves headroom for the desktop OS and other servers."""
+    override = os.environ.get("BTS_MEMORY_LIMIT_GB", "").strip()
+    if override:
+        try:
+            return float(override)
+        except ValueError:
+            pass
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip()
+            total_gb = float(out) / (1024 ** 3)
+            # Use at most 60% of physical memory on a shared Mac, bounded between 4.0 and 24.0 GB
+            return round(max(4.0, min(24.0, total_gb * 0.60)), 1)
+        import psutil
+        total_gb = float(psutil.virtual_memory().total) / (1024 ** 3)
+        return round(max(4.0, min(24.0, total_gb * 0.60)), 1)
+    except Exception:
+        return fallback
+
+
+DEFAULT_MEMORY_LIMIT_GB = _detect_safe_memory_limit_gb()
 DEFAULT_WATCHER_INTERVAL_S = 300.0
 DEFAULT_PIPELINE_TIMEOUT_S = 6 * 3600  # 6 hours for the full daily run
 
@@ -91,7 +116,9 @@ class BackendConfig:
     # Website
     serve_website: bool = True
     host: str = "0.0.0.0"
-    port: int = 5000
+    port: int = field(
+        default_factory=lambda: int(os.environ.get("PORT", "8000" if sys.platform == "darwin" else "5000"))
+    )
     use_gunicorn: bool = True  # auto-falls-back to Flask dev server on Windows
 
     # Pipeline
@@ -122,7 +149,7 @@ class BackendConfig:
     watcher_window_days: int = 365  # how far ahead the watcher re-runs
 
     # Resource limits
-    memory_limit_gb: float = DEFAULT_MEMORY_LIMIT_GB
+    memory_limit_gb: float = field(default_factory=lambda: DEFAULT_MEMORY_LIMIT_GB)
 
     # Misc
     log_dir: Path = field(default_factory=lambda: OUTPUT_LOGS_DIR)
@@ -267,6 +294,13 @@ class BackendServer:
             )
             FastAPIApp(website_app.app, options).run()
         except Exception as exc:
+            if "Address already in use" in str(exc) or getattr(exc, "errno", None) == 48:
+                if self.config.port == 5000 and sys.platform == "darwin":
+                    LOG.error(
+                        "[web] Port 5000 is occupied. On macOS Monterey+, Apple AirPlay Receiver "
+                        "(ControlCenter) uses port 5000 by default. Set PORT=8000 (or pass --port 8000) "
+                        "or disable AirPlay Receiver in macOS System Settings -> General -> AirDrop & AirPlay."
+                    )
             LOG.exception("[web] gunicorn crashed: %s -- falling back to direct uvicorn", exc)
             self._run_flask_dev()
 
@@ -288,6 +322,13 @@ class BackendServer:
                 log_level="info",
             )
         except Exception as exc:
+            if "Address already in use" in str(exc) or getattr(exc, "errno", None) == 48:
+                if self.config.port == 5000 and sys.platform == "darwin":
+                    LOG.error(
+                        "[web] Port 5000 is occupied. On macOS Monterey+, Apple AirPlay Receiver "
+                        "(ControlCenter) uses port 5000 by default. Set PORT=8000 (or pass --port 8000) "
+                        "or disable AirPlay Receiver in macOS System Settings -> General -> AirDrop & AirPlay."
+                    )
             LOG.exception("[web] uvicorn server crashed: %s", exc)
 
     # ------------------------------------------------------------------
@@ -426,15 +467,19 @@ class BackendServer:
             if force_path_b:
                 subprocess_env["BTS_FORCE_PATH_B"] = force_path_b
             pipeline_log.start_run(trigger=trigger, reset=True)
-            proc = subprocess.Popen(
-                cmd,
-                cwd=str(PROJECT_ROOT),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env=subprocess_env,
-                start_new_session=True,
-            )
+            popen_kwargs = {
+                "cwd": str(PROJECT_ROOT),
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.STDOUT,
+                "text": True,
+                "env": subprocess_env,
+                "start_new_session": True,
+            }
+            if sys.platform != "win32":
+                # Give user desktop tasks and other servers priority over heavy background training
+                nice_val = int(os.getenv("SOCCER_PIPELINE_NICE", "5"))
+                popen_kwargs["preexec_fn"] = lambda: os.nice(nice_val)
+            proc = subprocess.Popen(cmd, **popen_kwargs)
             proc._bts_trigger = trigger  # type: ignore[attr-defined]
             self._pipeline_proc = proc
             self._tee_pipeline_output()

@@ -798,7 +798,15 @@ def build_results_index_from_espn(predictions_df, mapping_by_competition, fetch_
         if subset.empty:
             continue
         predicted_team_names = set(subset["home_team"].astype(str)) | set(subset["away_team"].astype(str))
-        date_series = pd.to_datetime(subset["match_date"], errors="coerce")
+        
+        # Only query dates for fixtures that still need settling (or are missing actual_result)
+        if "actual_result" in subset.columns:
+            unsettled_subset = subset[~subset["actual_result"].astype(str).str.strip().str.upper().isin({"H", "D", "A"})]
+        else:
+            unsettled_subset = subset
+        if unsettled_subset.empty:
+            continue
+        date_series = pd.to_datetime(unsettled_subset["match_date"], errors="coerce")
         date_series = date_series[date_series.notna()]
         if date_series.empty:
             continue
@@ -829,32 +837,37 @@ def build_results_index_from_espn(predictions_df, mapping_by_competition, fetch_
         except Exception as error:
             return (competition, yyyymmdd, None, error)
 
-    tasks = []
+    # Deduplicate (league_key, yyyymmdd) tasks so we never make redundant ESPN requests
+    unique_tasks = {}
     for plan in plans:
         for yyyymmdd in plan["date_codes"]:
-            tasks.append((plan["competition"], plan["league_key"], yyyymmdd))
+            key = (plan["league_key"], yyyymmdd)
+            unique_tasks.setdefault(key, []).append(plan["competition"])
 
     fetched = {}
-    if fetch_workers <= 1 or len(tasks) <= 1:
-        for comp, yyyymmdd, data, err in (_fetch_one(c, k, d) for c, k, d in tasks):
+    if fetch_workers <= 1 or len(unique_tasks) <= 1:
+        for (league_key, yyyymmdd), comps in unique_tasks.items():
+            _, _, data, err = _fetch_one(comps[0], league_key, yyyymmdd)
             if err is not None:
-                print(f"Skipping {comp} date {yyyymmdd}: {err}")
+                print(f"Skipping {','.join(comps)} date {yyyymmdd}: {err}")
                 continue
-            fetched.setdefault(comp, []).append((yyyymmdd, data))
+            for comp in comps:
+                fetched.setdefault(comp, []).append((yyyymmdd, data))
     else:
-        max_workers = max(1, min(int(fetch_workers), len(tasks)))
+        max_workers = max(1, min(int(fetch_workers), len(unique_tasks)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_meta = {
-                executor.submit(_fetch_one, comp, league_key, yyyymmdd): (comp, yyyymmdd)
-                for comp, league_key, yyyymmdd in tasks
+                executor.submit(_fetch_one, comps[0], league_key, yyyymmdd): (comps, yyyymmdd)
+                for (league_key, yyyymmdd), comps in unique_tasks.items()
             }
             for fut in as_completed(future_to_meta):
-                comp, yyyymmdd = future_to_meta[fut]
+                comps, yyyymmdd = future_to_meta[fut]
                 _, _, data, err = fut.result()
                 if err is not None:
-                    print(f"Skipping {comp} date {yyyymmdd}: {err}")
+                    print(f"Skipping {','.join(comps)} date {yyyymmdd}: {err}")
                     continue
-                fetched.setdefault(comp, []).append((yyyymmdd, data))
+                for comp in comps:
+                    fetched.setdefault(comp, []).append((yyyymmdd, data))
 
     for plan in plans:
         competition = plan["competition"]

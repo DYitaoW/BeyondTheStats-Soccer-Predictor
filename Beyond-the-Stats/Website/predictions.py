@@ -1354,17 +1354,17 @@ def _load_upcoming_rows(
 
     if fixtures_only:
         rows = []
-        for _, row in frame.iterrows():
+        for row in frame.to_dict(orient="records"):
             comp = str(row.get("competition", "")).strip()
-            home = _team_name_for_display(str(row.get("display_home_team", row["home_team"])).strip())
-            away = _team_name_for_display(str(row.get("display_away_team", row["away_team"])).strip())
+            home = _team_name_for_display(str(row.get("display_home_team") or row.get("home_team", "")).strip())
+            away = _team_name_for_display(str(row.get("display_away_team") or row.get("away_team", "")).strip())
             c_home = canonical_team_name(home, comp) or home
             c_away = canonical_team_name(away, comp) or away
-            date_for_sync = str(row.get("match_datetime_et", "") or row.get("match_datetime_utc", "") or row["match_date"])
+            date_for_sync = str(row.get("match_datetime_et", "") or row.get("match_datetime_utc", "") or row.get("match_date", ""))
             sync_k = make_match_sync_key(date_for_sync, comp, c_home, c_away)
             rows.append({
-                "match_date": str(row["match_date"]),
-                "match_date_iso": str(row["match_date"]),
+                "match_date": str(row.get("match_date", "")),
+                "match_date_iso": str(row.get("match_date", "")),
                 "competition": comp,
                 "home_team": home,
                 "away_team": away,
@@ -1384,17 +1384,17 @@ def _load_upcoming_rows(
     strength_index = _build_strength_index(target_mode) if target_mode in ("global", "mls", "extra") else {}
 
     rows = []
-    for _, row in frame.iterrows():
+    for row in frame.to_dict(orient="records"):
         # Prefer display labels so provisional cup teams can be marked without affecting tracking keys.
-        home = _team_name_for_display(str(row.get("display_home_team", row["home_team"])).strip())
-        away = _team_name_for_display(str(row.get("display_away_team", row["away_team"])).strip())
-        comp_str = str(row["competition"]).strip()
+        home = _team_name_for_display(str(row.get("display_home_team") or row.get("home_team", "")).strip())
+        away = _team_name_for_display(str(row.get("display_away_team") or row.get("away_team", "")).strip())
+        comp_str = str(row.get("competition", "")).strip()
         c_home = canonical_team_name(home, comp_str) or home
         c_away = canonical_team_name(away, comp_str) or away
-        raw_date = str(row["match_date"])
+        raw_date = str(row.get("match_date", ""))
         time_label = ""
-        mls_dt_raw = str(row.get("match_datetime_et", "")).strip() if "match_datetime_et" in frame.columns else ""
-        utc_dt_raw = str(row.get("match_datetime_utc", "")).strip() if "match_datetime_utc" in frame.columns else ""
+        mls_dt_raw = str(row.get("match_datetime_et", "")).strip()
+        utc_dt_raw = str(row.get("match_datetime_utc", "")).strip()
         match_dt_et = ""
 
         # Convert match_datetime_utc to Eastern time for display and as match_dt_et
@@ -2209,6 +2209,17 @@ def _load_team_recent_matches(team, processed_dir, limit=10):
     cached = _RECENT_MATCHES_CACHE.get(cache_key)
     if cached and (now - _RECENT_MATCHES_CACHE_TIME) < 300:
         return cached
+
+    try:
+        from shared import sqlite_store
+        db_matches = sqlite_store.load_team_recent_matches(team, limit=limit)
+        if db_matches:
+            _RECENT_MATCHES_CACHE[cache_key] = db_matches
+            _RECENT_MATCHES_CACHE_TIME = now
+            return db_matches
+    except Exception:
+        pass
+
     if not os.path.exists(processed_dir):
         return []
     rows = []
@@ -2645,14 +2656,14 @@ def _collect_live_past_game_rows(cutoff: str) -> list[dict]:
 _PAST_GAME_PREDICTION_LOOKUP_CACHE: dict[str, dict] | None = None
 _PAST_GAME_PREDICTION_LOOKUP_CACHE_TIME: float = 0.0
 _PAST_GAME_PREDICTION_LOOKUP_LOCK = threading.Lock()
-_PAST_GAME_PREDICTION_LOOKUP_TTL: float = 120.0
+_PAST_GAME_PREDICTION_LOOKUP_TTL: float = 300.0
 
 
 def _build_past_game_prediction_lookup() -> dict[str, dict]:
     """Index prediction rows by match key for enriching live results.
 
     Prefers API-shaped SQLite upcoming rows when present, then CSV enrichment.
-    Cached for up to 120 seconds or until pipeline cache invalidation.
+    Cached for up to 300 seconds or until pipeline cache invalidation.
     """
     global _PAST_GAME_PREDICTION_LOOKUP_CACHE, _PAST_GAME_PREDICTION_LOOKUP_CACHE_TIME
     now = time.time()
@@ -2701,8 +2712,10 @@ def _build_past_game_prediction_lookup() -> dict[str, dict]:
                 if isinstance(row, dict):
                     _index_row(row)
             has_sqlite = True
+        # For past games, only load the last 30 days to enrich recent live games without scanning historical archive
         if store.count_rows("past_games") > 0:
-            for row in store.load_past_games():
+            cutoff_date = (datetime.now(timezone.utc).date() - timedelta(days=30)).isoformat()
+            for row in store.load_past_games(from_date=cutoff_date):
                 if isinstance(row, dict):
                     _index_row(row)
             has_sqlite = True
