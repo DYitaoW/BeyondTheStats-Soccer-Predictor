@@ -18,15 +18,29 @@ import re
 import time
 import urllib.error
 import urllib.request
+import ssl
 from datetime import date, datetime, timedelta
 from typing import Iterable, Iterator
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Beyond-the-Stats/
-CACHE_ROOT = os.path.join(BASE_DIR, "Output", "Cache", "espn")
 
 DEFAULT_TIMEOUT_SECONDS = 30
 TTL_PAST_SECONDS = 2 * 3600    # 2h for today and earlier
 TTL_FUTURE_SECONDS = 24 * 3600  # 24h for future dates
+
+try:
+    import certifi
+    _SSL_CONTEXT: ssl.SSLContext | None = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _SSL_CONTEXT = None
+
+
+def _urlopen(req, timeout: int = DEFAULT_TIMEOUT_SECONDS):
+    """Open a URL with certifi SSL context to ensure clean SSL verification on macOS."""
+    if _SSL_CONTEXT is not None:
+        return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CONTEXT)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Beyond-the-Stats/
+CACHE_ROOT = os.path.join(BASE_DIR, "Output", "Cache", "espn")
 
 _SAFE_SEGMENT = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -147,7 +161,7 @@ def fetch_scoreboard(
         f"{espn_id}/scoreboard?dates={date_code}"
     )
     request = urllib.request.Request(url)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with _urlopen(request, timeout=timeout) as response:
         data = json.loads(response.read().decode("utf-8"))
     _write_cache(path, data)
     return data
@@ -167,7 +181,7 @@ def fetch_scoreboard_default(
         return cached["data"]
     url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
     request = urllib.request.Request(url)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with _urlopen(request, timeout=timeout) as response:
         data = json.loads(response.read().decode("utf-8"))
     _write_cache(path, data)
     return data
@@ -221,7 +235,7 @@ def fetch_scoreboard_range(
     )
     try:
         request = urllib.request.Request(range_url)
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with _urlopen(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
         if _absorb(payload):
             if progress_label:

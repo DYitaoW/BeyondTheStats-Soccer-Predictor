@@ -393,15 +393,18 @@ def _period_label_from_espn_status(type_name, detail, period_num=None):
     return detail_s
 
 
-def _is_halftime_break(period_str, status_type=""):
-    """True during the interval, not during 1st/2nd half play."""
+def _is_halftime_break(period_str, status_type="", clock_str=""):
+    """True during the halftime interval, not during 1st/2nd half play."""
     period = str(period_str or "").strip().lower()
     status_type = str(status_type or "").strip().upper()
+    clock = str(clock_str or "").strip().lower()
     if status_type in {"STATUS_HALFTIME", "STATUS_EXTRA_HALFTIME"}:
         return True
-    if "halftime" in period or period in {"ht", "half"}:
+    if clock in {"ht", "halftime", "half time"}:
         return True
-    if "et halftime" in period:
+    if period in {"ht", "half", "et halftime", "halftime", "half time"}:
+        return True
+    if "halftime" in period or "half time" in period or "et halftime" in period:
         return True
     return False
 
@@ -703,13 +706,18 @@ def _parse_espn_key_events(summary_data):
             "clock": str(ev.get("clock", {}).get("displayValue", "")),
             "scoring_play": bool(ev.get("scoringPlay")),
         }
+        if ev.get("id"):
+            entry["id"] = str(ev["id"])
         team = ev.get("team") or {}
         if team.get("id"):
             entry["team_id"] = str(team["id"])
-        athlete = ev.get("athlete") or {}
+        athletes = ev.get("athletesInvolved") or []
+        athlete = ev.get("athlete") or (athletes[0] if athletes else {})
         if athlete.get("id"):
             entry["athlete_id"] = str(athlete["id"])
-            entry["athlete_name"] = str(athlete.get("displayName", ""))
+        ath_name = str(athlete.get("displayName") or athlete.get("fullName") or athlete.get("shortName") or "").strip()
+        if ath_name:
+            entry["athlete_name"] = ath_name
         result.append(entry)
     return result
 

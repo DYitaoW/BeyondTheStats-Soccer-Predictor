@@ -99,6 +99,15 @@ REFRESH_RECENT_SEASONS = 2
 MMZ4281_BASE_URL = "https://www.football-data.co.uk/mmz4281/{season_code}/{league_code}.csv"
 
 
+def _get_ssl_context():
+    try:
+        import certifi
+        import ssl
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return None
+
+
 def _urlopen_with_retry(url, timeout=30, attempts=4, backoff_base=2.0):
     """GET a URL with bounded retries.
 
@@ -109,9 +118,13 @@ def _urlopen_with_retry(url, timeout=30, attempts=4, backoff_base=2.0):
     """
     delay = backoff_base
     last_exc = None
+    ssl_ctx = _get_ssl_context()
     for attempt in range(1, attempts + 1):
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as response:
+            kwargs = {"timeout": timeout}
+            if ssl_ctx is not None and url.startswith("https://"):
+                kwargs["context"] = ssl_ctx
+            with urllib.request.urlopen(url, **kwargs) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
             if exc.code != 429 and exc.code < 500:

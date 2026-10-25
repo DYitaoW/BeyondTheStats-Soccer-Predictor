@@ -19,6 +19,7 @@ from competition_rules import canonical_team_name, make_match_sync_key
 from accuracy_tracker import _track_prediction_results
 from espn_api import _fetch_competition_scores, _fetch_event_summary, LIVE_SCORE_FETCH_TIMEOUT
 from espn_parser import (
+    _is_halftime_break,
     _parse_elapsed_minutes,
     _parse_espn_boxscore_stats,
     _parse_espn_game_info,
@@ -63,6 +64,8 @@ _summary_fetch_meta: dict[str, dict] = {}
 _PRE_SUMMARY_RETRY_S = 600
 _notified_events: dict[str, set] = {}
 _notified_events_lock = threading.Lock()
+_match_tracker: dict[str, dict] = {}
+_match_tracker_lock = threading.Lock()
 _last_friendlies_sync_ts = 0.0
 _FRIENDLIES_SYNC_INTERVAL_S = 900
 
@@ -308,6 +311,8 @@ def _keep_game_for_poll_window(game, allowed_dates):
     In-progress games are always kept (can spill past midnight). Completed and
     upcoming games must fall on one of the allowed ET scoreboard dates.
     """
+    if game.get("simulated"):
+        return True
     status = str(game.get("status") or "").strip().lower()
     if status == "in":
         return True
@@ -1078,6 +1083,315 @@ def get_live_scores_snapshot() -> dict:
         return dict(_live_scores)
 
 
+def _dispatch_match_event_notifications() -> int:
+    """Inspect current match states, detect kickoff, goals, halftime, fulltime, and red cards,
+    and dispatch deduplicated push alerts and Live Activity updates.
+
+    Guarantees:
+    - Exactly ONE goal alert per (match_id, home_score, away_score) scoreline.
+    - Scorer name and minute are resolved from scoreboard details or keyEvents.
+    - Halftime detected reliably via _is_halftime_break / STATUS_HALFTIME / HT.
+    - Full time detected reliably via status == "post" / STATUS_FULL_TIME.
+    - Initial startup does not send backlogged notifications for finished/old games.
+    """
+    total_dispatched = 0
+    try:
+        from notifications import (
+            clear_match_subscriptions,
+            for_game_or_team_subscribers,
+            send_live_activity_end,
+            send_live_activity_update,
+        )
+
+        _SCORING_EVENT_TYPES = frozenset({"goal", "own goal", "penalty"})
+        _ALERT_EVENT_TYPES = _SCORING_EVENT_TYPES | frozenset({"red card"})
+
+        with _live_scores_lock, _notified_events_lock, _match_tracker_lock:
+            for comp_name, comp_data in _live_scores.items():
+                for g in comp_data.get("games", []):
+                    mid = str(g.get("match_id", "")).strip()
+                    if not mid:
+                        continue
+                    cur_status = str(g.get("status", "")).strip().lower()
+                    if cur_status not in ("in", "post"):
+                        if cur_status == "pre":
+                            _match_tracker[mid] = {
+                                "status": "pre",
+                                "home_score": None,
+                                "away_score": None,
+                            }
+                        continue
+
+                    notified = _notified_events.setdefault(mid, set())
+                    ht = g.get("home_team", "")
+                    at = g.get("away_team", "")
+                    hs = g.get("home_score")
+                    as_ = g.get("away_score")
+                    state_base = _la_content_state(g, comp_name)
+                    cur_minute = state_base.get("match_minute") or 0
+
+                    prev_meta = _match_tracker.get(mid)
+                    is_first_observation = prev_meta is None
+
+                    if is_first_observation:
+                        # Pre-mark completed or mid-game milestones on initial observation
+                        # to avoid spamming historical/past milestones.
+                        if cur_status == "post":
+                            notified.add(f"start|{mid}")
+                            notified.add(f"halftime|{mid}")
+                            notified.add(f"ht|{mid}")
+                            notified.add(f"fulltime|{mid}")
+                            notified.add(f"ft|{mid}")
+                            if hs is not None and as_ is not None and hs != "-" and as_ != "-":
+                                notified.add(f"goal|{mid}|{hs}-{as_}")
+                                notified.add(f"score_goal|{mid}|{hs}-{as_}")
+                        elif cur_status == "in":
+                            if cur_minute > 5 or g.get("period") in ("2nd Half", "Halftime", "ET"):
+                                notified.add(f"start|{mid}")
+                            if g.get("period") in ("2nd Half", "ET") or _is_halftime_break(g.get("period"), g.get("status_type"), g.get("clock")):
+                                notified.add(f"halftime|{mid}")
+                                notified.add(f"ht|{mid}")
+                            if hs is not None and as_ is not None and hs != "-" and as_ != "-" and (hs > 0 or as_ > 0):
+                                notified.add(f"goal|{mid}|{hs}-{as_}")
+                                notified.add(f"score_goal|{mid}|{hs}-{as_}")
+                        _match_tracker[mid] = {
+                            "status": cur_status,
+                            "home_score": hs,
+                            "away_score": as_,
+                            "period": g.get("period", ""),
+                            "status_type": g.get("status_type", ""),
+                        }
+                        continue
+
+                    prev_status = prev_meta.get("status", "")
+                    prev_h = prev_meta.get("home_score")
+                    prev_a = prev_meta.get("away_score")
+
+                    def _queue_event_alert(event_type: str, title: str, body: str):
+                        tokens = for_game_or_team_subscribers(
+                            mid, comp_name, home_team=ht, away_team=at, event=event_type
+                        )
+                        for token in tokens:
+                            from notifications import _apns_notification_queue
+                            _apns_notification_queue.append({
+                                "token": token,
+                                "title": title,
+                                "body": body,
+                                "badge": 1,
+                                "match_id": mid,
+                                "competition": comp_name,
+                                "event": event_type,
+                            })
+                        from notifications import _notify_apns_queue
+                        _notify_apns_queue()
+                        return len(tokens)
+
+                    # Handle VAR goal cancellation / reversal
+                    if (
+                        prev_h is not None
+                        and prev_a is not None
+                        and hs is not None
+                        and as_ is not None
+                        and hs != "-"
+                        and as_ != "-"
+                        and (hs < prev_h or as_ < prev_a)
+                    ):
+                        notified.discard(f"goal|{mid}|{prev_h}-{prev_a}")
+                        notified.discard(f"score_goal|{mid}|{prev_h}-{prev_a}")
+
+                    # 1. Match Kickoff (pre -> in)
+                    start_id = f"start|{mid}"
+                    if (prev_status == "pre" and cur_status == "in") or (
+                        cur_status == "in" and start_id not in notified and cur_minute <= 5
+                    ):
+                        if start_id not in notified:
+                            notified.add(start_id)
+                            start_title = "Match Started"
+                            start_body = f"{ht} vs {at} - Kickoff!"
+                            _queue_event_alert("start", start_title, start_body)
+                            la_state = {**state_base, "event": "kickoff"}
+                            send_live_activity_update(
+                                mid, comp_name, la_state,
+                                event="kickoff",
+                                alert={"title": start_title, "body": start_body},
+                            )
+                            total_dispatched += 1
+
+                    # 2. Halftime detection (robust check across period, status_type, and clock)
+                    is_ht = _is_halftime_break(g.get("period"), g.get("status_type"), g.get("clock"))
+                    if is_ht and cur_status != "post":
+                        ht_id = f"halftime|{mid}"
+                        if ht_id not in notified:
+                            notified.add(ht_id)
+                            notified.add(f"ht|{mid}")
+                            hs_disp = hs if hs is not None and hs != "-" else 0
+                            as_disp = as_ if as_ is not None and as_ != "-" else 0
+                            ht_title = "Halftime"
+                            ht_body = f"{ht} {hs_disp}-{as_disp} {at} - Halftime"
+                            _queue_event_alert("ht", ht_title, ht_body)
+                            la_state = {**state_base, "event": "halftime"}
+                            send_live_activity_update(
+                                mid, comp_name, la_state,
+                                event="halftime",
+                                alert={"title": ht_title, "body": ht_body},
+                            )
+                            total_dispatched += 1
+
+                    # 3. Goal detection (strict deduplication by match ID and scoreline)
+                    if (
+                        hs is not None
+                        and as_ is not None
+                        and hs != "-"
+                        and as_ != "-"
+                        and (hs > 0 or as_ > 0)
+                    ):
+                        goal_id = f"goal|{mid}|{hs}-{as_}"
+                        score_increased = (
+                            prev_h is not None
+                            and prev_a is not None
+                            and (hs > prev_h or as_ > prev_a)
+                        )
+                        if goal_id not in notified and score_increased:
+                            notified.add(goal_id)
+                            notified.add(f"score_goal|{mid}|{hs}-{as_}")
+
+                            scoring_side = "home" if (hs > (prev_h or 0)) else "away"
+                            scorer_name = ""
+                            scorer_min = ""
+                            scorer_type = "goal"
+                            goalscorers = g.get("goalscorers") or []
+                            matching_goals = [goal for goal in goalscorers if goal.get("team") == scoring_side]
+                            target_goal = matching_goals[-1] if matching_goals else (goalscorers[-1] if goalscorers else None)
+                            if target_goal:
+                                scorer_name = target_goal.get("scorer", "").strip()
+                                scorer_min = target_goal.get("minute", "").strip()
+                                scorer_type = target_goal.get("type", "goal").strip().lower()
+
+                            # If scorer not in goalscorers, search key_events
+                            if not scorer_name:
+                                for ev in reversed(g.get("key_events") or []):
+                                    ev_type = str(ev.get("type", "")).lower().strip()
+                                    if ev_type in _SCORING_EVENT_TYPES or ev.get("scoring_play"):
+                                        ath = ev.get("athlete_name", "").strip()
+                                        clk = ev.get("clock", "").strip()
+                                        txt = ev.get("text", "").strip() or ev.get("short_text", "").strip()
+                                        if ath:
+                                            scorer_name = ath
+                                            scorer_min = clk
+                                            scorer_type = ev_type
+                                            break
+                                        elif txt:
+                                            scorer_name = txt
+                                            scorer_min = clk
+                                            scorer_type = ev_type
+                                            break
+
+                            goal_title = "Goal"
+                            if scorer_name:
+                                if "own" in scorer_type:
+                                    tag = f"{scorer_name} ({scorer_min} OG)" if scorer_min else f"{scorer_name} (OG)"
+                                elif "pen" in scorer_type:
+                                    tag = f"{scorer_name} ({scorer_min} pen)" if scorer_min else f"{scorer_name} (pen)"
+                                elif scorer_min:
+                                    tag = f"{scorer_name} ({scorer_min})"
+                                else:
+                                    tag = scorer_name
+                                goal_body = f"{ht} {hs}-{as_} {at} - {tag}"
+                            else:
+                                clk = g.get("clock", "")
+                                goal_body = f"{ht} {hs}-{as_} {at} ({clk})" if clk else f"{ht} {hs}-{as_} {at}"
+
+                            _queue_event_alert("goal", goal_title, goal_body)
+
+                            la_event_label = (
+                                "own goal" if "own" in scorer_type
+                                else "penalty" if "penalty" in scorer_type
+                                else "goal"
+                            )
+                            la_state = {
+                                **state_base,
+                                "event": la_event_label,
+                                "clock": scorer_min or g.get("clock", ""),
+                            }
+                            if scorer_name:
+                                la_state["event_text"] = scorer_name
+                            la_alert = {"title": goal_title, "body": goal_body}
+                            send_live_activity_update(mid, comp_name, la_state, event=la_event_label, alert=la_alert)
+                            total_dispatched += 1
+
+                    # 4. Red Cards (from details/red_cards or key_events)
+                    for rc in (g.get("red_cards") or []):
+                        rc_player = rc.get("player", "").strip() or "Player"
+                        rc_min = rc.get("minute", "").strip()
+                        rc_side = rc.get("team", "")
+                        rc_id = f"red_card|{mid}|{rc_player}|{rc_min}"
+                        if rc_id not in notified:
+                            notified.add(rc_id)
+                            carded_team = ht if rc_side == "home" else (at if rc_side == "away" else "")
+                            team_info = f" ({carded_team})" if carded_team else ""
+                            min_info = f" ({rc_min})" if rc_min else ""
+                            rc_body = f"{rc_player}{team_info} Red Card{min_info}"
+                            _queue_event_alert("red_card", "Red Card", rc_body)
+                            la_state = {**state_base, "event": "red card", "clock": rc_min, "event_text": rc_body}
+                            send_live_activity_update(mid, comp_name, la_state, event="red card", alert={"title": "Red Card", "body": rc_body})
+                            total_dispatched += 1
+
+                    for ev in (g.get("key_events") or []):
+                        ev_type = str(ev.get("type", "")).lower().strip()
+                        if "red card" in ev_type:
+                            rc_player = ev.get("athlete_name", "").strip() or ev.get("text", "").strip() or "Player"
+                            rc_min = ev.get("clock", "").strip()
+                            rc_id = f"red_card|{mid}|{rc_player}|{rc_min}"
+                            if rc_id not in notified:
+                                notified.add(rc_id)
+                                rc_body = f"{rc_player} Red Card ({rc_min})" if rc_min else f"{rc_player} Red Card"
+                                _queue_event_alert("red_card", "Red Card", rc_body)
+                                la_state = {**state_base, "event": "red card", "clock": rc_min, "event_text": rc_body}
+                                send_live_activity_update(mid, comp_name, la_state, event="red card", alert={"title": "Red Card", "body": rc_body})
+                                total_dispatched += 1
+
+                    # 5. Full time detection
+                    is_ft = (
+                        cur_status == "post"
+                        or str(g.get("status_type", "")).upper() in {
+                            "STATUS_FULL_TIME", "STATUS_FINAL", "STATUS_END_REGULAR_TIME"
+                        }
+                    )
+                    if is_ft:
+                        ft_id = f"fulltime|{mid}"
+                        if ft_id not in notified:
+                            notified.add(ft_id)
+                            notified.add(f"ft|{mid}")
+                            hs_disp = hs if hs is not None and hs != "-" else g.get("home_score", 0)
+                            as_disp = as_ if as_ is not None and as_ != "-" else g.get("away_score", 0)
+                            ft_title = "Full Time"
+                            ft_body = f"{ht} {hs_disp}-{as_disp} {at} - Full Time"
+                            _queue_event_alert("end", ft_title, ft_body)
+                            state = {
+                                "home_score": hs_disp,
+                                "away_score": as_disp,
+                                "status": "FT",
+                                "match_minute": state_base.get("match_minute") or 90,
+                            }
+                            send_live_activity_end(mid, comp_name, state, alert={"title": ft_title, "body": ft_body})
+                            total_dispatched += 1
+                        clear_match_subscriptions(mid, comp_name)
+
+                    # Update tracker for next cycle
+                    _match_tracker[mid] = {
+                        "status": cur_status,
+                        "home_score": hs,
+                        "away_score": as_,
+                        "period": g.get("period", ""),
+                        "status_type": g.get("status_type", ""),
+                    }
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+    return total_dispatched
+
+
 def _discover_competitions_for_poll(poll_date, today_str):
     """Return competitions expected to have games today.
 
@@ -1394,6 +1708,10 @@ def refresh_live_scores_now(*, force: bool = False) -> dict:
         primary_date = poll_dates[0]
         results, _todays = _poll_espn_for_dates(poll_dates, include_deferred=True)
         _merge_poll_results_into_live_scores(results, primary_date, allowed_dates=poll_dates)
+        try:
+            _dispatch_match_event_notifications()
+        except Exception:
+            pass
         _last_on_demand_refresh_ts = time.time()
         try:
             _update_cached_live_scores_payload()
@@ -1501,30 +1819,14 @@ def _live_score_poller_loop():
                             cur_home = g.get("home_score")
                             cur_away = g.get("away_score")
                             state = _la_content_state(g, comp_name)
-                            # Match ended — dismiss Live Activity with final score and alert notification.
-                            if prev and prev[1] != "post" and cur_status == "post":
-                                state = {
-                                    "home_score": cur_home,
-                                    "away_score": cur_away,
-                                    "status": "FT",
-                                    "match_minute": state.get("match_minute") or 90,
-                                }
-                                ft_alert = {
-                                    "title": "Full Time",
-                                    "body": f"{g.get('home_team', '')} {cur_home}-{cur_away} {g.get('away_team', '')} - Full Time",
-                                }
-                                _la.send_live_activity_end(mid, comp_name, state, alert=ft_alert)
-                            # Score changed while live/finished — update LA scoreboard and send goal notification.
-                            elif cur_status in ("in", "post") and (
+                            # Score changed while live/finished — update Live Activity scoreboard content-state silently.
+                            # Notification banners with goalscorer names are dispatched in the unified block below.
+                            if cur_status in ("in", "post") and (
                                 prev_home is not None and prev_away is not None and (prev_home != cur_home or prev_away != cur_away)
                             ):
                                 score_state = dict(state)
                                 score_state["event"] = "score"
-                                goal_alert = {
-                                    "title": "Goal",
-                                    "body": f"{g.get('home_team', '')} {cur_home}-{cur_away} {g.get('away_team', '')}",
-                                }
-                                _la.send_live_activity_update(mid, comp_name, score_state, event="score", alert=goal_alert)
+                                _la.send_live_activity_update(mid, comp_name, score_state, event="score")
             except Exception:
                 import traceback
                 traceback.print_exc()
@@ -1671,183 +1973,7 @@ def _live_score_poller_loop():
 
             # ── Event push notifications (goals, red cards, halftime, full time) ──
             try:
-                from notifications import (
-                    clear_match_subscriptions,
-                    for_game_or_team_subscribers,
-                    send_live_activity_end,
-                    send_live_activity_update,
-                )
-
-                # Scoring types that must refresh Live Activity scores.
-                _SCORING_EVENT_TYPES = frozenset({"goal", "own goal", "penalty"})
-                _ALERT_EVENT_TYPES = _SCORING_EVENT_TYPES | frozenset({"red card"})
-
-                with _live_scores_lock, _notified_events_lock:
-                    for comp_name, comp_data in _live_scores.items():
-                        for g in comp_data.get("games", []):
-                            mid = g.get("match_id")
-                            if not mid:
-                                continue
-                            cur_status = g.get("status", "")
-                            if cur_status not in ("in", "post"):
-                                continue
-
-                            notified = _notified_events.setdefault(mid, set())
-                            ht = g.get("home_team", "")
-                            at = g.get("away_team", "")
-                            hs = g.get("home_score", "-")
-                            as_ = g.get("away_score", "-")
-                            state_base = _la_content_state(g, comp_name)
-
-                            def _queue_event_alert(event_type: str, title: str, body: str):
-                                """Queue a regular alert push to subscribers of match/teams who requested this event."""
-                                tokens = for_game_or_team_subscribers(
-                                    mid, comp_name, home_team=ht, away_team=at, event=event_type
-                                )
-                                for token in tokens:
-                                    from notifications import _apns_notification_queue
-                                    _apns_notification_queue.append({
-                                        "token": token,
-                                        "title": title,
-                                        "body": body,
-                                        "badge": 1,
-                                        "match_id": mid,
-                                        "competition": comp_name,
-                                        "event": event_type,
-                                    })
-                                from notifications import _notify_apns_queue
-                                _notify_apns_queue()
-                                return len(tokens)
-
-                            # Key events: goals (incl. own goal / penalty) + red cards.
-                            # Every scoring event pushes a Live Activity content-state
-                            # update with the current score and alert so the Dynamic Island /
-                            # Lock Screen scoreboard stays in sync and alerts the user.
-                            for ev in (g.get("key_events") or []):
-                                ev_type = str(ev.get("type", "")).lower().strip()
-                                is_scoring = (
-                                    ev_type in _SCORING_EVENT_TYPES
-                                    or (
-                                        bool(ev.get("scoring_play"))
-                                        and "missed" not in ev_type
-                                        and "penalty shoot" not in ev_type
-                                    )
-                                )
-                                if not is_scoring and ev_type not in _ALERT_EVENT_TYPES:
-                                    continue
-                                ev_id = (
-                                    f"{ev_type}|{ev.get('clock', '')}|"
-                                    f"{ev.get('athlete_id', '')}|{ev.get('text', '')}"
-                                )
-                                if ev_id in notified:
-                                    continue
-                                notified.add(ev_id)
-
-                                clock = ev.get("clock", "")
-                                text = ev.get("text", "") or ev.get("short_text", "")
-                                if is_scoring:
-                                    title = "Goal"
-                                    la_event_label = (
-                                        "own goal" if "own" in ev_type
-                                        else "penalty" if "penalty" in ev_type
-                                        else "goal"
-                                    )
-                                    alert_ev_type = "goal"
-                                else:
-                                    title = "Red Card"
-                                    la_event_label = "red card"
-                                    alert_ev_type = "red_card"
-                                body = f"{ht} {hs}-{as_} {at} ({clock}')"
-                                if text:
-                                    body = f"{body} - {text}"
-
-                                _queue_event_alert(alert_ev_type, title, body)
-                                la_state = {
-                                    **state_base,
-                                    "event": la_event_label,
-                                    "clock": clock,
-                                }
-                                if text:
-                                    la_state["event_text"] = text
-                                # Live Activities: goals and red cards send notifications (alert banner & sound)
-                                la_alert = {"title": title, "body": body}
-                                send_live_activity_update(mid, comp_name, la_state, event=la_event_label, alert=la_alert)
-
-                            # Fallback goal alert if key_events is not populated but the score changed
-                            if not (g.get("key_events") or []):
-                                prev_h, prev_a = prev_scores.get(mid, (None, None))
-                                if (
-                                    prev_h is not None
-                                    and prev_a is not None
-                                    and (prev_h != hs or prev_a != as_)
-                                    and hs != "-"
-                                    and as_ != "-"
-                                ):
-                                    score_ev_id = f"score_goal|{mid}|{hs}-{as_}"
-                                    if score_ev_id not in notified:
-                                        notified.add(score_ev_id)
-                                        goal_title = "Goal"
-                                        goal_body = f"{ht} {hs}-{as_} {at}"
-                                        _queue_event_alert("goal", goal_title, goal_body)
-                                        send_live_activity_update(
-                                            mid,
-                                            comp_name,
-                                            {**state_base, "event": "goal"},
-                                            event="goal",
-                                            alert={"title": goal_title, "body": goal_body},
-                                        )
-
-                            # Halftime: detected when period string first contains "halftime"
-                            period_raw = str(g.get("period", "") or g.get("clock", "") or "").lower()
-                            if "halftime" in period_raw or period_raw in ("ht", "half"):
-                                ht_id = f"halftime|{mid}"
-                                if ht_id not in notified:
-                                    notified.add(ht_id)
-                                    ht_title = "Halftime"
-                                    ht_body = f"{ht} {hs}-{as_} {at} - Halftime"
-                                    _queue_event_alert("ht", ht_title, ht_body)
-                                    # Live Activities: HT should send notifications
-                                    send_live_activity_update(
-                                        mid, comp_name, {**state_base, "event": "halftime"},
-                                        event="halftime",
-                                        alert={"title": ht_title, "body": ht_body},
-                                    )
-
-                            # Full time: status transitioned to "post" this cycle.
-                            p = prev_statuses.get(mid)
-                            if p and p[1] != "post" and cur_status == "post":
-                                ft_id = f"fulltime|{mid}"
-                                if ft_id not in notified:
-                                    notified.add(ft_id)
-                                    ft_title = "Full Time"
-                                    ft_body = f"{ht} {hs}-{as_} {at} - Full Time"
-                                    _queue_event_alert("end", ft_title, ft_body)
-                                    # Live Activities: FT should send notifications and end activity
-                                    ft_state = {
-                                        "home_score": hs if hs != "-" else g.get("home_score"),
-                                        "away_score": as_ if as_ != "-" else g.get("away_score"),
-                                        "status": "FT",
-                                        "match_minute": state_base.get("match_minute") or 90,
-                                    }
-                                    send_live_activity_end(
-                                        mid, comp_name, ft_state,
-                                        alert={"title": ft_title, "body": ft_body},
-                                    )
-                                clear_match_subscriptions(mid, comp_name)
-
-                            # Match started (pre -> in)
-                            if p and p[1] == "pre" and cur_status == "in":
-                                start_id = f"start|{mid}"
-                                if start_id not in notified:
-                                    notified.add(start_id)
-                                    start_title = "Match Started"
-                                    start_body = f"{ht} vs {at} - Kickoff!"
-                                    _queue_event_alert("start", start_title, start_body)
-                                    send_live_activity_update(
-                                        mid, comp_name, {**state_base, "event": "kickoff"},
-                                        event="kickoff",
-                                        alert={"title": start_title, "body": start_body},
-                                    )
+                _dispatch_match_event_notifications()
             except Exception:
                 import traceback
                 traceback.print_exc()

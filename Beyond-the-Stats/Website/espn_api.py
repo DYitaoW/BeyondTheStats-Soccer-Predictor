@@ -90,8 +90,15 @@ def _fetch_espn_json(url: str, *, timeout: float = LIVE_SCORE_FETCH_TIMEOUT) -> 
 
     # 2. Resilient fallback to urllib if pooled client fails or httpx is absent
     try:
+        ctx = None
+        try:
+            import certifi
+            import ssl
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            ctx = None
         req = urllib.request.Request(url, headers=ESPN_REQUEST_HEADERS)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with (urllib.request.urlopen(req, timeout=timeout, context=ctx) if ctx else urllib.request.urlopen(req, timeout=timeout)) as resp:
             return json.loads(resp.read().decode())
     except Exception:
         return None

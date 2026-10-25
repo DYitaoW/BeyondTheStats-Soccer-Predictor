@@ -242,10 +242,26 @@ class BackendServer:
     # ------------------------------------------------------------------
 
     def _use_gunicorn(self) -> bool:
-        """Whether gunicorn should be used on this platform."""
-        return self.config.use_gunicorn and (
-            sys.platform.startswith("linux") or sys.platform == "darwin"
-        ) and self._gunicorn_available()
+        """Whether gunicorn should be used on this platform.
+
+        Gunicorn uses os.fork() to spawn worker processes. On macOS (Darwin),
+        forking in a process with active background threads (like our scheduler,
+        memory monitor, and watcher) causes macOS libobjc to crash with SIGABRT
+        ('+[NSMutableString initialize] may have been in progress in another thread
+        when fork() was called'). Direct uvicorn avoids fork() entirely and is
+        safe, fast, and native on macOS. Gunicorn is only used on Linux.
+        """
+        override = os.environ.get("BTS_USE_GUNICORN", "").strip().lower()
+        if override in {"1", "true", "yes"}:
+            return self._gunicorn_available()
+        if override in {"0", "false", "no"}:
+            return False
+
+        return (
+            self.config.use_gunicorn
+            and sys.platform.startswith("linux")
+            and self._gunicorn_available()
+        )
 
     def _gunicorn_available(self) -> bool:
         try:
@@ -313,6 +329,10 @@ class BackendServer:
             return
 
         website_app.app.config["_backend_refresh"] = self._run_pipeline_in_background
+        try:
+            _warm_website_caches()
+        except Exception:
+            LOG.exception("[web] failed to warm caches")
         try:
             import uvicorn
             uvicorn.run(
@@ -464,6 +484,11 @@ class BackendServer:
                 # ceiling (e.g. 14 GB), not bare-metal RAM which can be much larger.
                 "BTS_MEMORY_LIMIT_GB": str(self.config.memory_limit_gb),
             }
+            try:
+                import certifi
+                subprocess_env.setdefault("SSL_CERT_FILE", certifi.where())
+            except Exception:
+                pass
             if force_path_b:
                 subprocess_env["BTS_FORCE_PATH_B"] = force_path_b
             pipeline_log.start_run(trigger=trigger, reset=True)

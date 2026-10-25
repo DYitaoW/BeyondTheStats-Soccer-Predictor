@@ -9,7 +9,7 @@ Thumbs.db
 *.swo
 
 # =============================================================================
-# Python
+# Python & Virtual Environments
 # =============================================================================
 __pycache__/
 *.py[cod]
@@ -17,9 +17,35 @@ __pycache__/
 *.pyd
 *.egg-info/
 .pytest_cache/
+.venv
 .venv/
+.venv*/
+venv
 venv/
+venv*/
+env
 env/
+env*/
+ENV
+ENV/
+*.venv
+*.venv/
+
+# =============================================================================
+# Database files & SQLite journals / WAL
+# =============================================================================
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+**/bts_store.db*
+**/*_store.db*
+**/test_*.db*
 
 # =============================================================================
 # Local secrets (never commit)
@@ -155,3 +181,5 @@ scripts/__pycache__/
 # updated even when the Actions deploy token is missing.
 !Beyond-the-Stats/public/
 !Beyond-the-Stats/public/**
+
+Data/redeem_codes.json

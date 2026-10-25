@@ -51,8 +51,16 @@ if [[ -z "${PYTHON_BIN}" ]]; then
     PYTHON_BIN="$(brew --prefix python@3.11)/bin/python3.11"
 fi
 
-# 3. Create Virtual Environment
+# 3. Create or Locate Virtual Environment
 VENV_DIR="${APP_DIR}/venv"
+for candidate in "${APP_DIR}/.venv2" "${APP_DIR}/.venv" "${APP_DIR}/venv"; do
+    if [[ -d "${candidate}" && -f "${candidate}/bin/python" ]]; then
+        VENV_DIR="${candidate}"
+        echo "[+] Found existing virtual environment at ${VENV_DIR}"
+        break
+    fi
+done
+
 if [[ ! -d "${VENV_DIR}" ]]; then
     echo "[+] Creating virtual environment at ${VENV_DIR}..."
     "${PYTHON_BIN}" -m venv "${VENV_DIR}"

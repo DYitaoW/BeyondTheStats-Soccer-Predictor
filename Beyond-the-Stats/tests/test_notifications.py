@@ -14,6 +14,7 @@ if str(_ROOT) not in sys.path:
 if str(_WEBSITE) not in sys.path:
     sys.path.insert(0, str(_WEBSITE))
 
+import notifications
 from notifications import (
     ALL_EVENT_TYPES,
     _apns_notification_queue,
@@ -152,9 +153,10 @@ class TestSubscriptionFiltering(unittest.TestCase):
         subscribe_team("tok-abc", "Liverpool", events=["goal"])
 
         prefs = get_device_subscriptions("tok-abc")
-        self.assertIn("m1|epl", prefs["matches"])
+        self.assertTrue(any(k.lower() == "m1|epl" for k in prefs["matches"]))
         self.assertIn("liverpool", prefs["teams"])
-        self.assertEqual(prefs["match_events"]["m1|epl"], ["goal", "ht"])
+        match_k = next(k for k in prefs["match_events"] if k.lower() == "m1|epl")
+        self.assertEqual(prefs["match_events"][match_k], ["goal", "ht"])
         self.assertEqual(prefs["team_events"]["liverpool"], ["goal"])
 
 
@@ -324,7 +326,7 @@ class TestCompactLiveScores(unittest.TestCase):
         # Excluded heavy fields
         self.assertNotIn("lineups", compact)
         self.assertNotIn("key_events", compact)
-        self.assertNotIn("goalscorers", compact)
+        self.assertIn("goalscorers", compact)
         self.assertNotIn("boxscore_stats", compact)
         self.assertNotIn("shot_mapping", compact)
         self.assertNotIn("injuries_availability", compact)

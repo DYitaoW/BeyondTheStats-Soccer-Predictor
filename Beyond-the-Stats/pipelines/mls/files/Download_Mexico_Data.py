@@ -40,8 +40,21 @@ def season_file_name(start_year):
     return f"{FILE_PREFIX}{start_year}.csv"
 
 
+def _get_ssl_context():
+    try:
+        import certifi
+        import ssl
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return None
+
+
 def fetch_source_dataframe():
-    with urllib.request.urlopen(MEXICO_SOURCE_URL, timeout=30) as response:
+    ssl_ctx = _get_ssl_context()
+    kwargs = {"timeout": 30}
+    if ssl_ctx is not None and MEXICO_SOURCE_URL.startswith("https://"):
+        kwargs["context"] = ssl_ctx
+    with urllib.request.urlopen(MEXICO_SOURCE_URL, **kwargs) as response:
         raw = response.read()
 
     text = raw.decode("utf-8-sig", errors="replace")

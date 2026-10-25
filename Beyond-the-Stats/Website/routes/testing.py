@@ -16,6 +16,7 @@ from live_poller import (
     remove_simulated_live_game,
     update_simulated_live_game,
 )
+import notifications
 from notifications import (
     ALL_EVENT_TYPES,
     _apns_notification_queue,
@@ -127,7 +128,7 @@ def api_test_notifications_push():
     results = []
     success_count = 0
     for tok in targets:
-        res = apns_send_detailed(
+        res = notifications.apns_send_detailed(
             push_token=tok,
             payload=apns_payload,
             topic=topic,

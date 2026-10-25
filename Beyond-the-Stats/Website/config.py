@@ -735,6 +735,7 @@ GZIP_MINIMUM_SIZE = int(os.environ.get("GZIP_MINIMUM_SIZE", "1000"))
 
 REDEEM_CODES_FILE = str(_paths.REDEEM_CODES_FILE)
 REDEEM_CODES_EXAMPLE_FILE = str(_paths.REDEEM_CODES_EXAMPLE_FILE)
+POINTS_ADJUSTMENTS_FILE = str(_paths.POINTS_ADJUSTMENTS_FILE)
 
 
 def get_live_score_tier(competition: str) -> str:

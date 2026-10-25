@@ -16,6 +16,7 @@ from starlette.responses import StreamingResponse
 from .compat import Blueprint, Response, jsonify, request
 import pandas as pd
 
+from cache import _cached_response
 import config
 from live_poller import (
     _effective_poller_date,
@@ -224,6 +225,7 @@ def api_match_detail(match_id: str):
 
 @live_scores_bp.get("/api/live-score-history")
 @live_scores_bp.get("/api/past-live-scores")
+@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
 def api_live_score_history():
     """Return historical completed games, grouped by competition."""
     compact = request.args.get("compact", "").strip().lower() in {"1", "true", "yes"}
@@ -1220,7 +1222,9 @@ def api_today():
         with _TODAY_CACHE_LOCK:
             entry = _TODAY_CACHE.get(cache_key)
             if entry and (now_ts - entry["ts"]) < _TODAY_CACHE_TTL:
-                return jsonify(entry["payload"])
+                resp = jsonify(entry["payload"])
+                resp.headers["Cache-Control"] = f"public, max-age={int(_TODAY_CACHE_TTL)}"
+                return resp
 
     payload = build_today_merged_payload(
         target_date_iso=target_date,
@@ -1232,5 +1236,7 @@ def api_today():
     with _TODAY_CACHE_LOCK:
         _TODAY_CACHE[cache_key] = {"ts": now_ts, "payload": payload}
 
-    return jsonify(payload)
+    resp = jsonify(payload)
+    resp.headers["Cache-Control"] = f"public, max-age={int(_TODAY_CACHE_TTL)}"
+    return resp
 

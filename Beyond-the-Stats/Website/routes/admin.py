@@ -138,6 +138,12 @@ def api_help():
         ("/live-activities/register", "POST", "Register a Live Activity push token for a match (app alias)"),
         ("/live-activities/unregister", "POST", "Remove a Live Activity registration (app alias)"),
         ("/api/redeem", "GET/POST", "Redeem a promo code (?code= or JSON body)"),
+        ("/api/admin/points-adjustments", "GET", "List points deductions and baselines (auth required)"),
+        ("/api/admin/points-adjustments", "POST", "Save or update team points deduction or baseline (auth required)"),
+        ("/api/admin/points-adjustments", "DELETE", "Remove a team points adjustment (auth required)"),
+        ("/api/admin/points-adjustments/recalculate", "POST", "Recalculate standings and flush caches (auth required)"),
+        ("/api/admin/points-adjustments/preview", "GET", "Preview standings with adjustment markers (auth required)"),
+        ("/api/admin/points-adjustments/competitions", "GET", "Catalog of competitions, teams & active adjustments (auth required)"),
         ("/api/info/changes", "GET", "App changes changelog entries"),
         ("/api/info/roadmap", "GET", "App planned features/roadmap"),
         ("/api/info/upcoming", "GET", "App upcoming features"),
@@ -223,6 +229,29 @@ def api_help_all():
 
 
 # ── Pipeline & Maintenance ───────────────────────────────────────────
+
+@admin_bp.get("/api/health")
+@admin_bp.get("/health")
+def api_health():
+    """Health check endpoint for Cloudflare, load balancers, and monitoring."""
+    refreshed_at = get_last_pipeline_run()
+    refreshed_at_str = refreshed_at.isoformat() if refreshed_at else None
+    poller_status = None
+    try:
+        from live_poller import get_live_poller_status
+        poller_status = get_live_poller_status()
+    except Exception:
+        pass
+
+    return jsonify({
+        "ok": True,
+        "status": "healthy",
+        "service": "beyond-the-stats-backend",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "last_refresh_utc": refreshed_at_str,
+        "poller": poller_status,
+    })
+
 
 @admin_bp.get("/api/last-refresh")
 def api_last_refresh():
@@ -472,3 +501,296 @@ def api_info_upcoming():
 def api_test_sync():
     """Diagnostic endpoint to verify file synchronization and FastAPI compatibility."""
     return jsonify({"status": "ok", "sync_test": True, "server": "FastAPI"})
+
+
+# ── Points Adjustments & Deductions (Admin Debug) ────────────────────
+
+@admin_bp.get("/api/admin/points-adjustments")
+def api_admin_get_points_adjustments():
+    """List all team points deductions, baseline points, and overrides."""
+    if not mutation_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    comp_filter = str(request.args.get("competition", "")).strip() or None
+    team_filter = str(request.args.get("team", "")).strip() or None
+
+    try:
+        from shared.sqlite_store import load_all_points_adjustments
+        adjustments = load_all_points_adjustments(competition=comp_filter)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Failed to load adjustments: {exc}"}), 500
+
+    if team_filter:
+        team_lower = team_filter.lower()
+        adjustments = [
+            a for a in adjustments
+            if team_lower in a.get("team", "").lower()
+        ]
+
+    comps_with_adjustments = sorted(list({a["competition"] for a in adjustments if a.get("competition")}))
+
+    return jsonify({
+        "ok": True,
+        "adjustments": adjustments,
+        "count": len(adjustments),
+        "competitions": comps_with_adjustments,
+    })
+
+
+@admin_bp.post("/api/admin/points-adjustments")
+def api_admin_save_points_adjustment():
+    """Create or update a team points deduction, baseline points, or manual points override."""
+    if not mutation_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    competition = str(payload.get("competition") or request.form.get("competition") or "").strip()
+    team = str(payload.get("team") or request.form.get("team") or "").strip()
+
+    if not competition:
+        return jsonify({"ok": False, "error": "Missing required field: competition"}), 400
+    if not team:
+        return jsonify({"ok": False, "error": "Missing required field: team"}), 400
+
+    try:
+        from competition_rules import canonical_team_name, resolve_competition_query
+        base_comp, _view = resolve_competition_query(competition)
+        competition = base_comp
+        team = canonical_team_name(team, competition) or team
+    except Exception:
+        pass
+
+    try:
+        deduction_points = max(0, int(payload.get("deduction_points", 0) or 0))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "deduction_points must be an integer >= 0"}), 400
+
+    try:
+        baseline_points = int(payload.get("baseline_points", 0) or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "baseline_points must be an integer"}), 400
+
+    raw_override = payload.get("override_pts")
+    override_pts = None
+    if raw_override is not None and str(raw_override).strip() != "":
+        try:
+            override_pts = int(raw_override)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "override_pts must be an integer or null"}), 400
+
+    try:
+        baseline_p = int(payload.get("baseline_p", 0) or 0)
+        baseline_w = int(payload.get("baseline_w", 0) or 0)
+        baseline_d = int(payload.get("baseline_d", 0) or 0)
+        baseline_l = int(payload.get("baseline_l", 0) or 0)
+        baseline_gf = int(payload.get("baseline_gf", 0) or 0)
+        baseline_ga = int(payload.get("baseline_ga", 0) or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "baseline match statistics (P, W, D, L, GF, GA) must be integers"}), 400
+
+    deduction_reason = str(payload.get("deduction_reason") or "").strip()
+    notes = str(payload.get("notes") or "").strip()
+    recalculate = payload.get("recalculate", True)
+    if isinstance(recalculate, str):
+        recalculate = recalculate.lower() in ("1", "true", "yes")
+
+    try:
+        from shared.sqlite_store import save_points_adjustment
+        saved = save_points_adjustment(
+            competition=competition,
+            team=team,
+            deduction_points=deduction_points,
+            baseline_points=baseline_points,
+            override_pts=override_pts,
+            baseline_p=baseline_p,
+            baseline_w=baseline_w,
+            baseline_d=baseline_d,
+            baseline_l=baseline_l,
+            baseline_gf=baseline_gf,
+            baseline_ga=baseline_ga,
+            deduction_reason=deduction_reason,
+            notes=notes,
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Failed to save points adjustment: {exc}"}), 500
+
+    recalculated = False
+    if recalculate:
+        try:
+            from standings import _clear_standings_cache, _compute_standings_from_history, clear_points_adjustments_cache
+            clear_points_adjustments_cache()
+            _clear_standings_cache(competition)
+            from league_data import clear_league_data_caches
+            clear_league_data_caches()
+            _compute_standings_from_history(competition)
+            recalculated = True
+        except Exception:
+            pass
+
+    return jsonify({
+        "ok": True,
+        "message": f"Points adjustment saved for {team} ({competition}).",
+        "adjustment": saved,
+        "recalculated": recalculated,
+    })
+
+
+@admin_bp.route("/api/admin/points-adjustments", methods=["DELETE"])
+@admin_bp.route("/api/admin/points-adjustments/<path:storage_key>", methods=["DELETE"])
+def api_admin_delete_points_adjustment(storage_key: str | None = None):
+    """Delete a team points adjustment row."""
+    if not mutation_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    key = storage_key or payload.get("storage_key") or request.args.get("storage_key") or request.args.get("key")
+    competition = str(payload.get("competition") or request.args.get("competition") or "").strip()
+    team = str(payload.get("team") or request.args.get("team") or "").strip()
+
+    recalculate = payload.get("recalculate", request.args.get("recalculate", True))
+    if isinstance(recalculate, str):
+        recalculate = recalculate.lower() in ("1", "true", "yes")
+
+    from shared.sqlite_store import delete_points_adjustment, delete_points_adjustment_by_key
+
+    deleted = False
+    affected_comp = competition
+    if key:
+        deleted = delete_points_adjustment_by_key(str(key))
+        if ":" in str(key):
+            affected_comp = str(key).split(":", 1)[0]
+    elif competition and team:
+        deleted = delete_points_adjustment(competition, team)
+        affected_comp = competition
+    else:
+        return jsonify({
+            "ok": False,
+            "error": "Provide storage_key or competition and team to delete",
+        }), 400
+
+    if not deleted:
+        return jsonify({"ok": False, "error": "Adjustment not found or could not be deleted"}), 404
+
+    recalculated = False
+    if recalculate:
+        try:
+            from standings import _clear_standings_cache, _compute_standings_from_history, clear_points_adjustments_cache
+            clear_points_adjustments_cache()
+            if affected_comp:
+                _clear_standings_cache(affected_comp)
+                _compute_standings_from_history(affected_comp)
+            from league_data import clear_league_data_caches
+            clear_league_data_caches()
+            recalculated = True
+        except Exception:
+            pass
+
+    return jsonify({
+        "ok": True,
+        "message": "Points adjustment successfully deleted.",
+        "storage_key": key,
+        "competition": affected_comp,
+        "recalculated": recalculated,
+    })
+
+
+@admin_bp.post("/api/admin/points-adjustments/recalculate")
+def api_admin_recalculate_standings():
+    """Flush standings and league-data caches and force recomputation."""
+    if not mutation_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    competition = str(payload.get("competition") or request.args.get("competition") or "").strip()
+
+    from standings import _clear_all_real_data_caches, _clear_standings_cache, _compute_standings_from_history, clear_points_adjustments_cache
+    from league_data import clear_league_data_caches
+
+    clear_points_adjustments_cache()
+    clear_league_data_caches()
+
+    refreshed = []
+    if competition and competition.lower() != "all":
+        _clear_standings_cache(competition)
+        res = _compute_standings_from_history(competition)
+        if res:
+            refreshed.append(competition)
+    else:
+        _clear_all_real_data_caches()
+        for comp in config.LIVE_SCORE_COMPETITIONS:
+            if comp not in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+                try:
+                    res = _compute_standings_from_history(comp)
+                    if res:
+                        refreshed.append(comp)
+                except Exception:
+                    pass
+
+    return jsonify({
+        "ok": True,
+        "message": f"Recalculated standings for {len(refreshed)} competition(s).",
+        "competitions": refreshed,
+    })
+
+
+@admin_bp.get("/api/admin/points-adjustments/preview")
+def api_admin_preview_standings():
+    """Preview current standings for a competition with adjustments highlighted."""
+    if not mutation_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    competition = str(request.args.get("competition", "")).strip()
+    if not competition:
+        return jsonify({"ok": False, "error": "Missing required ?competition= query parameter"}), 400
+
+    from standings import _compute_standings_from_history, _build_fallback_standings, get_all_points_adjustments_for_competition
+    standings = _compute_standings_from_history(competition) or _build_fallback_standings(competition)
+    if not standings:
+        return jsonify({"ok": False, "error": f"No standings available for {competition}"}), 404
+
+    active_adjs = get_all_points_adjustments_for_competition(competition)
+
+    return jsonify({
+        "ok": True,
+        "competition": competition,
+        "active_adjustments": active_adjs,
+        "standings": standings,
+    })
+
+
+@admin_bp.get("/api/admin/points-adjustments/competitions")
+def api_admin_competitions_catalog():
+    """List all available competitions with team rosters and adjustment statuses."""
+    if not mutation_authorized():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    from shared.sqlite_store import load_all_points_adjustments
+    from standings import _canonical_roster_teams
+
+    all_adjs = load_all_points_adjustments()
+    adjs_by_comp: dict[str, list[dict]] = {}
+    for a in all_adjs:
+        adjs_by_comp.setdefault(a["competition"], []).append(a)
+
+    comps = []
+    for comp_name in sorted(config.LIVE_SCORE_COMPETITIONS.keys()):
+        if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+            continue
+        comp_adjs = adjs_by_comp.get(comp_name, [])
+        try:
+            teams = _canonical_roster_teams(comp_name)
+        except Exception:
+            teams = []
+        comps.append({
+            "competition": comp_name,
+            "has_adjustments": len(comp_adjs) > 0,
+            "adjustments_count": len(comp_adjs),
+            "teams": teams,
+            "adjustments": comp_adjs,
+        })
+
+    return jsonify({
+        "ok": True,
+        "count": len(comps),
+        "competitions": comps,
+    })

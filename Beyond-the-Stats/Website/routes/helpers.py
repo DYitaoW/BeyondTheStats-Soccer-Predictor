@@ -175,7 +175,7 @@ def regional_espn_schedule_fallback(existing_rows: list) -> list:
         if not espn_id:
             continue
         try:
-            games = _fetch_competition_schedule(competition, espn_id, days_forward=365) or []
+            games = _fetch_competition_schedule(competition, espn_id, days_forward=30) or []
         except Exception:
             games = []
         for game in games:

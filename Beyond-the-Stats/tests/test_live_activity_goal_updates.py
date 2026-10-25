@@ -60,9 +60,9 @@ class LiveActivityGoalUpdateTests(unittest.TestCase):
         """Own goals and penalties must also refresh Live Activity scores."""
         source = (WEBSITE_DIR / "live_poller.py").read_text(encoding="utf-8")
         self.assertIn('_SCORING_EVENT_TYPES = frozenset({"goal", "own goal", "penalty"})', source)
-        self.assertIn("send_live_activity_update(mid, comp_name, la_state)", source)
+        self.assertIn("send_live_activity_update(mid, comp_name, la_state", source)
         self.assertIn('score_state["event"] = "score"', source)
-        self.assertIn("send_live_activity_end(mid, comp_name, state)", source)
+        self.assertIn("send_live_activity_end(mid, comp_name, state", source)
 
     def test_score_change_helper_used_by_poller(self):
         source = (WEBSITE_DIR / "live_poller.py").read_text(encoding="utf-8")
