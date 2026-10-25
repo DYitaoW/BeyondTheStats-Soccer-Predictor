@@ -26,7 +26,7 @@ class TestBackendStartupConfiguration(unittest.TestCase):
 
     def test_run_backend_cli_default_run_on_start_false(self):
         """CLI arguments without --run-on-start should result in run_on_start=False."""
-        with patch.object(sys, "argv", ["run_backend.py"]):
+        with patch.dict(os.environ, {"PIPELINE_RUN_ON_START": "0"}), patch.object(sys, "argv", ["run_backend.py"]):
             args = run_backend.parse_args()
             self.assertFalse(args.run_on_start)
 

@@ -9,10 +9,10 @@
 tunnel: <TUNNEL_ID>
 credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
 
-# Web server origin: local Flask on port 5000.
+# Web server origin: local backend on port 8000 (macOS standard to avoid AirPlay conflict on 5000).
 ingress:
   - hostname: <HOSTNAME>
-    service: http://localhost:5000
+    service: http://localhost:8000
     originRequest:
       connectTimeout: 10s
       noTLSVerify: false

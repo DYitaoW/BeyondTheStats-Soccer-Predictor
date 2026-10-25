@@ -1395,6 +1395,10 @@ def _load_upcoming_rows(
         time_label = ""
         mls_dt_raw = str(row.get("match_datetime_et", "")).strip()
         utc_dt_raw = str(row.get("match_datetime_utc", "")).strip()
+        if utc_dt_raw.lower() in ("none", "nan", "null"):
+            utc_dt_raw = ""
+        if mls_dt_raw.lower() in ("none", "nan", "null"):
+            mls_dt_raw = ""
         match_dt_et = ""
 
         # Convert match_datetime_utc to Eastern time for display and as match_dt_et
@@ -1407,13 +1411,18 @@ def _load_upcoming_rows(
                     match_dt_et = date_val.strftime("%Y-%m-%dT%H:%M:%S%z")
                 except Exception:
                     pass
-        elif is_mls_file and mls_dt_raw:
-            date_val = pd.to_datetime(mls_dt_raw, utc=True, errors="coerce")
+        elif mls_dt_raw:
+            date_val = pd.to_datetime(mls_dt_raw, errors="coerce")
             if pd.notna(date_val):
                 try:
-                    date_val = date_val.tz_convert("America/New_York")
+                    if date_val.tzinfo is None:
+                        date_val = date_val.tz_localize("America/New_York")
+                    else:
+                        date_val = date_val.tz_convert("America/New_York")
                     time_label = date_val.strftime("%I:%M %p ET").lstrip("0")
                     match_dt_et = date_val.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    if not utc_dt_raw:
+                        utc_dt_raw = date_val.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
                 except Exception:
                     pass
         elif is_mls_file and len(raw_date) == 10 and raw_date.count("-") == 2:
@@ -1527,7 +1536,11 @@ def _load_upcoming_rows(
                 "reasoning": str(row.get("probability_reasoning", "")).strip(),
                 "predicted_result": str(row.get("predicted_result", "")).strip(),
                 "prediction_key": str(row.get("prediction_key", "")).strip(),
-                "match_datetime_utc": utc_dt_raw,
+                "match_datetime_utc": (
+                    utc_dt_raw
+                    if utc_dt_raw and str(utc_dt_raw).lower() not in ("none", "nan", "null")
+                    else ""
+                ),
                 "actual_home_goals": int(actual_home_goals) if pd.notna(actual_home_goals) else None,
                 "actual_away_goals": int(actual_away_goals) if pd.notna(actual_away_goals) else None,
                 "actual_result": str(row.get("actual_result", "")).strip(),

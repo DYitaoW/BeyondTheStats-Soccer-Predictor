@@ -2139,7 +2139,7 @@ def load_upcoming_matchweek_fixtures(api_token, window_days):
         try:
             import sqlite_store
 
-            cup_comps = [cup_data["name"] for cup_data in CUP_CONFIGS.values()]
+            cup_comps = [cup_data["name"] for cup_data in CUP_COMPETITIONS.values()]
             sqlite_fixtures = sqlite_store.load_upcoming_fixtures_dataframe(
                 competitions=cup_comps,
                 reference_date=pd.Timestamp(datetime.now(UTC).date()),

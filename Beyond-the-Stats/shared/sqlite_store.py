@@ -26,7 +26,7 @@ try:
 except Exception:  # pragma: no cover - script bootstrap fallback
     _paths = None  # type: ignore
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 _WRITE_LOCK = threading.RLock()
 
 _PAST_TABLE = "past_games"
@@ -34,6 +34,7 @@ _LIVE_TABLE = "live_score_history"
 _UPCOMING_TABLE = "upcoming_games"
 _SQUAD_VALUES_TABLE = "squad_values"
 _NOTIF_SUBS_TABLE = "notification_subscriptions"
+_POINTS_ADJ_TABLE = "team_points_adjustments"
 _META_TABLE = "store_meta"
 
 
@@ -89,6 +90,16 @@ def _mls_squad_values_json() -> Path:
         / "Data"
         / "Team_Data"
         / "mls_squad_values.json"
+    )
+
+
+def _points_adjustments_json() -> Path:
+    if _paths is not None and hasattr(_paths, "POINTS_ADJUSTMENTS_FILE"):
+        return Path(_paths.POINTS_ADJUSTMENTS_FILE)
+    return (
+        Path(__file__).resolve().parent.parent
+        / "Data"
+        / "team_points_adjustments.json"
     )
 
 
@@ -340,6 +351,41 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
     conn.execute(
         f"""
+        CREATE TABLE IF NOT EXISTS {_POINTS_ADJ_TABLE} (
+            storage_key TEXT PRIMARY KEY,
+            competition TEXT NOT NULL,
+            team TEXT NOT NULL,
+            deduction_points INTEGER NOT NULL DEFAULT 0,
+            baseline_points INTEGER NOT NULL DEFAULT 0,
+            override_pts INTEGER,
+            baseline_p INTEGER NOT NULL DEFAULT 0,
+            baseline_w INTEGER NOT NULL DEFAULT 0,
+            baseline_d INTEGER NOT NULL DEFAULT 0,
+            baseline_l INTEGER NOT NULL DEFAULT 0,
+            baseline_gf INTEGER NOT NULL DEFAULT 0,
+            baseline_ga INTEGER NOT NULL DEFAULT 0,
+            deduction_reason TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            updated_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_pts_adj_comp
+        ON {_POINTS_ADJ_TABLE}(competition)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_pts_adj_team
+        ON {_POINTS_ADJ_TABLE}(team)
+        """
+    )
+
+    conn.execute(
+        f"""
         INSERT OR REPLACE INTO {_META_TABLE}(key, value)
         VALUES ('schema_version', ?)
         """,
@@ -436,10 +482,15 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
                 f"SELECT value FROM {_META_TABLE} WHERE key = ?",
                 ("squad_values_migrated",),
             ).fetchone()
+            pts_flag = conn.execute(
+                f"SELECT value FROM {_META_TABLE} WHERE key = ?",
+                ("points_adjustments_migrated",),
+            ).fetchone()
 
             past_count = 0
             live_count = 0
             squad_count = 0
+            pts_count = 0
             did_work = False
 
             if not flag or flag["value"] != "1" or force:
@@ -507,6 +558,39 @@ def migrate_json_archives(db_path: Optional[Path] = None, *, force: bool = False
                 conn.execute(
                     f"INSERT OR REPLACE INTO {_META_TABLE}(key, value) VALUES (?, ?)",
                     ("squad_values_migrated", "1"),
+                )
+
+            if not pts_flag or pts_flag["value"] != "1" or force:
+                pts_file = _points_adjustments_json()
+                if pts_file.is_file():
+                    try:
+                        pts_payload = json.loads(pts_file.read_text(encoding="utf-8"))
+                        if isinstance(pts_payload, list):
+                            for r in pts_payload:
+                                if isinstance(r, dict) and r.get("competition") and r.get("team"):
+                                    _save_points_adjustment_conn(
+                                        conn,
+                                        competition=r["competition"],
+                                        team=r["team"],
+                                        deduction_points=r.get("deduction_points", 0),
+                                        baseline_points=r.get("baseline_points", 0),
+                                        override_pts=r.get("override_pts"),
+                                        baseline_p=r.get("baseline_p", 0),
+                                        baseline_w=r.get("baseline_w", 0),
+                                        baseline_d=r.get("baseline_d", 0),
+                                        baseline_l=r.get("baseline_l", 0),
+                                        baseline_gf=r.get("baseline_gf", 0),
+                                        baseline_ga=r.get("baseline_ga", 0),
+                                        deduction_reason=r.get("deduction_reason", ""),
+                                        notes=r.get("notes", ""),
+                                    )
+                                    pts_count += 1
+                                    did_work = True
+                    except Exception as exc:
+                        print(f"[sqlite-store] team_points_adjustments.json migrate skipped: {exc}")
+                conn.execute(
+                    f"INSERT OR REPLACE INTO {_META_TABLE}(key, value) VALUES (?, ?)",
+                    ("points_adjustments_migrated", "1"),
                 )
 
             if not did_work:
@@ -957,7 +1041,7 @@ def load_team_recent_matches(
 
 
 def count_rows(table: str, db_path: Optional[Path] = None) -> int:
-    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE, _NOTIF_SUBS_TABLE}:
+    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE, _NOTIF_SUBS_TABLE, _POINTS_ADJ_TABLE}:
         raise ValueError(f"unknown table: {table}")
     ensure_store(db_path)
     conn = _open_ready(db_path)
@@ -999,6 +1083,11 @@ def _sanitize_csv_value(value: Any) -> Any:
         pass
     if isinstance(value, (datetime,)):
         return value.isoformat()
+    if isinstance(value, str):
+        val_str = value.strip()
+        if val_str.lower() in ("nan", "none", "null"):
+            return None
+        return val_str
     return value
 
 
@@ -1372,6 +1461,7 @@ def store_info(db_path: Optional[Path] = None) -> dict:
             _UPCOMING_TABLE: count_rows(_UPCOMING_TABLE, path),
             _SQUAD_VALUES_TABLE: count_rows(_SQUAD_VALUES_TABLE, path),
             _NOTIF_SUBS_TABLE: count_rows(_NOTIF_SUBS_TABLE, path),
+            _POINTS_ADJ_TABLE: count_rows(_POINTS_ADJ_TABLE, path),
         },
         "never_deletes": True,
         "persists_across_reboot": True,
@@ -1739,3 +1829,299 @@ def load_all_notification_subs(db_path: Optional[Path] = None) -> list[dict]:
         ]
     finally:
         conn.close()
+
+
+# ── Team Points Adjustments & Deductions ─────────────────────────────
+
+def points_adjustment_storage_key(competition: str, team: str) -> str:
+    """Stable dedupe key for team points adjustment rows."""
+    comp = str(competition or "").strip().lower()
+    tm = str(team or "").strip().lower()
+    return f"{comp}:{tm}"
+
+
+def _save_points_adjustment_conn(
+    conn: sqlite3.Connection,
+    competition: str,
+    team: str,
+    deduction_points: int = 0,
+    baseline_points: int = 0,
+    override_pts: Optional[int] = None,
+    baseline_p: int = 0,
+    baseline_w: int = 0,
+    baseline_d: int = 0,
+    baseline_l: int = 0,
+    baseline_gf: int = 0,
+    baseline_ga: int = 0,
+    deduction_reason: str = "",
+    notes: str = "",
+) -> dict:
+    comp = str(competition or "").strip()
+    tm = str(team or "").strip()
+    if not comp or not tm:
+        raise ValueError("competition and team must be non-empty strings")
+    key = points_adjustment_storage_key(comp, tm)
+    now = _utc_now()
+
+    deduction_points = max(0, int(deduction_points or 0))
+    baseline_points = int(baseline_points or 0)
+    override_val = (
+        int(override_pts)
+        if override_pts is not None and str(override_pts).strip() != ""
+        else None
+    )
+    baseline_p = int(baseline_p or 0)
+    baseline_w = int(baseline_w or 0)
+    baseline_d = int(baseline_d or 0)
+    baseline_l = int(baseline_l or 0)
+    baseline_gf = int(baseline_gf or 0)
+    baseline_ga = int(baseline_ga or 0)
+    reason = str(deduction_reason or "").strip()
+    notes_text = str(notes or "").strip()
+
+    existing = conn.execute(
+        f"SELECT created_at FROM {_POINTS_ADJ_TABLE} WHERE storage_key = ?",
+        (key,),
+    ).fetchone()
+    created_at = existing["created_at"] if existing and existing["created_at"] else now
+
+    conn.execute(
+        f"""
+        INSERT INTO {_POINTS_ADJ_TABLE} (
+            storage_key, competition, team,
+            deduction_points, baseline_points, override_pts,
+            baseline_p, baseline_w, baseline_d, baseline_l, baseline_gf, baseline_ga,
+            deduction_reason, notes, updated_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(storage_key) DO UPDATE SET
+            competition = excluded.competition,
+            team = excluded.team,
+            deduction_points = excluded.deduction_points,
+            baseline_points = excluded.baseline_points,
+            override_pts = excluded.override_pts,
+            baseline_p = excluded.baseline_p,
+            baseline_w = excluded.baseline_w,
+            baseline_d = excluded.baseline_d,
+            baseline_l = excluded.baseline_l,
+            baseline_gf = excluded.baseline_gf,
+            baseline_ga = excluded.baseline_ga,
+            deduction_reason = excluded.deduction_reason,
+            notes = excluded.notes,
+            updated_at = excluded.updated_at
+        """,
+        (
+            key,
+            comp,
+            tm,
+            deduction_points,
+            baseline_points,
+            override_val,
+            baseline_p,
+            baseline_w,
+            baseline_d,
+            baseline_l,
+            baseline_gf,
+            baseline_ga,
+            reason,
+            notes_text,
+            now,
+            created_at,
+        ),
+    )
+    return {
+        "storage_key": key,
+        "competition": comp,
+        "team": tm,
+        "deduction_points": deduction_points,
+        "baseline_points": baseline_points,
+        "override_pts": override_val,
+        "baseline_p": baseline_p,
+        "baseline_w": baseline_w,
+        "baseline_d": baseline_d,
+        "baseline_l": baseline_l,
+        "baseline_gf": baseline_gf,
+        "baseline_ga": baseline_ga,
+        "deduction_reason": reason,
+        "notes": notes_text,
+        "updated_at": now,
+        "created_at": created_at,
+    }
+
+
+def save_points_adjustment(
+    competition: str,
+    team: str,
+    deduction_points: int = 0,
+    baseline_points: int = 0,
+    override_pts: Optional[int] = None,
+    baseline_p: int = 0,
+    baseline_w: int = 0,
+    baseline_d: int = 0,
+    baseline_l: int = 0,
+    baseline_gf: int = 0,
+    baseline_ga: int = 0,
+    deduction_reason: str = "",
+    notes: str = "",
+    db_path: Optional[Path] = None,
+) -> dict:
+    """Upsert a team points adjustment / deduction row into SQLite and sync to JSON backup."""
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            result = _save_points_adjustment_conn(
+                conn,
+                competition=competition,
+                team=team,
+                deduction_points=deduction_points,
+                baseline_points=baseline_points,
+                override_pts=override_pts,
+                baseline_p=baseline_p,
+                baseline_w=baseline_w,
+                baseline_d=baseline_d,
+                baseline_l=baseline_l,
+                baseline_gf=baseline_gf,
+                baseline_ga=baseline_ga,
+                deduction_reason=deduction_reason,
+                notes=notes,
+            )
+            _durable_commit(conn)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+    try:
+        dump_points_adjustments_json(db_path)
+    except Exception as exc:
+        print(f"[sqlite-store] dump points adjustments JSON warning: {exc}")
+    return result
+
+
+def get_points_adjustment(
+    competition: str,
+    team: str,
+    db_path: Optional[Path] = None,
+) -> Optional[dict]:
+    """Fetch points adjustment for a competition and team if present."""
+    comp = str(competition or "").strip()
+    tm = str(team or "").strip()
+    if not comp or not tm:
+        return None
+    key = points_adjustment_storage_key(comp, tm)
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        row = conn.execute(
+            f"""
+            SELECT storage_key, competition, team,
+                   deduction_points, baseline_points, override_pts,
+                   baseline_p, baseline_w, baseline_d, baseline_l, baseline_gf, baseline_ga,
+                   deduction_reason, notes, updated_at, created_at
+            FROM {_POINTS_ADJ_TABLE}
+            WHERE storage_key = ?
+            """,
+            (key,),
+        ).fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def load_all_points_adjustments(
+    competition: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> list[dict]:
+    """Load points adjustments, optionally filtered by competition."""
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        if competition and str(competition).strip():
+            c = str(competition).strip()
+            rows = conn.execute(
+                f"""
+                SELECT storage_key, competition, team,
+                       deduction_points, baseline_points, override_pts,
+                       baseline_p, baseline_w, baseline_d, baseline_l, baseline_gf, baseline_ga,
+                       deduction_reason, notes, updated_at, created_at
+                FROM {_POINTS_ADJ_TABLE}
+                WHERE competition = ? OR LOWER(competition) = LOWER(?)
+                ORDER BY competition ASC, team ASC
+                """,
+                (c, c),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"""
+                SELECT storage_key, competition, team,
+                       deduction_points, baseline_points, override_pts,
+                       baseline_p, baseline_w, baseline_d, baseline_l, baseline_gf, baseline_ga,
+                       deduction_reason, notes, updated_at, created_at
+                FROM {_POINTS_ADJ_TABLE}
+                ORDER BY competition ASC, team ASC
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_points_adjustment(
+    competition: str,
+    team: str,
+    db_path: Optional[Path] = None,
+) -> bool:
+    """Delete points adjustment by competition and team name."""
+    comp = str(competition or "").strip()
+    tm = str(team or "").strip()
+    if not comp or not tm:
+        return False
+    key = points_adjustment_storage_key(comp, tm)
+    return delete_points_adjustment_by_key(key, db_path=db_path)
+
+
+def delete_points_adjustment_by_key(
+    storage_key: str,
+    db_path: Optional[Path] = None,
+) -> bool:
+    """Delete points adjustment by storage key."""
+    key = str(storage_key or "").strip().lower()
+    if not key:
+        return False
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"DELETE FROM {_POINTS_ADJ_TABLE} WHERE storage_key = ?",
+                (key,),
+            )
+            deleted = cur.rowcount > 0
+            _durable_commit(conn)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+    if deleted:
+        try:
+            dump_points_adjustments_json(db_path)
+        except Exception:
+            pass
+    return deleted
+
+
+def dump_points_adjustments_json(db_path: Optional[Path] = None) -> None:
+    """Persist all active adjustments from SQLite to backup JSON."""
+    rows = load_all_points_adjustments(db_path=db_path)
+    path = _points_adjustments_json()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(rows, f, indent=2, ensure_ascii=False)
+    tmp_path.replace(path)
+

@@ -54,6 +54,174 @@ _real_tables: dict[str, dict] = {}
 _team_display_mapping: dict[str, dict[str, str]] | None = None
 _team_display_mapping_lock = threading.Lock()
 
+_points_adjustments_cache: dict[str, dict[str, dict]] | None = None
+_points_adjustments_cache_lock = threading.Lock()
+
+
+def clear_points_adjustments_cache() -> None:
+    """Invalidate in-memory points adjustments cache."""
+    global _points_adjustments_cache
+    with _points_adjustments_cache_lock:
+        _points_adjustments_cache = None
+
+
+def _load_points_adjustments(force_reload: bool = False) -> dict[str, dict[str, dict]]:
+    """Return in-memory map of competition -> {team_key: adjustment_dict}."""
+    global _points_adjustments_cache
+    if not force_reload and _points_adjustments_cache is not None:
+        return _points_adjustments_cache
+    with _points_adjustments_cache_lock:
+        if not force_reload and _points_adjustments_cache is not None:
+            return _points_adjustments_cache
+        items = []
+        try:
+            from shared.sqlite_store import load_all_points_adjustments
+            items = load_all_points_adjustments()
+        except Exception:
+            items = []
+        if not items and hasattr(config, "POINTS_ADJUSTMENTS_FILE") and os.path.exists(config.POINTS_ADJUSTMENTS_FILE):
+            try:
+                with open(config.POINTS_ADJUSTMENTS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        items = [r for r in data if isinstance(r, dict)]
+            except Exception:
+                pass
+
+        indexed: dict[str, dict[str, dict]] = {}
+        for row in items:
+            comp = str(row.get("competition") or "").strip()
+            team = str(row.get("team") or "").strip()
+            if not comp or not team:
+                continue
+            base_comp = comp
+            try:
+                base_comp, _view = resolve_competition_query(comp)
+            except Exception:
+                base_comp = comp
+            for c in {comp, base_comp}:
+                c_key = c.lower()
+                c_map = indexed.setdefault(c_key, {})
+                c_map[team.lower()] = row
+                try:
+                    canon = canonical_team_name(team, c)
+                    if canon:
+                        c_map[canon.lower()] = row
+                except Exception:
+                    pass
+        _points_adjustments_cache = indexed
+        return _points_adjustments_cache
+
+
+def get_points_adjustment_for_team(competition: str, team: str) -> dict | None:
+    """Retrieve points adjustment dict for a team in a competition if configured."""
+    comp = str(competition or "").strip()
+    tm = str(team or "").strip()
+    if not comp or not tm:
+        return None
+    adjustments = _load_points_adjustments()
+    base_comp = comp
+    try:
+        base_comp, _view = resolve_competition_query(comp)
+    except Exception:
+        base_comp = comp
+    for c in (comp.lower(), base_comp.lower()):
+        c_map = adjustments.get(c)
+        if not c_map:
+            continue
+        if tm.lower() in c_map:
+            return c_map[tm.lower()]
+        try:
+            canon = canonical_team_name(tm, comp)
+            if canon and canon.lower() in c_map:
+                return c_map[canon.lower()]
+        except Exception:
+            pass
+    return None
+
+
+def get_all_points_adjustments_for_competition(competition: str) -> dict[str, dict]:
+    """Return all team adjustments keyed by canonical team name for a competition."""
+    comp = str(competition or "").strip()
+    if not comp:
+        return {}
+    adjustments = _load_points_adjustments()
+    base_comp = comp
+    try:
+        base_comp, _view = resolve_competition_query(comp)
+    except Exception:
+        base_comp = comp
+    result: dict[str, dict] = {}
+    for c in (base_comp.lower(), comp.lower()):
+        c_map = adjustments.get(c)
+        if c_map:
+            for tm_key, adj in c_map.items():
+                team_name = adj.get("team", tm_key)
+                result[team_name] = adj
+    return result
+
+
+def _apply_adjustment_to_entry(entry: dict, adj: dict) -> dict:
+    """Apply point deductions, baselines, and overrides to a single team standings entry."""
+    if not adj or entry.get("_adjustment_applied"):
+        return entry
+    deduction = int(adj.get("deduction_points") or 0)
+    baseline_pts = int(adj.get("baseline_points") or 0)
+    override_pts = adj.get("override_pts")
+    bp = int(adj.get("baseline_p") or 0)
+    bw = int(adj.get("baseline_w") or 0)
+    bd = int(adj.get("baseline_d") or 0)
+    bl = int(adj.get("baseline_l") or 0)
+    bgf = int(adj.get("baseline_gf") or 0)
+    bga = int(adj.get("baseline_ga") or 0)
+    reason = str(adj.get("deduction_reason") or "").strip()
+    notes = str(adj.get("notes") or "").strip()
+
+    if bp or bw or bd or bl or bgf or bga:
+        entry["P"] = int(entry.get("P") or 0) + bp
+        entry["W"] = int(entry.get("W") or 0) + bw
+        entry["D"] = int(entry.get("D") or 0) + bd
+        entry["L"] = int(entry.get("L") or 0) + bl
+        entry["GF"] = int(entry.get("GF") or 0) + bgf
+        entry["GA"] = int(entry.get("GA") or 0) + bga
+        entry["GD"] = entry["GF"] - entry["GA"]
+
+    if override_pts is not None and str(override_pts).strip() != "":
+        entry["override_pts"] = int(override_pts)
+        entry["Pts"] = int(override_pts)
+    else:
+        raw_pts = int(entry.get("Pts") or 0)
+        entry["Pts"] = max(0, raw_pts + baseline_pts - deduction)
+
+    if deduction > 0:
+        entry["deduction"] = deduction
+        entry["deduction_points"] = deduction
+        if reason:
+            entry["deduction_reason"] = reason
+    if baseline_pts != 0:
+        entry["baseline_points"] = baseline_pts
+    if notes:
+        entry["adjustment_notes"] = notes
+    entry["_adjustment_applied"] = True
+    return entry
+
+
+def _apply_adjustments_to_table(table: dict, comp_name: str) -> None:
+    """Mutate intermediate computed standings table with adjustments before ranking."""
+    comp_adjustments = get_all_points_adjustments_for_competition(comp_name)
+    if not comp_adjustments:
+        return
+    for team, row in list(table.items()):
+        adj = get_points_adjustment_for_team(comp_name, team)
+        if adj:
+            _apply_adjustment_to_entry(row, adj)
+    for team, adj in comp_adjustments.items():
+        canon = _normalize_team_name(team, comp_name)
+        if canon not in table and team not in table:
+            row = {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0}
+            _apply_adjustment_to_entry(row, adj)
+            table[canon] = row
+
 
 def _load_team_display_mapping() -> dict[str, dict[str, str]]:
     global _team_display_mapping
@@ -432,7 +600,12 @@ def _align_standings_to_canonical_roster(standings: dict, comp_name: str) -> dic
                 by_key[key] = _merge_entry(by_key[key], entry, canon)
 
         group_roster = _roster_for_group(group_name)
+        comp_adjs = get_all_points_adjustments_for_competition(comp_name)
         if group_roster:
+            for adj_tm in comp_adjs:
+                canon_adj = _normalize_team_name(adj_tm, base_comp)
+                if canon_adj and canon_adj not in group_roster:
+                    group_roster.append(canon_adj)
             roster_set = set(group_roster)
             by_team = {
                 t: {
@@ -449,7 +622,23 @@ def _align_standings_to_canonical_roster(standings: dict, comp_name: str) -> dic
                 by_team[team] = _merge_entry(by_team[team], row, team)
             ranked_rows = list(by_team.values())
         else:
+            for adj_tm in comp_adjs:
+                canon_adj = _normalize_team_name(adj_tm, base_comp)
+                adj_key = canon_adj.lower()
+                if adj_key not in by_key:
+                    seeded = {
+                        "team": canon_adj, "rank": 0, "position": 0,
+                        "P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0,
+                    }
+                    by_key[adj_key] = seeded
+                    order.append(adj_key)
             ranked_rows = [by_key[k] for k in order]
+
+        for row in ranked_rows:
+            team_name = row.get("team", "")
+            adj = get_points_adjustment_for_team(comp_name, team_name)
+            if adj:
+                _apply_adjustment_to_entry(row, adj)
 
         ranked = sorted(
             ranked_rows,
@@ -585,10 +774,17 @@ def _fetch_espn_roster_for_competition(comp_name: str) -> list[str]:
         return []
     try:
         import urllib.request
+        ctx = None
+        try:
+            import certifi
+            import ssl
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            ctx = None
 
         url = f"{config.LIVE_SCORE_ESPN_BASE}/{espn_id}/teams"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=12) as resp:
+        with (urllib.request.urlopen(req, timeout=12, context=ctx) if ctx else urllib.request.urlopen(req, timeout=12)) as resp:
             payload = json.load(resp)
         teams: list[str] = []
         for league in (payload.get("sports") or [{}])[0].get("leagues") or []:
@@ -1110,6 +1306,7 @@ def _compute_standings_from_history(comp_name, force_recompute=False):
             hs["D"] += 1; at["D"] += 1; hs["Pts"] += 1; at["Pts"] += 1
 
     def _rank_table(table, all_matches=None):
+        _apply_adjustments_to_table(table, comp_name)
         use_h2h = uses_h2h_tiebreaker(comp_name) and all_matches is not None
         if not use_h2h:
             return sorted(table.items(), key=lambda kv: (-kv[1]["Pts"], -kv[1]["GD"], -kv[1]["GF"], kv[0]))
@@ -1586,7 +1783,8 @@ def _get_or_fetch_standings(comp_name, computed=True):
 
 
 def _clear_standings_cache(comp_name):
-    """Force next fetch of *comp_name* standings to hit ESPN."""
+    """Force next fetch of *comp_name* standings to hit ESPN and reload points adjustments."""
+    clear_points_adjustments_cache()
     with _real_tables_lock:
         _real_tables.pop(comp_name, None)
 
@@ -1621,6 +1819,7 @@ def _clear_leaders_cache(comp_name):
 
 def _clear_all_real_data_caches():
     """Drop all in-memory ESPN standings/leaders caches (e.g. after pipeline refresh)."""
+    clear_points_adjustments_cache()
     with _real_tables_lock:
         _real_tables.clear()
     with _real_leaders_lock:

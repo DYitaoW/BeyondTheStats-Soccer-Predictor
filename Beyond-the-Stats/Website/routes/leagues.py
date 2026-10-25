@@ -132,6 +132,7 @@ def _enrich_league_data_mls_fields(comp: str, payload: dict) -> dict:
 
 
 @leagues_bp.get("/api/world-cup")
+@_cached_response(ttl=config.CACHE_TTL_LONG)
 def api_world_cup():
     """Return the World Cup projection data."""
     world_cup_file = config.WORLD_CUP_PROJECTION_FILE
@@ -680,6 +681,7 @@ def api_cup_data(competition):
 
 
 @leagues_bp.get("/api/stats")
+@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
 def api_stats():
     """Return overall site stats: accuracy, league count, last refresh time."""
     try:

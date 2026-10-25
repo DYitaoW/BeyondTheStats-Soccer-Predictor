@@ -1499,11 +1499,16 @@ def build_team_context(target_teams, by_team_matches, rankings, squad_values):
 
 
 def load_existing_recent_matches():
-    if not os.path.exists(RAW_MATCHES_FILE):
+    if not os.path.exists(RAW_MATCHES_FILE) or os.path.getsize(RAW_MATCHES_FILE) == 0:
         return [], {}
-    frame = pd.read_csv(RAW_MATCHES_FILE)
-    rows = frame.to_dict("records")
-    return rows, by_team_from_rows(rows)
+    try:
+        frame = pd.read_csv(RAW_MATCHES_FILE)
+        if frame.empty:
+            return [], {}
+        rows = frame.to_dict("records")
+        return rows, by_team_from_rows(rows)
+    except Exception:
+        return [], {}
 
 
 def by_team_from_rows(rows):

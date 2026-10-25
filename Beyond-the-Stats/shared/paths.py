@@ -22,7 +22,18 @@ Layout (post-reorg)::
 from __future__ import annotations
 
 import os
+import ssl
 from pathlib import Path
+
+# Ensure SSL certificate verification works on macOS / launchd / headless environments
+try:
+    import certifi
+    ca_path = certifi.where()
+    if os.path.exists(ca_path):
+        os.environ.setdefault("SSL_CERT_FILE", ca_path)
+        ssl._create_default_https_context = lambda: ssl.create_default_context(cafile=ca_path)
+except Exception:
+    pass
 
 # Beyond-the-Stats/
 SP_DIR = Path(__file__).resolve().parent.parent
@@ -111,6 +122,7 @@ LEAGUE_TEAMS_FILE = DATA_SEEDS_DIR / "league_teams.json"
 CURRENT_SEASON_TEAMS_FILE = DATA_SEEDS_DIR / "current_season_teams.json"
 ESPN_TEAM_NAMES_FILE = DATA_SEEDS_DIR / "espn_team_names_seen.json"
 ESPN_CUP_NAMES_FILE = DATA_SEEDS_DIR / "espn_cup_names_seen.json"
+POINTS_ADJUSTMENTS_FILE = DATA_DIR / "team_points_adjustments.json"
 
 # Common prediction artifacts
 GLOBAL_UPCOMING_FILE = OUTPUT_PRED_EUROPE / "upcoming_matchweek_predictions.csv"

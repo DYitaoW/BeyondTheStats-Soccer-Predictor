@@ -78,13 +78,19 @@ ios_device_tokens: set[str] = set()
 
 # Live Activity storage: key = "{match_id}|{competition}"
 _live_activities: dict[str, list[dict]] = {}
-_live_activities_lock = threading.Lock()
+_live_activities_lock = threading.RLock()
 
 # Regular push subscription store: key = "{match_id}|{competition}",
 # value = set of device tokens that asked to be notified about that match.
 _match_notification_subscriptions: dict[str, set[str]] = {}
 _match_subscription_events: dict[str, dict[str, set[str]]] = {}
-_match_notification_subscriptions_lock = threading.Lock()
+_match_notification_subscriptions_lock = threading.RLock()
+
+# Team push subscription store: key = normalized_team_name,
+# value = set of device tokens that asked to be notified about that team.
+_team_notification_subscriptions: dict[str, set[str]] = {}
+_team_subscription_events: dict[str, dict[str, set[str]]] = {}
+_team_notification_subscriptions_lock = threading.RLock()
 
 # Token environment cache: maps clean token to bool (True = Sandbox, False = Production)
 _token_environment_cache: dict[str, bool] = {}
@@ -644,11 +650,17 @@ def _generate_apns_jwt() -> str | None:
     iss = config.APNS_TEAM_ID or ""
     key_path = config.APNS_AUTH_KEY_PATH or ""
 
-    if not kid or not iss or not key_path or not os.path.exists(key_path):
+    if not kid or not iss or not key_path:
         return None
 
-    with open(key_path, "r") as f:
-        private_key = f.read()
+    try:
+        if not os.path.exists(key_path):
+            return None
+        with open(key_path, "r") as f:
+            private_key = f.read()
+    except Exception as exc:
+        logger.warning(f"Could not read APNs key file at {key_path}: {exc}")
+        return None
 
     token = pyjwt.encode(
         {"iss": iss, "iat": int(now), "exp": int(now) + 3600},

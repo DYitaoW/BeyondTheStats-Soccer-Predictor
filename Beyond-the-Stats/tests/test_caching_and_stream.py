@@ -45,6 +45,8 @@ from routes.leagues import (
 class TestLeagueLeadersCaching(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
+        with _LEAGUE_LEADERS_MEMO_LOCK:
+            _LEAGUE_LEADERS_MEMO_CACHE["computing"] = False
 
     def test_build_league_leaders_data(self):
         data = _build_league_leaders_data()
@@ -108,6 +110,8 @@ class TestLeagueLeadersCaching(unittest.TestCase):
 class TestLiveScoresStream(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
+        with _LEAGUE_LEADERS_MEMO_LOCK:
+            _LEAGUE_LEADERS_MEMO_CACHE["computing"] = False
 
     def test_sse_subscriber_registration(self):
         q = register_sse_subscriber(compact=True)
@@ -136,7 +140,7 @@ class TestLiveScoresStream(unittest.TestCase):
         # Connect to stream and read the first two chunks
         with self.client.stream("GET", "/api/live-scores/stream?compact=1") as stream:
             self.assertEqual(stream.status_code, 200)
-            self.assertEqual(stream.headers.get("content-type"), "text/event-stream")
+            self.assertTrue(stream.headers.get("content-type", "").startswith("text/event-stream"))
 
             lines = []
             for line in stream.iter_lines():

@@ -19,6 +19,9 @@ from live_poller import _live_scores, _live_scores_lock
 from routes.predictions import (
     _get_team_next_game_payload,
     _invalidate_team_next_game_index,
+    _load_team_upcoming_games,
+    _clean_fixture_datetime_sort_key,
+    _resolve_team_api_payload,
     _TEAM_NEXT_GAME_INDEX,
 )
 
@@ -171,6 +174,112 @@ class TestTeamNextGame(unittest.TestCase):
 
             # 100 in-memory queries should finish well under 50ms (<0.5ms each)
             self.assertLess(elapsed_ms, 50.0, f"Expected <50ms for 100 queries, got {elapsed_ms:.2f}ms")
+
+    def test_cup_match_takes_precedence_when_earlier_than_league(self):
+        # Chelsea has Carabao Cup match on 2026-10-28 and Premier League on 2026-10-31
+        mock_upcoming = [
+            {
+                "match_id": "pl-100",
+                "competition": "England/Premier League",
+                "home_team": "Chelsea",
+                "away_team": "Man United",
+                "match_date_iso": "2026-10-31",
+                "match_datetime_utc": "2026-10-31T12:30:00+00:00",
+                "match_datetime_et": "2026-10-31T08:30:00-0400",
+                "status": "upcoming",
+            },
+            {
+                "match_id": "cup-200",
+                "competition": "England/League Cup",
+                "home_team": "Liverpool",
+                "away_team": "Chelsea",
+                "match_date_iso": "2026-10-28",
+                "match_datetime_utc": "None",
+                "match_datetime_et": "2026-10-28T16:00:00-04:00",
+                "sync_key": "|liverpool|chelsea",
+                "status": "upcoming",
+            },
+        ]
+
+        with patch("routes.predictions._ALL_UPCOMING_SOURCES", []), \
+             patch("shared.sqlite_store.load_upcoming_games", return_value=mock_upcoming):
+            _invalidate_team_next_game_index()
+
+            res = _get_team_next_game_payload("Chelsea")
+            self.assertTrue(res.get("ok"))
+            self.assertTrue(res.get("has_game"))
+            game = res.get("game")
+            self.assertIsNotNone(game)
+            self.assertEqual(game.get("competition"), "England/League Cup")
+            self.assertEqual(game.get("match_date"), "2026-10-28")
+            self.assertEqual(game.get("opponent"), "Liverpool")
+            self.assertFalse(game.get("is_home"))
+            # Check datetime normalization
+            self.assertEqual(game.get("match_datetime_utc"), "2026-10-28T20:00:00Z")
+            self.assertEqual(game.get("match_datetime_et"), "2026-10-28T16:00:00-04:00")
+            # Check sync_key has date prefix rather than leading pipe
+            self.assertFalse(game.get("sync_key").startswith("|"))
+            self.assertIn("2026-10-28", game.get("sync_key"))
+
+    def test_load_team_upcoming_games_merges_league_and_cup(self):
+        mock_upcoming = [
+            {
+                "match_id": "settled-past",
+                "competition": "England/Premier League",
+                "home_team": "Chelsea",
+                "away_team": "Tottenham",
+                "match_date_iso": "2026-10-24",
+                "status": "settled",
+                "actual_result": "A",
+            },
+            {
+                "match_id": "cup-200",
+                "competition": "England/League Cup",
+                "home_team": "Liverpool",
+                "away_team": "Chelsea",
+                "match_date_iso": "2026-10-28",
+                "match_datetime_utc": "None",
+                "match_datetime_et": "2026-10-28T16:00:00-04:00",
+                "status": "upcoming",
+            },
+            {
+                "match_id": "pl-100",
+                "competition": "England/Premier League",
+                "home_team": "Chelsea",
+                "away_team": "Man United",
+                "match_date_iso": "2026-10-31",
+                "match_datetime_utc": "2026-10-31T12:30:00+00:00",
+                "status": "upcoming",
+            },
+        ]
+
+        with patch("routes.predictions._ALL_UPCOMING_SOURCES", []), \
+             patch("shared.sqlite_store.load_upcoming_games", return_value=mock_upcoming):
+            games = _load_team_upcoming_games("Chelsea")
+            self.assertEqual(len(games), 2)
+            # Carabao Cup game is first
+            self.assertEqual(games[0]["competition"], "England/League Cup")
+            self.assertEqual(games[0]["opponent"], "Liverpool")
+            self.assertEqual(games[0]["match_date"], "2026-10-28")
+            # Premier League game is second
+            self.assertEqual(games[1]["competition"], "England/Premier League")
+            self.assertEqual(games[1]["opponent"], "Man United")
+            self.assertEqual(games[1]["match_date"], "2026-10-31")
+
+    def test_clean_fixture_datetime_sort_key(self):
+        # Invalid strings should not be treated as dates
+        self.assertEqual(_clean_fixture_datetime_sort_key({"match_datetime_utc": "None"}), "9999-99-99")
+        self.assertEqual(_clean_fixture_datetime_sort_key({"match_datetime_utc": "nan"}), "9999-99-99")
+        self.assertEqual(_clean_fixture_datetime_sort_key({"match_datetime_utc": ""}), "9999-99-99")
+
+        # ET datetime string with timezone offset converts to UTC ISO
+        key_et = _clean_fixture_datetime_sort_key({"match_datetime_et": "2026-10-28T16:00:00-04:00"})
+        self.assertEqual(key_et, "2026-10-28T20:00:00Z")
+
+        # UTC string normalized
+        key_utc = _clean_fixture_datetime_sort_key({"match_datetime_utc": "2026-10-31T12:30:00+00:00"})
+        self.assertEqual(key_utc, "2026-10-31T12:30:00Z")
+        self.assertLess(key_et, key_utc)
 
 
 if __name__ == "__main__":
