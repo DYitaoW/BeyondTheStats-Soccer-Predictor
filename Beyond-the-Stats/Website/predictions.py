@@ -1449,9 +1449,13 @@ def _load_upcoming_rows(
             weekday = date_val.strftime("%A")
             date_label = date_val.strftime("%B %d, %Y")
         try:
-            ph_raw = float(row["prob_home"]) * 100
-            pdv_raw = float(row["prob_draw"]) * 100
-            pa_raw = float(row["prob_away"]) * 100
+            ph_raw = float(row["prob_home"])
+            pdv_raw = float(row["prob_draw"])
+            pa_raw = float(row["prob_away"])
+            if ph_raw <= 1.0 and pdv_raw <= 1.0 and pa_raw <= 1.0 and (ph_raw + pdv_raw + pa_raw) <= 1.05:
+                ph_raw *= 100
+                pdv_raw *= 100
+                pa_raw *= 100
             ph = round(ph_raw, 3)
             pdv = round(pdv_raw, 3)
             pa = round(pa_raw, 3)

@@ -1223,7 +1223,7 @@ def api_upcoming(mode):
                 _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to)
             combined_stats = dict(combined_stats or {})
             combined_league_stats = {ls.get("competition", ""): ls for ls in (combined_league_stats or []) if ls.get("competition")}
-
+        else:
             all_rows = []
             combined_stats = {"correct_total": 0, "total_predictions": 0, "pending_total": 0, "accuracy_pct": 0.0}
             combined_league_stats = {}

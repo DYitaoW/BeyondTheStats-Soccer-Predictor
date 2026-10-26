@@ -304,6 +304,24 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         f"""
+        CREATE INDEX IF NOT EXISTS idx_upcoming_sync_key
+        ON {_UPCOMING_TABLE}(json_extract(payload_json, '$.sync_key'))
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_past_sync_key
+        ON {_PAST_TABLE}(json_extract(payload_json, '$.sync_key'))
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_live_hist_sync_key
+        ON {_LIVE_TABLE}(json_extract(payload_json, '$.sync_key'))
+        """
+    )
+    conn.execute(
+        f"""
         CREATE TABLE IF NOT EXISTS {_SQUAD_VALUES_TABLE} (
             storage_key TEXT PRIMARY KEY,
             team_name TEXT NOT NULL,
@@ -1241,42 +1259,113 @@ def load_upcoming_games(
 
 
 def get_game_by_match_id(match_id: str, db_path: Optional[Path] = None) -> Optional[dict]:
-    """Fast, single-row indexed lookup of a game by match_id across live, upcoming, and past tables."""
+    """Fast, single-row indexed lookup of a game by match_id, sync_key, or storage_key across live, upcoming, and past tables."""
+    import urllib.parse
+
     mid = str(match_id or "").strip()
     if not mid:
         return None
     ensure_store(db_path)
     conn = _open_ready(db_path)
+
+    unquoted_mid = urllib.parse.unquote_plus(mid).strip()
+    candidates = [mid]
+    if unquoted_mid and unquoted_mid != mid:
+        candidates.append(unquoted_mid)
+
+    storage_keys = set()
+    for c in candidates:
+        storage_keys.add(c)
+        storage_keys.add(f"id:{c}")
+        storage_keys.add(f"prediction:{c}")
+        storage_keys.add(f"fixture:{c}")
+        for prefix in ("fixture:", "prediction:", "id:"):
+            if c.startswith(prefix):
+                storage_keys.add(c[len(prefix):])
+
+    cand_list = list(candidates)
+    sk_list = list(storage_keys)
+    cand_ph = ",".join("?" for _ in cand_list)
+    sk_ph = ",".join("?" for _ in sk_list)
+
     try:
-        # 1. Check live_score_history (indexed on match_id and storage_key)
+        # 1. Check live_score_history (indexed on match_id, storage_key, sync_key)
+        live_params = cand_list + sk_list + cand_list + cand_list
         row = conn.execute(
-            f"SELECT payload_json FROM {_LIVE_TABLE} WHERE match_id = ? OR storage_key = ? LIMIT 1",
-            (mid, f"id:{mid}"),
+            f"""
+            SELECT payload_json FROM {_LIVE_TABLE}
+            WHERE match_id IN ({cand_ph})
+               OR storage_key IN ({sk_ph})
+               OR json_extract(payload_json, '$.sync_key') IN ({cand_ph})
+               OR json_extract(payload_json, '$.match_id') IN ({cand_ph})
+            LIMIT 1
+            """,
+            live_params,
         ).fetchone()
         if row and row["payload_json"]:
             res = _json_loads(row["payload_json"])
             if res:
                 return res
 
-        # 2. Check upcoming_games (by storage_key or match_id inside JSON)
+        # 2. Check upcoming_games (by storage_key, prediction_key, sync_key, match_id)
+        upcoming_params = sk_list + cand_list + cand_list + cand_list
         row = conn.execute(
-            f"SELECT payload_json FROM {_UPCOMING_TABLE} WHERE storage_key = ? OR json_extract(payload_json, '$.match_id') = ? LIMIT 1",
-            (f"id:{mid}", mid),
+            f"""
+            SELECT payload_json FROM {_UPCOMING_TABLE}
+            WHERE storage_key IN ({sk_ph})
+               OR prediction_key IN ({cand_ph})
+               OR json_extract(payload_json, '$.sync_key') IN ({cand_ph})
+               OR json_extract(payload_json, '$.match_id') IN ({cand_ph})
+            LIMIT 1
+            """,
+            upcoming_params,
         ).fetchone()
         if row and row["payload_json"]:
             res = _json_loads(row["payload_json"])
             if res:
                 return res
 
-        # 3. Check past_games (by storage_key or match_id inside JSON)
+        # 3. Check past_games (by storage_key, prediction_key, sync_key, match_id)
+        past_params = sk_list + cand_list + cand_list + cand_list
         row = conn.execute(
-            f"SELECT payload_json FROM {_PAST_TABLE} WHERE storage_key = ? OR json_extract(payload_json, '$.match_id') = ? LIMIT 1",
-            (f"id:{mid}", mid),
+            f"""
+            SELECT payload_json FROM {_PAST_TABLE}
+            WHERE storage_key IN ({sk_ph})
+               OR prediction_key IN ({cand_ph})
+               OR json_extract(payload_json, '$.sync_key') IN ({cand_ph})
+               OR json_extract(payload_json, '$.match_id') IN ({cand_ph})
+            LIMIT 1
+            """,
+            past_params,
         ).fetchone()
         if row and row["payload_json"]:
             res = _json_loads(row["payload_json"])
             if res:
                 return res
+
+        # 4. Fallback: pipe-delimited date|home|away lookup
+        for c in candidates:
+            parts = [p.strip() for p in c.split("|") if p.strip()]
+            if len(parts) in (3, 4):
+                dt_iso = parts[0]
+                h_name = parts[-2].lower().replace(" ", "")
+                a_name = parts[-1].lower().replace(" ", "")
+                for tbl in (_UPCOMING_TABLE, _PAST_TABLE, _LIVE_TABLE):
+                    dt_col = "match_date_iso" if tbl != _LIVE_TABLE else "game_date"
+                    row = conn.execute(
+                        f"""
+                        SELECT payload_json FROM {tbl}
+                        WHERE {dt_col} = ?
+                          AND LOWER(REPLACE(home_team, ' ', '')) = ?
+                          AND LOWER(REPLACE(away_team, ' ', '')) = ?
+                        LIMIT 1
+                        """,
+                        (dt_iso, h_name, a_name),
+                    ).fetchone()
+                    if row and row["payload_json"]:
+                        res = _json_loads(row["payload_json"])
+                        if res:
+                            return res
 
         return None
     except Exception:

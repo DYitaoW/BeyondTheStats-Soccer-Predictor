@@ -9,6 +9,7 @@ import os
 import queue
 import threading
 import time
+import urllib.parse
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -178,6 +179,9 @@ def api_live_scores_stream():
 
 def _enrich_with_upcoming_prediction(entry: dict, mid: str) -> dict:
     """Merge comprehensive upcoming prediction data (probabilities, distributions, secondary markets, reasoning, odds) into match payload."""
+    clean_mid = str(mid or "").strip()
+    unquoted_mid = urllib.parse.unquote_plus(clean_mid).strip()
+
     if not entry.get("sync_key") or not entry.get("canonical_home_team"):
         try:
             from live_poller import _stamp_game_sync_fields as _stamp_fields
@@ -191,104 +195,262 @@ def _enrich_with_upcoming_prediction(entry: dict, mid: str) -> dict:
         lookup = _build_past_game_prediction_lookup()
 
         if lookup:
-            if mid and f"mid:{mid}" in lookup:
-                pred_row = lookup[f"mid:{mid}"]
-            if not pred_row and entry.get("sync_key") and entry["sync_key"] in lookup:
-                pred_row = lookup[entry["sync_key"]]
-            if not pred_row:
-                date_iso = _past_row_date_iso(entry)
-                c_home = str(entry.get("canonical_home_team", "") or "").strip().lower()
-                c_away = str(entry.get("canonical_away_team", "") or "").strip().lower()
-                if date_iso and c_home and c_away:
-                    pred_row = lookup.get(f"{date_iso}|{c_home}|{c_away}")
-            if not pred_row:
-                date_iso = _past_row_date_iso(entry)
-                comp = str(entry.get("competition", "")).strip().lower()
-                home = str(entry.get("home_team", "")).strip().lower()
-                away = str(entry.get("away_team", "")).strip().lower()
-                if date_iso and comp and home and away:
-                    pred_row = lookup.get(f"{date_iso}|{comp}|{home}|{away}")
+            cand_keys = []
+            if clean_mid:
+                cand_keys.extend([f"mid:{clean_mid}", clean_mid])
+            if unquoted_mid and unquoted_mid != clean_mid:
+                cand_keys.extend([f"mid:{unquoted_mid}", unquoted_mid])
+            if entry.get("sync_key"):
+                cand_keys.append(entry["sync_key"])
+            date_iso = _past_row_date_iso(entry)
+            c_home = str(entry.get("canonical_home_team", "") or "").strip().lower()
+            c_away = str(entry.get("canonical_away_team", "") or "").strip().lower()
+            if date_iso and c_home and c_away:
+                cand_keys.append(f"{date_iso}|{c_home}|{c_away}")
+            comp = str(entry.get("competition", "")).strip().lower()
+            home = str(entry.get("home_team", "")).strip().lower()
+            away = str(entry.get("away_team", "")).strip().lower()
+            if date_iso and comp and home and away:
+                cand_keys.append(f"{date_iso}|{comp}|{home}|{away}")
+
+            for k in cand_keys:
+                if k in lookup:
+                    pred_row = lookup[k]
+                    break
     except Exception:
         pred_row = None
 
     if not pred_row:
         try:
-            pred_row = _sqlite_store.get_game_by_match_id(mid)
+            for cand in (clean_mid, unquoted_mid, entry.get("sync_key")):
+                if cand:
+                    pred_row = _sqlite_store.get_game_by_match_id(cand)
+                    if pred_row:
+                        break
         except Exception:
             pass
 
+    prediction_fields = {
+        "prob_home", "prob_draw", "prob_away",
+        "prob_home_text", "prob_draw_text", "prob_away_text",
+        "pred_home_goals", "pred_away_goals",
+        "pred_home_shots", "pred_away_shots", "pred_home_sot", "pred_away_sot",
+        "prob_both_score", "prob_over_1_5", "prob_over_2_5", "prob_over_3_5",
+        "prob_home_goals_0", "prob_home_goals_1plus", "prob_home_goals_2plus",
+        "prob_away_goals_0", "prob_away_goals_1plus", "prob_away_goals_2plus",
+        "correct_score_dist", "double_chance", "asian_handicap", "total_goals_dist",
+        "first_to_score", "clean_sheet",
+        "home_attack_rating", "home_defence_rating", "away_attack_rating", "away_defence_rating",
+        "last_5_home", "last_5_away",
+        "winner_label", "predicted_result", "prediction_key", "prediction_quality",
+        "has_prediction", "prediction_note", "reasoning", "probability_reasoning",
+        "odds_home", "odds_draw", "odds_away", "schedule_only", "unmapped_teams",
+        "match_datetime_et", "match_datetime_utc", "date_label", "time_label", "weekday",
+    }
+
+    preserve = {
+        "match_id",
+        "home_score",
+        "away_score",
+        "status",
+        "clock",
+        "period",
+        "match_minute",
+        "events",
+        "key_events",
+        "lineups",
+        "stats",
+        "live_status",
+        "live_clock",
+        "live_period",
+        "live_prediction",
+        "live_updates",
+        "actual_home_goals",
+        "actual_away_goals",
+        "actual_result",
+        "is_correct",
+        "is_live",
+    }
+
     if pred_row:
-        preserve = {
-            "match_id",
-            "home_score",
-            "away_score",
-            "status",
-            "clock",
-            "period",
-            "match_minute",
-            "events",
-            "key_events",
-            "lineups",
-            "stats",
-            "live_status",
-            "live_clock",
-            "live_period",
-            "live_prediction",
-            "live_updates",
-            "actual_home_goals",
-            "actual_away_goals",
-            "actual_result",
-            "is_correct",
-            "is_live",
-        }
         for k, v in pred_row.items():
             if k in preserve:
                 continue
-            if v in (None, "", [], {}):
-                continue
-            if entry.get(k) in (None, "", [], {}):
-                entry[k] = v
-            elif k.startswith("prob_") or k.startswith("pred_") or k in {
-                "winner_label",
-                "predicted_result",
-                "prediction_key",
-                "prediction_quality",
-                "has_prediction",
-                "prediction_note",
-                "reasoning",
-                "probability_reasoning",
-                "correct_score_dist",
-                "double_chance",
-                "asian_handicap",
-                "total_goals_dist",
-                "first_to_score",
-                "clean_sheet",
-                "last_5_home",
-                "last_5_away",
-                "home_attack_rating",
-                "home_defence_rating",
-                "away_attack_rating",
-                "away_defence_rating",
-                "prob_home_text",
-                "prob_draw_text",
-                "prob_away_text",
-                "weekday",
-                "date_label",
-                "time_label",
-                "match_datetime_et",
-                "match_datetime_utc",
-                "schedule_only",
-                "unmapped_teams",
-                "odds_home",
-                "odds_draw",
-                "odds_away",
-            }:
+            if k in prediction_fields:
+                if entry.get(k) in (None, "", [], {}) or v not in (None, "", [], {}):
+                    entry[k] = v
+            elif entry.get(k) in (None, "", [], {}):
                 entry[k] = v
 
-        entry["upcoming_prediction"] = dict(pred_row)
-        entry["prematch_prediction"] = dict(pred_row)
-    elif entry.get("prematch_prediction"):
-        entry["upcoming_prediction"] = dict(entry["prematch_prediction"])
+    # Fallback to prematch/upcoming_prediction if present on entry
+    for sub_key in ("upcoming_prediction", "prematch_prediction"):
+        if isinstance(entry.get(sub_key), dict):
+            for k, v in entry[sub_key].items():
+                if k not in preserve and (entry.get(k) in (None, "", [], {}) or k in prediction_fields):
+                    if entry.get(k) is None:
+                        entry[k] = v
+
+    # Fallback math calculations for missing secondary prediction markets
+    hg = entry.get("pred_home_goals")
+    ag = entry.get("pred_away_goals")
+    ph = entry.get("prob_home")
+    pdv = entry.get("prob_draw")
+    pa = entry.get("prob_away")
+
+    # Double chance
+    if not entry.get("double_chance") and (ph is not None or pdv is not None or pa is not None):
+        try:
+            from math_utils import _compute_double_chance
+            ph_val = float(ph or 0)
+            pd_val = float(pdv or 0)
+            pa_val = float(pa or 0)
+            if ph_val > 1.0 or pd_val > 1.0 or pa_val > 1.0:
+                ph_val /= 100.0
+                pd_val /= 100.0
+                pa_val /= 100.0
+            dc = _compute_double_chance(ph_val, pd_val, pa_val)
+            if dc:
+                entry["double_chance"] = dc
+        except Exception:
+            pass
+
+    # Correct score distribution
+    if not entry.get("correct_score_dist") and (hg is not None and ag is not None):
+        try:
+            from math_utils import _compute_correct_score_dist
+            entry["correct_score_dist"] = _compute_correct_score_dist(hg, ag)
+        except Exception:
+            pass
+
+    # Asian handicap
+    if not entry.get("asian_handicap") and (hg is not None and ag is not None):
+        try:
+            from math_utils import _compute_asian_handicap
+            ph_val = (float(ph) / 100.0 if float(ph) > 1.0 else float(ph)) if ph is not None else None
+            pd_val = (float(pdv) / 100.0 if float(pdv) > 1.0 else float(pdv)) if pdv is not None else None
+            pa_val = (float(pa) / 100.0 if float(pa) > 1.0 else float(pa)) if pa is not None else None
+            entry["asian_handicap"] = _compute_asian_handicap(hg, ag, prob_home=ph_val, prob_draw=pd_val, prob_away=pa_val)
+        except Exception:
+            pass
+
+    # Total goals distribution
+    if not entry.get("total_goals_dist") and (hg is not None and ag is not None):
+        try:
+            from math_utils import _compute_total_goals_dist
+            entry["total_goals_dist"] = _compute_total_goals_dist(hg, ag)
+        except Exception:
+            pass
+
+    # First to score
+    if not entry.get("first_to_score") and (hg is not None and ag is not None):
+        try:
+            from math_utils import _compute_first_to_score
+            entry["first_to_score"] = _compute_first_to_score(hg, ag)
+        except Exception:
+            pass
+
+    # Clean sheet
+    if not entry.get("clean_sheet") and (hg is not None and ag is not None):
+        try:
+            from math_utils import _compute_clean_sheet
+            entry["clean_sheet"] = _compute_clean_sheet(hg, ag)
+        except Exception:
+            pass
+
+    # Secondary goal probabilities
+    if (entry.get("prob_both_score") is None or entry.get("prob_over_2_5") is None) and (hg is not None and ag is not None):
+        try:
+            from math_utils import _compute_goal_probabilities
+            probs = _compute_goal_probabilities(float(hg), float(ag))
+            for gp in (
+                "prob_both_score", "prob_over_1_5", "prob_over_2_5", "prob_over_3_5",
+                "prob_home_goals_0", "prob_home_goals_1plus", "prob_home_goals_2plus",
+                "prob_away_goals_0", "prob_away_goals_1plus", "prob_away_goals_2plus",
+            ):
+                if entry.get(gp) is None and gp in probs:
+                    entry[gp] = round(float(probs[gp]), 6)
+        except Exception:
+            pass
+
+    # Prob text formatting
+    if entry.get("prob_home") is not None:
+        try:
+            ph_val = float(entry["prob_home"])
+            if ph_val <= 1.0 and ph_val > 0:
+                ph_val *= 100.0
+            raw_txt = str(entry.get("prob_home_text", "")).strip()
+            if not raw_txt or raw_txt.endswith(".0") or float(raw_txt.rstrip("%") or 0) > 100:
+                entry["prob_home_text"] = f"{ph_val:.1f}%"
+        except Exception:
+            pass
+    if entry.get("prob_draw") is not None:
+        try:
+            pd_val = float(entry["prob_draw"])
+            if pd_val <= 1.0 and pd_val > 0:
+                pd_val *= 100.0
+            raw_txt = str(entry.get("prob_draw_text", "")).strip()
+            if not raw_txt or raw_txt.endswith(".0") or float(raw_txt.rstrip("%") or 0) > 100:
+                entry["prob_draw_text"] = f"{pd_val:.1f}%"
+        except Exception:
+            pass
+    if entry.get("prob_away") is not None:
+        try:
+            pa_val = float(entry["prob_away"])
+            if pa_val <= 1.0 and pa_val > 0:
+                pa_val *= 100.0
+            raw_txt = str(entry.get("prob_away_text", "")).strip()
+            if not raw_txt or raw_txt.endswith(".0") or float(raw_txt.rstrip("%") or 0) > 100:
+                entry["prob_away_text"] = f"{pa_val:.1f}%"
+        except Exception:
+            pass
+
+    # Last 5 form
+    h_team = entry.get("home_team")
+    if not entry.get("last_5_home") and h_team:
+        try:
+            entry["last_5_home"] = _sqlite_store.load_team_recent_matches(str(h_team), limit=5)
+        except Exception:
+            entry["last_5_home"] = []
+    elif entry.get("last_5_home") is None:
+        entry["last_5_home"] = []
+
+    a_team = entry.get("away_team")
+    if not entry.get("last_5_away") and a_team:
+        try:
+            entry["last_5_away"] = _sqlite_store.load_team_recent_matches(str(a_team), limit=5)
+        except Exception:
+            entry["last_5_away"] = []
+    elif entry.get("last_5_away") is None:
+        entry["last_5_away"] = []
+
+    # Ratings
+    for r_key in ("home_attack_rating", "home_defence_rating", "away_attack_rating", "away_defence_rating"):
+        if r_key not in entry:
+            entry[r_key] = None
+
+    # Winner label
+    if not entry.get("winner_label") and entry.get("predicted_result"):
+        try:
+            from predictions import _winner_label
+            entry["winner_label"] = _winner_label(entry["predicted_result"], str(h_team or ""), str(a_team or ""))
+        except Exception:
+            pass
+
+    # Ensure reasoning fields synced
+    r_val = str(entry.get("reasoning") or entry.get("probability_reasoning") or "").strip()
+    if r_val:
+        entry["reasoning"] = r_val
+        entry["probability_reasoning"] = r_val
+
+    # Snapshot dictionary for upcoming_prediction and prematch_prediction
+    pred_snapshot = {k: entry.get(k) for k in prediction_fields if k in entry}
+    if not isinstance(entry.get("upcoming_prediction"), dict):
+        entry["upcoming_prediction"] = {}
+    entry["upcoming_prediction"].update(pred_snapshot)
+
+    if not isinstance(entry.get("prematch_prediction"), dict):
+        entry["prematch_prediction"] = {}
+    entry["prematch_prediction"].update(pred_snapshot)
 
     return entry
 
@@ -305,19 +467,36 @@ def clear_match_detail_cache() -> None:
         _MATCH_DETAIL_CACHE.clear()
 
 
-@live_scores_bp.get("/api/match/<match_id>")
-def api_match_detail(match_id: str):
+@live_scores_bp.get("/api/match")
+@live_scores_bp.get("/api/match/<path:match_id>")
+def api_match_detail(match_id: str = ""):
     """Return complete detailed information for a single match with caching, ETags, and edge headers."""
-    mid = str(match_id or "").strip()
+    mid = str(
+        match_id
+        or request.args.get("match_id")
+        or request.args.get("sync_key")
+        or request.args.get("id")
+        or request.args.get("game_id")
+        or ""
+    ).strip()
     if not mid:
         return jsonify({"ok": False, "error": "match_id required"}), 400
+
+    unquoted_mid = urllib.parse.unquote_plus(mid).strip()
+    candidate_ids = {mid, unquoted_mid}
+    for prefix in ("fixture:", "prediction:", "id:"):
+        for c in list(candidate_ids):
+            if c.startswith(prefix):
+                candidate_ids.add(c[len(prefix):])
+            else:
+                candidate_ids.add(f"{prefix}{c}")
 
     now = time.time()
     if_none_match = request.headers.get("if-none-match", "").strip('"').strip()
 
     # 0. Check in-memory fast cache
     with _MATCH_DETAIL_CACHE_LOCK:
-        cached_item = _MATCH_DETAIL_CACHE.get(mid)
+        cached_item = _MATCH_DETAIL_CACHE.get(mid) or _MATCH_DETAIL_CACHE.get(unquoted_mid)
         if cached_item:
             exp_ts, cached_payload, cached_etag = cached_item
             if now < exp_ts:
@@ -340,11 +519,13 @@ def api_match_detail(match_id: str):
     def _apply_live_summary(game_dict: dict) -> dict:
         entry = dict(game_dict)
         with _live_summary_cache_lock:
-            cached = _live_summary_cache.get(mid)
-            if cached:
-                for k, v in cached.items():
-                    if v not in (None, "", [], {}):
-                        entry[k] = v
+            for cand in candidate_ids:
+                cached = _live_summary_cache.get(cand)
+                if cached:
+                    for k, v in cached.items():
+                        if v not in (None, "", [], {}):
+                            entry[k] = v
+                    break
         return _enrich_with_upcoming_prediction(entry, mid)
 
     def _ensure_game_sync(game: dict) -> dict:
@@ -357,15 +538,11 @@ def api_match_detail(match_id: str):
     with _live_scores_lock:
         for comp_name, comp_data in _live_scores.items():
             for g in comp_data.get("games", []):
-                if str(g.get("match_id", "")).strip() == mid:
+                g_mid = str(g.get("match_id", "")).strip()
+                g_sync = str(g.get("sync_key", "")).strip()
+                if (g_mid and g_mid in candidate_ids) or (g_sync and g_sync in candidate_ids):
                     game_dict = dict(g)
                     game_dict.setdefault("competition", comp_name)
-                    with _live_summary_cache_lock:
-                        cached = _live_summary_cache.get(mid)
-                        if cached:
-                            for k, v in cached.items():
-                                if v not in (None, "", [], {}):
-                                    game_dict[k] = v
                     found_game = _apply_live_summary(game_dict)
                     found_source = "live"
                     break
@@ -376,6 +553,8 @@ def api_match_detail(match_id: str):
     if not found_game:
         try:
             g = _sqlite_store.get_game_by_match_id(mid)
+            if not g and unquoted_mid != mid:
+                g = _sqlite_store.get_game_by_match_id(unquoted_mid)
             if g:
                 found_game = _apply_live_summary(dict(g))
                 st = str(found_game.get("status", "")).strip().lower()
@@ -388,9 +567,11 @@ def api_match_detail(match_id: str):
         try:
             from predictions import _build_past_game_prediction_lookup
             lookup = _build_past_game_prediction_lookup()
-            if f"mid:{mid}" in lookup:
-                found_game = _apply_live_summary(dict(lookup[f"mid:{mid}"]))
-                found_source = "upcoming_prediction"
+            for cand in (f"mid:{mid}", mid, unquoted_mid, f"mid:{unquoted_mid}"):
+                if cand in lookup:
+                    found_game = _apply_live_summary(dict(lookup[cand]))
+                    found_source = "upcoming_prediction"
+                    break
         except Exception:
             pass
 
@@ -405,7 +586,9 @@ def api_match_detail(match_id: str):
                     data = json.load(f)
                 games = data if isinstance(data, list) else data.get("games", [])
                 for g in games:
-                    if str(g.get("match_id", "")).strip() == mid:
+                    g_mid = str(g.get("match_id", "")).strip()
+                    g_sync = str(g.get("sync_key", "")).strip()
+                    if (g_mid and g_mid in candidate_ids) or (g_sync and g_sync in candidate_ids):
                         found_game = _apply_live_summary(dict(g))
                         found_source = "history_json"
                         break
@@ -419,7 +602,9 @@ def api_match_detail(match_id: str):
             for source, csv_path in _ALL_UPCOMING_SOURCES:
                 rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
                 for g in rows:
-                    if str(g.get("match_id", "")).strip() == mid:
+                    g_mid = str(g.get("match_id", "")).strip()
+                    g_sync = str(g.get("sync_key", "")).strip()
+                    if (g_mid and g_mid in candidate_ids) or (g_sync and g_sync in candidate_ids):
                         found_game = _apply_live_summary(dict(g))
                         found_source = "upcoming_csv"
                         break
@@ -458,6 +643,8 @@ def api_match_detail(match_id: str):
 
     with _MATCH_DETAIL_CACHE_LOCK:
         _MATCH_DETAIL_CACHE[mid] = (now + ttl, payload, etag)
+        if unquoted_mid != mid:
+            _MATCH_DETAIL_CACHE[unquoted_mid] = (now + ttl, payload, etag)
 
     if if_none_match and if_none_match == etag:
         return Response("", status_code=304, headers={"ETag": f'"{etag}"', "Cache-Control": cc, "Vary": "Accept-Encoding"})

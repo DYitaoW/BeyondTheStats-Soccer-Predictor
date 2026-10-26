@@ -1,60 +1,16 @@
 {
-  "generated_at_utc": "2026-10-25T18:59:26+00:00",
+  "generated_at_utc": "2026-10-26T04:33:02+00:00",
   "global": {
     "England/Championship": [],
     "England/Premier League": [],
     "France/Ligue 1": [],
     "Germany/Bundesliga": [],
-    "Italy/Serie A": [
-      "Atalanta",
-      "Fiorentina",
-      "Frosinone",
-      "Genoa",
-      "Internazionale",
-      "Venezia"
-    ],
-    "Portugal/Liga Portugal": [
-      "Estoril",
-      "Moreirense"
-    ],
-    "Spain/La Liga": [
-      "Athletic Club",
-      "Celta Vigo",
-      "Getafe",
-      "Real Betis"
-    ]
+    "Italy/Serie A": [],
+    "Portugal/Liga Portugal": [],
+    "Spain/La Liga": []
   },
   "mls": {
-    "United States/MLS": [
-      "Atlanta United FC",
-      "Austin FC",
-      "CF Montréal",
-      "Charlotte FC",
-      "Chicago Fire FC",
-      "Colorado Rapids",
-      "Columbus Crew",
-      "D.C. United",
-      "FC Cincinnati",
-      "FC Dallas",
-      "Houston Dynamo FC",
-      "Inter Miami CF",
-      "Minnesota United FC",
-      "Nashville SC",
-      "New England Revolution",
-      "New York City FC",
-      "Orlando City SC",
-      "Philadelphia Union",
-      "Portland Timbers",
-      "Real Salt Lake",
-      "Red Bull New York",
-      "San Diego FC",
-      "San Jose Earthquakes",
-      "Seattle Sounders FC",
-      "Sporting Kansas City",
-      "St. Louis CITY SC",
-      "Toronto FC",
-      "Vancouver Whitecaps"
-    ]
+    "United States/MLS": []
   },
   "extra": {},
   "cup": {},

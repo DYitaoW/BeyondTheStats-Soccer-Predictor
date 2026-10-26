@@ -153,3 +153,45 @@ def _compute_asian_handicap(pred_home_goals, pred_away_goals, prob_home=None, pr
                 p_a = _gd_prob(lambda g, n=line: g < -n)
         lines[str(line)] = {"home": round(p_h, 6), "away": round(p_a, 6)}
     return lines
+
+
+def _compute_goal_probabilities(pred_home_goals, pred_away_goals) -> dict:
+    """Compute Poisson-based goal event probabilities from expected goals."""
+    hg = max(0.01, _safe_float(pred_home_goals, 0.0))
+    ag = max(0.01, _safe_float(pred_away_goals, 0.0))
+
+    p_h0 = _poisson_pmf(0, hg)
+    p_h1 = _poisson_pmf(1, hg)
+    p_a0 = _poisson_pmf(0, ag)
+    p_a1 = _poisson_pmf(1, ag)
+
+    prob_home_goals_0 = round(p_h0, 6)
+    prob_home_goals_1plus = round(1.0 - p_h0, 6)
+    prob_home_goals_2plus = round(max(0.0, 1.0 - p_h0 - p_h1), 6)
+    prob_away_goals_0 = round(p_a0, 6)
+    prob_away_goals_1plus = round(1.0 - p_a0, 6)
+    prob_away_goals_2plus = round(max(0.0, 1.0 - p_a0 - p_a1), 6)
+    prob_both_score = round((1.0 - p_h0) * (1.0 - p_a0), 6)
+
+    lam = hg + ag
+    p_tot0 = _poisson_pmf(0, lam)
+    p_tot1 = _poisson_pmf(1, lam)
+    p_tot2 = _poisson_pmf(2, lam)
+    p_tot3 = _poisson_pmf(3, lam)
+
+    prob_over_1_5 = round(max(0.0, 1.0 - p_tot0 - p_tot1), 6)
+    prob_over_2_5 = round(max(0.0, 1.0 - p_tot0 - p_tot1 - p_tot2), 6)
+    prob_over_3_5 = round(max(0.0, 1.0 - p_tot0 - p_tot1 - p_tot2 - p_tot3), 6)
+
+    return {
+        "prob_home_goals_0": prob_home_goals_0,
+        "prob_home_goals_1plus": prob_home_goals_1plus,
+        "prob_home_goals_2plus": prob_home_goals_2plus,
+        "prob_away_goals_0": prob_away_goals_0,
+        "prob_away_goals_1plus": prob_away_goals_1plus,
+        "prob_away_goals_2plus": prob_away_goals_2plus,
+        "prob_both_score": prob_both_score,
+        "prob_over_1_5": prob_over_1_5,
+        "prob_over_2_5": prob_over_2_5,
+        "prob_over_3_5": prob_over_3_5,
+    }
