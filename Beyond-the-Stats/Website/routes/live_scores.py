@@ -4,6 +4,7 @@ Live scores, APNs push notifications, and Live Activities API routes.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import queue
 import threading
@@ -15,6 +16,7 @@ from zoneinfo import ZoneInfo
 from starlette.responses import StreamingResponse
 from .compat import Blueprint, Response, jsonify, request
 import pandas as pd
+from shared import sqlite_store as _sqlite_store
 
 from cache import _cached_response
 import config
@@ -57,6 +59,7 @@ from notifications import (
 )
 import notifications as live_activities
 from routes.helpers import mutation_authorized
+from team_utils import decorate_game_team_names, resolve_team_info
 
 live_scores_bp = Blueprint("live_scores", __name__)
 live_scores_router = live_scores_bp
@@ -77,6 +80,7 @@ def api_live_scores():
         try:
             refresh_live_scores_now(force=force_refresh)
         except Exception:
+            pass
             import traceback
             traceback.print_exc()
 
@@ -107,7 +111,12 @@ def api_live_scores():
                 "compact": compact,
             })
         wanted = {c.strip() for c in comp_filter.split(",") if c.strip()}
-        filtered = {k: v for k, v in _live_scores.items() if k in wanted}
+        filtered = {}
+        for k, v in _live_scores.items():
+            if k in wanted:
+                v_copy = dict(v)
+                v_copy["games"] = [decorate_game_team_names(dict(g), k) for g in v.get("games", [])]
+                filtered[k] = v_copy
         if compact:
             filtered = to_compact_live_scores_data(filtered)
         return jsonify({
@@ -167,19 +176,182 @@ def api_live_scores_stream():
     )
 
 
+def _enrich_with_upcoming_prediction(entry: dict, mid: str) -> dict:
+    """Merge comprehensive upcoming prediction data (probabilities, distributions, secondary markets, reasoning, odds) into match payload."""
+    if not entry.get("sync_key") or not entry.get("canonical_home_team"):
+        try:
+            from live_poller import _stamp_game_sync_fields as _stamp_fields
+            _stamp_fields(entry, entry.get("competition", ""))
+        except Exception:
+            pass
+
+    pred_row = None
+    try:
+        from predictions import _build_past_game_prediction_lookup, _past_row_date_iso
+        lookup = _build_past_game_prediction_lookup()
+
+        if lookup:
+            if mid and f"mid:{mid}" in lookup:
+                pred_row = lookup[f"mid:{mid}"]
+            if not pred_row and entry.get("sync_key") and entry["sync_key"] in lookup:
+                pred_row = lookup[entry["sync_key"]]
+            if not pred_row:
+                date_iso = _past_row_date_iso(entry)
+                c_home = str(entry.get("canonical_home_team", "") or "").strip().lower()
+                c_away = str(entry.get("canonical_away_team", "") or "").strip().lower()
+                if date_iso and c_home and c_away:
+                    pred_row = lookup.get(f"{date_iso}|{c_home}|{c_away}")
+            if not pred_row:
+                date_iso = _past_row_date_iso(entry)
+                comp = str(entry.get("competition", "")).strip().lower()
+                home = str(entry.get("home_team", "")).strip().lower()
+                away = str(entry.get("away_team", "")).strip().lower()
+                if date_iso and comp and home and away:
+                    pred_row = lookup.get(f"{date_iso}|{comp}|{home}|{away}")
+    except Exception:
+        pred_row = None
+
+    if not pred_row:
+        try:
+            pred_row = _sqlite_store.get_game_by_match_id(mid)
+        except Exception:
+            pass
+
+    if pred_row:
+        preserve = {
+            "match_id",
+            "home_score",
+            "away_score",
+            "status",
+            "clock",
+            "period",
+            "match_minute",
+            "events",
+            "key_events",
+            "lineups",
+            "stats",
+            "live_status",
+            "live_clock",
+            "live_period",
+            "live_prediction",
+            "live_updates",
+            "actual_home_goals",
+            "actual_away_goals",
+            "actual_result",
+            "is_correct",
+            "is_live",
+        }
+        for k, v in pred_row.items():
+            if k in preserve:
+                continue
+            if v in (None, "", [], {}):
+                continue
+            if entry.get(k) in (None, "", [], {}):
+                entry[k] = v
+            elif k.startswith("prob_") or k.startswith("pred_") or k in {
+                "winner_label",
+                "predicted_result",
+                "prediction_key",
+                "prediction_quality",
+                "has_prediction",
+                "prediction_note",
+                "reasoning",
+                "probability_reasoning",
+                "correct_score_dist",
+                "double_chance",
+                "asian_handicap",
+                "total_goals_dist",
+                "first_to_score",
+                "clean_sheet",
+                "last_5_home",
+                "last_5_away",
+                "home_attack_rating",
+                "home_defence_rating",
+                "away_attack_rating",
+                "away_defence_rating",
+                "prob_home_text",
+                "prob_draw_text",
+                "prob_away_text",
+                "weekday",
+                "date_label",
+                "time_label",
+                "match_datetime_et",
+                "match_datetime_utc",
+                "schedule_only",
+                "unmapped_teams",
+                "odds_home",
+                "odds_draw",
+                "odds_away",
+            }:
+                entry[k] = v
+
+        entry["upcoming_prediction"] = dict(pred_row)
+        entry["prematch_prediction"] = dict(pred_row)
+    elif entry.get("prematch_prediction"):
+        entry["upcoming_prediction"] = dict(entry["prematch_prediction"])
+
+    return entry
+
+
+_MATCH_DETAIL_CACHE: dict[str, tuple[float, dict, str]] = {}
+_MATCH_DETAIL_CACHE_LOCK = threading.Lock()
+_MATCH_DETAIL_LIVE_TTL = 3.0
+_MATCH_DETAIL_PRE_TTL = 60.0
+_MATCH_DETAIL_POST_TTL = 3600.0
+
+
+def clear_match_detail_cache() -> None:
+    with _MATCH_DETAIL_CACHE_LOCK:
+        _MATCH_DETAIL_CACHE.clear()
+
+
 @live_scores_bp.get("/api/match/<match_id>")
 def api_match_detail(match_id: str):
-    """Return complete detailed information for a single match (on-demand drilldown)."""
+    """Return complete detailed information for a single match with caching, ETags, and edge headers."""
     mid = str(match_id or "").strip()
     if not mid:
         return jsonify({"ok": False, "error": "match_id required"}), 400
 
+    now = time.time()
+    if_none_match = request.headers.get("if-none-match", "").strip('"').strip()
+
+    # 0. Check in-memory fast cache
+    with _MATCH_DETAIL_CACHE_LOCK:
+        cached_item = _MATCH_DETAIL_CACHE.get(mid)
+        if cached_item:
+            exp_ts, cached_payload, cached_etag = cached_item
+            if now < exp_ts:
+                game_st = str(cached_payload.get("game", {}).get("status", "")).strip().lower()
+                cc = (
+                    "public, max-age=5, s-maxage=5, stale-while-revalidate=5" if game_st == "in"
+                    else ("public, max-age=3600, s-maxage=86400, stale-while-revalidate=600" if game_st in ("post", "ft", "final")
+                    else "public, max-age=60, s-maxage=300, stale-while-revalidate=60")
+                )
+                if if_none_match and if_none_match == cached_etag:
+                    return Response("", status_code=304, headers={"ETag": f'"{cached_etag}"', "Cache-Control": cc, "Vary": "Accept-Encoding"})
+                resp = jsonify(cached_payload)
+                resp.headers["ETag"] = f'"{cached_etag}"'
+                resp.headers["Cache-Control"] = cc
+                resp.headers["Vary"] = "Accept-Encoding"
+                resp.headers["X-Cache"] = "HIT"
+                return resp
+
+    # Look up match across sources
+    def _apply_live_summary(game_dict: dict) -> dict:
+        entry = dict(game_dict)
+        with _live_summary_cache_lock:
+            cached = _live_summary_cache.get(mid)
+            if cached:
+                for k, v in cached.items():
+                    if v not in (None, "", [], {}):
+                        entry[k] = v
+        return _enrich_with_upcoming_prediction(entry, mid)
+
     def _ensure_game_sync(game: dict) -> dict:
-        entry = dict(game)
-        if not entry.get("sync_key") or not entry.get("canonical_home_team"):
-            from live_poller import _stamp_game_sync_fields
-            _stamp_game_sync_fields(entry, entry.get("competition", ""))
-        return entry
+        return _apply_live_summary(game)
+
+    found_game = None
+    found_source = ""
 
     # 1. Check live in-memory games first
     with _live_scores_lock:
@@ -194,33 +366,108 @@ def api_match_detail(match_id: str):
                             for k, v in cached.items():
                                 if v not in (None, "", [], {}):
                                     game_dict[k] = v
-                    return jsonify({"ok": True, "source": "live", "game": _ensure_game_sync(game_dict)})
+                    found_game = _apply_live_summary(game_dict)
+                    found_source = "live"
+                    break
+            if found_game:
+                break
 
-    # 2. Check SQLite live_score_history / past_games
-    try:
-        from shared import sqlite_store as _sqlite_store
-        _sqlite_store.ensure_store()
-        all_hist = _sqlite_store.load_live_score_history() or []
-        for g in all_hist:
-            if str(g.get("match_id", "")).strip() == mid:
-                return jsonify({"ok": True, "source": "history", "game": _ensure_game_sync(g)})
+    # 2. Check targeted single-row lookup in SQLite (fast indexed query!)
+    if not found_game:
+        try:
+            g = _sqlite_store.get_game_by_match_id(mid)
+            if g:
+                found_game = _apply_live_summary(dict(g))
+                st = str(found_game.get("status", "")).strip().lower()
+                found_source = "upcoming" if st in ("upcoming", "pre") else "history"
+        except Exception:
+            pass
 
-        all_past = _sqlite_store.load_past_games() or []
-        for g in all_past:
-            if str(g.get("match_id", "")).strip() == mid:
-                return jsonify({"ok": True, "source": "past_games", "game": _ensure_game_sync(g)})
-    except Exception:
-        pass
+    # 3. Check upcoming predictions lookup index (in-memory O(1))
+    if not found_game:
+        try:
+            from predictions import _build_past_game_prediction_lookup
+            lookup = _build_past_game_prediction_lookup()
+            if f"mid:{mid}" in lookup:
+                found_game = _apply_live_summary(dict(lookup[f"mid:{mid}"]))
+                found_source = "upcoming_prediction"
+        except Exception:
+            pass
 
-    # 3. Check JSON history fallback
-    try:
-        for g in (_load_live_score_history() or []):
-            if str(g.get("match_id", "")).strip() == mid:
-                return jsonify({"ok": True, "source": "history_json", "game": _ensure_game_sync(g)})
-    except Exception:
-        pass
+    # 4. Fallback: check JSON history
+    if not found_game:
+        try:
+            import json, os
+            from Website import config
+            hist_path = getattr(config, "LIVE_SCORE_HISTORY_PATH", None) or os.path.join(getattr(config, "STATUS_DIR", ""), "live_score_history.json")
+            if hist_path and os.path.exists(hist_path):
+                with open(hist_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                games = data if isinstance(data, list) else data.get("games", [])
+                for g in games:
+                    if str(g.get("match_id", "")).strip() == mid:
+                        found_game = _apply_live_summary(dict(g))
+                        found_source = "history_json"
+                        break
+        except Exception:
+            pass
 
-    return jsonify({"ok": False, "error": f"Match {mid} not found"}), 404
+    # 5. Fallback: check CSV predictions
+    if not found_game:
+        try:
+            from predictions import _load_upcoming_rows
+            for source, csv_path in _ALL_UPCOMING_SOURCES:
+                rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
+                for g in rows:
+                    if str(g.get("match_id", "")).strip() == mid:
+                        found_game = _apply_live_summary(dict(g))
+                        found_source = "upcoming_csv"
+                        break
+                if found_game:
+                    break
+        except Exception:
+            pass
+
+    if not found_game:
+        return jsonify({"ok": False, "error": f"Match {mid} not found"}), 404
+
+    found_game = decorate_game_team_names(found_game, found_game.get("competition", ""))
+    if isinstance(found_game.get("upcoming_prediction"), dict):
+        decorate_game_team_names(found_game["upcoming_prediction"], found_game.get("competition", ""))
+    if isinstance(found_game.get("prematch_prediction"), dict):
+        decorate_game_team_names(found_game["prematch_prediction"], found_game.get("competition", ""))
+    payload = {"ok": True, "source": found_source, "game": found_game}
+
+    # Compute ETag and caching headers
+    st_val = str(found_game.get("status", "")).strip().lower()
+    h_sc = str(found_game.get("home_score", ""))
+    a_sc = str(found_game.get("away_score", ""))
+    clk = str(found_game.get("clock", found_game.get("live_clock", "")))
+    etag_raw = f"{mid}:{st_val}:{h_sc}:{a_sc}:{clk}"
+    etag = hashlib.md5(etag_raw.encode("utf-8")).hexdigest()[:16]
+
+    if st_val == "in":
+        ttl = _MATCH_DETAIL_LIVE_TTL
+        cc = "public, max-age=5, s-maxage=5, stale-while-revalidate=5"
+    elif st_val in ("post", "ft", "final"):
+        ttl = _MATCH_DETAIL_POST_TTL
+        cc = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=600"
+    else:
+        ttl = _MATCH_DETAIL_PRE_TTL
+        cc = "public, max-age=60, s-maxage=300, stale-while-revalidate=60"
+
+    with _MATCH_DETAIL_CACHE_LOCK:
+        _MATCH_DETAIL_CACHE[mid] = (now + ttl, payload, etag)
+
+    if if_none_match and if_none_match == etag:
+        return Response("", status_code=304, headers={"ETag": f'"{etag}"', "Cache-Control": cc, "Vary": "Accept-Encoding"})
+
+    resp = jsonify(payload)
+    resp.headers["ETag"] = f'"{etag}"'
+    resp.headers["Cache-Control"] = cc
+    resp.headers["Vary"] = "Accept-Encoding"
+    resp.headers["X-Cache"] = "MISS"
+    return resp
 
 
 @live_scores_bp.get("/api/live-score-history")
@@ -270,9 +517,6 @@ def api_live_score_history():
     games = None
     used_sqlite = False
     try:
-        from shared import sqlite_store as _sqlite_store
-
-        _sqlite_store.ensure_store()
         if _sqlite_store.count_rows("live_score_history") > 0:
             games = _sqlite_store.load_live_score_history(
                 competition_substr=league,
@@ -320,7 +564,8 @@ def api_live_score_history():
                 "games": [],
                 "last_polled_utc": datetime.now(timezone.utc).isoformat(),
             }
-        competitions[comp]["games"].append(to_compact_live_game(g) if compact else g)
+        g_dec = decorate_game_team_names(dict(g), comp)
+        competitions[comp]["games"].append(to_compact_live_game(g_dec) if compact else g_dec)
 
     res = {
         "ok": True,
@@ -484,6 +729,7 @@ def api_register_device():
             set_token_environment(token, env)
         except Exception:
             pass
+
     if platform == "ios":
         ios_device_tokens.add(token)
     else:
@@ -535,6 +781,7 @@ def api_subscribe_match_notifications():
                         break
         except Exception:
             pass
+
         competition = competition or ""
     if len(token) > 512 or len(match_id) > 256 or len(competition) > 256 or len(team) > 256:
         return jsonify({"ok": False, "error": "input too long"}), 400
@@ -675,6 +922,7 @@ def api_register_live_activity():
                         break
         except Exception:
             pass
+
         competition = competition or ""
     if len(activity_token) > 1024 or len(match_id) > 256 or len(competition) > 256:
         return jsonify({"ok": False, "error": "input too long"}), 400
@@ -771,7 +1019,7 @@ def api_startup():
     upcoming_today = []
     try:
         from predictions import _load_upcoming_rows
-        from routes.helpers import _ALL_UPCOMING_SOURCES, exclude_upcoming_only_rows, regional_espn_schedule_fallback
+        from predictions import exclude_upcoming_only_rows, regional_espn_schedule_fallback
         from routes.predictions import _to_compact_upcoming_row
 
         feed = []
@@ -1092,6 +1340,7 @@ def build_today_merged_payload(
                 "canonical_teams": f"{c_home} vs {c_away}",
             }
 
+        item = decorate_game_team_names(item, item.get("competition", ""))
         merged_items.append(item)
 
     # Second pass: Include upcoming games that had no live counterpart (upcoming_only)
@@ -1120,6 +1369,7 @@ def build_today_merged_payload(
             "upcoming_teams": f"{ht} vs {at}",
             "canonical_teams": f"{c_home} vs {c_away}",
         }
+        item = decorate_game_team_names(item, item.get("competition", ""))
         merged_items.append(item)
 
     # Filter by competition if requested
@@ -1239,4 +1489,3 @@ def api_today():
     resp = jsonify(payload)
     resp.headers["Cache-Control"] = f"public, max-age={int(_TODAY_CACHE_TTL)}"
     return resp
-

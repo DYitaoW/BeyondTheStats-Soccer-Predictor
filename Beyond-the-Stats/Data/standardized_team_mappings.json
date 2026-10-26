@@ -1,0 +1,2820 @@
+{
+  "version": "1.0",
+  "teams": [
+    {
+      "full_name": "Arsenal",
+      "short_name": "Arsenal",
+      "abbreviation": "ARS",
+      "league": "Premier League",
+      "logo_file": "arsenal.png",
+      "aliases": [
+        "Arsenal",
+        "Arsenal FC",
+        "The Gunners"
+      ],
+      "id": "arsenal"
+    },
+    {
+      "full_name": "Aston Villa",
+      "short_name": "Aston Villa",
+      "abbreviation": "AVL",
+      "league": "Premier League",
+      "logo_file": "aston-villa.png",
+      "aliases": [
+        "Aston Villa",
+        "Aston Villa FC",
+        "Villa"
+      ],
+      "id": "aston-villa"
+    },
+    {
+      "full_name": "AFC Bournemouth",
+      "short_name": "Bournemouth",
+      "abbreviation": "BOU",
+      "league": "Premier League",
+      "logo_file": "bournemouth.png",
+      "aliases": [
+        "AFC Bournemouth",
+        "Bournemouth",
+        "Bournemouth FC"
+      ],
+      "id": "afc-bournemouth"
+    },
+    {
+      "full_name": "Brentford",
+      "short_name": "Brentford",
+      "abbreviation": "BRE",
+      "league": "Premier League",
+      "logo_file": "brentford.png",
+      "aliases": [
+        "Brentford",
+        "Brentford FC"
+      ],
+      "id": "brentford"
+    },
+    {
+      "full_name": "Brighton & Hove Albion",
+      "short_name": "Brighton",
+      "abbreviation": "BHA",
+      "league": "Premier League",
+      "logo_file": "brighton-and-hove-albion.png",
+      "aliases": [
+        "Brighton",
+        "Brighton & Hove",
+        "Brighton & Hove Albion",
+        "Brighton & Hove Albion FC",
+        "Brighton Hove Albion",
+        "Brighton and Hove Albion"
+      ],
+      "id": "brighton-hove-albion"
+    },
+    {
+      "full_name": "Chelsea",
+      "short_name": "Chelsea",
+      "abbreviation": "CHE",
+      "league": "Premier League",
+      "logo_file": "chelsea.png",
+      "aliases": [
+        "Chelsea",
+        "Chelsea FC",
+        "The Blues"
+      ],
+      "id": "chelsea"
+    },
+    {
+      "full_name": "Crystal Palace",
+      "short_name": "Crystal Palace",
+      "abbreviation": "CRY",
+      "league": "Premier League",
+      "logo_file": "crystal-palace.png",
+      "aliases": [
+        "Crystal Palace",
+        "Crystal Palace FC",
+        "Palace"
+      ],
+      "id": "crystal-palace"
+    },
+    {
+      "full_name": "Everton",
+      "short_name": "Everton",
+      "abbreviation": "EVE",
+      "league": "Premier League",
+      "logo_file": "everton.png",
+      "aliases": [
+        "Everton",
+        "Everton FC",
+        "The Toffees"
+      ],
+      "id": "everton"
+    },
+    {
+      "full_name": "Fulham",
+      "short_name": "Fulham",
+      "abbreviation": "FUL",
+      "league": "Premier League",
+      "logo_file": "fulham.png",
+      "aliases": [
+        "Fulham",
+        "Fulham FC"
+      ],
+      "id": "fulham"
+    },
+    {
+      "full_name": "Ipswich Town",
+      "short_name": "Ipswich",
+      "abbreviation": "IPS",
+      "league": "Premier League",
+      "logo_file": "ipswich-town.png",
+      "aliases": [
+        "Ipswich",
+        "Ipswich Town",
+        "Ipswich Town FC"
+      ],
+      "id": "ipswich-town"
+    },
+    {
+      "full_name": "Leicester City",
+      "short_name": "Leicester",
+      "abbreviation": "LEI",
+      "league": "Premier League",
+      "logo_file": "leicester-city.png",
+      "aliases": [
+        "Leicester",
+        "Leicester City",
+        "Leicester City FC"
+      ],
+      "id": "leicester-city"
+    },
+    {
+      "full_name": "Liverpool",
+      "short_name": "Liverpool",
+      "abbreviation": "LIV",
+      "league": "Premier League",
+      "logo_file": "liverpool.png",
+      "aliases": [
+        "Liverpool",
+        "Liverpool FC",
+        "The Reds"
+      ],
+      "id": "liverpool"
+    },
+    {
+      "full_name": "Manchester City",
+      "short_name": "Man City",
+      "abbreviation": "MCI",
+      "league": "Premier League",
+      "logo_file": "manchester-city.png",
+      "aliases": [
+        "MCFC",
+        "Man City",
+        "Manchester City",
+        "Manchester City FC"
+      ],
+      "id": "manchester-city"
+    },
+    {
+      "full_name": "Manchester United",
+      "short_name": "Man Utd",
+      "abbreviation": "MUN",
+      "league": "Premier League",
+      "logo_file": "man-united.png",
+      "aliases": [
+        "MUFC",
+        "Man United",
+        "Man Utd",
+        "Manchester United",
+        "Manchester United FC",
+        "Manchester Utd"
+      ],
+      "id": "manchester-united"
+    },
+    {
+      "full_name": "Newcastle United",
+      "short_name": "Newcastle",
+      "abbreviation": "NEW",
+      "league": "Premier League",
+      "logo_file": "newcastle-united.png",
+      "aliases": [
+        "NUFC",
+        "Newcastle",
+        "Newcastle United",
+        "Newcastle United FC",
+        "The Magpies"
+      ],
+      "id": "newcastle-united"
+    },
+    {
+      "full_name": "Nottingham Forest",
+      "short_name": "Nott'm Forest",
+      "abbreviation": "NFO",
+      "league": "Premier League",
+      "logo_file": "nottingham-forest.png",
+      "aliases": [
+        "Nott'm Forest",
+        "Nottingham",
+        "Nottingham Forest",
+        "Nottingham Forest FC"
+      ],
+      "id": "nottingham-forest"
+    },
+    {
+      "full_name": "Southampton",
+      "short_name": "Southampton",
+      "abbreviation": "SOU",
+      "league": "Premier League",
+      "logo_file": "southampton.png",
+      "aliases": [
+        "Southampton",
+        "Southampton FC",
+        "The Saints"
+      ],
+      "id": "southampton"
+    },
+    {
+      "full_name": "Tottenham Hotspur",
+      "short_name": "Spurs",
+      "abbreviation": "TOT",
+      "league": "Premier League",
+      "logo_file": "tottenham-hotspur.png",
+      "aliases": [
+        "Spurs",
+        "Tottenham",
+        "Tottenham Hotspur",
+        "Tottenham Hotspur FC"
+      ],
+      "id": "tottenham-hotspur"
+    },
+    {
+      "full_name": "West Ham United",
+      "short_name": "West Ham",
+      "abbreviation": "WHU",
+      "league": "Premier League",
+      "logo_file": "west-ham-united.png",
+      "aliases": [
+        "The Hammers",
+        "West Ham",
+        "West Ham United",
+        "West Ham United FC"
+      ],
+      "id": "west-ham-united"
+    },
+    {
+      "full_name": "Wolverhampton Wanderers",
+      "short_name": "Wolves",
+      "abbreviation": "WOL",
+      "league": "Premier League",
+      "logo_file": "wolverhampton.png",
+      "aliases": [
+        "Wolverhampton",
+        "Wolverhampton Wanderers",
+        "Wolverhampton Wanderers FC",
+        "Wolves"
+      ],
+      "id": "wolverhampton-wanderers"
+    },
+    {
+      "full_name": "Deportivo Alavés",
+      "short_name": "Alavés",
+      "abbreviation": "ALA",
+      "league": "La Liga",
+      "logo_file": "alaves.png",
+      "aliases": [
+        "Alaves",
+        "Alavés",
+        "Deportivo Alaves",
+        "Deportivo Alavés"
+      ],
+      "id": "deportivo-alav-s"
+    },
+    {
+      "full_name": "Athletic Club",
+      "short_name": "Athletic",
+      "abbreviation": "ATH",
+      "league": "La Liga",
+      "logo_file": "athletic-bilbao.png",
+      "aliases": [
+        "Ath Bilbao",
+        "Athletic",
+        "Athletic Bilbao",
+        "Athletic Club",
+        "Athletic Club Bilbao"
+      ],
+      "id": "athletic-club"
+    },
+    {
+      "full_name": "Atlético Madrid",
+      "short_name": "Atlético",
+      "abbreviation": "ATM",
+      "league": "La Liga",
+      "logo_file": "atletico-madrid.png",
+      "aliases": [
+        "Atl Madrid",
+        "Atleti",
+        "Atletico Madrid",
+        "Atlético",
+        "Atlético Madrid",
+        "Club Atlético de Madrid"
+      ],
+      "id": "atl-tico-madrid"
+    },
+    {
+      "full_name": "FC Barcelona",
+      "short_name": "Barcelona",
+      "abbreviation": "BAR",
+      "league": "La Liga",
+      "logo_file": "barcelona.png",
+      "aliases": [
+        "Barcelona",
+        "Barça",
+        "FC Barcelona"
+      ],
+      "id": "fc-barcelona"
+    },
+    {
+      "full_name": "Real Betis",
+      "short_name": "Betis",
+      "abbreviation": "BET",
+      "league": "La Liga",
+      "logo_file": "real-betis.png",
+      "aliases": [
+        "Betis",
+        "Real Betis",
+        "Real Betis Balompié"
+      ],
+      "id": "real-betis"
+    },
+    {
+      "full_name": "Celta Vigo",
+      "short_name": "Celta",
+      "abbreviation": "CEL",
+      "league": "La Liga",
+      "logo_file": "celta-vigo.png",
+      "aliases": [
+        "Celta",
+        "Celta Vigo",
+        "Celta de Vigo",
+        "RC Celta"
+      ],
+      "id": "celta-vigo"
+    },
+    {
+      "full_name": "RCD Espanyol",
+      "short_name": "Espanyol",
+      "abbreviation": "ESP",
+      "league": "La Liga",
+      "logo_file": "espanyol.png",
+      "aliases": [
+        "Espanol",
+        "Espanyol",
+        "RCD Espanyol",
+        "RCD Espanyol de Barcelona"
+      ],
+      "id": "rcd-espanyol"
+    },
+    {
+      "full_name": "Getafe CF",
+      "short_name": "Getafe",
+      "abbreviation": "GET",
+      "league": "La Liga",
+      "logo_file": "getafe.png",
+      "aliases": [
+        "Getafe",
+        "Getafe CF"
+      ],
+      "id": "getafe-cf"
+    },
+    {
+      "full_name": "Girona FC",
+      "short_name": "Girona",
+      "abbreviation": "GIR",
+      "league": "La Liga",
+      "logo_file": "girona.png",
+      "aliases": [
+        "Girona",
+        "Girona FC"
+      ],
+      "id": "girona-fc"
+    },
+    {
+      "full_name": "UD Las Palmas",
+      "short_name": "Las Palmas",
+      "abbreviation": "LPA",
+      "league": "La Liga",
+      "logo_file": "las-palmas.png",
+      "aliases": [
+        "Las Palmas",
+        "UD Las Palmas"
+      ],
+      "id": "ud-las-palmas"
+    },
+    {
+      "full_name": "CD Leganés",
+      "short_name": "Leganés",
+      "abbreviation": "LEG",
+      "league": "La Liga",
+      "logo_file": "leganes.png",
+      "aliases": [
+        "CD Leganés",
+        "Leganes",
+        "Leganés"
+      ],
+      "id": "cd-legan-s"
+    },
+    {
+      "full_name": "RCD Mallorca",
+      "short_name": "Mallorca",
+      "abbreviation": "MLL",
+      "league": "La Liga",
+      "logo_file": "mallorca.png",
+      "aliases": [
+        "Mallorca",
+        "RCD Mallorca"
+      ],
+      "id": "rcd-mallorca"
+    },
+    {
+      "full_name": "CA Osasuna",
+      "short_name": "Osasuna",
+      "abbreviation": "OSA",
+      "league": "La Liga",
+      "logo_file": "osasuna.png",
+      "aliases": [
+        "CA Osasuna",
+        "Osasuna"
+      ],
+      "id": "ca-osasuna"
+    },
+    {
+      "full_name": "Rayo Vallecano",
+      "short_name": "Rayo",
+      "abbreviation": "RAY",
+      "league": "La Liga",
+      "logo_file": "rayo-vallecano.png",
+      "aliases": [
+        "Rayo",
+        "Rayo Vallecano",
+        "Vallecano"
+      ],
+      "id": "rayo-vallecano"
+    },
+    {
+      "full_name": "Real Madrid",
+      "short_name": "Real Madrid",
+      "abbreviation": "RMA",
+      "league": "La Liga",
+      "logo_file": "real-madrid.png",
+      "aliases": [
+        "Los Blancos",
+        "Real Madrid",
+        "Real Madrid CF"
+      ],
+      "id": "real-madrid"
+    },
+    {
+      "full_name": "Real Sociedad",
+      "short_name": "Sociedad",
+      "abbreviation": "RSO",
+      "league": "La Liga",
+      "logo_file": "real-sociedad.png",
+      "aliases": [
+        "La Real",
+        "Real Sociedad",
+        "Sociedad"
+      ],
+      "id": "real-sociedad"
+    },
+    {
+      "full_name": "Sevilla FC",
+      "short_name": "Sevilla",
+      "abbreviation": "SEV",
+      "league": "La Liga",
+      "logo_file": "sevilla.png",
+      "aliases": [
+        "Sevilla",
+        "Sevilla FC"
+      ],
+      "id": "sevilla-fc"
+    },
+    {
+      "full_name": "Valencia CF",
+      "short_name": "Valencia",
+      "abbreviation": "VAL",
+      "league": "La Liga",
+      "logo_file": "valencia.png",
+      "aliases": [
+        "Valencia",
+        "Valencia CF"
+      ],
+      "id": "valencia-cf"
+    },
+    {
+      "full_name": "Real Valladolid",
+      "short_name": "Valladolid",
+      "abbreviation": "VLD",
+      "league": "La Liga",
+      "logo_file": "valladolid.png",
+      "aliases": [
+        "Real Valladolid",
+        "Valladolid"
+      ],
+      "id": "real-valladolid"
+    },
+    {
+      "full_name": "Villarreal CF",
+      "short_name": "Villarreal",
+      "abbreviation": "VIL",
+      "league": "La Liga",
+      "logo_file": "villarreal.png",
+      "aliases": [
+        "Villarreal",
+        "Villarreal CF",
+        "Yellow Submarine"
+      ],
+      "id": "villarreal-cf"
+    },
+    {
+      "full_name": "AC Milan",
+      "short_name": "Milan",
+      "abbreviation": "ACM",
+      "league": "Serie A",
+      "logo_file": "ac-milan.png",
+      "aliases": [
+        "AC Milan",
+        "Milan",
+        "Rossoneri"
+      ],
+      "id": "ac-milan"
+    },
+    {
+      "full_name": "Atalanta BC",
+      "short_name": "Atalanta",
+      "abbreviation": "ATA",
+      "league": "Serie A",
+      "logo_file": "atalanta.png",
+      "aliases": [
+        "Atalanta",
+        "Atalanta BC"
+      ],
+      "id": "atalanta-bc"
+    },
+    {
+      "full_name": "Bologna FC 1909",
+      "short_name": "Bologna",
+      "abbreviation": "BOL",
+      "league": "Serie A",
+      "logo_file": "bologna.png",
+      "aliases": [
+        "Bologna",
+        "Bologna FC 1909"
+      ],
+      "id": "bologna-fc-1909"
+    },
+    {
+      "full_name": "Cagliari Calcio",
+      "short_name": "Cagliari",
+      "abbreviation": "CAG",
+      "league": "Serie A",
+      "logo_file": "cagliari.png",
+      "aliases": [
+        "Cagliari",
+        "Cagliari Calcio"
+      ],
+      "id": "cagliari-calcio"
+    },
+    {
+      "full_name": "Como 1907",
+      "short_name": "Como",
+      "abbreviation": "COM",
+      "league": "Serie A",
+      "logo_file": "como.png",
+      "aliases": [
+        "Como",
+        "Como 1907"
+      ],
+      "id": "como-1907"
+    },
+    {
+      "full_name": "Empoli FC",
+      "short_name": "Empoli",
+      "abbreviation": "EMP",
+      "league": "Serie A",
+      "logo_file": "empoli.png",
+      "aliases": [
+        "Empoli",
+        "Empoli FC"
+      ],
+      "id": "empoli-fc"
+    },
+    {
+      "full_name": "ACF Fiorentina",
+      "short_name": "Fiorentina",
+      "abbreviation": "FIO",
+      "league": "Serie A",
+      "logo_file": "fiorentina.png",
+      "aliases": [
+        "ACF Fiorentina",
+        "Fiorentina",
+        "La Viola"
+      ],
+      "id": "acf-fiorentina"
+    },
+    {
+      "full_name": "Genoa CFC",
+      "short_name": "Genoa",
+      "abbreviation": "GEN",
+      "league": "Serie A",
+      "logo_file": "genoa.png",
+      "aliases": [
+        "Genoa",
+        "Genoa CFC"
+      ],
+      "id": "genoa-cfc"
+    },
+    {
+      "full_name": "Hellas Verona",
+      "short_name": "Verona",
+      "abbreviation": "VER",
+      "league": "Serie A",
+      "logo_file": "hellas-verona.png",
+      "aliases": [
+        "Hellas Verona",
+        "Verona"
+      ],
+      "id": "hellas-verona"
+    },
+    {
+      "full_name": "FC Internazionale Milano",
+      "short_name": "Inter",
+      "abbreviation": "INT",
+      "league": "Serie A",
+      "logo_file": "inter-milan.png",
+      "aliases": [
+        "FC Internazionale Milano",
+        "Inter",
+        "Inter Milan",
+        "Internazionale",
+        "Nerazzurri"
+      ],
+      "id": "fc-internazionale-milano"
+    },
+    {
+      "full_name": "Juventus FC",
+      "short_name": "Juventus",
+      "abbreviation": "JUV",
+      "league": "Serie A",
+      "logo_file": "juventus.png",
+      "aliases": [
+        "Bianconeri",
+        "Juve",
+        "Juventus",
+        "Juventus FC"
+      ],
+      "id": "juventus-fc"
+    },
+    {
+      "full_name": "SS Lazio",
+      "short_name": "Lazio",
+      "abbreviation": "LAZ",
+      "league": "Serie A",
+      "logo_file": "lazio.png",
+      "aliases": [
+        "Lazio",
+        "SS Lazio"
+      ],
+      "id": "ss-lazio"
+    },
+    {
+      "full_name": "US Lecce",
+      "short_name": "Lecce",
+      "abbreviation": "LEC",
+      "league": "Serie A",
+      "logo_file": "lecce.png",
+      "aliases": [
+        "Lecce",
+        "US Lecce"
+      ],
+      "id": "us-lecce"
+    },
+    {
+      "full_name": "AC Monza",
+      "short_name": "Monza",
+      "abbreviation": "MNZ",
+      "league": "Serie A",
+      "logo_file": "monza.png",
+      "aliases": [
+        "AC Monza",
+        "Monza"
+      ],
+      "id": "ac-monza"
+    },
+    {
+      "full_name": "SSC Napoli",
+      "short_name": "Napoli",
+      "abbreviation": "NAP",
+      "league": "Serie A",
+      "logo_file": "napoli.png",
+      "aliases": [
+        "Napoli",
+        "SSC Napoli"
+      ],
+      "id": "ssc-napoli"
+    },
+    {
+      "full_name": "Parma Calcio 1913",
+      "short_name": "Parma",
+      "abbreviation": "PAR",
+      "league": "Serie A",
+      "logo_file": "parma.png",
+      "aliases": [
+        "Parma",
+        "Parma Calcio 1913"
+      ],
+      "id": "parma-calcio-1913"
+    },
+    {
+      "full_name": "AS Roma",
+      "short_name": "Roma",
+      "abbreviation": "ROM",
+      "league": "Serie A",
+      "logo_file": "roma.png",
+      "aliases": [
+        "AS Roma",
+        "Giallorossi",
+        "Roma"
+      ],
+      "id": "as-roma"
+    },
+    {
+      "full_name": "Torino FC",
+      "short_name": "Torino",
+      "abbreviation": "TOR",
+      "league": "Serie A",
+      "logo_file": "torino.png",
+      "aliases": [
+        "Torino",
+        "Torino FC"
+      ],
+      "id": "torino-fc"
+    },
+    {
+      "full_name": "Udinese Calcio",
+      "short_name": "Udinese",
+      "abbreviation": "UDI",
+      "league": "Serie A",
+      "logo_file": "udinese.png",
+      "aliases": [
+        "Udinese",
+        "Udinese Calcio"
+      ],
+      "id": "udinese-calcio"
+    },
+    {
+      "full_name": "Venezia FC",
+      "short_name": "Venezia",
+      "abbreviation": "VEN",
+      "league": "Serie A",
+      "logo_file": "venezia.png",
+      "aliases": [
+        "Venezia",
+        "Venezia FC"
+      ],
+      "id": "venezia-fc"
+    },
+    {
+      "full_name": "FC Augsburg",
+      "short_name": "Augsburg",
+      "abbreviation": "AUG",
+      "league": "Bundesliga",
+      "logo_file": "augsburg.png",
+      "aliases": [
+        "Augsburg",
+        "FC Augsburg"
+      ],
+      "id": "fc-augsburg"
+    },
+    {
+      "full_name": "VfL Bochum",
+      "short_name": "Bochum",
+      "abbreviation": "BOC",
+      "league": "Bundesliga",
+      "logo_file": "bochum.png",
+
+      "aliases": [
+        "Bochum",
+        "VfL Bochum"
+      ],
+      "id": "vfl-bochum"
+    },
+    {
+      "full_name": "Borussia Dortmund",
+      "short_name": "Dortmund",
+      "abbreviation": "BVB",
+      "league": "Bundesliga",
+      "logo_file": "borussia-dortmund.png",
+      "aliases": [
+        "BVB",
+        "BVB Borussia Dortmund",
+        "Borussia Dortmund",
+        "Dortmund"
+      ],
+      "id": "borussia-dortmund"
+    },
+    {
+      "full_name": "Borussia Mönchengladbach",
+      "short_name": "M'gladbach",
+      "abbreviation": "BMG",
+      "league": "Bundesliga",
+      "logo_file": "monchengladbach.png",
+      "aliases": [
+        "Borussia Monchengladbach",
+        "Borussia Mönchengladbach",
+        "Gladbach",
+        "M'gladbach",
+        "Mochengladbach"
+      ],
+      "id": "borussia-m-nchengladbach"
+    },
+    {
+      "full_name": "Eintracht Frankfurt",
+      "short_name": "Frankfurt",
+      "abbreviation": "SGE",
+      "league": "Bundesliga",
+      "logo_file": "eintracht-frankfurt.png",
+      "aliases": [
+        "Ein Frankfurt",
+        "Eintracht",
+        "Eintracht Frankfurt",
+        "Frankfurt"
+      ],
+      "id": "eintracht-frankfurt"
+    },
+    {
+      "full_name": "SC Freiburg",
+      "short_name": "Freiburg",
+      "abbreviation": "FRE",
+      "league": "Bundesliga",
+      "logo_file": "freiburg.png",
+      "aliases": [
+        "Freiburg",
+        "SC Freiburg"
+      ],
+      "id": "sc-freiburg"
+    },
+    {
+      "full_name": "1. FC Heidenheim",
+      "short_name": "Heidenheim",
+      "abbreviation": "HEI",
+      "league": "Bundesliga",
+      "logo_file": "heidenheim.png",
+      "aliases": [
+        "1. FC Heidenheim",
+        "1. FC Heidenheim 1846",
+        "FC Heidenheim",
+        "Heidenheim",
+        "Heidenheim 1846"
+      ],
+      "id": "1-fc-heidenheim"
+    },
+    {
+      "full_name": "TSG 1899 Hoffenheim",
+      "short_name": "Hoffenheim",
+      "abbreviation": "HOF",
+      "league": "Bundesliga",
+      "logo_file": "hoffenheim.png",
+      "aliases": [
+        "Hoffenheim",
+        "TSG 1899 Hoffenheim",
+        "TSG Hoffenheim"
+      ],
+      "id": "tsg-1899-hoffenheim"
+    },
+    {
+      "full_name": "Holstein Kiel",
+      "short_name": "Kiel",
+      "abbreviation": "KIE",
+      "league": "Bundesliga",
+      "logo_file": "holstein-kiel.png",
+      "aliases": [
+        "Holstein Kiel",
+        "Kiel"
+      ],
+      "id": "holstein-kiel"
+    },
+    {
+      "full_name": "1. FSV Mainz 05",
+      "short_name": "Mainz",
+      "abbreviation": "MAI",
+      "league": "Bundesliga",
+      "logo_file": "mainz.png",
+      "aliases": [
+        "1. FSV Mainz 05",
+        "FSV Mainz 05",
+        "Mainz",
+        "Mainz 05"
+      ],
+      "id": "1-fsv-mainz-05"
+    },
+    {
+      "full_name": "FC Bayern Munich",
+      "short_name": "Bayern",
+      "abbreviation": "BAY",
+      "league": "Bundesliga",
+      "logo_file": "bayern-munich.png",
+      "aliases": [
+        "Bayern",
+        "Bayern Munich",
+        "Bayern München",
+        "FC Bayern Munich",
+        "FC Bayern München"
+      ],
+      "id": "fc-bayern-munich"
+    },
+    {
+      "full_name": "RB Leipzig",
+      "short_name": "RB Leipzig",
+      "abbreviation": "RBL",
+      "league": "Bundesliga",
+      "logo_file": "rb-leipzig.png",
+      "aliases": [
+        "Leipzig",
+        "RB Leipzig",
+        "RasenBallsport Leipzig"
+      ],
+      "id": "rb-leipzig"
+    },
+    {
+      "full_name": "FC St. Pauli",
+      "short_name": "St. Pauli",
+      "abbreviation": "STP",
+      "league": "Bundesliga",
+      "logo_file": "st-pauli.png",
+      "aliases": [
+        "FC St. Pauli",
+        "St Pauli",
+        "St. Pauli"
+      ],
+      "id": "fc-st-pauli"
+    },
+    {
+      "full_name": "VfB Stuttgart",
+      "short_name": "Stuttgart",
+      "abbreviation": "STU",
+      "league": "Bundesliga",
+      "logo_file": "stuttgart.png",
+      "aliases": [
+        "Stuttgart",
+        "VfB Stuttgart"
+      ],
+      "id": "vfb-stuttgart"
+    },
+    {
+      "full_name": "1. FC Union Berlin",
+      "short_name": "Union Berlin",
+      "abbreviation": "UNB",
+      "league": "Bundesliga",
+      "logo_file": "union-berlin.png",
+      "aliases": [
+        "1. FC Union Berlin",
+        "Union Berlin"
+      ],
+      "id": "1-fc-union-berlin"
+    },
+    {
+      "full_name": "SV Werder Bremen",
+      "short_name": "Bremen",
+      "abbreviation": "SVW",
+      "league": "Bundesliga",
+      "logo_file": "werder-bremen.png",
+      "aliases": [
+        "Bremen",
+        "SV Werder Bremen",
+        "Werder Bremen"
+      ],
+      "id": "sv-werder-bremen"
+    },
+    {
+      "full_name": "VfL Wolfsburg",
+      "short_name": "Wolfsburg",
+      "abbreviation": "WOB",
+      "league": "Bundesliga",
+      "logo_file": "wolfsburg.png",
+      "aliases": [
+        "VfL Wolfsburg",
+        "Wolfsburg"
+      ],
+      "id": "vfl-wolfsburg"
+    },
+    {
+      "full_name": "Bayer 04 Leverkusen",
+      "short_name": "Leverkusen",
+      "abbreviation": "B04",
+      "league": "Bundesliga",
+      "logo_file": "leverkusen.png",
+      "aliases": [
+        "Bayer 04 Leverkusen",
+        "Bayer Leverkusen",
+        "Leverkusen"
+      ],
+      "id": "bayer-04-leverkusen"
+    },
+    {
+      "full_name": "Angers SCO",
+      "short_name": "Angers",
+      "abbreviation": "ANG",
+      "league": "Ligue 1",
+      "logo_file": "angers.png",
+      "aliases": [
+        "Angers",
+        "Angers SCO"
+      ],
+      "id": "angers-sco"
+    },
+    {
+      "full_name": "AJ Auxerre",
+      "short_name": "Auxerre",
+      "abbreviation": "AUX",
+      "league": "Ligue 1",
+      "logo_file": "auxerre.png",
+      "aliases": [
+        "AJ Auxerre",
+        "Auxerre"
+      ],
+      "id": "aj-auxerre"
+    },
+    {
+      "full_name": "Stade Brestois 29",
+      "short_name": "Brest",
+      "abbreviation": "BRE",
+      "league": "Ligue 1",
+      "logo_file": "brest.png",
+      "aliases": [
+        "Brest",
+        "Stade Brestois 29"
+      ],
+      "id": "stade-brestois-29"
+    },
+    {
+      "full_name": "Le Havre AC",
+      "short_name": "Le Havre",
+      "abbreviation": "HAV",
+      "league": "Ligue 1",
+      "logo_file": "le-havre.png",
+      "aliases": [
+        "Le Havre",
+        "Le Havre AC"
+      ],
+      "id": "le-havre-ac"
+    },
+    {
+      "full_name": "RC Lens",
+      "short_name": "Lens",
+      "abbreviation": "LEN",
+      "league": "Ligue 1",
+      "logo_file": "lens.png",
+      "aliases": [
+        "Lens",
+        "RC Lens"
+      ],
+      "id": "rc-lens"
+    },
+    {
+      "full_name": "Lille OSC",
+      "short_name": "Lille",
+      "abbreviation": "LIL",
+      "league": "Ligue 1",
+      "logo_file": "lille.png",
+      "aliases": [
+        "LOSC",
+        "Lille",
+        "Lille OSC"
+      ],
+      "id": "lille-osc"
+    },
+    {
+      "full_name": "Olympique Lyonnais",
+      "short_name": "Lyon",
+      "abbreviation": "LYO",
+      "league": "Ligue 1",
+      "logo_file": "lyon.png",
+      "aliases": [
+        "Lyon",
+        "OL",
+        "Olympique Lyonnais"
+      ],
+      "id": "olympique-lyonnais"
+    },
+    {
+      "full_name": "Olympique de Marseille",
+      "short_name": "Marseille",
+      "abbreviation": "MAR",
+      "league": "Ligue 1",
+      "logo_file": "marseille.png",
+      "aliases": [
+        "Marseille",
+        "OM",
+        "Olympique de Marseille"
+      ],
+      "id": "olympique-de-marseille"
+    },
+    {
+      "full_name": "AS Monaco",
+      "short_name": "Monaco",
+      "abbreviation": "MON",
+      "league": "Ligue 1",
+      "logo_file": "as-monaco.png",
+      "aliases": [
+        "AS Monaco",
+        "Monaco"
+      ],
+      "id": "as-monaco"
+    },
+    {
+      "full_name": "Montpellier HSC",
+      "short_name": "Montpellier",
+      "abbreviation": "MPL",
+      "league": "Ligue 1",
+      "logo_file": "montpellier.png",
+      "aliases": [
+        "Montpellier",
+        "Montpellier HSC"
+      ],
+      "id": "montpellier-hsc"
+    },
+    {
+      "full_name": "FC Nantes",
+      "short_name": "Nantes",
+      "abbreviation": "NAN",
+      "league": "Ligue 1",
+      "logo_file": "nantes.png",
+      "aliases": [
+        "FC Nantes",
+        "Nantes"
+      ],
+      "id": "fc-nantes"
+    },
+    {
+      "full_name": "OGC Nice",
+      "short_name": "Nice",
+      "abbreviation": "NIC",
+      "league": "Ligue 1",
+      "logo_file": "nice.png",
+      "aliases": [
+        "Nice",
+        "OGC Nice"
+      ],
+      "id": "ogc-nice"
+    },
+    {
+      "full_name": "Paris Saint-Germain",
+      "short_name": "PSG",
+      "abbreviation": "PSG",
+      "league": "Ligue 1",
+      "logo_file": "psg.png",
+      "aliases": [
+        "PSG",
+        "Paris SG",
+        "Paris Saint-Germain",
+        "Paris Saint-Germain FC"
+      ],
+      "id": "paris-saint-germain"
+    },
+    {
+      "full_name": "Stade de Reims",
+      "short_name": "Reims",
+      "abbreviation": "REI",
+      "league": "Ligue 1",
+      "logo_file": "reims.png",
+      "aliases": [
+        "Reims",
+        "Stade de Reims"
+      ],
+      "id": "stade-de-reims"
+    },
+    {
+      "full_name": "Stade Rennais FC",
+      "short_name": "Rennes",
+      "abbreviation": "REN",
+      "league": "Ligue 1",
+      "logo_file": "rennes.png",
+      "aliases": [
+        "Rennes",
+        "Stade Rennais",
+        "Stade Rennais FC"
+      ],
+      "id": "stade-rennais-fc"
+    },
+    {
+      "full_name": "AS Saint-Étienne",
+      "short_name": "Saint-Étienne",
+      "abbreviation": "STE",
+      "league": "Ligue 1",
+      "logo_file": "as-saint-etienne.png",
+      "aliases": [
+        "AS Saint-Etienne",
+        "AS Saint-Étienne",
+        "ASSE",
+        "Saint-Etienne",
+        "Saint-Étienne"
+      ],
+      "id": "as-saint-tienne"
+    },
+    {
+      "full_name": "RC Strasbourg Alsace",
+      "short_name": "Strasbourg",
+      "abbreviation": "STR",
+      "league": "Ligue 1",
+      "logo_file": "strasbourg.png",
+      "aliases": [
+        "RC Strasbourg Alsace",
+        "Strasbourg"
+      ],
+      "id": "rc-strasbourg-alsace"
+    },
+    {
+      "full_name": "Toulouse FC",
+      "short_name": "Toulouse",
+      "abbreviation": "TOU",
+      "league": "Ligue 1",
+      "logo_file": "toulouse.png",
+      "aliases": [
+        "Toulouse",
+        "Toulouse FC"
+      ],
+      "id": "toulouse-fc"
+    },
+    {
+      "full_name": "Atlanta United FC",
+      "short_name": "Atlanta",
+      "abbreviation": "ATL",
+      "league": "MLS",
+      "logo_file": "atlanta-united.png",
+      "aliases": [
+        "Atlanta",
+        "Atlanta United",
+        "Atlanta United FC",
+        "Atlanta Utd"
+      ],
+      "id": "atlanta-united-fc"
+    },
+    {
+      "full_name": "Austin FC",
+      "short_name": "Austin",
+      "abbreviation": "ATX",
+      "league": "MLS",
+      "logo_file": "austin-fc.png",
+      "aliases": [
+        "Austin",
+        "Austin FC"
+      ],
+      "id": "austin-fc"
+    },
+    {
+      "full_name": "Charlotte FC",
+      "short_name": "Charlotte",
+      "abbreviation": "CLT",
+      "league": "MLS",
+      "logo_file": "charlotte-fc.png",
+      "aliases": [
+        "Charlotte",
+        "Charlotte FC"
+      ],
+      "id": "charlotte-fc"
+    },
+    {
+      "full_name": "Chicago Fire FC",
+      "short_name": "Chicago",
+      "abbreviation": "CHI",
+      "league": "MLS",
+      "logo_file": "chicago-fire.png",
+      "aliases": [
+        "Chicago",
+        "Chicago Fire",
+        "Chicago Fire FC"
+      ],
+      "id": "chicago-fire-fc"
+    },
+    {
+      "full_name": "Colorado Rapids",
+      "short_name": "Colorado",
+      "abbreviation": "COL",
+      "league": "MLS",
+      "logo_file": "colorado-rapids.png",
+      "aliases": [
+        "Colorado",
+        "Colorado Rapids"
+      ],
+      "id": "colorado-rapids"
+    },
+    {
+      "full_name": "Columbus Crew",
+      "short_name": "Columbus",
+      "abbreviation": "CLB",
+      "league": "MLS",
+      "logo_file": "columbus-crew.png",
+      "aliases": [
+        "Columbus",
+        "Columbus Crew"
+      ],
+      "id": "columbus-crew"
+    },
+    {
+      "full_name": "FC Dallas",
+      "short_name": "Dallas",
+      "abbreviation": "DAL",
+      "league": "MLS",
+      "logo_file": "fc-dallas.png",
+      "aliases": [
+        "Dallas",
+        "FC Dallas"
+      ],
+      "id": "fc-dallas"
+    },
+    {
+      "full_name": "D.C. United",
+      "short_name": "DC United",
+      "abbreviation": "DCU",
+      "league": "MLS",
+      "logo_file": "d-c-united.png",
+      "aliases": [
+        "D.C. United",
+        "DC United",
+        "dc-united"
+      ],
+      "id": "d-c-united"
+    },
+    {
+      "full_name": "Houston Dynamo FC",
+      "short_name": "Houston",
+      "abbreviation": "HOU",
+      "league": "MLS",
+      "logo_file": "houston-dynamo.png",
+      "aliases": [
+        "Houston",
+        "Houston Dynamo",
+        "Houston Dynamo FC"
+      ],
+      "id": "houston-dynamo-fc"
+    },
+    {
+      "full_name": "Inter Miami CF",
+      "short_name": "Inter Miami",
+      "abbreviation": "MIA",
+      "league": "MLS",
+      "logo_file": "inter-miami.png",
+      "aliases": [
+        "Inter Miami",
+        "Inter Miami CF"
+      ],
+      "id": "inter-miami-cf"
+    },
+    {
+      "full_name": "LA Galaxy",
+      "short_name": "LA Galaxy",
+      "abbreviation": "LAG",
+      "league": "MLS",
+      "logo_file": "la-galaxy.png",
+      "aliases": [
+        "LA Galaxy",
+        "Los Angeles Galaxy"
+      ],
+      "id": "la-galaxy"
+    },
+    {
+      "full_name": "Los Angeles FC",
+      "short_name": "LAFC",
+      "abbreviation": "LAF",
+      "league": "MLS",
+      "logo_file": "lafc.png",
+      "aliases": [
+        "LAFC",
+        "Los Angeles FC"
+      ],
+      "id": "los-angeles-fc"
+    },
+    {
+      "full_name": "Minnesota United FC",
+      "short_name": "Minnesota",
+      "abbreviation": "MIN",
+      "league": "MLS",
+      "logo_file": "minnesota-united.png",
+      "aliases": [
+        "Minnesota",
+        "Minnesota United",
+        "Minnesota United FC"
+      ],
+      "id": "minnesota-united-fc"
+    },
+    {
+      "full_name": "CF Montréal",
+      "short_name": "Montréal",
+      "abbreviation": "MTL",
+      "league": "MLS",
+      "logo_file": "cf-montreal.png",
+      "aliases": [
+        "CF Montreal",
+        "CF Montréal",
+        "Montreal",
+        "Montreal Impact",
+        "Montréal"
+      ],
+      "id": "cf-montr-al"
+    },
+    {
+      "full_name": "Nashville SC",
+      "short_name": "Nashville",
+      "abbreviation": "NSH",
+      "league": "MLS",
+      "logo_file": "nashville.png",
+      "aliases": [
+        "Nashville",
+        "Nashville SC"
+      ],
+      "id": "nashville-sc"
+    },
+    {
+      "full_name": "New England Revolution",
+      "short_name": "New England",
+      "abbreviation": "NER",
+      "league": "MLS",
+      "logo_file": "new-england.png",
+      "aliases": [
+        "New England",
+        "New England Revolution",
+        "Revs"
+      ],
+      "id": "new-england-revolution"
+    },
+    {
+      "full_name": "New York City FC",
+      "short_name": "NYCFC",
+      "abbreviation": "NYC",
+      "league": "MLS",
+      "logo_file": "nycfc.png",
+      "aliases": [
+        "NYCFC",
+        "New York City",
+        "New York City FC"
+      ],
+      "id": "new-york-city-fc"
+    },
+    {
+      "full_name": "New York Red Bulls",
+      "short_name": "NY Red Bulls",
+      "abbreviation": "RBNY",
+      "league": "MLS",
+      "logo_file": "ny-red-bulls.png",
+      "aliases": [
+        "NY Red Bulls",
+        "New York Red Bulls",
+        "Red Bull New York"
+      ],
+      "id": "new-york-red-bulls"
+    },
+    {
+      "full_name": "Orlando City SC",
+      "short_name": "Orlando",
+      "abbreviation": "ORL",
+      "league": "MLS",
+      "logo_file": "orlando-city.png",
+      "aliases": [
+        "Orlando",
+        "Orlando City",
+        "Orlando City SC"
+      ],
+      "id": "orlando-city-sc"
+    },
+    {
+      "full_name": "Philadelphia Union",
+      "short_name": "Philadelphia",
+      "abbreviation": "PHI",
+      "league": "MLS",
+      "logo_file": "philadelphia-union.png",
+      "aliases": [
+        "Philadelphia",
+        "Philadelphia Union"
+      ],
+      "id": "philadelphia-union"
+    },
+    {
+      "full_name": "Portland Timbers",
+      "short_name": "Portland",
+      "abbreviation": "POR",
+      "league": "MLS",
+      "logo_file": "portland-timbers.png",
+      "aliases": [
+        "Portland",
+        "Portland Timbers"
+      ],
+      "id": "portland-timbers"
+    },
+    {
+      "full_name": "Real Salt Lake",
+      "short_name": "Salt Lake",
+      "abbreviation": "RSL",
+      "league": "MLS",
+      "logo_file": "real-salt-lake.png",
+      "aliases": [
+        "Real Salt Lake",
+        "Salt Lake"
+      ],
+      "id": "real-salt-lake"
+    },
+    {
+      "full_name": "San Jose Earthquakes",
+      "short_name": "San Jose",
+      "abbreviation": "SJ",
+      "league": "MLS",
+      "logo_file": "san-jose-earthquakes.png",
+      "aliases": [
+        "Quakes",
+        "San Jose",
+        "San Jose Earthquakes"
+      ],
+      "id": "san-jose-earthquakes"
+    },
+    {
+      "full_name": "Seattle Sounders FC",
+      "short_name": "Seattle",
+      "abbreviation": "SEA",
+      "league": "MLS",
+      "logo_file": "seattle-sounders.png",
+      "aliases": [
+        "Seattle",
+        "Seattle Sounders",
+        "Seattle Sounders FC"
+      ],
+      "id": "seattle-sounders-fc"
+    },
+    {
+      "full_name": "Sporting Kansas City",
+      "short_name": "Sporting KC",
+      "abbreviation": "SKC",
+      "league": "MLS",
+      "logo_file": "sporting-kansas-city.png",
+      "aliases": [
+        "Kansas City",
+        "Sporting KC",
+        "Sporting Kansas City"
+      ],
+      "id": "sporting-kansas-city"
+    },
+    {
+      "full_name": "St. Louis CITY SC",
+      "short_name": "St. Louis",
+      "abbreviation": "STL",
+      "league": "MLS",
+      "logo_file": "st-louis.png",
+      "aliases": [
+        "St Louis City",
+        "St. Louis",
+        "St. Louis CITY SC",
+        "St. Louis City"
+      ],
+      "id": "st-louis-city-sc"
+    },
+    {
+      "full_name": "Toronto FC",
+      "short_name": "Toronto",
+      "abbreviation": "TOR",
+      "league": "MLS",
+      "logo_file": "toronto.png",
+      "aliases": [
+        "Toronto",
+        "Toronto FC"
+      ],
+      "id": "toronto-fc"
+    },
+    {
+      "full_name": "Vancouver Whitecaps FC",
+      "short_name": "Vancouver",
+      "abbreviation": "VAN",
+      "league": "MLS",
+      "logo_file": "vancouver-whitecaps.png",
+      "aliases": [
+        "Vancouver",
+        "Vancouver Whitecaps",
+        "Vancouver Whitecaps FC"
+      ],
+      "id": "vancouver-whitecaps-fc"
+    },
+    {
+      "full_name": "FC Cincinnati",
+
+      "short_name": "Cincinnati",
+      "abbreviation": "CIN",
+      "league": "MLS",
+      "logo_file": "cincinnati.png",
+      "aliases": [
+        "Cincinnati",
+        "FC Cincinnati"
+      ],
+      "id": "fc-cincinnati"
+    },
+    {
+      "full_name": "San Diego FC",
+      "short_name": "San Diego",
+      "abbreviation": "SD",
+      "league": "MLS",
+      "logo_file": "san-diego.png",
+      "aliases": [
+        "San Diego",
+        "San Diego FC"
+      ],
+      "id": "san-diego-fc"
+    },
+    {
+      "full_name": "West Bromwich Albion",
+      "short_name": "West Brom",
+      "abbreviation": "WBA",
+      "league": "EFL Championship",
+      "logo_file": "west-brom.png",
+      "aliases": [
+        "West Brom",
+        "West Bromwich",
+        "West Bromwich Albion",
+        "West Bromwich Albion FC"
+      ],
+      "id": "west-bromwich-albion"
+    },
+    {
+      "full_name": "Preston North End",
+      "short_name": "Preston",
+      "abbreviation": "PNE",
+      "league": "EFL Championship",
+      "logo_file": "preston.png",
+      "aliases": [
+        "Preston",
+        "Preston North End"
+      ],
+      "id": "preston-north-end"
+    },
+    {
+      "full_name": "Queens Park Rangers",
+      "short_name": "QPR",
+      "abbreviation": "QPR",
+      "league": "EFL Championship",
+      "logo_file": "qpr.png",
+      "aliases": [
+        "QPR",
+        "Queens Park Rangers",
+        "Queens Park Rangers FC"
+      ],
+      "id": "queens-park-rangers"
+    },
+    {
+      "full_name": "Leeds United",
+      "short_name": "Leeds",
+      "abbreviation": "LEE",
+      "league": "EFL Championship",
+      "logo_file": "leeds-united.png",
+      "aliases": [
+        "Leeds",
+        "Leeds United",
+        "Leeds United FC"
+      ],
+      "id": "leeds-united"
+    },
+    {
+      "full_name": "Burnley FC",
+      "short_name": "Burnley",
+      "abbreviation": "BUR",
+      "league": "EFL Championship",
+      "logo_file": "burnley.png",
+      "aliases": [
+        "Burnley",
+        "Burnley FC"
+      ],
+      "id": "burnley-fc"
+    },
+    {
+      "full_name": "Sheffield United",
+      "short_name": "Sheff Utd",
+      "abbreviation": "SHU",
+      "league": "EFL Championship",
+      "logo_file": "sheffield-united.png",
+      "aliases": [
+        "Sheff Utd",
+        "Sheffield United",
+        "Sheffield Utd",
+        "The Blades"
+      ],
+      "id": "sheffield-united"
+    },
+    {
+      "full_name": "Sheffield Wednesday",
+      "short_name": "Sheff Weds",
+      "abbreviation": "SHW",
+      "league": "EFL Championship",
+      "logo_file": "sheffield-wednesday.png",
+      "aliases": [
+        "Sheff Weds",
+        "Sheffield Wednesday",
+        "Sheffield Weds",
+        "The Owls"
+      ],
+      "id": "sheffield-wednesday"
+    },
+    {
+      "full_name": "Derby County",
+      "short_name": "Derby",
+      "abbreviation": "DER",
+      "league": "EFL Championship",
+      "logo_file": "derby-county.png",
+      "aliases": [
+        "Derby",
+        "Derby County"
+      ],
+      "id": "derby-county"
+    },
+    {
+      "full_name": "Norwich City",
+      "short_name": "Norwich",
+      "abbreviation": "NOR",
+      "league": "EFL Championship",
+      "logo_file": "norwich-city.png",
+      "aliases": [
+        "Norwich",
+        "Norwich City",
+        "The Canaries"
+      ],
+      "id": "norwich-city"
+    },
+    {
+      "full_name": "Oxford United",
+      "short_name": "Oxford",
+      "abbreviation": "OXF",
+      "league": "EFL Championship",
+      "logo_file": "oxford-united.png",
+      "aliases": [
+        "Oxford",
+        "Oxford United",
+        "Oxford Utd"
+      ],
+      "id": "oxford-united"
+    },
+    {
+      "full_name": "Cardiff City",
+      "short_name": "Cardiff",
+      "abbreviation": "CAR",
+      "league": "EFL Championship",
+      "logo_file": "cardiff-city.png",
+      "aliases": [
+        "Cardiff",
+        "Cardiff City",
+        "The Bluebirds"
+      ],
+      "id": "cardiff-city"
+    },
+    {
+      "full_name": "Coventry City",
+      "short_name": "Coventry",
+      "abbreviation": "COV",
+      "league": "EFL Championship",
+      "logo_file": "coventry-city.png",
+      "aliases": [
+        "Coventry",
+        "Coventry City",
+        "Coventry City FC"
+      ],
+      "id": "coventry-city"
+    },
+    {
+      "full_name": "Birmingham City",
+      "short_name": "Birmingham",
+      "abbreviation": "BIR",
+      "league": "EFL Championship",
+      "logo_file": "birmingham-city.png",
+      "aliases": [
+        "Birmingham",
+        "Birmingham City"
+      ],
+      "id": "birmingham-city"
+    },
+    {
+      "full_name": "Stoke City",
+      "short_name": "Stoke",
+      "abbreviation": "STO",
+      "league": "EFL Championship",
+      "logo_file": "stoke-city.png",
+      "aliases": [
+        "Stoke",
+        "Stoke City"
+      ],
+      "id": "stoke-city"
+    },
+    {
+      "full_name": "Swansea City",
+      "short_name": "Swansea",
+      "abbreviation": "SWA",
+      "league": "EFL Championship",
+      "logo_file": "swansea-city.png",
+      "aliases": [
+        "Swansea",
+        "Swansea City"
+      ],
+      "id": "swansea-city"
+    },
+    {
+      "full_name": "Bolton Wanderers",
+      "short_name": "Bolton",
+      "abbreviation": "BOL",
+      "league": "EFL League One",
+      "logo_file": "bolton.png",
+      "aliases": [
+        "Bolton",
+        "Bolton Wanderers",
+        "Bolton Wanderers FC"
+      ],
+      "id": "bolton-wanderers"
+    },
+    {
+      "full_name": "AFC Ajax",
+      "short_name": "Ajax",
+      "abbreviation": "AJX",
+      "league": "Eredivisie",
+      "logo_file": "ajax.png",
+      "aliases": [
+        "AFC Ajax",
+        "Ajax",
+        "Ajax Amsterdam"
+      ],
+      "id": "afc-ajax"
+    },
+    {
+      "full_name": "Feyenoord Rotterdam",
+      "short_name": "Feyenoord",
+      "abbreviation": "FEY",
+      "league": "Eredivisie",
+      "logo_file": "feyenoord.png",
+      "aliases": [
+        "Feyenoord",
+        "Feyenoord Rotterdam"
+      ],
+      "id": "feyenoord-rotterdam"
+    },
+    {
+      "full_name": "PSV Eindhoven",
+      "short_name": "PSV",
+      "abbreviation": "PSV",
+      "league": "Eredivisie",
+      "logo_file": "psv.png",
+      "aliases": [
+        "PSV",
+        "PSV Eindhoven"
+      ],
+      "id": "psv-eindhoven"
+    },
+    {
+      "full_name": "FC Porto",
+      "short_name": "Porto",
+      "abbreviation": "FCP",
+      "league": "Primeira Liga",
+      "logo_file": "porto.png",
+      "aliases": [
+        "FC Porto",
+        "Porto"
+      ],
+      "id": "fc-porto"
+    },
+    {
+      "full_name": "Sporting CP",
+      "short_name": "Sporting",
+      "abbreviation": "SCP",
+      "league": "Primeira Liga",
+      "logo_file": "sporting.png",
+      "aliases": [
+        "Sp Lisbon",
+        "Sporting",
+        "Sporting CP",
+        "Sporting Lisbon"
+      ],
+      "id": "sporting-cp"
+    },
+    {
+      "full_name": "SL Benfica",
+      "short_name": "Benfica",
+      "abbreviation": "SLB",
+      "league": "Primeira Liga",
+      "logo_file": "benfica.png",
+      "aliases": [
+        "Benfica",
+        "SL Benfica"
+      ],
+      "id": "sl-benfica"
+    },
+    {
+      "full_name": "SC Braga",
+      "short_name": "Braga",
+      "abbreviation": "BRA",
+      "league": "Primeira Liga",
+      "logo_file": "braga.png",
+      "aliases": [
+        "Braga",
+        "SC Braga",
+        "Sp Braga"
+      ],
+      "id": "sc-braga"
+    },
+    {
+      "full_name": "Club Brugge KV",
+      "short_name": "Brugge",
+      "abbreviation": "CLU",
+      "league": "Belgian Pro League",
+      "logo_file": "club-brugge.png",
+      "aliases": [
+        "Brugge",
+        "Club Brugge",
+        "Club Brugge KV"
+      ],
+      "id": "club-brugge-kv"
+    },
+    {
+      "full_name": "RSC Anderlecht",
+      "short_name": "Anderlecht",
+      "abbreviation": "AND",
+      "league": "Belgian Pro League",
+      "logo_file": "anderlecht.png",
+      "aliases": [
+        "Anderlecht",
+        "RSC Anderlecht"
+      ],
+      "id": "rsc-anderlecht"
+    },
+    {
+      "full_name": "Royale Union Saint-Gilloise",
+      "short_name": "Union SG",
+      "abbreviation": "USG",
+      "league": "Belgian Pro League",
+      "logo_file": "st-gilloise.png",
+      "aliases": [
+        "Royale Union Saint-Gilloise",
+        "St Gilloise",
+        "St. Gilloise",
+        "Union SG",
+        "Union St.-Gilloise"
+      ],
+      "id": "royale-union-saint-gilloise"
+    },
+    {
+      "full_name": "Celtic FC",
+      "short_name": "Celtic",
+      "abbreviation": "CEL",
+      "league": "Scottish Premiership",
+      "logo_file": "celtic.png",
+      "aliases": [
+        "Celtic",
+        "Celtic FC"
+      ],
+      "id": "celtic-fc"
+    },
+    {
+      "full_name": "Rangers FC",
+      "short_name": "Rangers",
+      "abbreviation": "RAN",
+      "league": "Scottish Premiership",
+      "logo_file": "rangers.png",
+      "aliases": [
+        "Rangers",
+        "Rangers FC"
+      ],
+      "id": "rangers-fc"
+    },
+    {
+      "full_name": "Galatasaray SK",
+      "short_name": "Galatasaray",
+      "abbreviation": "GAL",
+      "league": "Süper Lig",
+      "logo_file": "galatasaray.png",
+      "aliases": [
+        "Galatasaray",
+        "Galatasaray SK"
+      ],
+      "id": "galatasaray-sk"
+    },
+    {
+      "full_name": "Fenerbahçe SK",
+      "short_name": "Fenerbahçe",
+      "abbreviation": "FEN",
+      "league": "Süper Lig",
+      "logo_file": "fenerbahce.png",
+      "aliases": [
+        "Fenerbahce",
+        "Fenerbahçe",
+        "Fenerbahçe SK"
+      ],
+      "id": "fenerbah-e-sk"
+    },
+    {
+      "full_name": "Beşiktaş JK",
+      "short_name": "Beşiktaş",
+      "abbreviation": "BJK",
+      "league": "Süper Lig",
+      "logo_file": "besiktas.png",
+      "aliases": [
+        "Besiktas",
+        "Beşiktaş",
+        "Beşiktaş JK"
+      ],
+      "id": "be-ikta-jk"
+    },
+    {
+      "full_name": "FC Red Bull Salzburg",
+      "short_name": "Salzburg",
+      "abbreviation": "RBS",
+      "league": "Austrian Bundesliga",
+      "logo_file": "rb-salzburg.png",
+      "aliases": [
+        "FC Red Bull Salzburg",
+        "RB Salzburg",
+        "Red Bull Salzburg",
+        "Salzburg"
+      ],
+      "id": "fc-red-bull-salzburg"
+    },
+    {
+      "full_name": "Club América",
+      "short_name": "América",
+      "abbreviation": "AME",
+      "league": "Liga MX",
+      "logo_file": "club-america.png",
+      "aliases": [
+        "America",
+        "América",
+        "Club America",
+        "Club América"
+      ],
+      "id": "club-am-rica"
+    },
+    {
+      "full_name": "CD Guadalajara",
+      "short_name": "Chivas",
+      "abbreviation": "GDL",
+      "league": "Liga MX",
+      "logo_file": "guadalajara.png",
+      "aliases": [
+        "CD Guadalajara",
+        "Chivas",
+        "Guadalajara",
+        "Guadalajara Chivas"
+      ],
+      "id": "cd-guadalajara"
+    },
+    {
+      "full_name": "CF Monterrey",
+      "short_name": "Monterrey",
+      "abbreviation": "MTY",
+      "league": "Liga MX",
+      "logo_file": "monterrey.png",
+      "aliases": [
+        "CF Monterrey",
+        "Monterrey",
+        "Rayados"
+      ],
+      "id": "cf-monterrey"
+    },
+    {
+      "full_name": "Tigres UANL",
+      "short_name": "Tigres",
+      "abbreviation": "TIG",
+      "league": "Liga MX",
+      "logo_file": "tigres.png",
+      "aliases": [
+        "Tigres",
+        "Tigres UANL"
+      ],
+      "id": "tigres-uanl"
+    },
+    {
+      "full_name": "Cruz Azul",
+      "short_name": "Cruz Azul",
+      "abbreviation": "CAZ",
+      "league": "Liga MX",
+      "logo_file": "cruz-azul.png",
+      "aliases": [
+        "Cruz Azul"
+      ],
+      "id": "cruz-azul"
+    },
+    {
+      "full_name": "Club Universidad Nacional",
+      "short_name": "Pumas",
+      "abbreviation": "PUM",
+      "league": "Liga MX",
+      "logo_file": "pumas.png",
+      "aliases": [
+        "Club Universidad Nacional",
+        "Pumas",
+        "Pumas UNAM",
+        "UNAM Pumas"
+      ],
+      "id": "club-universidad-nacional"
+    },
+    {
+      "full_name": "Deportivo Toluca FC",
+      "short_name": "Toluca",
+      "abbreviation": "TOL",
+      "league": "Liga MX",
+      "logo_file": "toluca.png",
+      "aliases": [
+        "Deportivo Toluca FC",
+        "Toluca"
+      ],
+      "id": "deportivo-toluca-fc"
+    },
+    {
+      "full_name": "Club Tijuana",
+      "short_name": "Tijuana",
+      "abbreviation": "TIJ",
+      "league": "Liga MX",
+      "logo_file": "tijuana.png",
+      "aliases": [
+        "Club Tijuana",
+        "Tijuana",
+        "Xolos"
+      ],
+      "id": "club-tijuana"
+    },
+    {
+      "full_name": "Club León",
+      "short_name": "León",
+      "abbreviation": "LEO",
+      "league": "Liga MX",
+      "logo_file": "ac-leon.png",
+      "aliases": [
+        "Club Leon",
+        "Club León",
+        "Leon",
+        "León"
+      ],
+      "id": "club-le-n"
+    },
+    {
+      "full_name": "Atlético de San Luis",
+      "short_name": "San Luis",
+      "abbreviation": "ASL",
+      "league": "Liga MX",
+      "logo_file": "atletico-san-luis.png",
+      "aliases": [
+        "Atl. San Luis",
+        "Atletico San Luis",
+        "Atlético San Luis",
+        "Atlético de San Luis",
+        "San Luis"
+      ],
+      "id": "atl-tico-de-san-luis"
+    },
+    {
+      "full_name": "Club Atlético Boca Juniors",
+      "short_name": "Boca",
+      "abbreviation": "BOC",
+      "league": "Argentine Primera",
+      "logo_file": "boca-juniors.png",
+      "aliases": [
+        "Boca",
+        "Boca Juniors",
+        "Club Atlético Boca Juniors"
+      ],
+      "id": "club-atl-tico-boca-juniors"
+    },
+    {
+      "full_name": "Club Atlético River Plate",
+      "short_name": "River",
+      "abbreviation": "RIV",
+      "league": "Argentine Primera",
+      "logo_file": "river-plate.png",
+      "aliases": [
+        "Club Atlético River Plate",
+        "River",
+        "River Plate"
+      ],
+      "id": "club-atl-tico-river-plate"
+    },
+    {
+      "full_name": "Racing Club",
+      "short_name": "Racing",
+      "abbreviation": "RAC",
+      "league": "Argentine Primera",
+      "logo_file": "racing-club.png",
+      "aliases": [
+        "Racing",
+        "Racing Club",
+        "Racing Club de Avellaneda"
+      ],
+      "id": "racing-club"
+    },
+    {
+      "full_name": "Club Atlético Independiente",
+      "short_name": "Independiente",
+      "abbreviation": "IND",
+      "league": "Argentine Primera",
+      "logo_file": "independiente.png",
+      "aliases": [
+        "Club Atlético Independiente",
+        "Independiente"
+      ],
+      "id": "club-atl-tico-independiente"
+    },
+    {
+      "full_name": "Club Atlético San Lorenzo",
+      "short_name": "San Lorenzo",
+      "abbreviation": "SLO",
+      "league": "Argentine Primera",
+      "logo_file": "san-lorenzo.png",
+      "aliases": [
+        "Club Atlético San Lorenzo",
+        "San Lorenzo",
+        "San Lorenzo de Almagro"
+      ],
+      "id": "club-atl-tico-san-lorenzo"
+    },
+    {
+      "full_name": "Clube de Regatas do Flamengo",
+      "short_name": "Flamengo",
+      "abbreviation": "FLA",
+      "league": "Brasileirão",
+      "logo_file": "flamengo.png",
+      "aliases": [
+        "Clube de Regatas do Flamengo",
+        "Flamengo",
+        "Flamengo RJ"
+      ],
+      "id": "clube-de-regatas-do-flamengo"
+    },
+    {
+      "full_name": "Sociedade Esportiva Palmeiras",
+      "short_name": "Palmeiras",
+      "abbreviation": "PAL",
+      "league": "Brasileirão",
+      "logo_file": "palmeiras.png",
+      "aliases": [
+        "Palmeiras",
+        "Sociedade Esportiva Palmeiras"
+      ],
+      "id": "sociedade-esportiva-palmeiras"
+    },
+    {
+      "full_name": "São Paulo FC",
+      "short_name": "São Paulo",
+      "abbreviation": "SAO",
+      "league": "Brasileirão",
+      "logo_file": "sao-paulo.png",
+      "aliases": [
+        "Sao Paulo",
+        "São Paulo",
+        "São Paulo FC"
+      ],
+      "id": "s-o-paulo-fc"
+    },
+    {
+      "full_name": "Sport Club Corinthians Paulista",
+      "short_name": "Corinthians",
+      "abbreviation": "COR",
+      "league": "Brasileirão",
+      "logo_file": "corinthians.png",
+      "aliases": [
+        "Corinthians",
+        "Sport Club Corinthians Paulista"
+      ],
+      "id": "sport-club-corinthians-paulista"
+    },
+    {
+      "full_name": "Clube Atlético Mineiro",
+      "short_name": "Atlético-MG",
+      "abbreviation": "CAM",
+      "league": "Brasileirão",
+      "logo_file": "athletico-minero.png",
+      "aliases": [
+        "Athletico-MG",
+        "Atletico Mineiro",
+        "Atletico-MG",
+        "Atlético Mineiro",
+        "Atlético-MG",
+        "Clube Atlético Mineiro"
+      ],
+      "id": "clube-atl-tico-mineiro"
+    },
+    {
+      "full_name": "Botafogo de Futebol e Regatas",
+      "short_name": "Botafogo",
+      "abbreviation": "BOT",
+      "league": "Brasileirão",
+      "logo_file": "botafogo.png",
+      "aliases": [
+        "Botafogo",
+        "Botafogo RJ",
+        "Botafogo de Futebol e Regatas"
+      ],
+      "id": "botafogo-de-futebol-e-regatas"
+    },
+    {
+      "full_name": "Club de Regatas Vasco da Gama",
+      "short_name": "Vasco",
+      "abbreviation": "VAS",
+      "league": "Brasileirão",
+      "logo_file": "vasco.png",
+      "aliases": [
+        "Club de Regatas Vasco da Gama",
+        "Vasco",
+        "Vasco da Gama",
+        "Vasco de Gama"
+      ],
+      "id": "club-de-regatas-vasco-da-gama"
+    },
+    {
+      "id": "argentina",
+      "full_name": "Argentina",
+      "short_name": "Argentina",
+      "abbreviation": "ARG",
+      "league": "National Teams",
+      "logo_file": "argentina.png",
+      "aliases": [
+        "Argentina"
+      ]
+    },
+    {
+      "id": "australia",
+      "full_name": "Australia",
+      "short_name": "Australia",
+      "abbreviation": "AUS",
+      "league": "National Teams",
+      "logo_file": "australia.png",
+      "aliases": [
+        "Australia"
+      ]
+    },
+    {
+      "id": "belgium",
+      "full_name": "Belgium",
+      "short_name": "Belgium",
+      "abbreviation": "BEL",
+      "league": "National Teams",
+      "logo_file": "belgium.png",
+      "aliases": [
+        "Belgium"
+      ]
+    },
+    {
+      "id": "brazil",
+      "full_name": "Brazil",
+      "short_name": "Brazil",
+      "abbreviation": "BRA",
+      "league": "National Teams",
+      "logo_file": "brazil.png",
+      "aliases": [
+        "Brazil"
+      ]
+    },
+    {
+      "id": "canada",
+      "full_name": "Canada",
+      "short_name": "Canada",
+      "abbreviation": "CAN",
+      "league": "National Teams",
+      "logo_file": "canada.png",
+      "aliases": [
+        "Canada"
+      ]
+    },
+    {
+      "id": "colombia",
+      "full_name": "Colombia",
+      "short_name": "Colombia",
+      "abbreviation": "COL",
+      "league": "National Teams",
+      "logo_file": "colombia.png",
+      "aliases": [
+        "Colombia"
+      ]
+    },
+    {
+      "id": "costa-rica",
+      "full_name": "Costa Rica",
+      "short_name": "Costa Rica",
+      "abbreviation": "CRC",
+      "league": "National Teams",
+      "logo_file": "costa-rica.png",
+      "aliases": [
+        "Costa Rica"
+      ]
+    },
+    {
+      "id": "croatia",
+      "full_name": "Croatia",
+
+      "short_name": "Croatia",
+      "abbreviation": "CRO",
+      "league": "National Teams",
+      "logo_file": "croatia.png",
+      "aliases": [
+        "Croatia"
+      ]
+    },
+    {
+      "id": "czech-republic",
+      "full_name": "Czech Republic",
+      "short_name": "Czech Republic",
+      "abbreviation": "CZE",
+      "league": "National Teams",
+      "logo_file": "czech-republic.png",
+      "aliases": [
+        "Czech Republic"
+      ]
+    },
+    {
+      "id": "denmark",
+      "full_name": "Denmark",
+      "short_name": "Denmark",
+      "abbreviation": "DEN",
+      "league": "National Teams",
+      "logo_file": "denmark.png",
+      "aliases": [
+        "Denmark"
+      ]
+    },
+    {
+      "id": "ecuador",
+      "full_name": "Ecuador",
+      "short_name": "Ecuador",
+      "abbreviation": "ECU",
+      "league": "National Teams",
+      "logo_file": "ecuador.png",
+      "aliases": [
+        "Ecuador"
+      ]
+    },
+    {
+      "id": "egypt",
+      "full_name": "Egypt",
+      "short_name": "Egypt",
+      "abbreviation": "EGY",
+      "league": "National Teams",
+      "logo_file": "egypt.png",
+      "aliases": [
+        "Egypt"
+      ]
+    },
+    {
+      "id": "england",
+      "full_name": "England",
+      "short_name": "England",
+      "abbreviation": "ENG",
+      "league": "National Teams",
+      "logo_file": "england.png",
+      "aliases": [
+        "England"
+      ]
+    },
+    {
+      "id": "france",
+      "full_name": "France",
+      "short_name": "France",
+      "abbreviation": "FRA",
+      "league": "National Teams",
+      "logo_file": "france.png",
+      "aliases": [
+        "France"
+      ]
+    },
+    {
+      "id": "germany",
+      "full_name": "Germany",
+      "short_name": "Germany",
+      "abbreviation": "GER",
+      "league": "National Teams",
+      "logo_file": "germany.png",
+      "aliases": [
+        "Germany"
+      ]
+    },
+    {
+      "id": "ghana",
+      "full_name": "Ghana",
+      "short_name": "Ghana",
+      "abbreviation": "GHA",
+      "league": "National Teams",
+      "logo_file": "ghana.png",
+      "aliases": [
+        "Ghana"
+      ]
+    },
+    {
+      "id": "greece",
+      "full_name": "Greece",
+      "short_name": "Greece",
+      "abbreviation": "GRE",
+      "league": "National Teams",
+      "logo_file": "greece.png",
+      "aliases": [
+        "Greece"
+      ]
+    },
+    {
+      "id": "iran",
+      "full_name": "Iran",
+      "short_name": "Iran",
+      "abbreviation": "IRN",
+      "league": "National Teams",
+      "logo_file": "iran.png",
+      "aliases": [
+        "Iran"
+      ]
+    },
+    {
+      "id": "italy",
+      "full_name": "Italy",
+      "short_name": "Italy",
+      "abbreviation": "ITA",
+      "league": "National Teams",
+      "logo_file": "italy.png",
+      "aliases": [
+        "Italy"
+      ]
+    },
+    {
+      "id": "ivory-coast",
+      "full_name": "Ivory Coast",
+      "short_name": "Ivory Coast",
+      "abbreviation": "CIV",
+      "league": "National Teams",
+      "logo_file": "ivory-coast.png",
+      "aliases": [
+        "Ivory Coast"
+      ]
+    },
+    {
+      "id": "japan",
+      "full_name": "Japan",
+      "short_name": "Japan",
+      "abbreviation": "JPN",
+      "league": "National Teams",
+      "logo_file": "japan.png",
+      "aliases": [
+        "Japan"
+      ]
+    },
+    {
+      "id": "mexico",
+      "full_name": "Mexico",
+      "short_name": "Mexico",
+      "abbreviation": "MEX",
+      "league": "National Teams",
+      "logo_file": "mexico.png",
+      "aliases": [
+        "Mexico"
+      ]
+    },
+    {
+      "id": "morocco",
+      "full_name": "Morocco",
+      "short_name": "Morocco",
+      "abbreviation": "MAR",
+      "league": "National Teams",
+      "logo_file": "morocco.png",
+      "aliases": [
+        "Morocco"
+      ]
+    },
+    {
+      "id": "netherlands",
+      "full_name": "Netherlands",
+      "short_name": "Netherlands",
+      "abbreviation": "NED",
+      "league": "National Teams",
+      "logo_file": "netherlands.png",
+      "aliases": [
+        "Netherlands"
+      ]
+    },
+    {
+      "id": "nigeria",
+      "full_name": "Nigeria",
+      "short_name": "Nigeria",
+      "abbreviation": "NGA",
+      "league": "National Teams",
+      "logo_file": "nigeria.png",
+      "aliases": [
+        "Nigeria"
+      ]
+    },
+    {
+      "id": "norway",
+      "full_name": "Norway",
+      "short_name": "Norway",
+      "abbreviation": "NOR",
+      "league": "National Teams",
+      "logo_file": "norway.png",
+      "aliases": [
+        "Norway"
+      ]
+    },
+    {
+      "id": "paraguay",
+      "full_name": "Paraguay",
+      "short_name": "Paraguay",
+      "abbreviation": "PAR",
+      "league": "National Teams",
+      "logo_file": "paraguay.png",
+      "aliases": [
+        "Paraguay"
+      ]
+    },
+    {
+      "id": "peru",
+      "full_name": "Peru",
+      "short_name": "Peru",
+      "abbreviation": "PER",
+      "league": "National Teams",
+      "logo_file": "peru.png",
+      "aliases": [
+        "Peru"
+      ]
+    },
+    {
+      "id": "poland",
+      "full_name": "Poland",
+      "short_name": "Poland",
+      "abbreviation": "POL",
+      "league": "National Teams",
+      "logo_file": "poland.png",
+      "aliases": [
+        "Poland"
+      ]
+    },
+    {
+      "id": "portugal",
+      "full_name": "Portugal",
+      "short_name": "Portugal",
+      "abbreviation": "POR",
+      "league": "National Teams",
+      "logo_file": "portugal.png",
+      "aliases": [
+        "Portugal"
+      ]
+    },
+    {
+      "id": "republic-of-ireland",
+      "full_name": "Republic of Ireland",
+      "short_name": "Republic of Ireland",
+      "abbreviation": "IRL",
+      "league": "National Teams",
+      "logo_file": "republic-of-ireland.png",
+      "aliases": [
+        "Republic of Ireland"
+      ]
+    },
+    {
+      "id": "saudi-arabia",
+      "full_name": "Saudi Arabia",
+      "short_name": "Saudi Arabia",
+      "abbreviation": "KSA",
+      "league": "National Teams",
+      "logo_file": "saudi-arabia.png",
+      "aliases": [
+        "Saudi Arabia"
+      ]
+    },
+    {
+      "id": "scotland",
+      "full_name": "Scotland",
+      "short_name": "Scotland",
+      "abbreviation": "SCO",
+      "league": "National Teams",
+      "logo_file": "scotland.png",
+      "aliases": [
+        "Scotland"
+      ]
+    },
+    {
+      "id": "senegal",
+      "full_name": "Senegal",
+      "short_name": "Senegal",
+      "abbreviation": "SEN",
+      "league": "National Teams",
+      "logo_file": "senegal.png",
+      "aliases": [
+        "Senegal"
+      ]
+    },
+    {
+      "id": "serbia",
+      "full_name": "Serbia",
+      "short_name": "Serbia",
+      "abbreviation": "SRB",
+      "league": "National Teams",
+      "logo_file": "serbia.png",
+      "aliases": [
+        "Serbia"
+      ]
+    },
+    {
+      "id": "south-korea",
+      "full_name": "South Korea",
+      "short_name": "South Korea",
+      "abbreviation": "KOR",
+      "league": "National Teams",
+      "logo_file": "south-korea.png",
+      "aliases": [
+        "South Korea"
+      ]
+    },
+    {
+      "id": "spain",
+      "full_name": "Spain",
+      "short_name": "Spain",
+      "abbreviation": "ESP",
+      "league": "National Teams",
+      "logo_file": "spain.png",
+      "aliases": [
+        "Spain"
+      ]
+    },
+    {
+      "id": "sweden",
+      "full_name": "Sweden",
+      "short_name": "Sweden",
+      "abbreviation": "SWE",
+      "league": "National Teams",
+      "logo_file": "sweden.png",
+      "aliases": [
+        "Sweden"
+      ]
+    },
+    {
+      "id": "switzerland",
+      "full_name": "Switzerland",
+      "short_name": "Switzerland",
+      "abbreviation": "SUI",
+      "league": "National Teams",
+      "logo_file": "switzerland.png",
+      "aliases": [
+        "Switzerland"
+      ]
+    },
+    {
+      "id": "tunisia",
+      "full_name": "Tunisia",
+      "short_name": "Tunisia",
+      "abbreviation": "TUN",
+      "league": "National Teams",
+      "logo_file": "tunisia.png",
+      "aliases": [
+        "Tunisia"
+      ]
+    },
+    {
+      "id": "turkey",
+      "full_name": "Turkey",
+      "short_name": "Turkey",
+      "abbreviation": "TUR",
+      "league": "National Teams",
+      "logo_file": "turkey.png",
+      "aliases": [
+        "Turkey"
+      ]
+    },
+    {
+      "id": "ukraine",
+      "full_name": "Ukraine",
+      "short_name": "Ukraine",
+      "abbreviation": "UKR",
+      "league": "National Teams",
+      "logo_file": "ukraine.png",
+      "aliases": [
+        "Ukraine"
+      ]
+    },
+    {
+      "id": "united-states",
+      "full_name": "United States",
+      "short_name": "United States",
+      "abbreviation": "USA",
+      "league": "National Teams",
+      "logo_file": "united-states.png",
+      "aliases": [
+        "United States"
+      ]
+    },
+    {
+      "id": "uruguay",
+      "full_name": "Uruguay",
+      "short_name": "Uruguay",
+      "abbreviation": "URU",
+      "league": "National Teams",
+      "logo_file": "uruguay.png",
+      "aliases": [
+        "Uruguay"
+      ]
+    },
+    {
+      "id": "wales",
+      "full_name": "Wales",
+      "short_name": "Wales",
+      "abbreviation": "WAL",
+      "league": "National Teams",
+      "logo_file": "wales.png",
+      "aliases": [
+        "Wales"
+      ]
+    }
+  ]
+}

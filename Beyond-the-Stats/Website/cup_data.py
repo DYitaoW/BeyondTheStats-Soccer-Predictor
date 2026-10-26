@@ -50,6 +50,12 @@ from league_data import (
     _slugify_competition,
 )
 from predictions import _load_json_payload
+from team_utils import (
+    decorate_standings_table,
+    decorate_standings_entry,
+    decorate_game_team_names,
+    resolve_team_info,
+)
 from standings import _dedupe_standings_groups
 
 
@@ -924,6 +930,19 @@ def _build_cup_data_payload_uncached(comp: str) -> dict:
     payload["bracket"] = bracket
     payload["predicted"] = predicted
     payload["format"] = fmt
+
+    if payload.get("predicted_table"):
+        decorate_standings_table(payload["predicted_table"], comp)
+    if payload.get("real_table"):
+        decorate_standings_table(payload["real_table"], comp)
+    if payload.get("predicted", {}).get("table"):
+        decorate_standings_table(payload["predicted"]["table"], comp)
+    if payload.get("real", {}).get("standings"):
+        decorate_standings_table(payload["real"]["standings"], comp)
+    if payload.get("fixtures"):
+        for fix_item in payload["fixtures"]:
+            if isinstance(fix_item, dict):
+                decorate_game_team_names(fix_item, comp)
 
     _write_cup_data_cache(comp, payload)
     return payload

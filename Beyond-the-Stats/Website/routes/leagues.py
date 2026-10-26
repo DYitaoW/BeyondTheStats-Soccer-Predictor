@@ -48,6 +48,12 @@ from predictions import (
     _load_upcoming_rows,
     get_last_pipeline_run,
 )
+from team_utils import (
+    decorate_standings_table,
+    decorate_standings_entry,
+    decorate_game_team_names,
+    resolve_team_info,
+)
 from cup_data import build_cup_data_payload, cup_data_competitions
 from league_data import build_league_data_payload
 from live_poller import _live_scores, _live_scores_lock
@@ -402,12 +408,12 @@ def api_real_tables():
             cached = persisted[comp_filter]
             if should_use_persisted_table(cached, force_refresh):
                 cleaned = _sanitize_real_standings(cached, comp_filter) or cached
-                return jsonify({"ok": True, "table": cleaned})
+                return jsonify({"ok": True, "table": decorate_standings_table(cleaned, comp_filter)})
         table = _compute_standings_from_history(comp_filter)
         if table is not None:
-            return jsonify({"ok": True, "table": table})
+            return jsonify({"ok": True, "table": decorate_standings_table(table, comp_filter)})
         fallback = _build_fallback_standings(comp_filter)
-        return jsonify({"ok": True, "table": fallback})
+        return jsonify({"ok": True, "table": decorate_standings_table(fallback, comp_filter)})
 
     results = {}
     now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -466,6 +472,7 @@ def api_real_tables():
         table = _compute_standings_from_history(alias)
         if table:
             results[alias] = table
+    decorate_standings_table(results)
     return jsonify({"ok": True, "tables": results, "total": len(results)})
 
 
@@ -555,6 +562,7 @@ def api_league_tables():
 
     if mode == "mls":
         data = build_mls_api_payload()
+        decorate_standings_table(data.get("tables", {}))
         return jsonify({"ok": True, **data})
     if mode == "cups":
         csv_path = config.CUP_PROJECTED_TABLE_FILE
@@ -591,6 +599,13 @@ def api_league_tables():
             if kf:
                 knockout_frameworks[comp_name] = kf
         fixtures = _load_all_fixtures_by_competition(config.CUP_UPCOMING_FILE)
+        decorate_standings_table(data.get("tables", {}))
+        if isinstance(fixtures, dict):
+            for c_name, fix_list in fixtures.items():
+                if isinstance(fix_list, list):
+                    for f in fix_list:
+                        if isinstance(f, dict):
+                            decorate_game_team_names(f, c_name)
         return jsonify({
             "ok": True, **data,
             "cup_brackets": brackets, "cup_formats": cup_formats,
@@ -618,6 +633,12 @@ def api_league_tables():
     excluded = config.LEAGUE_API_EXCLUDED_COMPETITIONS
     if isinstance(fixtures, dict):
         fixtures = {k: v for k, v in fixtures.items() if k not in excluded}
+        for c_name, fix_list in fixtures.items():
+            if isinstance(fix_list, list):
+                for f in fix_list:
+                    if isinstance(f, dict):
+                        decorate_game_team_names(f, c_name)
+    decorate_standings_table(data.get("tables", {}))
     return jsonify({"ok": True, **data, "fixtures": fixtures})
 
 
@@ -943,6 +964,45 @@ def _build_league_leaders_data() -> dict:
                 entry["leader_source"] = "predicted"
 
     leagues = [e for e in leagues if is_league_api_competition(e.get("competition"))]
+
+    def _enrich_leader_item(entry: dict):
+        if not isinstance(entry, dict):
+            return entry
+        comp = entry.get("competition", "")
+        pw = entry.get("predicted_winner")
+        if pw and pw != "—":
+            p_info = resolve_team_info(pw, comp)
+            entry["predicted_winner_full"] = p_info["full_name"]
+            entry["predicted_winner_short"] = p_info["short_name"]
+            entry["predicted_winner_abbr"] = p_info["abbreviation"]
+            entry["predicted_winner_id"] = p_info["id"]
+            entry["predicted_winner_logo"] = p_info["logo_file"]
+            entry["predicted_winner_info"] = p_info
+
+        cl = entry.get("current_leader")
+        if cl and cl != "—":
+            c_info = resolve_team_info(cl, comp)
+            entry["current_leader_full"] = c_info["full_name"]
+            entry["current_leader_short"] = c_info["short_name"]
+            entry["current_leader_abbr"] = c_info["abbreviation"]
+            entry["current_leader_id"] = c_info["id"]
+            entry["current_leader_logo"] = c_info["logo_file"]
+            entry["current_leader_info"] = c_info
+
+        for mls_k in ("east_leader", "west_leader", "mls_cup_winner"):
+            val = entry.get(mls_k)
+            if val:
+                m_info = resolve_team_info(val, "United States/MLS")
+                entry[f"{mls_k}_full"] = m_info["full_name"]
+                entry[f"{mls_k}_short"] = m_info["short_name"]
+                entry[f"{mls_k}_abbr"] = m_info["abbreviation"]
+                entry[f"{mls_k}_id"] = m_info["id"]
+                entry[f"{mls_k}_logo"] = m_info["logo_file"]
+                entry[f"{mls_k}_info"] = m_info
+        return entry
+
+    for item in leagues + cups:
+        _enrich_leader_item(item)
 
     return {
         "ok": True,

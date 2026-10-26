@@ -36,6 +36,12 @@ from predictions import (
     _load_projected_competition_table,
     _load_upcoming_rows,
 )
+from team_utils import (
+    decorate_standings_table,
+    decorate_standings_entry,
+    decorate_game_team_names,
+    resolve_team_info,
+)
 from standings import (
     _build_fallback_standings,
     _compute_standings_from_history,
@@ -1494,6 +1500,19 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
     payload["predicted"] = predicted
 
     payload = _enrich_mls_payload(comp, payload)
+
+    if payload.get("predicted_table"):
+        decorate_standings_table(payload["predicted_table"], comp)
+    if payload.get("real_table"):
+        decorate_standings_table(payload["real_table"], comp)
+    if payload.get("predicted", {}).get("table"):
+        decorate_standings_table(payload["predicted"]["table"], comp)
+    if payload.get("real", {}).get("standings"):
+        decorate_standings_table(payload["real"]["standings"], comp)
+    if payload.get("fixtures"):
+        for fix_item in payload["fixtures"]:
+            if isinstance(fix_item, dict):
+                decorate_game_team_names(fix_item, comp)
 
     _write_league_data_cache(comp, payload)
 
