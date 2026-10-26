@@ -970,7 +970,20 @@ def _update_cached_live_scores_payload() -> None:
     global _cached_sse_frame, _cached_compact_sse_frame
     status = get_live_poller_status()
     with _live_scores_lock:
-        data = dict(_live_scores)
+        data = {}
+        for cname, cdata in _live_scores.items():
+            cd = dict(cdata)
+            games_list = []
+            for g in cdata.get("games", []):
+                g_copy = dict(g)
+                try:
+                    from team_utils import decorate_game_team_names
+                    decorate_game_team_names(g_copy, cname)
+                except Exception:
+                    pass
+                games_list.append(g_copy)
+            cd["games"] = games_list
+            data[cname] = cd
 
     # 1. Full payload
     payload = {

@@ -155,5 +155,164 @@ class TestLiveScoresStream(unittest.TestCase):
             self.assertTrue(lines[1].startswith("data: {"))
 
 
+class TestApiMatchDetailUnified(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        with _live_scores_lock:
+            _live_scores.clear()
+
+    def tearDown(self):
+        with _live_scores_lock:
+            _live_scores.clear()
+
+    def test_api_match_detail_merges_live_and_full_precomputed_predictions(self):
+        mid = "unified-test-match-123"
+        live_entry = {
+            "match_id": mid,
+            "competition": "English Premier League",
+            "home_team": "Arsenal",
+            "away_team": "Chelsea",
+            "home_score": 2,
+            "away_score": 1,
+            "status": "in",
+            "clock": "68'",
+            "period": "2",
+        }
+        with _live_scores_lock:
+            _live_scores["English Premier League"] = {
+                "competition": "English Premier League",
+                "games": [live_entry],
+            }
+
+        pred_payload = {
+            "match_id": mid,
+            "competition": "English Premier League",
+            "home_team": "Arsenal",
+            "away_team": "Chelsea",
+            "prob_home": 58.5,
+            "prob_draw": 24.2,
+            "prob_away": 17.3,
+            "pred_home_goals": 2,
+            "pred_away_goals": 1,
+            "pred_home_shots": 15.2,
+            "pred_away_shots": 8.7,
+            "pred_home_sot": 5.4,
+            "pred_away_sot": 3.1,
+            "prob_both_score": 0.61,
+            "prob_over_2_5": 0.55,
+            "prob_home_goals_0": 0.12,
+            "probability_reasoning": "Arsenal expected to dominate possession and shot volume.",
+            "correct_score_dist": {"2-1": 0.14},
+            "double_chance": {"1X": 0.82},
+            "asian_handicap": {"home_-0.5": 0.58},
+            "odds_home": 1.80,
+            "odds_draw": 3.60,
+            "odds_away": 4.50,
+            "winner_label": "Pred: Arsenal",
+        }
+
+        with patch("predictions._build_past_game_prediction_lookup", return_value={f"mid:{mid}": pred_payload}):
+            resp = self.client.get(f"/api/match/{mid}")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertTrue(data.get("ok"))
+            self.assertEqual(data.get("source"), "live")
+            game = data.get("game", {})
+
+            # Live actual values preserved
+            self.assertEqual(game.get("status"), "in")
+            self.assertEqual(game.get("home_score"), 2)
+            self.assertEqual(game.get("away_score"), 1)
+            self.assertEqual(game.get("clock"), "68'")
+
+            # Full precomputed prediction fields merged directly at root
+            self.assertEqual(game.get("pred_home_shots"), 15.2)
+            self.assertEqual(game.get("pred_away_shots"), 8.7)
+            self.assertEqual(game.get("pred_home_sot"), 5.4)
+            self.assertEqual(game.get("pred_away_sot"), 3.1)
+            self.assertEqual(game.get("prob_both_score"), 0.61)
+            self.assertEqual(game.get("prob_over_2_5"), 0.55)
+            self.assertEqual(game.get("probability_reasoning"), "Arsenal expected to dominate possession and shot volume.")
+            self.assertEqual(game.get("odds_home"), 1.80)
+            self.assertEqual(game.get("winner_label"), "Pred: Arsenal")
+
+            # Also present inside upcoming_prediction dict
+            up = game.get("upcoming_prediction", {})
+            self.assertIsInstance(up, dict)
+            self.assertEqual(up.get("pred_home_shots"), 15.2)
+            self.assertEqual(up.get("prob_over_2_5"), 0.55)
+
+    def test_api_match_detail_upcoming_fixture(self):
+        mid = "upcoming-future-789"
+        pred_payload = {
+            "match_id": mid,
+            "competition": "Spanish La Liga",
+            "home_team": "Real Madrid",
+            "away_team": "Barcelona",
+            "match_date_iso": "2026-11-01",
+            "prob_home": 45.0,
+            "prob_draw": 26.0,
+            "prob_away": 29.0,
+            "pred_home_goals": 2,
+            "pred_away_goals": 1,
+            "pred_home_shots": 16.0,
+            "pred_away_shots": 13.0,
+            "prob_both_score": 0.68,
+            "prob_over_2_5": 0.64,
+            "probability_reasoning": "High-scoring Clasico anticipated based on attacking form.",
+        }
+
+        with patch("predictions._build_past_game_prediction_lookup", return_value={f"mid:{mid}": pred_payload}):
+            resp = self.client.get(f"/api/match/{mid}")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertTrue(data.get("ok"))
+            game = data.get("game", {})
+            self.assertEqual(game.get("home_team"), "Real Madrid")
+            self.assertEqual(game.get("away_team"), "Barcelona")
+            self.assertEqual(game.get("pred_home_shots"), 16.0)
+            self.assertEqual(game.get("prob_both_score"), 0.68)
+            self.assertIn("upcoming", data.get("source"))
+
+    def test_api_match_detail_etag_and_304(self):
+        from routes.live_scores import clear_match_detail_cache
+        clear_match_detail_cache()
+
+        mid = "live-caching-test-101"
+        live_entry = {
+            "match_id": mid,
+            "competition": "English Premier League",
+            "home_team": "Liverpool",
+            "away_team": "Manchester City",
+            "home_score": 1,
+            "away_score": 1,
+            "status": "in",
+            "clock": "45+2'",
+        }
+        with _live_scores_lock:
+            _live_scores["English Premier League"] = {
+                "competition": "English Premier League",
+                "games": [live_entry],
+            }
+
+        with patch("predictions._build_past_game_prediction_lookup", return_value={}):
+            # First fetch (cache MISS)
+            resp = self.client.get(f"/api/match/{mid}")
+            self.assertEqual(resp.status_code, 200)
+            etag = resp.headers.get("etag")
+            self.assertIsNotNone(etag)
+            self.assertIn("s-maxage=5", resp.headers.get("cache-control", ""))
+
+            # Subsequent fetch with matching If-None-Match (HTTP 304 Not Modified)
+            resp_304 = self.client.get(f"/api/match/{mid}", headers={"If-None-Match": etag})
+            self.assertEqual(resp_304.status_code, 304)
+
+            # Cached fetch without If-None-Match (Cache HIT)
+            resp_hit = self.client.get(f"/api/match/{mid}")
+            self.assertEqual(resp_hit.status_code, 200)
+            self.assertEqual(resp_hit.headers.get("x-cache"), "HIT")
+            self.assertEqual(resp_hit.headers.get("etag"), etag)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,7 +20,13 @@ import pandas as pd
 import config
 from competition_rules import canonical_team_name, make_match_sync_key, normalize_team_key
 from cache import _cached_response
-from team_utils import _team_name_for_db, _team_name_for_display
+from team_utils import (
+    _team_name_for_db,
+    _team_name_for_display,
+    decorate_game_team_names,
+    resolve_team_info,
+    get_standardized_teams_list,
+)
 from espn_api import _fetch_team_info, _ROSTER_CACHE
 from live_poller import _live_scores, _live_scores_lock
 from team_mappings import (
@@ -93,6 +99,7 @@ def _to_float(val):
 def _to_compact_upcoming_row(r: dict) -> dict:
     """Strip bulky secondary markets, last-5 match logs, and verbose reasoning for lightweight web/list views."""
     clean = _sanitize_for_json(r) if isinstance(r, dict) else {}
+    clean = decorate_game_team_names(clean, clean.get("competition", ""))
     comp = clean.get("competition", "")
     ht = clean.get("home_team", "")
     at = clean.get("away_team", "")
@@ -117,6 +124,24 @@ def _to_compact_upcoming_row(r: dict) -> dict:
         "away_team": at,
         "canonical_home_team": c_home,
         "canonical_away_team": c_away,
+        "home_team_full": clean.get("home_team_full"),
+        "home_team_full_name": clean.get("home_team_full"),
+        "home_team_short": clean.get("home_team_short"),
+        "home_team_short_name": clean.get("home_team_short"),
+        "home_team_abbr": clean.get("home_team_abbr"),
+        "home_team_abbreviation": clean.get("home_team_abbr"),
+        "home_team_id": clean.get("home_team_id"),
+        "home_team_logo": clean.get("home_team_logo"),
+        "home_team_info": clean.get("home_team_info"),
+        "away_team_full": clean.get("away_team_full"),
+        "away_team_full_name": clean.get("away_team_full"),
+        "away_team_short": clean.get("away_team_short"),
+        "away_team_short_name": clean.get("away_team_short"),
+        "away_team_abbr": clean.get("away_team_abbr"),
+        "away_team_abbreviation": clean.get("away_team_abbr"),
+        "away_team_id": clean.get("away_team_id"),
+        "away_team_logo": clean.get("away_team_logo"),
+        "away_team_info": clean.get("away_team_info"),
         "sync_key": sync_k,
         "match_id": clean.get("match_id"),
         "predicted_result": clean.get("predicted_result", ""),
@@ -239,6 +264,7 @@ def _build_team_next_game_index() -> dict[str, tuple[dict, bool]]:
             continue
         if ck not in seen_map:
             seen_map[ck] = dict(r)
+
         else:
             existing = seen_map[ck]
             for fld in ("match_datetime_utc", "match_datetime_et", "kickoff_utc", "predicted_result", "match_id"):
@@ -361,8 +387,8 @@ def _format_next_game_payload(
     away_team = str(game_dict.get("away_team", "") or "").strip()
     competition = str(game_dict.get("competition", "") or "").strip()
 
-    canon_home = canonical_team_name(home_team, competition) or home_team
-    canon_away = canonical_team_name(away_team, competition) or away_team
+    canon_home = game_dict.get("canonical_home_team") or canonical_team_name(home_team, competition) or home_team
+    canon_away = game_dict.get("canonical_away_team") or canonical_team_name(away_team, competition) or away_team
 
     opponent = away_team if is_home else home_team
     canon_opponent = canon_away if is_home else canon_home
@@ -378,6 +404,7 @@ def _format_next_game_payload(
 
     if not dt_et and dt_utc:
         dt_et = _utc_to_et(dt_utc)
+
     elif not dt_utc and dt_et:
         try:
             p_dt = pd.to_datetime(dt_et)
@@ -416,6 +443,7 @@ def _format_next_game_payload(
     else:
         live_status = live_status_raw or "scheduled"
 
+    decorate_game_team_names(game_dict, competition)
     sync_k = str(game_dict.get("sync_key") or "").strip()
     if not sync_k or sync_k.startswith("|"):
         sync_k = make_match_sync_key(
@@ -424,6 +452,7 @@ def _format_next_game_payload(
             canon_home,
             canon_away,
         )
+        game_dict["sync_key"] = sync_k
 
     return {
         "sync_key": sync_k,
@@ -437,6 +466,24 @@ def _format_next_game_payload(
         "away_team": away_team,
         "canonical_home_team": canon_home,
         "canonical_away_team": canon_away,
+        "home_team_full": game_dict.get("home_team_full"),
+        "home_team_full_name": game_dict.get("home_team_full"),
+        "home_team_short": game_dict.get("home_team_short"),
+        "home_team_short_name": game_dict.get("home_team_short"),
+        "home_team_abbr": game_dict.get("home_team_abbr"),
+        "home_team_abbreviation": game_dict.get("home_team_abbr"),
+        "home_team_id": game_dict.get("home_team_id"),
+        "home_team_logo": game_dict.get("home_team_logo"),
+        "home_team_info": game_dict.get("home_team_info"),
+        "away_team_full": game_dict.get("away_team_full"),
+        "away_team_full_name": game_dict.get("away_team_full"),
+        "away_team_short": game_dict.get("away_team_short"),
+        "away_team_short_name": game_dict.get("away_team_short"),
+        "away_team_abbr": game_dict.get("away_team_abbr"),
+        "away_team_abbreviation": game_dict.get("away_team_abbr"),
+        "away_team_id": game_dict.get("away_team_id"),
+        "away_team_logo": game_dict.get("away_team_logo"),
+        "away_team_info": game_dict.get("away_team_info"),
         "is_home": bool(is_home),
         "opponent": opponent,
         "opponent_display": opponent_display,
@@ -571,13 +618,15 @@ def _get_team_next_game_payload(team_input: str) -> dict:
             merged.update(today_pre_game)
             selected_game = merged
             selected_is_home = today_pre_is_home
+
         else:
             pre_dt = str(today_pre_game.get("kickoff_utc") or today_pre_game.get("match_date") or "")
             up_dt = str(upcoming_hit.get("match_datetime_utc") or upcoming_hit.get("match_date_iso") or "")
             if pre_dt and (not up_dt or pre_dt <= up_dt):
                 selected_game = today_pre_game
                 selected_is_home = today_pre_is_home
-            else:
+    
+
                 selected_game = upcoming_hit
                 selected_is_home = upcoming_is_home
     elif today_pre_game:
@@ -658,6 +707,7 @@ def _load_team_upcoming_games(team_name: str, mode: str = "global") -> list[dict
             continue
         if ck not in seen_map:
             seen_map[ck] = dict(r)
+
         else:
             existing = seen_map[ck]
             for fld in (
@@ -743,6 +793,7 @@ def _load_team_upcoming_games(team_name: str, mode: str = "global") -> list[dict
 
         if not dt_et and dt_utc:
             dt_et = _utc_to_et(dt_utc)
+
         elif not dt_utc and dt_et:
             try:
                 p_dt = pd.to_datetime(dt_et)
@@ -843,6 +894,7 @@ def _resolve_team_api_payload(team_input: str, mode: str):
     if isinstance(pt, dict):
         if team in pt:
             team_pred_data = pt[team]
+
         else:
             for tname, tdata in pt.items():
                 if str(tname).strip().lower() == team_lower:
@@ -854,11 +906,24 @@ def _resolve_team_api_payload(team_input: str, mode: str):
 
     next_game_payload = _get_team_next_game_payload(team_input)
     next_game = next_game_payload.get("game") if next_game_payload.get("has_game") else None
+    t_info = resolve_team_info(team_input)
+    for m in recent_matches:
+        if isinstance(m, dict):
+            decorate_game_team_names(m)
+    for g in upcoming:
+        if isinstance(g, dict):
+            decorate_game_team_names(g)
 
     return {
         "ok": True,
         "team": team,
         "display_team": _team_name_for_display(team),
+        "team_full": t_info["full_name"],
+        "team_short": t_info["short_name"],
+        "team_abbr": t_info["abbreviation"],
+        "team_id": t_info["id"],
+        "team_logo": t_info["logo_file"],
+        "team_info": t_info,
         "mode": mode,
         "form": team_form,
         "weighted_form": weighted_form,
@@ -938,7 +1003,8 @@ def api_teams():
                 teams = _load_teams_from_team_data(pm_mls)
             elif mode == "extra":
                 teams = _load_teams_from_team_data(pm_extra)
-            else:
+    
+
                 teams = _load_teams_from_team_data(pm_global)
         display_teams = sorted(_safe_teams(teams))
     else:
@@ -947,7 +1013,11 @@ def api_teams():
             display_teams = sorted(_safe_teams(teams))
         except Exception:
             display_teams = []
-    return jsonify({"teams": display_teams})
+    teams_detailed = [resolve_team_info(t) for t in display_teams]
+    return jsonify({
+        "teams": display_teams,
+        "teams_detailed": teams_detailed,
+    })
 
 
 @predictions_bp.get("/api/teams/catalog")
@@ -1128,7 +1198,7 @@ def api_upcoming(mode):
                     today_et = datetime.now(timezone.utc).date()
                 lower = today_et - timedelta(days=30)
                 cutoff = today_et + timedelta(days=21)
-            else:
+    
                 today = datetime.now(timezone.utc).date()
                 lower = today
                 cutoff = today + timedelta(days=window_days)
@@ -1153,7 +1223,7 @@ def api_upcoming(mode):
                 _load_upcoming_rows(config.ALL_UPCOMING_FILE, "global", date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to)
             combined_stats = dict(combined_stats or {})
             combined_league_stats = {ls.get("competition", ""): ls for ls in (combined_league_stats or []) if ls.get("competition")}
-        else:
+
             all_rows = []
             combined_stats = {"correct_total": 0, "total_predictions": 0, "pending_total": 0, "accuracy_pct": 0.0}
             combined_league_stats = {}
@@ -1169,6 +1239,7 @@ def api_upcoming(mode):
                 has_sqlite_rows = False
 
             if not has_sqlite_rows:
+
                 seen_keys = set()
                 for source, csv_path in _ALL_UPCOMING_SOURCES:
                     rows, _st, _ls = _load_upcoming_rows(csv_path, source, date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to)
@@ -1218,6 +1289,10 @@ def api_upcoming(mode):
         paged_rows = all_rows[offset : (offset + limit) if limit else None] if (limit or offset) else all_rows
         if compact:
             paged_rows = [_to_compact_upcoming_row(r) for r in paged_rows]
+        else:
+            paged_rows = [decorate_game_team_names(dict(r), r.get("competition", "")) for r in paged_rows]
+
+
         return jsonify({
             "ok": True,
             "total": len(all_rows),
@@ -1252,6 +1327,8 @@ def api_upcoming(mode):
     paged_rows = rows[offset : (offset + limit) if limit else None] if (limit or offset) else rows
     if compact:
         paged_rows = [_to_compact_upcoming_row(r) for r in paged_rows]
+    else:
+        paged_rows = [decorate_game_team_names(dict(r), r.get("competition", "")) for r in paged_rows]
     return jsonify({
         "ok": True,
         "total": len(rows),
@@ -1448,6 +1525,7 @@ def api_past_games():
             return
         row = dict(r)
         _enrich_json_past_row(row)
+        decorate_game_team_names(row)
         row = _sanitize_for_json(row)
         ck = "|".join(
             [

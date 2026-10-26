@@ -48,7 +48,7 @@ from competition_rules import (
     warm_competition_games_cache,
 )
 from espn_api import _fetch_leaders, _fetch_standings, LIVE_SCORE_FETCH_TIMEOUT
-from team_utils import _to_int
+from team_utils import _to_int, decorate_standings_entry, decorate_standings_table
 
 _real_tables: dict[str, dict] = {}
 _team_display_mapping: dict[str, dict[str, str]] | None = None
@@ -408,6 +408,7 @@ def _dedupe_standings_groups(standings: dict, comp_name: str) -> dict:
         for idx, row in enumerate(deduped, start=1):
             row["rank"] = idx
             row["position"] = idx
+            decorate_standings_entry(row, comp_name)
         new_groups.append({**group, "entries": deduped})
     out = dict(standings)
     out["groups"] = new_groups
@@ -652,6 +653,7 @@ def _align_standings_to_canonical_roster(standings: dict, comp_name: str) -> dic
         for idx, row in enumerate(ranked, start=1):
             row["rank"] = idx
             row["position"] = idx
+            decorate_standings_entry(row, comp_name)
         new_groups.append({**group, "entries": ranked})
     out = dict(standings)
     out["groups"] = new_groups
@@ -1897,6 +1899,11 @@ def _fill_placeholder_tables(data):
         if entries:
             entries.sort(key=lambda item: item.get("position") or 999)
             tables[comp_name] = entries
+    for c_name, tbl_entries in list(tables.items()):
+        if isinstance(tbl_entries, list):
+            for e in tbl_entries:
+                if isinstance(e, dict):
+                    decorate_standings_entry(e, c_name)
     data["tables"] = tables
 
 def _build_fallback_standings(comp_name):

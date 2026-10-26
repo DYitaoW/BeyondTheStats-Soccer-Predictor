@@ -590,13 +590,26 @@ def build_app_teams_catalog_payload(competition_filter: str | None = None) -> di
             by_competition[comp] = sorted(set(names), key=str.lower)
 
     all_teams = sorted(canonical_by_key.values(), key=str.lower)
-    teams_with_competitions = [
-        {
-            "team": canonical_by_key[key],
+    try:
+        from team_utils import resolve_team_info
+    except Exception:
+        resolve_team_info = lambda t, c="": {"full_name": str(t), "short_name": str(t), "abbreviation": str(t)[:3].upper(), "id": str(t).lower(), "logo_file": ""}
+
+    teams_with_competitions = []
+    for key in sorted(canonical_by_key.keys(), key=lambda k: canonical_by_key[k].lower()):
+        t_name = canonical_by_key[key]
+        t_info = resolve_team_info(t_name)
+        teams_with_competitions.append({
+            "team": t_name,
             "competitions": sorted(team_to_comps[key], key=str.lower),
-        }
-        for key in sorted(canonical_by_key.keys(), key=lambda k: canonical_by_key[k].lower())
-    ]
+            "team_full": t_info.get("full_name"),
+            "team_short": t_info.get("short_name"),
+            "team_abbr": t_info.get("abbreviation"),
+            "team_id": t_info.get("id"),
+            "team_logo": t_info.get("logo_file"),
+            "team_info": t_info,
+        })
+    teams_detailed = [resolve_team_info(t) for t in all_teams]
 
     return {
         "ok": True,
@@ -605,6 +618,7 @@ def build_app_teams_catalog_payload(competition_filter: str | None = None) -> di
         "competitions": competitions,
         "competition_count": len(competitions),
         "teams": all_teams,
+        "teams_detailed": teams_detailed,
         "team_count": len(all_teams),
         "by_competition": by_competition,
         "teams_with_competitions": teams_with_competitions,

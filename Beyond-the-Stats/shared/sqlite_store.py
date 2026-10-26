@@ -246,6 +246,18 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         f"""
+        CREATE INDEX IF NOT EXISTS idx_live_hist_match_id
+        ON {_LIVE_TABLE}(match_id)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_live_hist_away
+        ON {_LIVE_TABLE}(away_team)
+        """
+    )
+    conn.execute(
+        f"""
         CREATE TABLE IF NOT EXISTS {_UPCOMING_TABLE} (
             storage_key TEXT PRIMARY KEY,
             match_date_iso TEXT,
@@ -1224,6 +1236,51 @@ def load_upcoming_games(
             params,
         ).fetchall()
         return _decode_rows(rows)
+    finally:
+        conn.close()
+
+
+def get_game_by_match_id(match_id: str, db_path: Optional[Path] = None) -> Optional[dict]:
+    """Fast, single-row indexed lookup of a game by match_id across live, upcoming, and past tables."""
+    mid = str(match_id or "").strip()
+    if not mid:
+        return None
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        # 1. Check live_score_history (indexed on match_id and storage_key)
+        row = conn.execute(
+            f"SELECT payload_json FROM {_LIVE_TABLE} WHERE match_id = ? OR storage_key = ? LIMIT 1",
+            (mid, f"id:{mid}"),
+        ).fetchone()
+        if row and row["payload_json"]:
+            res = _json_loads(row["payload_json"])
+            if res:
+                return res
+
+        # 2. Check upcoming_games (by storage_key or match_id inside JSON)
+        row = conn.execute(
+            f"SELECT payload_json FROM {_UPCOMING_TABLE} WHERE storage_key = ? OR json_extract(payload_json, '$.match_id') = ? LIMIT 1",
+            (f"id:{mid}", mid),
+        ).fetchone()
+        if row and row["payload_json"]:
+            res = _json_loads(row["payload_json"])
+            if res:
+                return res
+
+        # 3. Check past_games (by storage_key or match_id inside JSON)
+        row = conn.execute(
+            f"SELECT payload_json FROM {_PAST_TABLE} WHERE storage_key = ? OR json_extract(payload_json, '$.match_id') = ? LIMIT 1",
+            (f"id:{mid}", mid),
+        ).fetchone()
+        if row and row["payload_json"]:
+            res = _json_loads(row["payload_json"])
+            if res:
+                return res
+
+        return None
+    except Exception:
+        return None
     finally:
         conn.close()
 

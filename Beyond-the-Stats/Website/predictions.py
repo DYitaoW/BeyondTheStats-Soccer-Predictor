@@ -1234,6 +1234,10 @@ def _load_upcoming_rows(
                 "actual_home_goals",
                 "actual_away_goals",
                 "schedule_only",
+                "probability_reasoning",
+                "odds_home",
+                "odds_draw",
+                "odds_away",
                 "live_tracking",
                 "prediction_quality",
                 "match_datetime_utc",
@@ -1533,7 +1537,15 @@ def _load_upcoming_rows(
                 "clean_sheet": _compute_clean_sheet(
                     row.get("pred_home_goals"), row.get("pred_away_goals"),
                 ),
+                "pred_home_shots": _to_float(row.get("pred_home_shots")),
+                "pred_away_shots": _to_float(row.get("pred_away_shots")),
+                "pred_home_sot": _to_float(row.get("pred_home_sot")),
+                "pred_away_sot": _to_float(row.get("pred_away_sot")),
+                "probability_reasoning": str(row.get("probability_reasoning", "")).strip(),
                 "reasoning": str(row.get("probability_reasoning", "")).strip(),
+                "odds_home": _to_float(row.get("odds_home") or row.get("home_odds")),
+                "odds_draw": _to_float(row.get("odds_draw") or row.get("draw_odds")),
+                "odds_away": _to_float(row.get("odds_away") or row.get("away_odds")),
                 "predicted_result": str(row.get("predicted_result", "")).strip(),
                 "prediction_key": str(row.get("prediction_key", "")).strip(),
                 "match_datetime_utc": (
@@ -2701,6 +2713,9 @@ def _build_past_game_prediction_lookup() -> dict[str, dict]:
         sync_k = row.get("sync_key") or make_match_sync_key(date_iso, comp, c_home, c_away)
 
         keys_to_index = []
+        mid_val = str(row.get("match_id", "") or "").strip()
+        if mid_val:
+            keys_to_index.append(f"mid:{mid_val}")
         if sync_k:
             keys_to_index.append(sync_k)
         if date_iso and c_home and c_away:
@@ -2827,8 +2842,14 @@ def _merge_prediction_onto_past_row(row: dict, lookup: dict[str, dict]) -> dict:
             "match_datetime_et",
             "match_datetime_utc",
             "schedule_only",
+            "probability_reasoning",
+            "odds_home",
+            "odds_draw",
+            "odds_away",
         }:
             merged[key] = value
+    merged["upcoming_prediction"] = dict(pred)
+    merged["prematch_prediction"] = dict(pred)
     _enrich_json_past_row(merged)
     return merged
 
