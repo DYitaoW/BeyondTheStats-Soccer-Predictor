@@ -121,6 +121,16 @@ def restart_launchd_service(app_dir: Path) -> bool:
         print("  Backend is UP and healthy on port 8000!")
         print("  API Health: http://localhost:8000/api/health")
         print("========================================================")
+        stdout_log = app_dir / "Output" / "Logs" / "launchd_stdout.log"
+        if stdout_log.is_file():
+            print("\nRecent background startup logs:")
+            try:
+                lines = stdout_log.read_text(errors="replace").splitlines()
+                for l in lines[-6:]:
+                    print(f"  {l}")
+            except Exception:
+                pass
+        print("")
     else:
         print(f"\n[!] Notice: Service kicked, but port 8000 health check not ready yet ({msg}).")
         print("    Check live output: python startbts logs")
@@ -228,3 +238,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
