@@ -202,7 +202,8 @@
     "Unionistas de Salamanca": "",
     "San Sebastián de los Reyes": "",
     "Coria": "",
-    "UB Lebrijana": ""
+    "UB Lebrijana": "",
+    "Pamplona": ""
   },
   "Italy/Serie A": {
     "AC Monza": "Monza",
@@ -308,7 +309,8 @@
     "CF Estrela da Amadora": "Estrela",
     "FC Alverca": "Alverca",
     "Académico de Viseu FC": "Academico Viseu",
-    "Academico Viseu": "Academico Viseu"
+    "Academico Viseu": "Academico Viseu",
+    "Académico de Viseu": "Academico Viseu"
   },
   "Germany/Bundesliga": {
     "SV 07 Elversberg": "Elversberg",
@@ -330,11 +332,13 @@
   },
   "France/Ligue 1": {
     "Le Mans FC": "Le Mans",
-    "ES Troyes AC": "Troyes"
+    "ES Troyes AC": "Troyes",
+    "Orléans": "Orleans"
   },
   "United States/MLS": {},
   "France/Ligue 2": {
-    "Nantes": "Nantes"
+    "Nantes": "Nantes",
+    "Orléans": "Orleans"
   },
   "Spain/La Liga 2": {
     "Celta B": "Celta B",
@@ -428,7 +432,8 @@
     "Coria": "",
     "Sevilla": "Sevilla",
     "UB Lebrijana": "",
-    "Getafe": "Getafe"
+    "Getafe": "Getafe",
+    "Pamplona": ""
   },
   "Italy/Serie B": {
     "Arezzo": "Arezzo",
@@ -503,7 +508,9 @@
     "SC Paderborn 07": "Paderborn",
     "VfB Stuttgart": "Stuttgart",
     "SSV Jeddeloh II": "",
-    "Hertha Berlin": "Hertha"
+    "Hertha Berlin": "Hertha",
+    "Freiburg": "Freiburg",
+    "Wolfsburg": "Wolfsburg"
   },
   "Greece/Super League": {
     "Iraklis": "Iraklis",
@@ -625,7 +632,8 @@
     "Wimborne Town": "",
     "Crawley Town": "",
     "Plymouth Parkway": "Plymouth",
-    "Berkhamsted": ""
+    "Berkhamsted": "",
+    "Bournemouth": "Bournemouth"
   },
   "England/League Cup": {
     "Bradford City": "Bradford",
@@ -721,7 +729,8 @@
     "Wimborne Town": "",
     "Crawley Town": "",
     "Plymouth Parkway": "Plymouth",
-    "Berkhamsted": ""
+    "Berkhamsted": "",
+    "Bournemouth": "Bournemouth"
   },
   "Spain/Copa del Rey": {
     "AE Prat": "",
@@ -842,9 +851,13 @@
     "Coria": "",
     "Sevilla": "Sevilla",
     "UB Lebrijana": "",
-    "Getafe": "Getafe"
+    "Getafe": "Getafe",
+    "Pamplona": ""
   },
-  "France/Coupe de France": {},
+  "France/Coupe de France": {
+    "Dijon": "Dijon",
+    "Orléans": "Orleans"
+  },
   "Italy/Coppa Italia": {
     "Internazionale": "Inter",
     "Genoa": "Genoa",

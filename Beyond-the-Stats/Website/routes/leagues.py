@@ -1050,6 +1050,7 @@ def clear_league_leaders_cache() -> None:
     """Invalidate in-memory league-leaders cache and trigger background recomputation."""
     with _LEAGUE_LEADERS_MEMO_LOCK:
         _LEAGUE_LEADERS_MEMO_CACHE["expires_at"] = 0.0
+        _LEAGUE_LEADERS_MEMO_CACHE["data"] = None
     threading.Thread(
         target=_refresh_league_leaders_cache,
         kwargs={"force": True},

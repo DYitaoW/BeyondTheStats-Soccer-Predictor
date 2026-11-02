@@ -589,17 +589,30 @@ def build_app_teams_catalog_payload(competition_filter: str | None = None) -> di
         if names:
             by_competition[comp] = sorted(set(names), key=str.lower)
 
-    all_teams = sorted(canonical_by_key.values(), key=str.lower)
     try:
         from team_utils import resolve_team_info
     except Exception:
         resolve_team_info = lambda t, c="": {"full_name": str(t), "short_name": str(t), "abbreviation": str(t)[:3].upper(), "id": str(t).lower(), "logo_file": ""}
 
-    teams_with_competitions = []
+    # Load canonical mapping target values to identify preferred canonical display names
+    from competition_rules import _load_display_mapping
+    _mapping_payload = _load_display_mapping()
+    canonical_targets: set[str] = set()
+    if isinstance(_mapping_payload, dict):
+        for _m in _mapping_payload.values():
+            if isinstance(_m, dict):
+                canonical_targets.update(_m.values())
+
+    all_predictor_teams: set[str] = set()
+    for _plist in predictor_by_comp.values():
+        all_predictor_teams.update(_plist)
+
+    # Initial candidate items
+    raw_candidates = []
     for key in sorted(canonical_by_key.keys(), key=lambda k: canonical_by_key[k].lower()):
         t_name = canonical_by_key[key]
         t_info = resolve_team_info(t_name)
-        teams_with_competitions.append({
+        raw_candidates.append({
             "team": t_name,
             "competitions": sorted(team_to_comps[key], key=str.lower),
             "team_full": t_info.get("full_name"),
@@ -609,7 +622,51 @@ def build_app_teams_catalog_payload(competition_filter: str | None = None) -> di
             "team_logo": t_info.get("logo_file"),
             "team_info": t_info,
         })
-    teams_detailed = [resolve_team_info(t) for t in all_teams]
+
+    # Deduplicate by resolved team_id (or lowercase name fallback)
+    by_id: dict[str, list[dict]] = defaultdict(list)
+    for entry in raw_candidates:
+        tid = str(entry.get("team_id") or "").strip().lower()
+        if tid:
+            by_id[tid].append(entry)
+        else:
+            by_id[entry["team"].lower()].append(entry)
+
+    name_replacements: dict[str, str] = {}
+    deduped_entries: list[dict] = []
+    for tid, entries in by_id.items():
+        if len(entries) == 1:
+            deduped_entries.append(entries[0])
+        else:
+            # Rank candidates: 1. Target of display mapping, 2. Used in predictor backend, 3. Shorter name, 4. Alphabetical
+            entries.sort(key=lambda e: (
+                e["team"] not in canonical_targets,
+                e["team"] not in all_predictor_teams,
+                len(e["team"]),
+                e["team"].lower(),
+            ))
+            chosen = dict(entries[0])
+            merged_comps: set[str] = set()
+            for e in entries:
+                merged_comps.update(e.get("competitions", []))
+                if e["team"] != chosen["team"]:
+                    name_replacements[e["team"]] = chosen["team"]
+            chosen["competitions"] = sorted(merged_comps, key=str.lower)
+            deduped_entries.append(chosen)
+
+    # Re-sort deduplicated teams alphabetically
+    deduped_entries.sort(key=lambda e: e["team"].lower())
+    teams_with_competitions = deduped_entries
+    all_teams = [e["team"] for e in deduped_entries]
+    teams_detailed = [e["team_info"] for e in deduped_entries]
+
+    # Remap by_competition names if any alias was collapsed into a preferred canonical name
+    if name_replacements:
+        for comp, comp_teams in list(by_competition.items()):
+            remapped_comp_teams = set()
+            for t in comp_teams:
+                remapped_comp_teams.add(name_replacements.get(t, t))
+            by_competition[comp] = sorted(remapped_comp_teams, key=str.lower)
 
     return {
         "ok": True,

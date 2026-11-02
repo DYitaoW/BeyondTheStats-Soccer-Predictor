@@ -275,6 +275,12 @@ def _game_et_calendar_date(game):
         value = game.get(key)
         if not value:
             continue
+        val_str = str(value).strip()
+        if len(val_str) == 10 and val_str.count("-") == 2:
+            try:
+                return date.fromisoformat(val_str)
+            except ValueError:
+                pass
         try:
             dt = pd.to_datetime(value, utc=True, errors="coerce")
             if pd.notna(dt):

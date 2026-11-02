@@ -2271,3 +2271,143 @@ def dump_points_adjustments_json(db_path: Optional[Path] = None) -> None:
         json.dump(rows, f, indent=2, ensure_ascii=False)
     tmp_path.replace(path)
 
+
+def cleanup_canonical_team_names(db_path: Optional[Path] = None) -> dict:
+    """Normalize and re-canonicalize home_team/away_team in upcoming_games, past_games, live_score_history.
+
+    Deduplicates fixtures where raw aliases (e.g. 'Derby County' or 'Newcastle United')
+    caused split rows instead of resolving to canonical names ('Derby', 'Newcastle').
+    """
+    import sys as _sys, os as _os
+    _website_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "Website")
+    if _website_dir not in _sys.path:
+        _sys.path.insert(0, _website_dir)
+    from competition_rules import canonical_team_name, make_match_sync_key
+
+    ensure_store(db_path)
+    totals = {"upcoming_updated": 0, "past_updated": 0, "live_updated": 0}
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            # 1. Clean upcoming_games
+            rows = conn.execute(
+                f"SELECT storage_key, match_date_iso, competition, home_team, away_team, prediction_key, source, status, payload_json FROM {_UPCOMING_TABLE}"
+            ).fetchall()
+            for key, date_iso, comp, home, away, pred_key, src, status, payload_raw in rows:
+                c_home = canonical_team_name(home, comp) or home
+                c_away = canonical_team_name(away, comp) or away
+                if c_home == home and c_away == away:
+                    continue
+                try:
+                    payload = json.loads(payload_raw) if payload_raw else {}
+                except Exception:
+                    payload = {}
+                payload["home_team"] = c_home
+                payload["away_team"] = c_away
+                payload["canonical_home_team"] = c_home
+                payload["canonical_away_team"] = c_away
+                if "display_home_team" in payload and payload["display_home_team"] == home:
+                    payload["display_home_team"] = c_home
+                if "display_away_team" in payload and payload["display_away_team"] == away:
+                    payload["display_away_team"] = c_away
+                date_for_sync = payload.get("match_datetime_et") or payload.get("match_datetime_utc") or payload.get("match_date_iso") or date_iso or ""
+                payload["sync_key"] = make_match_sync_key(date_for_sync, comp, c_home, c_away)
+                new_key = past_game_storage_key(payload) or key
+                new_payload_json = _json_dumps(payload)
+
+                if new_key == key:
+                    conn.execute(
+                        f"UPDATE {_UPCOMING_TABLE} SET home_team = ?, away_team = ?, payload_json = ? WHERE storage_key = ?",
+                        (c_home, c_away, new_payload_json, key),
+                    )
+                else:
+                    existing = conn.execute(
+                        f"SELECT 1 FROM {_UPCOMING_TABLE} WHERE storage_key = ?",
+                        (new_key,),
+                    ).fetchone()
+                    if existing:
+                        conn.execute(
+                            f"DELETE FROM {_UPCOMING_TABLE} WHERE storage_key = ?",
+                            (key,),
+                        )
+                    else:
+                        conn.execute(
+                            f"UPDATE {_UPCOMING_TABLE} SET storage_key = ?, home_team = ?, away_team = ?, payload_json = ? WHERE storage_key = ?",
+                            (new_key, c_home, c_away, new_payload_json, key),
+                        )
+                totals["upcoming_updated"] += 1
+
+            # 2. Clean past_games
+            past_rows = conn.execute(
+                f"SELECT storage_key, match_date_iso, competition, home_team, away_team, payload_json FROM {_PAST_TABLE}"
+            ).fetchall()
+            for key, date_iso, comp, home, away, payload_raw in past_rows:
+                c_home = canonical_team_name(home, comp) or home
+                c_away = canonical_team_name(away, comp) or away
+                if c_home == home and c_away == away:
+                    continue
+                try:
+                    payload = json.loads(payload_raw) if payload_raw else {}
+                except Exception:
+                    payload = {}
+                payload["home_team"] = c_home
+                payload["away_team"] = c_away
+                payload["canonical_home_team"] = c_home
+                payload["canonical_away_team"] = c_away
+                new_key = past_game_storage_key(payload) or key
+                new_payload_json = _json_dumps(payload)
+                if new_key == key:
+                    conn.execute(
+                        f"UPDATE {_PAST_TABLE} SET home_team = ?, away_team = ?, payload_json = ? WHERE storage_key = ?",
+                        (c_home, c_away, new_payload_json, key),
+                    )
+                else:
+                    existing = conn.execute(
+                        f"SELECT 1 FROM {_PAST_TABLE} WHERE storage_key = ?",
+                        (new_key,),
+                    ).fetchone()
+                    if existing:
+                        conn.execute(
+                            f"DELETE FROM {_PAST_TABLE} WHERE storage_key = ?",
+                            (key,),
+                        )
+                    else:
+                        conn.execute(
+                            f"UPDATE {_PAST_TABLE} SET storage_key = ?, home_team = ?, away_team = ?, payload_json = ? WHERE storage_key = ?",
+                            (new_key, c_home, c_away, new_payload_json, key),
+                        )
+                totals["past_updated"] += 1
+
+            # 3. Clean live_score_history
+            live_rows = conn.execute(
+                f"SELECT storage_key, game_date, competition, home_team, away_team, payload_json FROM {_LIVE_TABLE}"
+            ).fetchall()
+            for key, date_iso, comp, home, away, payload_raw in live_rows:
+                c_home = canonical_team_name(home, comp) or home
+                c_away = canonical_team_name(away, comp) or away
+                if c_home == home and c_away == away:
+                    continue
+                try:
+                    payload = json.loads(payload_raw) if payload_raw else {}
+                except Exception:
+                    payload = {}
+                payload["home_team"] = c_home
+                payload["away_team"] = c_away
+                payload["canonical_home_team"] = c_home
+                payload["canonical_away_team"] = c_away
+                new_payload_json = _json_dumps(payload)
+                conn.execute(
+                    f"UPDATE {_LIVE_TABLE} SET home_team = ?, away_team = ?, payload_json = ? WHERE storage_key = ?",
+                    (c_home, c_away, new_payload_json, key),
+                )
+                totals["live_updated"] += 1
+
+            _durable_commit(conn)
+            return totals
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+

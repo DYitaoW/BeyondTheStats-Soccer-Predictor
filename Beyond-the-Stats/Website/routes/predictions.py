@@ -454,7 +454,7 @@ def _format_next_game_payload(
         )
         game_dict["sync_key"] = sync_k
 
-    return {
+    out = {
         "sync_key": sync_k,
         "match_id": str(game_dict.get("match_id", "") or "").strip(),
         "competition": competition,
@@ -492,8 +492,31 @@ def _format_next_game_payload(
         "prob_home": _clean_float(game_dict.get("prob_home")),
         "prob_draw": _clean_float(game_dict.get("prob_draw")),
         "prob_away": _clean_float(game_dict.get("prob_away")),
+        "prob_home_text": game_dict.get("prob_home_text"),
+        "prob_draw_text": game_dict.get("prob_draw_text"),
+        "prob_away_text": game_dict.get("prob_away_text"),
         "pred_home_goals": _clean_float(game_dict.get("pred_home_goals")),
         "pred_away_goals": _clean_float(game_dict.get("pred_away_goals")),
+        "correct_score_dist": game_dict.get("correct_score_dist"),
+        "double_chance": game_dict.get("double_chance"),
+        "asian_handicap": game_dict.get("asian_handicap"),
+        "total_goals_dist": game_dict.get("total_goals_dist"),
+        "first_to_score": game_dict.get("first_to_score"),
+        "clean_sheet": game_dict.get("clean_sheet"),
+        "prob_both_score": _clean_float(game_dict.get("prob_both_score")),
+        "prob_over_1_5": _clean_float(game_dict.get("prob_over_1_5")),
+        "prob_over_2_5": _clean_float(game_dict.get("prob_over_2_5")),
+        "prob_over_3_5": _clean_float(game_dict.get("prob_over_3_5")),
+        "home_attack_rating": game_dict.get("home_attack_rating"),
+        "home_defence_rating": game_dict.get("home_defence_rating"),
+        "away_attack_rating": game_dict.get("away_attack_rating"),
+        "away_defence_rating": game_dict.get("away_defence_rating"),
+        "winner_label": game_dict.get("winner_label"),
+        "reasoning": game_dict.get("reasoning") or game_dict.get("probability_reasoning"),
+        "probability_reasoning": game_dict.get("probability_reasoning") or game_dict.get("reasoning"),
+        "odds_home": _clean_float(game_dict.get("odds_home")),
+        "odds_draw": _clean_float(game_dict.get("odds_draw")),
+        "odds_away": _clean_float(game_dict.get("odds_away")),
         "live_status": live_status,
         "live_clock": game_dict.get("clock") or game_dict.get("live_clock"),
         "live_period": game_dict.get("period") or game_dict.get("live_period"),
@@ -502,6 +525,14 @@ def _format_next_game_payload(
         "red_cards": game_dict.get("red_cards") or [],
         "yellow_cards": game_dict.get("yellow_cards") or [],
     }
+
+    try:
+        from match_analytics import enrich_match_analytics
+        enrich_match_analytics(out)
+    except Exception:
+        pass
+
+    return out
 
 
 def _get_team_next_game_payload(team_input: str) -> dict:
@@ -618,15 +649,13 @@ def _get_team_next_game_payload(team_input: str) -> dict:
             merged.update(today_pre_game)
             selected_game = merged
             selected_is_home = today_pre_is_home
-
         else:
             pre_dt = str(today_pre_game.get("kickoff_utc") or today_pre_game.get("match_date") or "")
             up_dt = str(upcoming_hit.get("match_datetime_utc") or upcoming_hit.get("match_date_iso") or "")
             if pre_dt and (not up_dt or pre_dt <= up_dt):
                 selected_game = today_pre_game
                 selected_is_home = today_pre_is_home
-    
-
+            else:
                 selected_game = upcoming_hit
                 selected_is_home = upcoming_is_home
     elif today_pre_game:
@@ -1058,18 +1087,21 @@ def api_team_next_game(team_name: str):
 @predictions_bp.get("/api/team")
 @_cached_response(ttl=config.CACHE_TTL_DEFAULT)
 def api_team():
-    """Return form, recent results, upcoming games, and H2H for one team."""
+    """Return form, recent results, upcoming games, and H2H for one team, or comprehensive overview."""
     team_input = request.args.get("team", "").strip()
     mode = request.args.get("mode", "global").strip().lower()
     if not team_input:
         return jsonify({"ok": False, "error": "Missing team"}), 400
+    if request.args.get("overview", "").strip().lower() in ("1", "true"):
+        from team_overview import build_team_overview
+        return jsonify(build_team_overview(team_input))
     return jsonify(_resolve_team_api_payload(team_input, mode))
 
 
 @predictions_bp.get("/api/team/<path:team_name>")
 @_cached_response(ttl=config.CACHE_TTL_DEFAULT)
 def api_team_by_path(team_name):
-    """Path-style alias for ``/api/team?team=...`` (e.g. ``/api/team/Arsenal``)."""
+    """Path-style alias for ``/api/team?team=...``, ``/api/team/<team>/overview``, or ``/api/team/<team>/next-game``."""
     team_input = str(team_name or "").strip()
     if not team_input:
         return jsonify({"ok": False, "error": "Missing team"}), 400
@@ -1078,8 +1110,26 @@ def api_team_by_path(team_name):
         if request.args.get("refresh", "").strip().lower() in ("1", "true"):
             _invalidate_team_next_game_index()
         return jsonify(_get_team_next_game_payload(actual_team))
+    if team_input.endswith("/overview"):
+        actual_team = team_input[:-9].strip()
+        from team_overview import build_team_overview
+        return jsonify(build_team_overview(actual_team))
+    if request.args.get("overview", "").strip().lower() in ("1", "true"):
+        from team_overview import build_team_overview
+        return jsonify(build_team_overview(team_input))
     mode = request.args.get("mode", "global").strip().lower()
     return jsonify(_resolve_team_api_payload(team_input, mode))
+
+
+@predictions_bp.get("/api/team-overview")
+@_cached_response(ttl=config.CACHE_TTL_DEFAULT)
+def api_team_overview_query():
+    """Explicit endpoint for comprehensive single-team overview."""
+    team_input = (request.args.get("team") or request.args.get("name") or "").strip()
+    if not team_input:
+        return jsonify({"ok": False, "error": "Missing team"}), 400
+    from team_overview import build_team_overview
+    return jsonify(build_team_overview(team_input))
 
 
 @predictions_bp.get("/api/teams/<team_id>/roster")

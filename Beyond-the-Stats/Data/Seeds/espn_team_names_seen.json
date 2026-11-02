@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-10-26T04:33:02+00:00",
+  "generated_at_utc": "2026-11-02T00:30:56+00:00",
   "global": {
     "England/Championship": [],
     "England/Premier League": [],
@@ -14,7 +14,9 @@
   },
   "extra": {},
   "cup": {},
-  "national": {},
+  "national": {
+    "International/Friendly": []
+  },
   "friendlies": {
     "International/Friendly": []
   }

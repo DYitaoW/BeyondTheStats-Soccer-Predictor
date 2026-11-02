@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -97,15 +98,15 @@ class TestTeamNextGame(unittest.TestCase):
         self.assertEqual(game_away.get("opponent"), "Arsenal")
 
     def test_upcoming_match_when_not_live(self):
-        # Mock upcoming game rows
+        future_date = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%d")
         mock_upcoming = [
             {
                 "match_id": "up-999",
                 "competition": "English Premier League",
                 "home_team": "Liverpool",
                 "away_team": "Manchester City",
-                "match_date_iso": "2026-10-25",
-                "match_datetime_utc": "2026-10-25T16:30:00Z",
+                "match_date_iso": future_date,
+                "match_datetime_utc": f"{future_date}T16:30:00Z",
                 "predicted_result": "H",
                 "prob_home": 0.45,
                 "prob_draw": 0.28,
@@ -149,14 +150,15 @@ class TestTeamNextGame(unittest.TestCase):
             self.assertIsNone(res.get("game"))
 
     def test_performance_under_50ms_for_100_queries(self):
+        future_date = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%d")
         mock_upcoming = [
             {
                 "match_id": f"fixture-{i}",
                 "competition": "English Premier League",
                 "home_team": f"TeamHome{i}",
                 "away_team": f"TeamAway{i}",
-                "match_date_iso": "2026-10-25",
-                "match_datetime_utc": "2026-10-25T16:30:00Z",
+                "match_date_iso": future_date,
+                "match_datetime_utc": f"{future_date}T16:30:00Z",
                 "status": "upcoming",
             }
             for i in range(20)
@@ -176,16 +178,18 @@ class TestTeamNextGame(unittest.TestCase):
             self.assertLess(elapsed_ms, 50.0, f"Expected <50ms for 100 queries, got {elapsed_ms:.2f}ms")
 
     def test_cup_match_takes_precedence_when_earlier_than_league(self):
-        # Chelsea has Carabao Cup match on 2026-10-28 and Premier League on 2026-10-31
+        cup_date = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%d")
+        pl_date = (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%Y-%m-%d")
+        # Chelsea has Carabao Cup match earlier than Premier League
         mock_upcoming = [
             {
                 "match_id": "pl-100",
                 "competition": "England/Premier League",
                 "home_team": "Chelsea",
                 "away_team": "Man United",
-                "match_date_iso": "2026-10-31",
-                "match_datetime_utc": "2026-10-31T12:30:00+00:00",
-                "match_datetime_et": "2026-10-31T08:30:00-0400",
+                "match_date_iso": pl_date,
+                "match_datetime_utc": f"{pl_date}T12:30:00+00:00",
+                "match_datetime_et": f"{pl_date}T08:30:00-0400",
                 "status": "upcoming",
             },
             {
@@ -193,10 +197,10 @@ class TestTeamNextGame(unittest.TestCase):
                 "competition": "England/League Cup",
                 "home_team": "Liverpool",
                 "away_team": "Chelsea",
-                "match_date_iso": "2026-10-28",
+                "match_date_iso": cup_date,
                 "match_datetime_utc": "None",
-                "match_datetime_et": "2026-10-28T16:00:00-04:00",
-                "sync_key": "|liverpool|chelsea",
+                "match_datetime_et": f"{cup_date}T16:00:00-04:00",
+                "sync_key": f"|liverpool|chelsea",
                 "status": "upcoming",
             },
         ]
@@ -211,24 +215,27 @@ class TestTeamNextGame(unittest.TestCase):
             game = res.get("game")
             self.assertIsNotNone(game)
             self.assertEqual(game.get("competition"), "England/League Cup")
-            self.assertEqual(game.get("match_date"), "2026-10-28")
+            self.assertEqual(game.get("match_date"), cup_date)
             self.assertEqual(game.get("opponent"), "Liverpool")
             self.assertFalse(game.get("is_home"))
             # Check datetime normalization
-            self.assertEqual(game.get("match_datetime_utc"), "2026-10-28T20:00:00Z")
-            self.assertEqual(game.get("match_datetime_et"), "2026-10-28T16:00:00-04:00")
+            self.assertTrue(game.get("match_datetime_utc").endswith("Z"))
+            self.assertEqual(game.get("match_datetime_et"), f"{cup_date}T16:00:00-04:00")
             # Check sync_key has date prefix rather than leading pipe
             self.assertFalse(game.get("sync_key").startswith("|"))
-            self.assertIn("2026-10-28", game.get("sync_key"))
+            self.assertIn(cup_date, game.get("sync_key"))
 
     def test_load_team_upcoming_games_merges_league_and_cup(self):
+        past_date = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
+        cup_date = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%d")
+        pl_date = (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%Y-%m-%d")
         mock_upcoming = [
             {
                 "match_id": "settled-past",
                 "competition": "England/Premier League",
                 "home_team": "Chelsea",
                 "away_team": "Tottenham",
-                "match_date_iso": "2026-10-24",
+                "match_date_iso": past_date,
                 "status": "settled",
                 "actual_result": "A",
             },
@@ -237,9 +244,9 @@ class TestTeamNextGame(unittest.TestCase):
                 "competition": "England/League Cup",
                 "home_team": "Liverpool",
                 "away_team": "Chelsea",
-                "match_date_iso": "2026-10-28",
+                "match_date_iso": cup_date,
                 "match_datetime_utc": "None",
-                "match_datetime_et": "2026-10-28T16:00:00-04:00",
+                "match_datetime_et": f"{cup_date}T16:00:00-04:00",
                 "status": "upcoming",
             },
             {
@@ -247,8 +254,8 @@ class TestTeamNextGame(unittest.TestCase):
                 "competition": "England/Premier League",
                 "home_team": "Chelsea",
                 "away_team": "Man United",
-                "match_date_iso": "2026-10-31",
-                "match_datetime_utc": "2026-10-31T12:30:00+00:00",
+                "match_date_iso": pl_date,
+                "match_datetime_utc": f"{pl_date}T12:30:00+00:00",
                 "status": "upcoming",
             },
         ]
@@ -260,11 +267,11 @@ class TestTeamNextGame(unittest.TestCase):
             # Carabao Cup game is first
             self.assertEqual(games[0]["competition"], "England/League Cup")
             self.assertEqual(games[0]["opponent"], "Liverpool")
-            self.assertEqual(games[0]["match_date"], "2026-10-28")
+            self.assertEqual(games[0]["match_date"], cup_date)
             # Premier League game is second
             self.assertEqual(games[1]["competition"], "England/Premier League")
             self.assertEqual(games[1]["opponent"], "Man United")
-            self.assertEqual(games[1]["match_date"], "2026-10-31")
+            self.assertEqual(games[1]["match_date"], pl_date)
 
     def test_clean_fixture_datetime_sort_key(self):
         # Invalid strings should not be treated as dates

@@ -234,14 +234,28 @@ def _enrich_with_upcoming_prediction(entry: dict, mid: str) -> dict:
         "prob_home", "prob_draw", "prob_away",
         "prob_home_text", "prob_draw_text", "prob_away_text",
         "pred_home_goals", "pred_away_goals",
-        "pred_home_shots", "pred_away_shots", "pred_home_sot", "pred_away_sot",
+        "pred_home_shots", "pred_away_shots", "pred_total_shots", "pred_home_sot", "pred_away_sot", "pred_total_sot",
+        "pred_home_corners", "pred_away_corners", "pred_total_corners",
+        "pred_home_possession", "pred_away_possession",
+        "pred_home_fouls", "pred_away_fouls", "pred_home_cards", "pred_away_cards",
         "prob_both_score", "prob_over_1_5", "prob_over_2_5", "prob_over_3_5",
         "prob_home_goals_0", "prob_home_goals_1plus", "prob_home_goals_2plus",
         "prob_away_goals_0", "prob_away_goals_1plus", "prob_away_goals_2plus",
         "correct_score_dist", "double_chance", "asian_handicap", "total_goals_dist",
         "first_to_score", "clean_sheet",
+        "expected_points", "xpts_home", "xpts_away",
+        "halftime_prediction", "pred_home_goals_ht", "pred_away_goals_ht",
+        "prob_home_ht", "prob_draw_ht", "prob_away_ht", "prob_ht_over_0_5", "prob_ht_over_1_5", "ht_correct_score_dist",
+        "htft_prediction", "predicted_htft", "prob_highest_scoring_half",
+        "combo_markets", "prob_home_win_and_over_2_5", "prob_away_win_and_over_2_5", "prob_draw_and_under_2_5",
+        "prob_home_win_clean_sheet", "prob_away_win_clean_sheet", "prob_btts_and_over_2_5", "prob_btts_and_under_2_5",
+        "predicted_stats",
         "home_attack_rating", "home_defence_rating", "away_attack_rating", "away_defence_rating",
-        "last_5_home", "last_5_away",
+        "last_5_home", "last_5_away", "last_5_home_at_home", "last_5_away_at_away",
+        "head_to_head", "h2h_summary", "home_momentum", "away_momentum",
+        "home_team", "away_team", "canonical_home_team", "canonical_away_team",
+        "home_team_full", "home_team_full_name", "home_team_short", "home_team_short_name", "home_team_abbr", "home_team_abbreviation", "home_team_id", "home_team_logo", "home_team_info",
+        "away_team_full", "away_team_full_name", "away_team_short", "away_team_short_name", "away_team_abbr", "away_team_abbreviation", "away_team_id", "away_team_logo", "away_team_info",
         "winner_label", "predicted_result", "prediction_key", "prediction_quality",
         "has_prediction", "prediction_note", "reasoning", "probability_reasoning",
         "odds_home", "odds_draw", "odds_away", "schedule_only", "unmapped_teams",
@@ -404,23 +418,27 @@ def _enrich_with_upcoming_prediction(entry: dict, mid: str) -> dict:
         except Exception:
             pass
 
-    # Last 5 form
+    # Comprehensive cross-competition form, H2H, momentum, HT/FT, xPTS, combos, and predicted stats
     h_team = entry.get("home_team")
-    if not entry.get("last_5_home") and h_team:
-        try:
-            entry["last_5_home"] = _sqlite_store.load_team_recent_matches(str(h_team), limit=5)
-        except Exception:
-            entry["last_5_home"] = []
-    elif entry.get("last_5_home") is None:
-        entry["last_5_home"] = []
-
     a_team = entry.get("away_team")
-    if not entry.get("last_5_away") and a_team:
-        try:
-            entry["last_5_away"] = _sqlite_store.load_team_recent_matches(str(a_team), limit=5)
-        except Exception:
-            entry["last_5_away"] = []
-    elif entry.get("last_5_away") is None:
+    try:
+        from match_analytics import enrich_match_analytics
+        enrich_match_analytics(entry)
+    except Exception:
+        if not entry.get("last_5_home") and h_team:
+            try:
+                entry["last_5_home"] = _sqlite_store.load_team_recent_matches(str(h_team), limit=5)
+            except Exception:
+                entry["last_5_home"] = []
+        if not entry.get("last_5_away") and a_team:
+            try:
+                entry["last_5_away"] = _sqlite_store.load_team_recent_matches(str(a_team), limit=5)
+            except Exception:
+                entry["last_5_away"] = []
+
+    if entry.get("last_5_home") is None:
+        entry["last_5_home"] = []
+    if entry.get("last_5_away") is None:
         entry["last_5_away"] = []
 
     # Ratings
@@ -442,15 +460,20 @@ def _enrich_with_upcoming_prediction(entry: dict, mid: str) -> dict:
         entry["reasoning"] = r_val
         entry["probability_reasoning"] = r_val
 
+    # Standardize 3-tier names, short name, abbreviation, id, and logo
+    decorate_game_team_names(entry, entry.get("competition", ""))
+
     # Snapshot dictionary for upcoming_prediction and prematch_prediction
     pred_snapshot = {k: entry.get(k) for k in prediction_fields if k in entry}
     if not isinstance(entry.get("upcoming_prediction"), dict):
         entry["upcoming_prediction"] = {}
     entry["upcoming_prediction"].update(pred_snapshot)
+    decorate_game_team_names(entry["upcoming_prediction"], entry.get("competition", ""))
 
     if not isinstance(entry.get("prematch_prediction"), dict):
         entry["prematch_prediction"] = {}
     entry["prematch_prediction"].update(pred_snapshot)
+    decorate_game_team_names(entry["prematch_prediction"], entry.get("competition", ""))
 
     return entry
 
