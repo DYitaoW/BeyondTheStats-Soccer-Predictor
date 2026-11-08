@@ -1,7 +1,12 @@
 {
-  "generated_at_utc": "2026-11-01T07:12:23+00:00",
+  "generated_at_utc": "2026-11-07T07:20:38+00:00",
   "cups": {
-    "England/FA Cup": [],
+    "England/FA Cup": [
+      "Bristol Rovers",
+      "Cambridge United",
+      "Leicester City",
+      "Oxford City"
+    ],
     "England/League Cup": [],
     "Europe/Champions League": [
       "AEK Athens",
@@ -118,6 +123,7 @@
       "Viktoria Plzen"
     ],
     "France/Coupe de France": [],
+    "Germany/DFB-Pokal": [],
     "Italy/Coppa Italia": [],
     "Spain/Copa del Rey": [],
     "North America/Leagues Cup": [

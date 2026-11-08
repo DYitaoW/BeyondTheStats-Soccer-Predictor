@@ -18,7 +18,13 @@ from .compat import Blueprint, Request, redirect, render_template, send_from_dir
 import pandas as pd
 
 import config
-from competition_rules import canonical_team_name, make_match_sync_key, normalize_team_key
+from competition_rules import (
+    canonical_team_name,
+    make_match_sync_key,
+    normalize_team_key,
+    _clean_team_slug,
+    resolve_competition_query,
+)
 from cache import _cached_response
 from team_utils import (
     _team_name_for_db,
@@ -36,6 +42,7 @@ from team_mappings import (
 )
 from accuracy_tracker import _load_prediction_tracking
 from predictions import (
+    _annotate_upcoming_rows_with_live,
     _build_past_game_prediction_lookup,
     _collect_live_past_game_rows,
     _enrich_json_past_row,
@@ -227,15 +234,18 @@ def _clean_fixture_datetime_sort_key(r: dict) -> str:
 
 def _fixture_dedup_key(r: dict) -> str:
     """Canonical deduplication key for match rows across DB and CSV sources."""
+    sk = str(r.get("sync_key") or "").strip().lower()
+    if sk:
+        return f"sync:{sk}"
     m_date = str(r.get("match_date_iso") or r.get("match_date") or "").strip()[:10]
     if not m_date or m_date.lower() in ("none", "nan", "null"):
         val_et = str(r.get("match_datetime_et") or "").strip()[:10]
         val_utc = str(r.get("match_datetime_utc") or "").strip()[:10]
         m_date = val_et if (val_et and val_et[:4].isdigit()) else (val_utc if (val_utc and val_utc[:4].isdigit()) else "")
-    home = str(r.get("home_team", "") or "").strip().lower()
-    away = str(r.get("away_team", "") or "").strip().lower()
-    comp = str(r.get("competition", "") or "").strip().lower()
-    return f"{m_date}|{comp}|{home}|{away}"
+    comp = str(r.get("competition", "") or "").strip()
+    c_home = canonical_team_name(r.get("home_team"), comp) or str(r.get("home_team") or "")
+    c_away = canonical_team_name(r.get("away_team"), comp) or str(r.get("away_team") or "")
+    return f"{m_date}|{comp.lower()}|{_clean_team_slug(c_home)}|{_clean_team_slug(c_away)}"
 
 
 def _build_team_next_game_index() -> dict[str, tuple[dict, bool]]:
@@ -1191,6 +1201,123 @@ def _upcoming_cache_ttl(req: Request) -> int:
     return config.CACHE_TTL_LIVE
 
 
+def _deduplicate_and_merge_upcoming_rows(rows: list[dict]) -> list[dict]:
+    """Deduplicate upcoming match rows by ESPN match_id, sync_key, or canonical team/date identity.
+
+    When merging duplicate records for the same fixture (e.g. one with ML prediction stats
+    and one from an ESPN live/schedule feed with numeric match_id):
+    - Retains full prediction distributions, probabilities, and analytics.
+    - Preserves numeric ESPN match_id and live game status/clock/scores.
+    """
+    id_to_idx: dict[str, int] = {}
+    sync_to_idx: dict[str, int] = {}
+    canon_to_idx: dict[tuple[str, str, str, str], int] = {}
+    pair_to_idx: dict[tuple[str, str, tuple[str, str]], int] = {}
+    merged_rows: list[dict] = []
+
+    def _row_canon_tuple(r: dict) -> tuple[str, str, str, str]:
+        date_str = str(r.get("match_date_iso") or r.get("match_date") or "")[:10]
+        comp = str(r.get("competition") or "")
+        base_comp, _ = resolve_competition_query(comp)
+        c_home = canonical_team_name(r.get("home_team"), comp) or str(r.get("home_team") or "")
+        c_away = canonical_team_name(r.get("away_team"), comp) or str(r.get("away_team") or "")
+        return (
+            date_str,
+            base_comp.strip().lower(),
+            _clean_team_slug(c_home),
+            _clean_team_slug(c_away),
+        )
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_dict = dict(row)
+        mid = str(row_dict.get("match_id") or "").strip()
+        sync_k = str(row_dict.get("sync_key") or "").strip().lower()
+        canon_tup = _row_canon_tuple(row_dict)
+        pair_tup = (
+            canon_tup[0],
+            canon_tup[1],
+            tuple(sorted([canon_tup[2], canon_tup[3]])) if (canon_tup[2] and canon_tup[3]) else ("", ""),
+        )
+
+        existing_idx = None
+        if mid and mid in id_to_idx:
+            existing_idx = id_to_idx[mid]
+        elif sync_k and sync_k in sync_to_idx:
+            existing_idx = sync_to_idx[sync_k]
+        elif canon_tup[0] and canon_tup[2] and canon_tup[3] and canon_tup in canon_to_idx:
+            existing_idx = canon_to_idx[canon_tup]
+        elif pair_tup[0] and pair_tup[2][0] and pair_tup[2][1] and pair_tup in pair_to_idx:
+            existing_idx = pair_to_idx[pair_tup]
+
+        if existing_idx is None:
+            new_idx = len(merged_rows)
+            merged_rows.append(row_dict)
+            if mid:
+                id_to_idx[mid] = new_idx
+            if sync_k:
+                sync_to_idx[sync_k] = new_idx
+            if canon_tup[0] and canon_tup[2] and canon_tup[3]:
+                canon_to_idx[canon_tup] = new_idx
+            if pair_tup[0] and pair_tup[2][0] and pair_tup[2][1]:
+                pair_to_idx[pair_tup] = new_idx
+        else:
+            existing = merged_rows[existing_idx]
+            existing_has_pred = bool(existing.get("has_prediction")) or (
+                existing.get("prediction_quality") in {"prediction", "provisional"}
+                and existing.get("prob_home") is not None
+            )
+            row_has_pred = bool(row_dict.get("has_prediction")) or (
+                row_dict.get("prediction_quality") in {"prediction", "provisional"}
+                and row_dict.get("prob_home") is not None
+            )
+
+            if row_has_pred and not existing_has_pred:
+                primary = row_dict
+                secondary = existing
+            else:
+                primary = existing
+                secondary = row_dict
+
+            # Merge essential identifiers and live fields
+            if not primary.get("match_id") and secondary.get("match_id"):
+                primary["match_id"] = secondary["match_id"]
+            if not primary.get("sync_key") and secondary.get("sync_key"):
+                primary["sync_key"] = secondary["sync_key"]
+
+            # Merge live scoring and date fields
+            for live_field in (
+                "live_clock", "live_period", "live_status", "live_updates",
+                "actual_home_goals", "actual_away_goals", "actual_result",
+                "lineups", "boxscore_stats", "key_events", "match_datetime_utc",
+                "match_datetime_et", "venue",
+            ):
+                if primary.get(live_field) in (None, "", [], {}) and secondary.get(live_field) not in (None, "", [], {}):
+                    primary[live_field] = secondary[live_field]
+
+            merged_rows[existing_idx] = primary
+            for rec in (primary, secondary):
+                r_mid = str(rec.get("match_id") or "").strip()
+                r_sync = str(rec.get("sync_key") or "").strip().lower()
+                r_canon = _row_canon_tuple(rec)
+                r_pair = (
+                    r_canon[0],
+                    r_canon[1],
+                    tuple(sorted([r_canon[2], r_canon[3]])) if (r_canon[2] and r_canon[3]) else ("", ""),
+                )
+                if r_mid:
+                    id_to_idx[r_mid] = existing_idx
+                if r_sync:
+                    sync_to_idx[r_sync] = existing_idx
+                if r_canon[0] and r_canon[2] and r_canon[3]:
+                    canon_to_idx[r_canon] = existing_idx
+                if r_pair[0] and r_pair[2][0] and r_pair[2][1]:
+                    pair_to_idx[r_pair] = existing_idx
+
+    return merged_rows
+
+
 @predictions_bp.get("/api/upcoming/<mode>")
 @_cached_response(ttl=_upcoming_cache_ttl)
 def api_upcoming(mode):
@@ -1310,17 +1437,8 @@ def api_upcoming(mode):
                             combined_league_stats[comp] = ls
 
         all_rows = regional_espn_schedule_fallback(all_rows)
-        seen_keys = set()
-        deduped_rows = []
-        for row in all_rows:
-            ck = "|".join(
-                str(row.get(k, "")).strip().lower()
-                for k in ("match_date_iso", "competition", "home_team", "away_team")
-            )
-            if ck and ck not in seen_keys:
-                seen_keys.add(ck)
-                deduped_rows.append(row)
-        all_rows = deduped_rows
+        all_rows = _annotate_upcoming_rows_with_live(all_rows)
+        all_rows = _deduplicate_and_merge_upcoming_rows(all_rows)
         if is_filtered:
             all_rows = [r for r in all_rows if _match_window(r)]
 
@@ -1357,16 +1475,19 @@ def api_upcoming(mode):
         return jsonify({"ok": False, "error": f"Unknown mode: {mode}"}), 400
     csv_path, source_mode = entry
     rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode, date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to)
-    if not rows:
-        try:
-            from shared import sqlite_store
-            db_rows = sqlite_store.load_upcoming_games(mode=source_mode, from_date=target_from, to_date=target_to)
-            if db_rows:
-                rows = list(db_rows)
-        except Exception:
-            pass
+    try:
+        from shared import sqlite_store
+        db_rows = sqlite_store.load_upcoming_games(mode=source_mode, from_date=target_from, to_date=target_to)
+        if not db_rows and mode == "mls":
+            db_rows = sqlite_store.load_upcoming_games(competition_substr="MLS", from_date=target_from, to_date=target_to)
+        if db_rows:
+            rows = list(rows or []) + list(db_rows)
+    except Exception:
+        pass
     if mode == "mls":
         rows = regional_espn_schedule_fallback(rows)
+    rows = _annotate_upcoming_rows_with_live(rows)
+    rows = _deduplicate_and_merge_upcoming_rows(rows)
     if is_filtered:
         rows = [r for r in rows if _match_window(r)]
     league_names = sorted({r.get("competition", "") for r in rows if r.get("competition")})
@@ -1455,9 +1576,10 @@ def api_home_upcoming():
                     feed.append(row)
 
     feed = regional_espn_schedule_fallback(feed)
+    feed = _annotate_upcoming_rows_with_live(feed)
+    feed = _deduplicate_and_merge_upcoming_rows(feed)
 
     all_rows = []
-    seen_keys = set()
     for row in feed:
         comp = str(row.get("competition", "")).strip()
         if comp in config.UPCOMING_ONLY_COMPETITIONS:
@@ -1473,13 +1595,6 @@ def api_home_upcoming():
             continue
         if parsed_date < start_date or parsed_date > end_date:
             continue
-        key = "|".join(
-            str(row.get(field, "")).strip().lower()
-            for field in ("match_date_iso", "competition", "home_team", "away_team")
-        )
-        if key in seen_keys:
-            continue
-        seen_keys.add(key)
         all_rows.append(row)
 
     all_rows = exclude_upcoming_only_rows(all_rows)

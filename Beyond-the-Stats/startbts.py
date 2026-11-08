@@ -75,17 +75,33 @@ def restart_launchd_service(app_dir: Path) -> bool:
 
     print(f"[+] Reloading Beyond the Stats backend (gui/{uid}/{service_label})...")
 
-    # 1. Try kickstart first (fastest restart if already registered)
-    res = subprocess.run(
-        ["launchctl", "kickstart", "-k", f"gui/{uid}/{service_label}"],
-        capture_output=True,
-        text=True,
-    )
-    if res.returncode == 0:
-        print("[+] Sent reload signal to background service.")
-    else:
-        # If not active, bootstrap it
-        print(f"[-] Kickstart: {res.stderr.strip() or 'service not active'}. Bootstrapping plist...")
+    # Ensure launchd plist enforces --no-run-on-start so reloads do not trigger the pipeline
+    plist_updated = False
+    if plist_path.is_file():
+        try:
+            content = plist_path.read_text(encoding="utf-8", errors="replace")
+            if "--no-run-on-start" not in content and "</array>" in content:
+                content = content.replace("</array>", "    <string>--no-run-on-start</string>\n    </array>", 1)
+                plist_path.write_text(content, encoding="utf-8")
+                plist_updated = True
+        except Exception:
+            pass
+
+    # If plist was updated, or not active, bootstrap it; otherwise kickstart for fastest reload
+    res_returncode = 1
+    if not plist_updated:
+        res = subprocess.run(
+            ["launchctl", "kickstart", "-k", f"gui/{uid}/{service_label}"],
+            capture_output=True,
+            text=True,
+        )
+        res_returncode = res.returncode
+        if res_returncode == 0:
+            print("[+] Sent reload signal to background service.")
+
+    if res_returncode != 0:
+        # If not active or plist was updated, re-bootstrap it
+        print("[-] Bootstrapping launchd service with latest configuration...")
         if not plist_path.is_file():
             setup_script = app_dir / "deploy" / "macos" / "setup_mac_mini.sh"
             if setup_script.is_file():
@@ -204,9 +220,9 @@ def tail_logs(app_dir: Path) -> None:
 def run_foreground(app_dir: Path) -> None:
     py_bin = find_python_bin(app_dir)
     entry = app_dir / "main" / "run_backend.py"
-    print(f"[+] Running in foreground mode: {py_bin} {entry}...")
+    print(f"[+] Running in foreground mode: {py_bin} {entry} --no-run-on-start...")
     try:
-        subprocess.run([str(py_bin), str(entry)], cwd=str(app_dir))
+        subprocess.run([str(py_bin), str(entry), "--no-run-on-start"], cwd=str(app_dir))
     except KeyboardInterrupt:
         print("\n[+] Backend stopped.")
 

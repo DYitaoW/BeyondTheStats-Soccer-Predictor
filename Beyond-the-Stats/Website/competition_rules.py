@@ -448,8 +448,13 @@ def resolve_competition_query(comp_name: str) -> tuple[str, str | None]:
 def normalize_team_key(name: str) -> str:
     text = str(name or "").strip().lower()
     text = re.sub(r"[^a-z0-9]+", "", text)
-    for token in ("fc", "cf", "sc", "united", "city", "club"):
-        text = text.replace(token, "")
+    for token in ("afc", "cfc", "fc", "cf", "sc", "club"):
+        if text.endswith(token) and len(text) > len(token) + 2:
+            text = text[:-len(token)]
+            break
+        if text.startswith(token) and len(text) > len(token) + 2:
+            text = text[len(token):]
+            break
     return text
 
 

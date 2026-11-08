@@ -34,6 +34,7 @@ _LIVE_TABLE = "live_score_history"
 _UPCOMING_TABLE = "upcoming_games"
 _SQUAD_VALUES_TABLE = "squad_values"
 _NOTIF_SUBS_TABLE = "notification_subscriptions"
+_NOTIF_HIST_TABLE = "notification_history"
 _POINTS_ADJ_TABLE = "team_points_adjustments"
 _META_TABLE = "store_meta"
 
@@ -381,6 +382,43 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
     conn.execute(
         f"""
+        CREATE TABLE IF NOT EXISTS {_NOTIF_HIST_TABLE} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            notif_type TEXT NOT NULL,
+            match_id TEXT,
+            sync_key TEXT,
+            competition TEXT,
+            home_team TEXT,
+            away_team TEXT,
+            home_score TEXT,
+            away_score TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_notif_hist_created
+        ON {_NOTIF_HIST_TABLE}(created_at DESC)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_notif_hist_match
+        ON {_NOTIF_HIST_TABLE}(match_id)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_notif_hist_sync
+        ON {_NOTIF_HIST_TABLE}(sync_key)
+        """
+    )
+
+    conn.execute(
+        f"""
         CREATE TABLE IF NOT EXISTS {_POINTS_ADJ_TABLE} (
             storage_key TEXT PRIMARY KEY,
             competition TEXT NOT NULL,
@@ -437,17 +475,37 @@ def _json_loads(raw: str | None) -> Optional[dict]:
     return payload if isinstance(payload, dict) else None
 
 
+def _resolve_canonical_team(team: str, comp: str = "") -> str:
+    raw = str(team or "").strip()
+    if not raw:
+        return ""
+    try:
+        import sys as _sys, os as _os
+        _website_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "Website")
+        if _website_dir not in _sys.path:
+            _sys.path.insert(0, _website_dir)
+        from competition_rules import canonical_team_name
+        c = canonical_team_name(raw, comp)
+        if c:
+            return c
+    except Exception:
+        pass
+    return raw
+
+
 def past_game_storage_key(row: dict) -> str:
     """Stable dedupe key for past-games rows (prediction_key preferred)."""
     prediction_key = str(row.get("prediction_key", "") or "").strip()
     if prediction_key:
         return f"prediction:{prediction_key}"
     date_iso = _row_date_iso(row)
-    competition = str(row.get("competition", "") or "").strip().lower()
-    home = str(row.get("home_team", "") or "").strip().lower()
-    away = str(row.get("away_team", "") or "").strip().lower()
-    if date_iso and home and away:
-        return f"fixture:{date_iso}|{competition}|{home}|{away}"
+    competition = str(row.get("competition", "") or "").strip()
+    home = str(row.get("canonical_home_team") or row.get("home_team", "") or "").strip()
+    away = str(row.get("canonical_away_team") or row.get("away_team", "") or "").strip()
+    c_home = _resolve_canonical_team(home, competition) or home
+    c_away = _resolve_canonical_team(away, competition) or away
+    if date_iso and c_home and c_away:
+        return f"fixture:{date_iso}|{competition.lower()}|{c_home.lower()}|{c_away.lower()}"
     return ""
 
 
@@ -457,11 +515,13 @@ def live_history_storage_key(row: dict) -> str:
     if match_id:
         return f"id:{match_id}"
     game_date = _row_date_iso(row)
-    competition = str(row.get("competition", "") or "").strip().lower()
-    home = str(row.get("home_team", "") or "").strip().lower()
-    away = str(row.get("away_team", "") or "").strip().lower()
-    if game_date and home and away:
-        return f"fixture:{game_date}|{competition}|{home}|{away}"
+    competition = str(row.get("competition", "") or "").strip()
+    home = str(row.get("canonical_home_team") or row.get("home_team", "") or "").strip()
+    away = str(row.get("canonical_away_team") or row.get("away_team", "") or "").strip()
+    c_home = _resolve_canonical_team(home, competition) or home
+    c_away = _resolve_canonical_team(away, competition) or away
+    if game_date and c_home and c_away:
+        return f"fixture:{game_date}|{competition.lower()}|{c_home.lower()}|{c_away.lower()}"
     return ""
 
 
@@ -1071,7 +1131,7 @@ def load_team_recent_matches(
 
 
 def count_rows(table: str, db_path: Optional[Path] = None) -> int:
-    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE, _NOTIF_SUBS_TABLE, _POINTS_ADJ_TABLE}:
+    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE, _NOTIF_SUBS_TABLE, _NOTIF_HIST_TABLE, _POINTS_ADJ_TABLE}:
         raise ValueError(f"unknown table: {table}")
     ensure_store(db_path)
     conn = _open_ready(db_path)
@@ -1140,6 +1200,14 @@ def _upsert_upcoming_conn(conn: sqlite3.Connection, rows: Iterable[dict], source
         payload = dict(row)
         if source and not payload.get("source"):
             payload["source"] = source
+        comp = str(payload.get("competition", "") or "").strip()
+        home = str(payload.get("home_team", "") or "").strip()
+        away = str(payload.get("away_team", "") or "").strip()
+        c_home = str(payload.get("canonical_home_team") or "").strip() or _resolve_canonical_team(home, comp) or home
+        c_away = str(payload.get("canonical_away_team") or "").strip() or _resolve_canonical_team(away, comp) or away
+        payload["canonical_home_team"] = c_home
+        payload["canonical_away_team"] = c_away
+
         key = past_game_storage_key(payload)
         if not key:
             skipped += 1
@@ -1149,6 +1217,24 @@ def _upsert_upcoming_conn(conn: sqlite3.Connection, rows: Iterable[dict], source
             payload["match_date_iso"] = date_iso
         status = _row_status(payload)
         payload["status"] = status
+
+        # Check for existing fixture by sync_key or storage_key to deduplicate aliases
+        sync_k = str(payload.get("sync_key") or "").strip().lower()
+        if sync_k:
+            existing_row = conn.execute(
+                f"SELECT storage_key, payload_json FROM {_UPCOMING_TABLE} WHERE json_extract(payload_json, '$.sync_key') = ?",
+                (sync_k,),
+            ).fetchone()
+            if existing_row:
+                old_key, old_payload_raw = existing_row
+                if old_key != key:
+                    conn.execute(f"DELETE FROM {_UPCOMING_TABLE} WHERE storage_key = ?", (old_key,))
+                try:
+                    old_payload = json.loads(old_payload_raw) if old_payload_raw else {}
+                    payload = _deep_merge_payload(old_payload, payload)
+                except Exception:
+                    pass
+
         conn.execute(
             f"""
             INSERT INTO {_UPCOMING_TABLE}(
@@ -1169,7 +1255,7 @@ def _upsert_upcoming_conn(conn: sqlite3.Connection, rows: Iterable[dict], source
             (
                 key,
                 date_iso,
-                str(payload.get("competition", "") or "").strip() or None,
+                comp or None,
                 str(payload.get("home_team", "") or "").strip() or None,
                 str(payload.get("away_team", "") or "").strip() or None,
                 str(payload.get("prediction_key", "") or "").strip() or None,
@@ -1216,6 +1302,8 @@ def load_upcoming_games(
     status: str = "",
     from_date: str = "",
     to_date: str = "",
+    source: str = "",
+    mode: str = "",
     limit: Optional[int] = None,
     offset: Optional[int] = None,
     db_path: Optional[Path] = None,
@@ -1238,6 +1326,10 @@ def load_upcoming_games(
         if to_date:
             clauses.append("COALESCE(match_date_iso, '') <= ?")
             params.append(to_date[:10])
+        if source or mode:
+            src = str(source or mode).strip().lower()
+            clauses.append("LOWER(COALESCE(source, '')) = ?")
+            params.append(src)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         limit_clause = ""
         if limit is not None and int(limit) > 0:
@@ -1969,6 +2061,126 @@ def load_all_notification_subs(db_path: Optional[Path] = None) -> list[dict]:
                     if "events" in r.keys() and r["events"]
                     else None
                 ),
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def save_notification_event(
+    title: str,
+    body: str,
+    notif_type: str,
+    match_id: str = "",
+    sync_key: str = "",
+    competition: str = "",
+    home_team: str = "",
+    away_team: str = "",
+    home_score: Any = None,
+    away_score: Any = None,
+    created_at: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> int:
+    """Persist a live or system notification event to SQLite."""
+    t_title = str(title or "").strip()
+    t_body = str(body or "").strip()
+    if not t_title or not t_body:
+        return 0
+    ensure_store(db_path)
+    now = created_at or _utc_now()
+    hs_str = str(home_score) if home_score is not None and home_score != "" else None
+    as_str = str(away_score) if away_score is not None and away_score != "" else None
+
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"""
+                INSERT INTO {_NOTIF_HIST_TABLE}(
+                    title, body, notif_type, match_id, sync_key, competition,
+                    home_team, away_team, home_score, away_score, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    t_title,
+                    t_body,
+                    str(notif_type or "alert").strip().lower(),
+                    str(match_id or "").strip() or None,
+                    str(sync_key or "").strip() or None,
+                    str(competition or "").strip() or None,
+                    str(home_team or "").strip() or None,
+                    str(away_team or "").strip() or None,
+                    hs_str,
+                    as_str,
+                    now,
+                ),
+            )
+            event_id = cur.lastrowid or 0
+            _durable_commit(conn)
+            return event_id
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def load_recent_notification_events(
+    limit: int = 50,
+    match_id: Optional[str] = None,
+    sync_key: Optional[str] = None,
+    team: Optional[str] = None,
+    notif_type: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> list[dict]:
+    """Load recent notification events from SQLite with optional filtering."""
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        query = (
+            f"SELECT id, title, body, notif_type, match_id, sync_key, competition, "
+            f"home_team, away_team, home_score, away_score, created_at "
+            f"FROM {_NOTIF_HIST_TABLE}"
+        )
+        clauses = []
+        params = []
+        if match_id:
+            clauses.append("(match_id = ? OR sync_key = ?)")
+            params.extend([str(match_id).strip(), str(match_id).strip()])
+        elif sync_key:
+            clauses.append("(sync_key = ? OR match_id = ?)")
+            params.extend([str(sync_key).strip(), str(sync_key).strip()])
+        if team:
+            t_norm = str(team).strip().lower()
+            clauses.append("(LOWER(home_team) = ? OR LOWER(away_team) = ? OR LOWER(home_team) LIKE ? OR LOWER(away_team) LIKE ?)")
+            params.extend([t_norm, t_norm, f"%{t_norm}%", f"%{t_norm}%"])
+        if notif_type:
+            clauses.append("notif_type = ?")
+            params.append(str(notif_type).strip().lower())
+
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(max(1, min(int(limit), 200)))
+
+        rows = conn.execute(query, tuple(params)).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "title": r["title"],
+                "body": r["body"],
+                "type": r["notif_type"],
+                "match_id": r["match_id"] or "",
+                "sync_key": r["sync_key"] or "",
+                "competition": r["competition"] or "",
+                "home_team": r["home_team"] or "",
+                "away_team": r["away_team"] or "",
+                "home_score": int(r["home_score"]) if r["home_score"] is not None and str(r["home_score"]).isdigit() else r["home_score"],
+                "away_score": int(r["away_score"]) if r["away_score"] is not None and str(r["away_score"]).isdigit() else r["away_score"],
                 "created_at": r["created_at"],
             }
             for r in rows

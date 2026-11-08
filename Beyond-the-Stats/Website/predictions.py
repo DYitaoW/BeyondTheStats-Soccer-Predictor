@@ -1045,6 +1045,20 @@ def _build_live_games_index() -> tuple[dict[tuple[str, str, str], dict], dict[st
                     continue
                 for alias in config.competition_live_aliases(comp_name):
                     team_index[(home, away, alias)] = game
+
+    # Also preload recent completed/scheduled matches from SQLite live_score_history
+    try:
+        from shared import sqlite_store
+        for h_game in sqlite_store.load_live_score_history(limit=500):
+            h_mid = str(h_game.get("match_id") or "").strip()
+            if h_mid and h_mid not in id_index:
+                id_index[h_mid] = h_game
+            h_sync = str(h_game.get("sync_key") or "").strip()
+            if h_sync and h_sync not in sync_index:
+                sync_index[h_sync] = h_game
+    except Exception:
+        pass
+
     return team_index, id_index, sync_index
 
 
@@ -1103,6 +1117,7 @@ def _find_live_game_for_row(
                 return game
             if (home in idx_away or idx_away in home) and (away in idx_home or idx_home in away):
                 return game
+
     return None
 
 
@@ -1165,8 +1180,7 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
         live_game = _find_live_game_for_row(row, team_index, id_index, sync_index)
         if not live_game:
             row["live_updates"] = False
-            row["live_status"] = None
-            row.pop("match_id", None)
+            row["live_status"] = "scheduled" if row.get("match_id") else None
             continue
 
         _apply_live_scores_to_row(row, live_game, eligible, comp)
@@ -2233,6 +2247,7 @@ _RECENT_MATCHES_CACHE_TIME = 0
 
 def _load_team_recent_matches(team, processed_dir, limit=10):
     """Return last N matches for a team from Processed_Data CSVs with dates and opponents."""
+    global _RECENT_MATCHES_CACHE_TIME
     now = time.time()
     cache_key = f"{team}|{limit}"
     cached = _RECENT_MATCHES_CACHE.get(cache_key)

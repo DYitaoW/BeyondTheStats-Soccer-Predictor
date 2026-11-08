@@ -492,12 +492,17 @@ def _la_content_state(game, comp_name) -> dict:
     )
     return {
         "match_id": game.get("match_id"),
+        "sync_key": game.get("sync_key", ""),
         "competition": comp_name,
         "home_team": game.get("home_team", ""),
         "away_team": game.get("away_team", ""),
         "home_score": game.get("home_score"),
         "away_score": game.get("away_score"),
         "status": game.get("status", ""),
+        "clock": game.get("clock", ""),
+        "period": game.get("period", ""),
+        "home_team_logo": game.get("home_team_logo", ""),
+        "away_team_logo": game.get("away_team_logo", ""),
         "match_minute": _parse_elapsed_minutes(game.get("clock", ""), game.get("period", "")),
         "prob_home": prob_home,
         "prob_draw": prob_draw,
@@ -1118,6 +1123,7 @@ def _dispatch_match_event_notifications() -> int:
         from notifications import (
             clear_match_subscriptions,
             for_game_or_team_subscribers,
+            record_notification_event,
             send_live_activity_end,
             send_live_activity_update,
         )
@@ -1185,10 +1191,26 @@ def _dispatch_match_event_notifications() -> int:
                     prev_status = prev_meta.get("status", "")
                     prev_h = prev_meta.get("home_score")
                     prev_a = prev_meta.get("away_score")
+                    sync_k = str(g.get("sync_key", "")).strip()
 
                     def _queue_event_alert(event_type: str, title: str, body: str):
+                        try:
+                            record_notification_event(
+                                title=title,
+                                body=body,
+                                match_id=mid,
+                                competition=comp_name,
+                                notif_type=event_type,
+                                sync_key=sync_k,
+                                home_team=ht,
+                                away_team=at,
+                                home_score=hs,
+                                away_score=as_,
+                            )
+                        except Exception:
+                            pass
                         tokens = for_game_or_team_subscribers(
-                            mid, comp_name, home_team=ht, away_team=at, event=event_type
+                            mid, comp_name, home_team=ht, away_team=at, event=event_type, sync_key=sync_k
                         )
                         for token in tokens:
                             from notifications import _apns_notification_queue
@@ -1198,6 +1220,7 @@ def _dispatch_match_event_notifications() -> int:
                                 "body": body,
                                 "badge": 1,
                                 "match_id": mid,
+                                "sync_key": sync_k,
                                 "competition": comp_name,
                                 "event": event_type,
                             })
@@ -1233,6 +1256,7 @@ def _dispatch_match_event_notifications() -> int:
                                 mid, comp_name, la_state,
                                 event="kickoff",
                                 alert={"title": start_title, "body": start_body},
+                                sync_key=sync_k,
                             )
                             total_dispatched += 1
 
@@ -1253,6 +1277,7 @@ def _dispatch_match_event_notifications() -> int:
                                 mid, comp_name, la_state,
                                 event="halftime",
                                 alert={"title": ht_title, "body": ht_body},
+                                sync_key=sync_k,
                             )
                             total_dispatched += 1
 
@@ -1335,7 +1360,7 @@ def _dispatch_match_event_notifications() -> int:
                             if scorer_name:
                                 la_state["event_text"] = scorer_name
                             la_alert = {"title": goal_title, "body": goal_body}
-                            send_live_activity_update(mid, comp_name, la_state, event=la_event_label, alert=la_alert)
+                            send_live_activity_update(mid, comp_name, la_state, event=la_event_label, alert=la_alert, sync_key=sync_k)
                             total_dispatched += 1
 
                     # 4. Red Cards (from details/red_cards or key_events)
@@ -1352,7 +1377,7 @@ def _dispatch_match_event_notifications() -> int:
                             rc_body = f"{rc_player}{team_info} Red Card{min_info}"
                             _queue_event_alert("red_card", "Red Card", rc_body)
                             la_state = {**state_base, "event": "red card", "clock": rc_min, "event_text": rc_body}
-                            send_live_activity_update(mid, comp_name, la_state, event="red card", alert={"title": "Red Card", "body": rc_body})
+                            send_live_activity_update(mid, comp_name, la_state, event="red card", alert={"title": "Red Card", "body": rc_body}, sync_key=sync_k)
                             total_dispatched += 1
 
                     for ev in (g.get("key_events") or []):
@@ -1366,7 +1391,7 @@ def _dispatch_match_event_notifications() -> int:
                                 rc_body = f"{rc_player} Red Card ({rc_min})" if rc_min else f"{rc_player} Red Card"
                                 _queue_event_alert("red_card", "Red Card", rc_body)
                                 la_state = {**state_base, "event": "red card", "clock": rc_min, "event_text": rc_body}
-                                send_live_activity_update(mid, comp_name, la_state, event="red card", alert={"title": "Red Card", "body": rc_body})
+                                send_live_activity_update(mid, comp_name, la_state, event="red card", alert={"title": "Red Card", "body": rc_body}, sync_key=sync_k)
                                 total_dispatched += 1
 
                     # 5. Full time detection
@@ -1392,7 +1417,7 @@ def _dispatch_match_event_notifications() -> int:
                                 "status": "FT",
                                 "match_minute": state_base.get("match_minute") or 90,
                             }
-                            send_live_activity_end(mid, comp_name, state, alert={"title": ft_title, "body": ft_body})
+                            send_live_activity_end(mid, comp_name, state, alert={"title": ft_title, "body": ft_body}, sync_key=sync_k)
                             total_dispatched += 1
                         clear_match_subscriptions(mid, comp_name)
 

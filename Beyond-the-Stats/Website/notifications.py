@@ -73,6 +73,7 @@ def normalize_events(events: Any) -> set[str]:
 
 _apns_notification_queue: deque = deque()
 _notifications: list[dict] = []
+_notifications_lock = threading.Lock()
 device_tokens: set[str] = set()
 ios_device_tokens: set[str] = set()
 
@@ -281,10 +282,23 @@ def subscribe_team(
     clean_token = str(device_token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
     if environment is not None and clean_token:
         set_token_environment(clean_token, environment)
+
+    keys_to_sub = [norm]
+    try:
+        from competition_rules import canonical_team_name
+        canon = canonical_team_name(team, competition)
+        if canon:
+            cn = normalize_team_name(canon)
+            if cn not in keys_to_sub:
+                keys_to_sub.append(cn)
+    except Exception:
+        pass
+
     with _team_notification_subscriptions_lock:
-        subs = _team_notification_subscriptions.setdefault(norm, set())
-        subs.add(clean_token)
-        _team_subscription_events.setdefault(norm, {})[clean_token] = norm_events
+        for k in keys_to_sub:
+            subs = _team_notification_subscriptions.setdefault(k, set())
+            subs.add(clean_token)
+            _team_subscription_events.setdefault(k, {})[clean_token] = norm_events
         ios_device_tokens.add(clean_token)
     if sqlite_store is not None:
         try:
@@ -302,27 +316,30 @@ def unsubscribe_team(device_token: str, team: str) -> bool:
     if not norm or not device_token:
         return False
     deleted = False
+    clean_token = str(device_token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
     with _team_notification_subscriptions_lock:
-        subs = _team_notification_subscriptions.get(norm)
-        if subs and device_token in subs:
-            subs.discard(device_token)
-            if not subs:
-                del _team_notification_subscriptions[norm]
-            deleted = True
-        ev_map = _team_subscription_events.get(norm)
-        if ev_map and device_token in ev_map:
-            del ev_map[device_token]
-            if not ev_map:
-                _team_subscription_events.pop(norm, None)
+        for k in list(_team_notification_subscriptions.keys()):
+            if k == norm or k.removesuffix(" fc") == norm or norm.removesuffix(" fc") == k:
+                subs = _team_notification_subscriptions.get(k)
+                if subs and clean_token in subs:
+                    subs.discard(clean_token)
+                    if not subs:
+                        del _team_notification_subscriptions[k]
+                    deleted = True
+                ev_map = _team_subscription_events.get(k)
+                if ev_map and clean_token in ev_map:
+                    del ev_map[clean_token]
+                    if not ev_map:
+                        _team_subscription_events.pop(k, None)
     if sqlite_store is not None:
         try:
-            sqlite_store.remove_notification_sub(device_token, "team", norm)
+            sqlite_store.remove_notification_sub(clean_token, "team", norm)
         except Exception as exc:
             logger.warning(f"[notifications] failed to remove team sub from SQLite: {exc}")
     return deleted
 
 
-def for_team_tokens(team: str, event: Optional[str] = None) -> list[str]:
+def for_team_tokens(team: str, event: Optional[str] = None, competition: str = "") -> list[str]:
     """Return all device tokens subscribed to a specific team (optionally filtered by event)."""
     norm = normalize_team_name(team)
     if not norm:
@@ -331,12 +348,27 @@ def for_team_tokens(team: str, event: Optional[str] = None) -> list[str]:
     tokens: list[str] = []
     with _team_notification_subscriptions_lock:
         lookup_names = [norm]
-        for k in _team_notification_subscriptions.keys():
-            if k != norm and (
-                k == norm.removesuffix(" fc").removesuffix(" cf")
-                or norm == k.removesuffix(" fc").removesuffix(" cf")
-            ):
-                lookup_names.append(k)
+        try:
+            from competition_rules import canonical_team_name, normalize_team_key
+            canon = canonical_team_name(team, competition)
+            if canon:
+                cn = normalize_team_name(canon)
+                if cn not in lookup_names:
+                    lookup_names.append(cn)
+            nk = normalize_team_key(team)
+            if nk and nk not in lookup_names:
+                lookup_names.append(nk)
+        except Exception:
+            pass
+
+        for k in list(_team_notification_subscriptions.keys()):
+            if k not in lookup_names:
+                if (
+                    k == norm.removesuffix(" fc").removesuffix(" cf")
+                    or norm == k.removesuffix(" fc").removesuffix(" cf")
+                    or (len(norm) >= 4 and len(k) >= 4 and (k.startswith(norm + " ") or norm.startswith(k + " ")))
+                ):
+                    lookup_names.append(k)
 
         for name in lookup_names:
             ev_map = _team_subscription_events.get(name, {})
@@ -357,24 +389,31 @@ def for_game_or_team_subscribers(
     home_team: str = "",
     away_team: str = "",
     event: Optional[str] = None,
+    sync_key: str = "",
 ) -> list[str]:
     """Return unified, deduplicated list of tokens subscribed to match OR either team (filtered by event)."""
     seen: set[str] = set()
     tokens: list[str] = []
-    # 1. Match-level subscribers
+    # 1. Match-level subscribers (match_id)
     for tok in for_match_tokens(match_id, competition, event=event):
         if tok not in seen:
             seen.add(tok)
             tokens.append(tok)
+    # 1b. Match-level subscribers (sync_key if different)
+    if sync_key and str(sync_key).strip() != str(match_id).strip():
+        for tok in for_match_tokens(sync_key, competition, event=event):
+            if tok not in seen:
+                seen.add(tok)
+                tokens.append(tok)
     # 2. Home team subscribers
     if home_team:
-        for tok in for_team_tokens(home_team, event=event):
+        for tok in for_team_tokens(home_team, event=event, competition=competition):
             if tok not in seen:
                 seen.add(tok)
                 tokens.append(tok)
     # 3. Away team subscribers
     if away_team:
-        for tok in for_team_tokens(away_team, event=event):
+        for tok in for_team_tokens(away_team, event=event, competition=competition):
             if tok not in seen:
                 seen.add(tok)
                 tokens.append(tok)
@@ -463,19 +502,53 @@ def record_notification_event(
     match_id: str = "",
     competition: str = "",
     notif_type: str = "live_event",
-) -> None:
-    """Record an event notification in the in-memory feed for GET /api/notifications."""
-    _notifications.append({
-        "id": len(_notifications),
-        "title": title,
-        "body": body,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "type": notif_type,
-        "match_id": match_id,
+    sync_key: str = "",
+    home_team: str = "",
+    away_team: str = "",
+    home_score: Any = None,
+    away_score: Any = None,
+) -> dict:
+    """Record an event notification in the in-memory feed and SQLite store for GET /api/notifications."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "id": len(_notifications) + 1,
+        "title": str(title or "").strip(),
+        "body": str(body or "").strip(),
+        "created_at": now_iso,
+        "type": normalize_event_type(notif_type) if notif_type else "live_event",
+        "match_id": str(match_id or "").strip(),
+        "sync_key": str(sync_key or "").strip(),
         "competition": normalize_live_competition(competition),
-    })
-    if len(_notifications) > 500:
-        del _notifications[:-500]
+        "home_team": str(home_team or "").strip(),
+        "away_team": str(away_team or "").strip(),
+        "home_score": home_score,
+        "away_score": away_score,
+    }
+    with _notifications_lock:
+        entry["id"] = len(_notifications) + 1
+        _notifications.append(entry)
+        if len(_notifications) > 500:
+            del _notifications[:-500]
+
+    if sqlite_store is not None and hasattr(sqlite_store, "save_notification_event"):
+        try:
+            sqlite_store.save_notification_event(
+                title=entry["title"],
+                body=entry["body"],
+                notif_type=entry["type"],
+                match_id=entry["match_id"],
+                sync_key=entry["sync_key"],
+                competition=entry["competition"],
+                home_team=entry["home_team"],
+                away_team=entry["away_team"],
+                home_score=entry["home_score"],
+                away_score=entry["away_score"],
+                created_at=now_iso,
+            )
+        except Exception as exc:
+            logger.warning(f"[notifications] failed to save notification event to SQLite: {exc}")
+
+    return entry
 
 
 def init_subscriptions_from_sqlite() -> dict:
@@ -486,7 +559,9 @@ def init_subscriptions_from_sqlite() -> dict:
         rows = sqlite_store.load_all_notification_subs()
         loaded_matches = 0
         loaded_teams = 0
-        with _match_notification_subscriptions_lock, _team_notification_subscriptions_lock:
+        loaded_devices = 0
+        loaded_live_activities = 0
+        with _match_notification_subscriptions_lock, _team_notification_subscriptions_lock, _live_activities_lock:
             for r in rows:
                 token = r.get("token")
                 sub_type = r.get("sub_type")
@@ -494,6 +569,9 @@ def init_subscriptions_from_sqlite() -> dict:
                 if not token or not target:
                     continue
                 ios_device_tokens.add(token)
+                if sub_type == "device":
+                    loaded_devices += 1
+                    continue
                 ev_pref = normalize_events(r.get("events"))
                 if sub_type == "team":
                     k = normalize_team_name(target)
@@ -506,7 +584,39 @@ def init_subscriptions_from_sqlite() -> dict:
                     _match_notification_subscriptions.setdefault(key, set()).add(token)
                     _match_subscription_events.setdefault(key, {})[token] = ev_pref
                     loaded_matches += 1
-        return {"loaded": len(rows), "matches": loaded_matches, "teams": loaded_teams}
+                elif sub_type == "live_activity":
+                    comp = r.get("competition") or ""
+                    key = target if "|" in target else _match_key(target, comp)
+                    clean_act = str(token).strip()
+                    existing = _live_activities.setdefault(key, [])
+                    if not any(e.get("activity_token") == clean_act for e in existing):
+                        existing.append({
+                            "activity_token": clean_act,
+                            "device_token": "",
+                            "match_id": target,
+                            "competition": normalize_live_competition(comp),
+                            "events": ev_pref,
+                            "registered_at": r.get("created_at") or datetime.now(timezone.utc).isoformat(),
+                        })
+                        loaded_live_activities += 1
+
+        # Also preload recent notification history into memory if empty
+        with _notifications_lock:
+            if not _notifications and hasattr(sqlite_store, "load_recent_notification_events"):
+                try:
+                    recent = sqlite_store.load_recent_notification_events(50)
+                    for item in reversed(recent):
+                        _notifications.append(item)
+                except Exception as exc:
+                    logger.debug(f"[notifications] failed to preload history: {exc}")
+
+        return {
+            "loaded": len(rows),
+            "matches": loaded_matches,
+            "teams": loaded_teams,
+            "devices": loaded_devices,
+            "live_activities": loaded_live_activities,
+        }
     except Exception as exc:
         logger.warning(f"[notifications] failed to preload subscriptions from SQLite: {exc}")
         return {"loaded": 0, "error": str(exc)}
@@ -518,19 +628,26 @@ def send_match_notification(
     title: str,
     body: str,
     event: Optional[str] = None,
+    home_team: str = "",
+    away_team: str = "",
+    sync_key: str = "",
 ) -> int:
-    """Queue a regular alert push only to subscribers of ``match_id`` who requested this event."""
-    tokens = for_match_tokens(match_id, competition, event=event)
+    """Queue a regular alert push only to subscribers of ``match_id`` / teams who requested this event."""
+    tokens = for_game_or_team_subscribers(
+        match_id, competition, home_team=home_team, away_team=away_team, event=event, sync_key=sync_key
+    )
     for token in tokens:
         _apns_notification_queue.append({
             "token": token,
             "title": title,
             "body": body,
-            "badge": 0,
+            "badge": 1,
             "match_id": match_id,
+            "sync_key": sync_key,
             "competition": normalize_live_competition(competition),
             "event": normalize_event_type(event) if event else "alert",
         })
+    _notify_apns_queue()
     return len(tokens)
 
 
@@ -541,67 +658,117 @@ def register(
     competition: str,
     events: Optional[Iterable[str] | str] = None,
     environment: Optional[str | bool] = None,
+    sync_key: str = "",
 ) -> bool:
     key = _match_key(match_id, competition)
     norm_events = normalize_events(events)
     clean_activity = str(activity_token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
     clean_device = str(device_token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
+    clean_sync = str(sync_key or "").strip()
     if environment is not None:
         if clean_activity:
             set_token_environment(clean_activity, environment)
         if clean_device:
             set_token_environment(clean_device, environment)
+
+    entry = {
+        "activity_token": clean_activity,
+        "device_token": clean_device,
+        "match_id": str(match_id or "").strip(),
+        "sync_key": clean_sync,
+        "competition": normalize_live_competition(competition),
+        "events": norm_events,
+        "registered_at": datetime.now(timezone.utc).isoformat(),
+    }
+
     with _live_activities_lock:
         existing = _live_activities.setdefault(key, [])
         if any(e["activity_token"] == clean_activity for e in existing):
             return False
-        existing.append({
-            "activity_token": clean_activity,
-            "device_token": clean_device,
-            "match_id": str(match_id or "").strip(),
-            "competition": normalize_live_competition(competition),
-            "events": norm_events,
-            "registered_at": datetime.now(timezone.utc).isoformat(),
-        })
-        return True
+        existing.append(entry)
+
+        if clean_sync and clean_sync != match_id:
+            s_key = _match_key(clean_sync, competition)
+            if s_key != key:
+                s_existing = _live_activities.setdefault(s_key, [])
+                if not any(e["activity_token"] == clean_activity for e in s_existing):
+                    s_existing.append(entry)
+
+    if sqlite_store is not None:
+        try:
+            sqlite_store.save_notification_sub(
+                clean_activity,
+                "live_activity",
+                match_id,
+                competition=competition,
+                events=norm_events,
+            )
+            if clean_sync and clean_sync != match_id:
+                sqlite_store.save_notification_sub(
+                    clean_activity,
+                    "live_activity",
+                    clean_sync,
+                    competition=competition,
+                    events=norm_events,
+                )
+        except Exception as exc:
+            logger.warning(f"[notifications] failed to save live activity to SQLite: {exc}")
+
+    return True
 
 
 def unregister(activity_token: str) -> bool:
+    clean_activity = str(activity_token or "").strip().replace(" ", "").replace("<", "").replace(">", "")
     removed = False
     with _live_activities_lock:
         for key in list(_live_activities):
             before = len(_live_activities[key])
             _live_activities[key] = [
-                e for e in _live_activities[key] if e["activity_token"] != activity_token
+                e for e in _live_activities[key] if e["activity_token"] != clean_activity
             ]
             if len(_live_activities[key]) < before:
                 removed = True
             if not _live_activities[key]:
                 del _live_activities[key]
+    if sqlite_store is not None:
+        try:
+            sqlite_store.remove_all_token_subscriptions(clean_activity)
+        except Exception as exc:
+            logger.warning(f"[notifications] failed to remove live activity from SQLite: {exc}")
     return removed
 
 
-def for_match(match_id: str, competition: str) -> list[dict]:
-    """Return Live Activity registrations for a match across competition aliases."""
+def for_match(match_id: str, competition: str, sync_key: str = "") -> list[dict]:
+    """Return Live Activity registrations for a match across competition aliases and sync keys."""
     out: list[dict] = []
     seen_tokens: set[str] = set()
     mid = str(match_id or "").strip()
+    s_key = str(sync_key or "").strip()
+    keys_to_search = _match_lookup_keys(mid, competition)
+    if s_key and s_key != mid:
+        for k in _match_lookup_keys(s_key, competition):
+            if k not in keys_to_search:
+                keys_to_search.append(k)
+
     with _live_activities_lock:
-        for key in _match_lookup_keys(mid, competition):
+        for key in keys_to_search:
             for entry in _live_activities.get(key, []):
                 token = entry.get("activity_token")
                 if not token or token in seen_tokens:
                     continue
                 seen_tokens.add(token)
                 out.append(dict(entry))
-        # Fallback: if no entries found via competition keys, search by match_id directly
-        if not out and mid:
+
+        targets = [t for t in (mid, s_key) if t]
+        if targets:
             for key, entries in _live_activities.items():
-                if key == mid or key.startswith(f"{mid}|"):
-                    for entry in entries:
-                        token = entry.get("activity_token")
-                        if not token or token in seen_tokens:
-                            continue
+                for entry in entries:
+                    token = entry.get("activity_token")
+                    if not token or token in seen_tokens:
+                        continue
+                    m_val = str(entry.get("match_id", "")).strip()
+                    s_val = str(entry.get("sync_key", "")).strip()
+                    if any(t in (m_val, s_val) or key == t or key.startswith(f"{t}|") for t in targets):
                         seen_tokens.add(token)
                         out.append(dict(entry))
     return out
@@ -619,6 +786,11 @@ def unregister_by_match(match_id: str, competition: str) -> bool:
             for k in to_remove:
                 if _live_activities.pop(k, None) is not None:
                     removed = True
+    if sqlite_store is not None:
+        try:
+            sqlite_store.remove_match_notification_subs(mid, competition=competition)
+        except Exception as exc:
+            logger.warning(f"[notifications] failed to remove match live activities from SQLite: {exc}")
     return removed
 
 
@@ -887,10 +1059,15 @@ def apns_send_detailed(
         result["hint"] = _derive_apns_hint(result["status_code"], result["reason"], live_activity, use_sandbox)
 
         if not result["ok"]:
-            # Auto-prune dead/expired tokens (APNs 410 Unregistered or fatal BadDeviceToken)
-            if result["status_code"] == 410 or (
-                result["status_code"] == 400 and result.get("reason") == "BadDeviceToken"
-            ):
+            # Auto-prune dead/expired tokens (APNs 410 Unregistered or fatal BadDeviceToken on real hex tokens)
+            is_unregistered = result["status_code"] == 410
+            is_fatal_bad_token = (
+                result["status_code"] == 400
+                and result.get("reason") == "BadDeviceToken"
+                and len(clean_token) == 64
+                and all(c in "0123456789abcdefABCDEF" for c in clean_token)
+            )
+            if is_unregistered or is_fatal_bad_token:
                 prune_dead_token(clean_token, is_live_activity=live_activity)
 
             logger.warning(
@@ -1080,17 +1257,20 @@ def send_live_activity_update(
     content_state: dict,
     event: str = "update",
     alert: Optional[dict] = None,
+    sync_key: str = "",
 ) -> int:
     """Queue a Live Activity content-state update for every registration of a match.
 
     When ``alert`` is passed (e.g. for goals or halftime), ActivityKit will present
     an alert banner and sound on the user's Lock Screen and Dynamic Island.
     """
-    activities = for_match(match_id, competition)
+    activities = for_match(match_id, competition, sync_key=sync_key)
     if not activities:
         return 0
     state = dict(content_state or {})
     state.setdefault("match_id", match_id)
+    if sync_key:
+        state.setdefault("sync_key", sync_key)
     state.setdefault("competition", normalize_live_competition(competition))
     for entry in activities:
         _apns_notification_queue.append({
@@ -1100,6 +1280,7 @@ def send_live_activity_update(
             "event": event or "update",
             "alert": alert,
             "match_id": match_id,
+            "sync_key": sync_key,
             "competition": normalize_live_competition(competition),
         })
     _notify_apns_queue()
@@ -1112,18 +1293,21 @@ def send_live_activity_end(
     content_state: dict | None = None,
     alert: Optional[dict] = None,
     dismissal_date: Optional[int] = None,
+    sync_key: str = "",
 ) -> int:
     """Queue an 'end' Live Activity push for a match with optional alert and dismissal date.
 
     dismissal_date: Epoch timestamp (seconds) when iOS removes the ended activity from Lock Screen.
     Defaults to 4 hours in the future to allow users to view the final score.
     """
-    activities = for_match(match_id, competition)
+    activities = for_match(match_id, competition, sync_key=sync_key)
     if not activities:
         unregister_by_match(match_id, competition)
         return 0
     state = dict(content_state or {})
     state.setdefault("status", "FT")
+    if sync_key:
+        state.setdefault("sync_key", sync_key)
     for entry in activities:
         _apns_notification_queue.append({
             "type": "liveactivity",
@@ -1133,6 +1317,7 @@ def send_live_activity_end(
             "alert": alert,
             "dismissal_date": dismissal_date,
             "match_id": match_id,
+            "sync_key": sync_key,
             "competition": normalize_live_competition(competition),
         })
     _notify_apns_queue()

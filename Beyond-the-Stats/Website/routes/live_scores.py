@@ -18,6 +18,7 @@ from starlette.responses import StreamingResponse
 from .compat import Blueprint, Response, jsonify, request
 import pandas as pd
 from shared import sqlite_store as _sqlite_store
+sqlite_store = _sqlite_store
 
 from cache import _cached_response
 import config
@@ -47,10 +48,12 @@ from notifications import (
     ALL_EVENT_TYPES,
     _apns_notification_queue,
     _notifications,
+    _notifications_lock,
     device_tokens,
     get_device_subscriptions,
     ios_device_tokens,
     normalize_events,
+    record_notification_event,
     send_live_activity_end,
     send_live_activity_update,
     subscribe_match,
@@ -881,7 +884,7 @@ def api_debug_poller_state():
 
 @live_scores_bp.post("/api/notifications")
 def api_push_notification():
-    """Queue a push notification for delivery via APNs."""
+    """Queue a push notification for delivery via APNs and record in notification feed."""
     payload = request.get_json(silent=True) or {}
     title = str(payload.get("title", "")).strip()
     body = str(payload.get("body", "")).strip()
@@ -892,13 +895,14 @@ def api_push_notification():
         badge = max(0, int(badge))
     except (TypeError, ValueError):
         badge = 0
-    _notifications.append({
-        "id": len(_notifications),
-        "title": title,
-        "body": body,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "type": payload.get("type", "info"),
-    })
+
+    record_notification_event(
+        title=title,
+        body=body,
+        notif_type=payload.get("type", "announcement"),
+        match_id=str(payload.get("match_id", "")).strip(),
+    )
+
     for device_token in list(ios_device_tokens):
         _apns_notification_queue.append({
             "token": device_token,
@@ -916,22 +920,71 @@ def api_push_notification():
 
 @live_scores_bp.get("/api/notifications")
 def api_get_notifications():
-    """Return recent notifications."""
-    limit = min(int(request.args.get("limit", "20")), 100)
-    items = list(_notifications)[-limit:]
-    return jsonify({"ok": True, "notifications": items})
+    """Return recent notifications with optional filtering by match, team, or type."""
+    limit = min(max(int(request.args.get("limit", "20")), 1), 100)
+    match_id = request.args.get("match_id", "").strip()
+    sync_key = request.args.get("sync_key", "").strip()
+    team = (request.args.get("team", "") or request.args.get("team_name", "")).strip().lower()
+    notif_type = request.args.get("type", "").strip().lower()
+
+    items = []
+    # If sqlite_store has load_recent_notification_events, prefer SQLite for persistent history
+    if sqlite_store is not None and hasattr(sqlite_store, "load_recent_notification_events"):
+        try:
+            items = sqlite_store.load_recent_notification_events(
+                limit=limit,
+                match_id=match_id or None,
+                sync_key=sync_key or None,
+                team=team or None,
+                notif_type=notif_type or None,
+            )
+        except Exception as exc:
+            logger.debug(f"[notifications] SQLite history fetch failed: {exc}")
+
+    if not items:
+        with _notifications_lock:
+            raw = list(_notifications)
+        filtered = []
+        for n in reversed(raw):
+            if match_id and n.get("match_id") != match_id and n.get("sync_key") != match_id:
+                continue
+            if sync_key and n.get("sync_key") != sync_key and n.get("match_id") != sync_key:
+                continue
+            if team and (
+                team not in str(n.get("home_team", "")).lower()
+                and team not in str(n.get("away_team", "")).lower()
+                and team not in str(n.get("title", "")).lower()
+                and team not in str(n.get("body", "")).lower()
+            ):
+                continue
+            if notif_type and n.get("type") != notif_type:
+                continue
+            filtered.append(n)
+            if len(filtered) >= limit:
+                break
+        items = filtered
+
+    return jsonify({"ok": True, "notifications": items, "count": len(items)})
 
 
 @live_scores_bp.post("/api/notifications/register")
 def api_register_device():
-    """Register a device token for push notifications."""
+    """Register a device token for push notifications and optional initial favorites."""
     payload = request.get_json(silent=True) or {}
-    token = str(payload.get("token", "")).strip().replace(" ", "").replace("<", "").replace(">", "")
+    token = (
+        payload.get("token")
+        or payload.get("device_token")
+        or payload.get("deviceToken")
+        or payload.get("push_token")
+        or ""
+    )
+    token = str(token).strip().replace(" ", "").replace("<", "").replace(">", "")
     if not token:
         return jsonify({"ok": False, "error": "token required"}), 400
     if len(token) > 512:
         return jsonify({"ok": False, "error": "token too long"}), 400
-    platform = str(payload.get("platform", "generic")).strip().lower()
+
+    platform = str(payload.get("platform", "ios")).strip().lower()
     env = payload.get("environment") or request.headers.get("X-Apns-Environment")
     if env:
         try:
@@ -940,11 +993,56 @@ def api_register_device():
         except Exception:
             pass
 
-    if platform == "ios":
+    # Default to iOS push tokens for mobile app
+    if platform in ("ios", "apple", "generic", "iphone", "ipad", "mobile") or not platform:
         ios_device_tokens.add(token)
     else:
         device_tokens.add(token)
-    return jsonify({"ok": True, "registered": True, "environment": env or "auto"})
+
+    # Persist device registration to SQLite
+    if sqlite_store is not None:
+        try:
+            sqlite_store.save_notification_sub(token, "device", "all", competition="", events=None)
+        except Exception as exc:
+            logger.warning(f"[notifications] failed to save device token to SQLite: {exc}")
+
+    # Auto-subscribe initial favorite teams if provided
+    subscribed_teams = []
+    raw_teams = payload.get("teams") or payload.get("favorite_teams") or payload.get("favorites") or payload.get("team")
+    if raw_teams:
+        if isinstance(raw_teams, str):
+            team_list = [t.strip() for t in raw_teams.split(",") if t.strip()]
+        elif isinstance(raw_teams, (list, tuple, set)):
+            team_list = [str(t).strip() for t in raw_teams if str(t).strip()]
+        else:
+            team_list = []
+        for t in team_list:
+            if t and len(t) <= 256:
+                if subscribe_team(token, t, environment=env):
+                    subscribed_teams.append(t)
+
+    # Auto-subscribe initial matches if provided
+    subscribed_matches = []
+    raw_matches = payload.get("matches") or payload.get("match_ids") or payload.get("match_id")
+    if raw_matches:
+        if isinstance(raw_matches, str):
+            match_list = [m.strip() for m in raw_matches.split(",") if m.strip()]
+        elif isinstance(raw_matches, (list, tuple, set)):
+            match_list = [str(m).strip() for m in raw_matches if str(m).strip()]
+        else:
+            match_list = []
+        for m in match_list:
+            if m and len(m) <= 256:
+                if subscribe_match(token, m, competition="", environment=env):
+                    subscribed_matches.append(m)
+
+    return jsonify({
+        "ok": True,
+        "registered": True,
+        "environment": env or "auto",
+        "teams_subscribed": subscribed_teams,
+        "matches_subscribed": subscribed_matches,
+    })
 
 
 @live_scores_bp.post("/api/notifications/unregister")
@@ -1105,13 +1203,42 @@ def api_get_notification_preferences():
     })
 
 
+@live_scores_bp.get("/live-activities")
+@live_scores_bp.get("/api/live-activities")
+def api_get_live_activities():
+    """Return all active Live Activity registrations, optionally filtered by match_id, sync_key, or competition."""
+    match_id = request.args.get("match_id", "").strip()
+    competition = request.args.get("competition", "").strip()
+    sync_key = request.args.get("sync_key", "").strip()
+
+    if match_id or sync_key:
+        activities = live_activities.for_match(match_id, competition, sync_key=sync_key)
+    else:
+        activities = live_activities.all_activities()
+
+    return jsonify({
+        "ok": True,
+        "count": len(activities),
+        "activities": activities,
+    })
+
+
 @live_scores_bp.post("/live-activities/register")
 @live_scores_bp.post("/api/live-activities/register")
 def api_register_live_activity():
     """Register a Live Activity push token for a specific match with optional event preferences."""
     payload = request.get_json(silent=True) or {}
-    activity_token = str(payload.get("activity_token", "")).strip().replace(" ", "").replace("<", "").replace(">", "")
-    match_id = str(payload.get("match_id", "")).strip()
+    activity_token = (
+        payload.get("activity_token")
+        or payload.get("activityToken")
+        or payload.get("push_token")
+        or ""
+    )
+    activity_token = str(activity_token).strip().replace(" ", "").replace("<", "").replace(">", "")
+    match_id = str(payload.get("match_id", "") or payload.get("id", "")).strip()
+    sync_key = str(payload.get("sync_key", "")).strip()
+    if not sync_key and "|" in match_id:
+        sync_key = match_id
     competition = str(payload.get("competition", "")).strip()
     events = payload.get("events")
     env = payload.get("environment") or request.headers.get("X-Apns-Environment")
@@ -1136,12 +1263,17 @@ def api_register_live_activity():
         competition = competition or ""
     if len(activity_token) > 1024 or len(match_id) > 256 or len(competition) > 256:
         return jsonify({"ok": False, "error": "input too long"}), 400
-    device_token = str(payload.get("device_token", "")).strip().replace(" ", "").replace("<", "").replace(">", "")
+    device_token = (
+        payload.get("device_token")
+        or payload.get("deviceToken")
+        or ""
+    )
+    device_token = str(device_token).strip().replace(" ", "").replace("<", "").replace(">", "")
     if len(device_token) > 512:
         return jsonify({"ok": False, "error": "device_token too long"}), 400
 
     ok = live_activities.register(
-        activity_token, device_token, match_id, competition, events=events, environment=env
+        activity_token, device_token, match_id, competition, events=events, environment=env, sync_key=sync_key
     )
     if ok and device_token:
         subscribe_match(device_token, match_id, competition, events=events, environment=env)
@@ -1150,6 +1282,8 @@ def api_register_live_activity():
         "registered": ok,
         "total": len(live_activities.all_activities()),
         "environment": env or "auto",
+        "match_id": match_id,
+        "sync_key": sync_key,
     })
 
 
@@ -1158,7 +1292,12 @@ def api_register_live_activity():
 def api_unregister_live_activity():
     """Remove a Live Activity registration."""
     payload = request.get_json(silent=True) or {}
-    activity_token = str(payload.get("activity_token", "")).strip()
+    activity_token = (
+        payload.get("activity_token")
+        or payload.get("activityToken")
+        or ""
+    )
+    activity_token = str(activity_token).strip().replace(" ", "").replace("<", "").replace(">", "")
     if not activity_token:
         return jsonify({"ok": False, "error": "activity_token required"}), 400
     if len(activity_token) > 1024:
@@ -1167,7 +1306,7 @@ def api_unregister_live_activity():
     if ok:
         match_id = str(payload.get("match_id", "")).strip()
         competition = str(payload.get("competition", "")).strip()
-        device_token = str(payload.get("device_token", "")).strip()
+        device_token = str(payload.get("device_token", "") or payload.get("deviceToken", "")).strip()
         if match_id and competition and device_token:
             unsubscribe_match(device_token, match_id, competition)
     return jsonify({"ok": True, "removed": ok})
@@ -1178,6 +1317,7 @@ def api_update_live_activity():
     """Manually push a content-state update to all Live Activities for a match with optional alert."""
     payload = request.get_json(silent=True) or {}
     match_id = str(payload.get("match_id", "")).strip()
+    sync_key = str(payload.get("sync_key", "")).strip()
     competition = str(payload.get("competition", "")).strip()
     content_state = payload.get("content_state")
     alert = payload.get("alert")
@@ -1185,7 +1325,7 @@ def api_update_live_activity():
         return jsonify({"ok": False, "error": "match_id, competition, and content_state required"}), 400
     if len(match_id) > 256 or len(competition) > 256:
         return jsonify({"ok": False, "error": "input too long"}), 400
-    sent = send_live_activity_update(match_id, competition, content_state, alert=alert)
+    sent = send_live_activity_update(match_id, competition, content_state, alert=alert, sync_key=sync_key)
     return jsonify({"ok": True, "sent": sent})
 
 
@@ -1194,6 +1334,7 @@ def api_end_live_activity():
     """End/dismiss Live Activities for a match with optional alert."""
     payload = request.get_json(silent=True) or {}
     match_id = str(payload.get("match_id", "")).strip()
+    sync_key = str(payload.get("sync_key", "")).strip()
     competition = str(payload.get("competition", "")).strip()
     alert = payload.get("alert")
     if not match_id or not competition:
@@ -1203,7 +1344,7 @@ def api_end_live_activity():
     content_state = payload.get("content_state", {})
     if not isinstance(content_state, dict):
         content_state = {}
-    sent = send_live_activity_end(match_id, competition, content_state, alert=alert)
+    sent = send_live_activity_end(match_id, competition, content_state, alert=alert, sync_key=sync_key)
     return jsonify({"ok": True, "sent": sent, "deregistered": True})
 
 
@@ -1554,19 +1695,28 @@ def build_today_merged_payload(
         merged_items.append(item)
 
     # Second pass: Include upcoming games that had no live counterpart (upcoming_only)
+    seen_second_pass_pairs: set[tuple[str, str]] = set()
     for up in upcoming_for_date:
         up_sk = up.get("sync_key")
         if up_sk and up_sk in matched_upcoming_keys:
             continue
-        if compact:
-            item = _to_compact_upcoming_row(up)
-        else:
-            item = dict(up)
 
         ht = up.get("home_team", "")
         at = up.get("away_team", "")
         c_home = up.get("canonical_home_team") or canonical_team_name(ht, up.get("competition", "")) or ht
         c_away = up.get("canonical_away_team") or canonical_team_name(at, up.get("competition", "")) or at
+        pair_k = (str(c_home or "").strip().lower(), str(c_away or "").strip().lower())
+        if pair_k[0] and pair_k[1] and pair_k in seen_second_pass_pairs:
+            continue
+        if pair_k[0] and pair_k[1]:
+            seen_second_pass_pairs.add(pair_k)
+        if up_sk:
+            matched_upcoming_keys.add(up_sk)
+
+        if compact:
+            item = _to_compact_upcoming_row(up)
+        else:
+            item = dict(up)
 
         item["status"] = "pre"
         item["live_status"] = "pre"

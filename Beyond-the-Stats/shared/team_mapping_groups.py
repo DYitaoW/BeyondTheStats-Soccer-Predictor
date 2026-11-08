@@ -68,14 +68,6 @@ def normalize_team_key(name) -> str:
         "team",
         "football",
         "and",
-        "town",
-        "athletic",
-        "county",
-        "albion",
-        "wanderers",
-        "hotspur",
-        "city",
-        "united",
     }
     parts = [p for p in parts if p not in stop_words]
     key = "".join(parts)
@@ -242,6 +234,26 @@ def fuzzy_resolve_team_name(raw_name: str, valid_names: list[str]) -> str | None
     if key in by_key:
         return by_key[key]
 
+    CLUB_QUALIFIERS = {
+        "city", "united", "rovers", "town", "athletic", "county", "albion",
+        "wanderers", "hotspur", "wednesday", "forest", "b", "ii"
+    }
+
+    def _qualifiers_compatible(cand_name: str) -> bool:
+        cand_lower = cand_name.lower()
+        cand_parts = set(re.findall(r"\b\w+\b", cand_lower))
+        cand_quals = cand_parts & CLUB_QUALIFIERS
+        raw_quals = raw_parts & CLUB_QUALIFIERS
+        if raw_quals and cand_quals:
+            return raw_quals == cand_quals
+        if raw_quals and not cand_quals:
+            # e.g. "Oxford City" / "Bristol Rovers" must not fuzzy-match bare "Oxford" / "Bristol"
+            return False
+        if cand_quals and not raw_quals:
+            # e.g. bare "Bristol" must not fuzzy-match "Bristol Rovers"
+            return False
+        return True
+
     # Require minimum normalized key length of 4 characters to prevent 1-3 char tokens
     # (like "b" or "sc") from erroneously matching inside unrelated team names.
     contained_by_raw = [
@@ -249,6 +261,7 @@ def fuzzy_resolve_team_name(raw_name: str, valid_names: list[str]) -> str | None
         if normalize_team_key(team)
         and len(normalize_team_key(team)) >= 4
         and normalize_team_key(team) in key
+        and _qualifiers_compatible(team)
     ]
     if contained_by_raw:
         # Prefer the longest key so "Inter" never beats "Inter Miami" when the
@@ -275,12 +288,16 @@ def fuzzy_resolve_team_name(raw_name: str, valid_names: list[str]) -> str | None
     contains = [
         team for team in valid_names
         if len(key) >= 4 and key in normalize_team_key(team)
+        and _qualifiers_compatible(team)
     ]
     if contains:
         contains.sort(key=lambda t: len(normalize_team_key(t) or ""), reverse=True)
         return contains[0]
 
-    close = difflib.get_close_matches(key, list(by_key.keys()), n=1, cutoff=0.88)
+    close = [
+        k for k in difflib.get_close_matches(key, list(by_key.keys()), n=3, cutoff=0.88)
+        if _qualifiers_compatible(by_key[k])
+    ]
     if close:
         return by_key[close[0]]
     return None
@@ -307,9 +324,15 @@ def store_team_mapping(
 
     is_reserve = canonical in {"Sociedad B", "Celta B", "Barcelona B", "Villarreal B", "Sevilla B", "Real Madrid B"} or canonical.endswith(" B") or canonical.endswith(" II")
 
-    if propagate_country and country:
+    if propagate_country and country and canonical:
+        is_cup = any(c in competition.lower() for c in ("cup", "copa", "coupe", "pokal", "trophy", "shield"))
         for comp_key in list(mapping.keys()):
             if competition_country(comp_key) == country:
+                # Do not leak cup-specific lower tier clubs into senior league tables
+                if is_cup and not any(c in comp_key.lower() for c in ("cup", "copa", "coupe", "pokal", "trophy", "shield")):
+                    # Only propagate from cup to league if the canonical is already known in that league
+                    if api_name not in mapping.get(comp_key, {}) and canonical not in mapping.get(comp_key, {}).values():
+                        continue
                 # Do NOT propagate reserve teams to top-tier leagues or cups where reserve teams are banned
                 if is_reserve and comp_key in {"Spain/La Liga", "Spain/Copa del Rey"}:
                     continue

@@ -19,12 +19,17 @@
         <string>8000</string>
         <string>--memory-limit-gb</string>
         <string>12.0</string>
+        <string>--no-run-on-start</string>
     </array>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
+        <key>PIPELINE_RUN_ON_START</key>
+        <string>0</string>
+        <key>PIPELINE_FULL_RETRAIN_ON_START</key>
+        <string>0</string>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <!-- Apple Silicon fork safety for multiprocessing libraries -->
