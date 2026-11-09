@@ -85,9 +85,15 @@ class TestLiveActivitiesAndAPNs(unittest.TestCase):
         notifications._apns_jwt_cache = None
         notifications._apns_jwt_expiry = 0
 
+        # Admin token: GET /api/live-activities and /api/test/* are admin-only.
+        self._orig_mutation_token = config.MUTATION_API_TOKEN
+        config.MUTATION_API_TOKEN = "test-admin-token"
+        self.admin = {"X-Admin-Token": "test-admin-token"}
+
         self.client = TestClient(app)
 
     def tearDown(self):
+        config.MUTATION_API_TOKEN = self._orig_mutation_token
         config.APNS_KEY_ID = self._orig_key_id
         config.APNS_TEAM_ID = self._orig_team_id
         config.APNS_AUTH_KEY_PATH = self._orig_key_path
@@ -120,20 +126,23 @@ class TestLiveActivitiesAndAPNs(unittest.TestCase):
         self.assertEqual(data.get("match_id"), espn_mid)
         self.assertEqual(data.get("sync_key"), sync_key)
 
+        # GET /api/live-activities exposes push tokens → admin only
+        self.assertEqual(self.client.get("/api/live-activities").status_code, 401)
+
         # Query GET /api/live-activities
-        get_resp = self.client.get("/api/live-activities")
+        get_resp = self.client.get("/api/live-activities", headers=self.admin)
         self.assertEqual(get_resp.status_code, 200)
         get_data = get_resp.json()
         self.assertTrue(get_data.get("ok"))
         self.assertGreaterEqual(get_data.get("count", 0), 1)
 
         # Filter by match_id
-        filter_resp = self.client.get(f"/api/live-activities?match_id={espn_mid}")
+        filter_resp = self.client.get(f"/api/live-activities?match_id={espn_mid}", headers=self.admin)
         self.assertEqual(filter_resp.status_code, 200)
         self.assertEqual(len(filter_resp.json().get("activities", [])), 1)
 
         # Filter by sync_key
-        filter_sync_resp = self.client.get(f"/api/live-activities?sync_key={sync_key}")
+        filter_sync_resp = self.client.get(f"/api/live-activities?sync_key={sync_key}", headers=self.admin)
         self.assertEqual(filter_sync_resp.status_code, 200)
         self.assertEqual(len(filter_sync_resp.json().get("activities", [])), 1)
 
@@ -198,7 +207,8 @@ class TestLiveActivitiesAndAPNs(unittest.TestCase):
         queued = _apns_notification_queue[0]
         self.assertEqual(queued["type"], "liveactivity")
         self.assertEqual(queued["token"], act_token)
-        self.assertEqual(queued["event"], "goal")
+        self.assertEqual(queued["event"], "update")  # APNs aps.event
+        self.assertEqual(queued["content_state"]["event"], "goal")  # UI label
         self.assertEqual(queued["content_state"]["home_score"], 1)
         self.assertEqual(queued["alert"]["title"], "Goal!")
 
@@ -257,7 +267,12 @@ class TestLiveActivitiesAndAPNs(unittest.TestCase):
             mock_client.post.return_value = mock_response
             mock_client_getter.return_value = mock_client
 
-            resp = self.client.post("/api/test/live-activities/push", json={
+            # /api/test/* requires the admin token
+            unauth = self.client.post("/api/test/live-activities/push", json={"activity_token": act_token})
+            self.assertEqual(unauth.status_code, 401)
+            mock_client.post.reset_mock()
+
+            resp = self.client.post("/api/test/live-activities/push", headers=self.admin, json={
                 "activity_token": act_token,
                 "home_team": "Real Madrid",
                 "away_team": "Barcelona",
@@ -295,6 +310,8 @@ class TestLiveActivitiesAndAPNs(unittest.TestCase):
             self.assertEqual(aps["content-state"]["home_team"], "Real Madrid")
             self.assertEqual(aps["content-state"]["home_score"], 2)
             self.assertEqual(aps["alert"]["title"], "Goal!")
+            self.assertEqual(aps["alert"]["sound"], "default")
+            self.assertNotIn("sound", aps)
 
     def test_apns_sandbox_production_auto_fallback(self):
         test_token = "1122334455667788990011223344556677889900112233445566778899001122"

@@ -65,20 +65,13 @@ class TestEventNormalization(unittest.TestCase):
         self.assertEqual(normalize_event_type("card"), "red_card")
 
     def test_normalize_events(self):
-        # Empty or None defaults to ALL_EVENT_TYPES
-        self.assertEqual(normalize_events(None), set(ALL_EVENT_TYPES))
-        self.assertEqual(normalize_events([]), set(ALL_EVENT_TYPES))
-        self.assertEqual(normalize_events(""), set(ALL_EVENT_TYPES))
-
-        # "start" or kickoff default now expands to ALL_EVENT_TYPES (all match activity)
-        self.assertEqual(normalize_events("start"), set(ALL_EVENT_TYPES))
-        self.assertEqual(normalize_events(["start"]), set(ALL_EVENT_TYPES))
-        self.assertEqual(normalize_events("kickoff"), set(ALL_EVENT_TYPES))
-        self.assertEqual(normalize_events("goals, kickoff, ft"), set(ALL_EVENT_TYPES))
-
-        # Explicit non-start preferences retain specific filters
-        self.assertEqual(normalize_events("goal, ht"), {"goal", "ht"})
-        self.assertEqual(normalize_events(["goal", "red_card"]), {"goal", "red_card"})
+        # Notifications are all-or-nothing: every input (including legacy
+        # per-event preferences from older app builds) yields every event type.
+        for value in (None, [], "", "start", ["start"], "kickoff", "goal, ht", ["goal", "red_card"]):
+            self.assertEqual(normalize_events(value), set(ALL_EVENT_TYPES), value)
+        for ev in ("second_half", "extra_time", "penalties"):
+            self.assertIn(ev, ALL_EVENT_TYPES)
+        self.assertEqual(normalize_event_type("ht_end"), "second_half")
 
 
 class TestSubscriptionFiltering(unittest.TestCase):
@@ -89,64 +82,34 @@ class TestSubscriptionFiltering(unittest.TestCase):
         _team_subscription_events.clear()
         _apns_notification_queue.clear()
 
-    def test_match_subscription_filtering(self):
-        # Device 1 wants only goals
+    def test_match_subscription_is_all_events(self):
+        # Legacy per-event preferences are ignored: every subscriber gets every event.
         subscribe_match("dev-1", "m123", "EPL", events=["goal"])
-        # Device 2 wants only red cards and ht
         subscribe_match("dev-2", "m123", "EPL", events=["red_card", "ht"])
-        # Device 3 wants start time (which now defaults to all in-game activity)
-        subscribe_match("dev-3", "m123", "EPL", events=["start"])
+        subscribe_match("dev-3", "m123", "EPL")
+        for ev in ("goal", "ht", "start", "red_card", "second_half", "end"):
+            self.assertEqual(set(for_match_tokens("m123", "EPL", event=ev)), {"dev-1", "dev-2", "dev-3"}, ev)
 
-        # Query for goal: dev-1 and dev-3 (dev-3 has start -> all events)
-        goal_tokens = for_match_tokens("m123", "EPL", event="goal")
-        self.assertIn("dev-1", goal_tokens)
-        self.assertNotIn("dev-2", goal_tokens)
-        self.assertIn("dev-3", goal_tokens)
-
-        # Query for ht: dev-2 and dev-3
-        ht_tokens = for_match_tokens("m123", "EPL", event="ht")
-        self.assertNotIn("dev-1", ht_tokens)
-        self.assertIn("dev-2", ht_tokens)
-        self.assertIn("dev-3", ht_tokens)
-
-        # Query for start: dev-3
-        start_tokens = for_match_tokens("m123", "EPL", event="start")
-        self.assertNotIn("dev-1", start_tokens)
-        self.assertNotIn("dev-2", start_tokens)
-        self.assertIn("dev-3", start_tokens)
-
-        # Unsubscribe dev-1
         unsubscribe_match("dev-1", "m123", "EPL")
         self.assertNotIn("dev-1", for_match_tokens("m123", "EPL", event="goal"))
 
-    def test_team_subscription_filtering(self):
+    def test_team_subscription_is_all_events(self):
         subscribe_team("dev-arsenal-goals", "Arsenal", events="goal")
         subscribe_team("dev-arsenal-all", "Arsenal", events=None)
-
-        goal_tokens = for_team_tokens("Arsenal", event="goal")
-        self.assertIn("dev-arsenal-goals", goal_tokens)
-        self.assertIn("dev-arsenal-all", goal_tokens)
-
-        card_tokens = for_team_tokens("Arsenal", event="red_card")
-        self.assertNotIn("dev-arsenal-goals", card_tokens)
-        self.assertIn("dev-arsenal-all", card_tokens)
+        for ev in ("goal", "red_card", "ht"):
+            self.assertEqual(
+                set(for_team_tokens("Arsenal", event=ev)), {"dev-arsenal-goals", "dev-arsenal-all"}, ev
+            )
 
     def test_for_game_or_team_subscribers_union(self):
         subscribe_match("dev-match", "m1", "EPL", events=["goal"])
         subscribe_team("dev-home", "Arsenal", events=["goal", "ht"])
         subscribe_team("dev-away", "Chelsea", events=["red_card"])
-
-        # For a goal event: dev-match and dev-home should receive, dev-away should not
-        goal_subs = for_game_or_team_subscribers("m1", "EPL", home_team="Arsenal", away_team="Chelsea", event="goal")
-        self.assertIn("dev-match", goal_subs)
-        self.assertIn("dev-home", goal_subs)
-        self.assertNotIn("dev-away", goal_subs)
-
-        # For a red card: only dev-away
-        card_subs = for_game_or_team_subscribers("m1", "EPL", home_team="Arsenal", away_team="Chelsea", event="red_card")
-        self.assertNotIn("dev-match", card_subs)
-        self.assertNotIn("dev-home", card_subs)
-        self.assertIn("dev-away", card_subs)
+        for ev in ("goal", "red_card"):
+            subs = for_game_or_team_subscribers(
+                "m1", "EPL", home_team="Arsenal", away_team="Chelsea", event=ev
+            )
+            self.assertEqual(set(subs), {"dev-match", "dev-home", "dev-away"}, ev)
 
     def test_get_device_subscriptions_preferences(self):
         subscribe_match("tok-abc", "m1", "EPL", events=["goal", "ht"])
@@ -156,8 +119,8 @@ class TestSubscriptionFiltering(unittest.TestCase):
         self.assertTrue(any(k.lower() == "m1|epl" for k in prefs["matches"]))
         self.assertIn("liverpool", prefs["teams"])
         match_k = next(k for k in prefs["match_events"] if k.lower() == "m1|epl")
-        self.assertEqual(prefs["match_events"][match_k], ["goal", "ht"])
-        self.assertEqual(prefs["team_events"]["liverpool"], ["goal"])
+        self.assertEqual(prefs["match_events"][match_k], sorted(ALL_EVENT_TYPES))
+        self.assertEqual(prefs["team_events"]["liverpool"], sorted(ALL_EVENT_TYPES))
 
 
 class TestLiveActivityAlerts(unittest.TestCase):
@@ -187,14 +150,17 @@ class TestLiveActivityAlerts(unittest.TestCase):
 
         # Mock _apns_send to verify the final APNs payload structure
         sent_payloads = []
-        with patch("notifications._apns_send", side_effect=lambda token, payload, topic, live_activity: sent_payloads.append(payload) or True):
+        with patch("notifications._apns_send", side_effect=lambda token, payload, topic, live_activity, **kw: sent_payloads.append(payload) or True):
             _drain_queue()
 
         self.assertEqual(len(sent_payloads), 1)
         aps = sent_payloads[0]["aps"]
-        self.assertEqual(aps["event"], "goal")
-        self.assertEqual(aps["alert"], goal_alert)
-        self.assertEqual(aps["sound"], "default")
+        # ActivityKit only accepts start/update/end; the UI label rides in content-state.
+        self.assertEqual(aps["event"], "update")
+        self.assertEqual(aps["content-state"]["event"], "goal")
+        # Apple's documented shape: sound lives inside the alert dict.
+        self.assertEqual(aps["alert"], {**goal_alert, "sound": "default"})
+        self.assertNotIn("sound", aps)
 
     def test_live_activity_ht_and_ft_alerts(self):
         register("act-token-2", "dev-tok-2", "m100", "EPL")
@@ -217,16 +183,18 @@ class TestLiveActivityAlerts(unittest.TestCase):
         )
 
         sent_payloads = []
-        with patch("notifications._apns_send", side_effect=lambda token, payload, topic, live_activity: sent_payloads.append(payload) or True):
+        with patch("notifications._apns_send", side_effect=lambda token, payload, topic, live_activity, **kw: sent_payloads.append(payload) or True):
             _drain_queue()
 
         self.assertEqual(len(sent_payloads), 2)
         # 1. HT payload
-        self.assertEqual(sent_payloads[0]["aps"]["event"], "halftime")
-        self.assertEqual(sent_payloads[0]["aps"]["alert"], ht_alert)
+        self.assertEqual(sent_payloads[0]["aps"]["event"], "update")
+        self.assertEqual(sent_payloads[0]["aps"]["content-state"]["event"], "halftime")
+        self.assertEqual(sent_payloads[0]["aps"]["alert"], {**ht_alert, "sound": "default"})
         # 2. FT payload
         self.assertEqual(sent_payloads[1]["aps"]["event"], "end")
-        self.assertEqual(sent_payloads[1]["aps"]["alert"], ft_alert)
+        self.assertEqual(sent_payloads[1]["aps"]["alert"], {**ft_alert, "sound": "default"})
+        self.assertIn("dismissal-date", sent_payloads[1]["aps"])
 
     def test_live_activity_match_id_fallback_across_competition_names(self):
         # Register with simple competition name

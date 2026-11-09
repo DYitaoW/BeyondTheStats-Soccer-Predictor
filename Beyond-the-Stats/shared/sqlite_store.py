@@ -34,12 +34,59 @@ _LIVE_TABLE = "live_score_history"
 _UPCOMING_TABLE = "upcoming_games"
 _SQUAD_VALUES_TABLE = "squad_values"
 _NOTIF_SUBS_TABLE = "notification_subscriptions"
+_LA_CHANNELS_TABLE = "live_activity_channels"
+_LA_DEVICE_SETTINGS_TABLE = "live_activity_device_settings"
 _NOTIF_HIST_TABLE = "notification_history"
 _POINTS_ADJ_TABLE = "team_points_adjustments"
 _META_TABLE = "store_meta"
 
 
+_TEST_DB_DIR: Optional[str] = None
+_TEST_DB_LOCK = threading.Lock()
+
+
+def _running_under_test_runner() -> bool:
+    """True when imported by unittest / pytest rather than the backend.
+
+    ``python -m unittest`` sets ``__main__`` to unittest's own ``__main__``;
+    ``python tests/test_x.py`` runs a ``test_*.py`` script; pytest registers
+    itself in ``sys.modules``.
+    """
+    import sys as _sys
+
+    if "pytest" in _sys.modules or "_pytest" in _sys.modules:
+        return True
+    main = _sys.modules.get("__main__")
+    main_file = str(getattr(main, "__file__", "") or "")
+    main_spec = str(getattr(getattr(main, "__spec__", None), "name", "") or "")
+    if main_spec.startswith("unittest") or main_file.replace("\\", "/").endswith("unittest/__main__.py"):
+        return True
+    argv0 = os.path.basename(str(_sys.argv[0] if _sys.argv else ""))
+    return argv0.startswith("test_") and argv0.endswith(".py")
+
+
+def _test_isolated_db_path() -> Path:
+    """Per-process throwaway store used when tests forget to isolate SQLite."""
+    global _TEST_DB_DIR
+    with _TEST_DB_LOCK:
+        if _TEST_DB_DIR is None:
+            import atexit
+            import shutil
+            import tempfile
+
+            _TEST_DB_DIR = tempfile.mkdtemp(prefix="bts-test-store-")
+            atexit.register(shutil.rmtree, _TEST_DB_DIR, True)
+    return Path(_TEST_DB_DIR) / "bts_store.db"
+
+
 def _default_db_path() -> Path:
+    # Test runs must never write to the production store: unisolated tests
+    # previously inserted a fake "Liverpool 1-1 Everton" into past_games
+    # (counted in the live Premier League table) plus fake devices and feed
+    # events. Tests that need a specific DB set BTS_SQLITE_STORE_PATH or
+    # patch this function; BTS_ALLOW_REAL_STORE_IN_TESTS=1 opts out.
+    if _running_under_test_runner() and os.environ.get("BTS_ALLOW_REAL_STORE_IN_TESTS", "").strip() != "1":
+        return _test_isolated_db_path()
     if _paths is not None:
         return Path(_paths.SQLITE_STORE_FILE)
     base = Path(__file__).resolve().parent.parent
@@ -357,6 +404,10 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             competition TEXT,
             events TEXT,
             created_at TEXT NOT NULL,
+            device_token TEXT,
+            sync_key TEXT,
+            environment TEXT,
+            team_id TEXT,
             PRIMARY KEY (token, sub_type, sub_target)
         )
         """
@@ -365,12 +416,49 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         cols = {row[1] for row in conn.execute(f"PRAGMA table_info({_NOTIF_SUBS_TABLE})").fetchall()}
         if cols and "events" not in cols:
             conn.execute(f"ALTER TABLE {_NOTIF_SUBS_TABLE} ADD COLUMN events TEXT")
+        # device_token: owning device of a Live Activity / push-to-start token
+        # sync_key:     canonical fixture key a Live Activity was registered with
+        # environment:  "sandbox" | "production" APNs environment of the token
+        # team_id:      resolved team identity for team follows (alias-safe matching)
+        for col in ("device_token", "sync_key", "environment", "team_id"):
+            if cols and col not in cols:
+                conn.execute(f"ALTER TABLE {_NOTIF_SUBS_TABLE} ADD COLUMN {col} TEXT")
     except Exception:
         pass
     conn.execute(
         f"""
         CREATE INDEX IF NOT EXISTS idx_notif_subs_target
         ON {_NOTIF_SUBS_TABLE}(sub_type, sub_target)
+        """
+    )
+    # ActivityKit broadcast channels (iOS 18+): one APNs channel per match and
+    # APNs environment. Channels can't be shared across sandbox/production.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {_LA_CHANNELS_TABLE} (
+            match_key TEXT NOT NULL,
+            environment TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            match_id TEXT,
+            sync_key TEXT,
+            competition TEXT,
+            created_at TEXT NOT NULL,
+            ended_at TEXT,
+            PRIMARY KEY (match_key, environment)
+        )
+        """
+    )
+    # Per-device Live Activity capabilities/settings reported by the app.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {_LA_DEVICE_SETTINGS_TABLE} (
+            device_token TEXT PRIMARY KEY,
+            frequent_updates INTEGER,
+            activities_enabled INTEGER,
+            supports_broadcast INTEGER,
+            ios_version TEXT,
+            updated_at TEXT NOT NULL
+        )
         """
     )
     conn.execute(
@@ -493,9 +581,23 @@ def _resolve_canonical_team(team: str, comp: str = "") -> str:
     return raw
 
 
+_NULLISH_KEYS = {"nan", "none", "null", "nat", "<na>"}
+
+
+def _clean_prediction_key(value: Any) -> str:
+    """prediction_key as text, or "" for missing / pandas-NaN values.
+
+    CSV rows without a key arrive as float NaN, which ``str()`` turned into
+    "nan" — every such row then shared the storage key ``prediction:nan`` and
+    overwrote the previous one.
+    """
+    text = str(value if value is not None else "").strip()
+    return "" if text.lower() in _NULLISH_KEYS else text
+
+
 def past_game_storage_key(row: dict) -> str:
     """Stable dedupe key for past-games rows (prediction_key preferred)."""
-    prediction_key = str(row.get("prediction_key", "") or "").strip()
+    prediction_key = _clean_prediction_key(row.get("prediction_key"))
     if prediction_key:
         return f"prediction:{prediction_key}"
     date_iso = _row_date_iso(row)
@@ -837,7 +939,7 @@ def _upsert_past_games_conn(conn: sqlite3.Connection, rows: Iterable[dict]) -> d
                 str(row.get("competition", "") or "").strip() or None,
                 str(row.get("home_team", "") or "").strip() or None,
                 str(row.get("away_team", "") or "").strip() or None,
-                str(row.get("prediction_key", "") or "").strip() or None,
+                _clean_prediction_key(row.get("prediction_key")) or None,
                 _json_dumps(row),
                 now,
             ),
@@ -1062,72 +1164,214 @@ def load_live_score_history(
         conn.close()
 
 
+_TEAM_ID_MEMO: dict[str, str] = {}
+_TEAM_ID_MEMO_LOCK = threading.Lock()
+
+
+def _latest_completed_date_iso() -> str:
+    """Newest calendar date a *completed* match can carry (ET or UTC today).
+
+    Guards readers against pipeline rows dated in the future (e.g. day/month
+    swapped dates, placeholder friendlies stored as 0-0)."""
+    now_utc = datetime.now(timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+
+        et = now_utc.astimezone(ZoneInfo("America/New_York")).date().isoformat()
+    except Exception:
+        et = now_utc.date().isoformat()
+    return max(et, now_utc.date().isoformat())
+
+
+def _team_identity_id(name: str) -> str:
+    """Resolved team id (``standardized_teams.resolve_team_info``), memoized."""
+    key = str(name or "").strip().lower()
+    if not key:
+        return ""
+    with _TEAM_ID_MEMO_LOCK:
+        if key in _TEAM_ID_MEMO:
+            return _TEAM_ID_MEMO[key]
+    tid = ""
+    try:
+        import sys as _sys, os as _os
+        _website_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "Website")
+        if _website_dir not in _sys.path:
+            _sys.path.insert(0, _website_dir)
+        from standardized_teams import resolve_team_info
+
+        tid = str((resolve_team_info(str(name).strip()) or {}).get("id") or "").strip()
+    except Exception:
+        tid = ""
+    with _TEAM_ID_MEMO_LOCK:
+        if len(_TEAM_ID_MEMO) > 50000:
+            _TEAM_ID_MEMO.clear()
+        _TEAM_ID_MEMO[key] = tid
+    return tid
+
+
+def _team_alias_names(conn: sqlite3.Connection, team: str) -> set[str]:
+    """Lower-cased stored spellings that identify *team*.
+
+    Canonical names depend on competition ("Manchester United" → "Man United"
+    only inside England/Premier League), so stored names are grouped by their
+    resolved team id instead — the same identity /api/teams/catalog and
+    notification follows use.
+    """
+    raw = str(team or "").strip()
+    names = {raw.lower()}
+    canon = _resolve_canonical_team(raw)
+    if canon:
+        names.add(canon.lower())
+    tid = _team_identity_id(raw)
+    if not tid:
+        return names
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT home_team AS n FROM {_PAST_TABLE}
+            UNION SELECT away_team FROM {_PAST_TABLE}
+            UNION SELECT home_team FROM {_LIVE_TABLE}
+            UNION SELECT away_team FROM {_LIVE_TABLE}
+            """
+        ).fetchall()
+    except Exception:
+        rows = []
+    for r in rows:
+        stored = str(r[0] or "").strip()
+        if stored and stored.lower() not in names and _team_identity_id(stored) == tid:
+            names.add(stored.lower())
+    return names
+
+
 def load_team_recent_matches(
     team_name: str,
     limit: int = 10,
     db_path: Optional[Path] = None,
 ) -> list[dict]:
-    """Return the most recent finished matches for a team from past_games and live_score_history."""
+    """Return the most recent finished matches for a team from past_games and live_score_history.
+
+    Team identity is matched on the raw name *and* its canonical form (so
+    "Manchester United" finds rows stored as "Man United"), and duplicates of
+    the same fixture stored under different keys (``prediction:`` vs
+    ``fixture:``, or a past_games row plus its live-history twin) are
+    collapsed by ESPN ``match_id`` or canonical ``date|home|away``.
+    """
     t = str(team_name or "").strip()
     if not t:
         return []
     ensure_store(db_path)
     conn = _open_ready(db_path)
-    t_lower = t.lower()
     try:
-        # Query past games where team was home or away using indexed lookups
-        fetch_limit = max(1, int(limit)) * 3
-        rows = conn.execute(
+        names = _team_alias_names(conn, t)
+    except Exception:
+        names = {t.lower()}
+    names_list = sorted(names)
+    marks = ",".join("?" for _ in names_list)
+    fetch_limit = max(1, int(limit)) * 4
+
+    def _int_or_none(value):
+        try:
+            if value is None or str(value).strip() == "":
+                return None
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+
+    try:
+        past_rows = conn.execute(
             f"""
             SELECT payload_json FROM {_PAST_TABLE}
-            WHERE LOWER(COALESCE(home_team, '')) = ? OR LOWER(COALESCE(away_team, '')) = ?
+            WHERE LOWER(COALESCE(home_team, '')) IN ({marks})
+               OR LOWER(COALESCE(away_team, '')) IN ({marks})
+               OR LOWER(COALESCE(json_extract(payload_json, '$.canonical_home_team'), '')) IN ({marks})
+               OR LOWER(COALESCE(json_extract(payload_json, '$.canonical_away_team'), '')) IN ({marks})
             ORDER BY COALESCE(match_date_iso, '') DESC
             LIMIT ?
             """,
-            (t_lower, t_lower, fetch_limit),
+            (*names_list, *names_list, *names_list, *names_list, fetch_limit),
         ).fetchall()
+        live_rows = conn.execute(
+            f"""
+            SELECT payload_json FROM {_LIVE_TABLE}
+            WHERE json_extract(payload_json, '$.status') = 'post'
+              AND (LOWER(COALESCE(home_team, '')) IN ({marks})
+                   OR LOWER(COALESCE(away_team, '')) IN ({marks})
+                   OR LOWER(COALESCE(json_extract(payload_json, '$.canonical_home_team'), '')) IN ({marks})
+                   OR LOWER(COALESCE(json_extract(payload_json, '$.canonical_away_team'), '')) IN ({marks}))
+            ORDER BY COALESCE(game_date, kickoff_utc, '') DESC
+            LIMIT ?
+            """,
+            (*names_list, *names_list, *names_list, *names_list, fetch_limit),
+        ).fetchall()
+    finally:
+        conn.close()
 
-        matches: list[dict] = []
-        seen_keys: set[str] = set()
-        for r in rows:
+    candidates: list[dict] = []
+    for source_rows in (past_rows, live_rows):
+        for r in source_rows:
             payload = _json_loads(r["payload_json"])
             if not isinstance(payload, dict):
                 continue
-            date_str = str(payload.get("match_date_iso") or payload.get("match_date") or "")
-            ht = str(payload.get("home_team", "")).strip()
-            at = str(payload.get("away_team", "")).strip()
-            comp = str(payload.get("competition", "")).strip()
-            ck = f"{date_str}|{ht.lower()}|{at.lower()}"
-            if ck in seen_keys:
+            mid = str(payload.get("match_id", "") or "").strip().lower()
+            if mid.startswith(("test-", "sim-")) or "test-past-games" in mid:
                 continue
-            seen_keys.add(ck)
-            is_home = (ht.lower() == t_lower)
-            hs = payload.get("actual_home_goals") if payload.get("actual_home_goals") is not None else payload.get("home_score")
-            aws = payload.get("actual_away_goals") if payload.get("actual_away_goals") is not None else payload.get("away_score")
-            res = str(payload.get("actual_result", "")).strip().upper()
-            if not res and hs is not None and aws is not None:
-                try:
-                    hs_int = int(hs)
-                    aws_int = int(aws)
-                    res = "H" if hs_int > aws_int else ("A" if aws_int > hs_int else "D")
-                except Exception:
-                    pass
-            matches.append({
-                "date": date_str,
-                "competition": comp,
-                "home_team": ht,
-                "away_team": at,
-                "home_score": int(hs) if hs is not None and str(hs).isdigit() else None,
-                "away_score": int(aws) if aws is not None and str(aws).isdigit() else None,
-                "result": res,
-                "is_home": is_home,
-                "opponent": at if is_home else ht,
-            })
-            if len(matches) >= limit:
-                break
-        return matches
-    finally:
-        conn.close()
+            if str(payload.get("competition", "") or "").startswith("Test/"):
+                continue
+            candidates.append(payload)
+
+    matches: list[dict] = []
+    seen_keys: set[str] = set()
+    latest = _latest_completed_date_iso()
+    for payload in candidates:
+        date_str = _row_date_iso(payload)
+        ht = str(payload.get("home_team", "")).strip()
+        at = str(payload.get("away_team", "")).strip()
+        comp = str(payload.get("competition", "")).strip()
+        if not date_str or not ht or not at or date_str > latest:
+            continue
+        c_ht = str(payload.get("canonical_home_team") or _resolve_canonical_team(ht, comp) or ht).strip()
+        c_at = str(payload.get("canonical_away_team") or _resolve_canonical_team(at, comp) or at).strip()
+        home_hit = ht.lower() in names or c_ht.lower() in names
+        away_hit = at.lower() in names or c_at.lower() in names
+        if not home_hit and not away_hit:
+            continue
+        hs = _int_or_none(
+            payload.get("actual_home_goals")
+            if payload.get("actual_home_goals") is not None
+            else payload.get("home_score")
+        )
+        aws = _int_or_none(
+            payload.get("actual_away_goals")
+            if payload.get("actual_away_goals") is not None
+            else payload.get("away_score")
+        )
+        if hs is None or aws is None:
+            continue
+        mid = str(payload.get("match_id", "") or "").strip()
+        fixture_key = f"{date_str}|{c_ht.lower()}|{c_at.lower()}"
+        if fixture_key in seen_keys or (mid and f"id:{mid}" in seen_keys):
+            continue
+        seen_keys.add(fixture_key)
+        if mid:
+            seen_keys.add(f"id:{mid}")
+        res = str(payload.get("actual_result", "")).strip().upper()
+        if res not in {"H", "D", "A"}:
+            res = "H" if hs > aws else ("A" if aws > hs else "D")
+        is_home = home_hit
+        matches.append({
+            "date": date_str,
+            "competition": comp,
+            "home_team": ht,
+            "away_team": at,
+            "home_score": hs,
+            "away_score": aws,
+            "result": res,
+            "is_home": is_home,
+            "opponent": at if is_home else ht,
+            "match_id": mid,
+        })
+    matches.sort(key=lambda m: m["date"], reverse=True)
+    return matches[: max(0, int(limit))]
 
 
 def count_rows(table: str, db_path: Optional[Path] = None) -> int:
@@ -1258,7 +1502,7 @@ def _upsert_upcoming_conn(conn: sqlite3.Connection, rows: Iterable[dict], source
                 comp or None,
                 str(payload.get("home_team", "") or "").strip() or None,
                 str(payload.get("away_team", "") or "").strip() or None,
-                str(payload.get("prediction_key", "") or "").strip() or None,
+                _clean_prediction_key(payload.get("prediction_key")) or None,
                 str(payload.get("source", "") or source or "").strip() or None,
                 status,
                 _json_dumps(payload),
@@ -1909,8 +2153,19 @@ def save_notification_sub(
     competition: str = "",
     events: Optional[Iterable[str] | str] = None,
     db_path: Optional[Path] = None,
+    device_token: str = "",
+    sync_key: str = "",
+    environment: str = "",
+    team_id: str = "",
 ) -> bool:
-    """Persist a notification subscription (match or team) to SQLite with event filters."""
+    """Persist a notification subscription to SQLite with event filters.
+
+    ``sub_type`` is one of ``device``, ``match``, ``team``, ``live_activity``,
+    ``la_push_to_start`` (target = owning device token) or ``la_started``
+    (target = match key; dedupes push-to-start sends across restarts).
+    ``device_token`` / ``sync_key`` / ``environment`` are optional metadata;
+    empty values never overwrite previously stored metadata.
+    """
     t = str(token or "").strip()
     st = str(sub_type or "").strip().lower()
     tgt = str(sub_target or "").strip()
@@ -1934,14 +2189,30 @@ def save_notification_sub(
             conn.execute(
                 f"""
                 INSERT INTO {_NOTIF_SUBS_TABLE}(
-                    token, sub_type, sub_target, competition, events, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    token, sub_type, sub_target, competition, events, created_at,
+                    device_token, sync_key, environment, team_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(token, sub_type, sub_target) DO UPDATE SET
                     competition = excluded.competition,
                     events = excluded.events,
-                    created_at = excluded.created_at
+                    created_at = excluded.created_at,
+                    device_token = COALESCE(excluded.device_token, device_token),
+                    sync_key = COALESCE(excluded.sync_key, sync_key),
+                    environment = COALESCE(excluded.environment, environment),
+                    team_id = COALESCE(excluded.team_id, team_id)
                 """,
-                (t, st, tgt, str(competition or "").strip() or None, events_str, now),
+                (
+                    t,
+                    st,
+                    tgt,
+                    str(competition or "").strip() or None,
+                    events_str,
+                    now,
+                    str(device_token or "").strip() or None,
+                    str(sync_key or "").strip() or None,
+                    str(environment or "").strip().lower() or None,
+                    str(team_id or "").strip().lower() or None,
+                ),
             )
             _durable_commit(conn)
             return True
@@ -1983,23 +2254,44 @@ def remove_notification_sub(
             conn.close()
 
 
+_MATCH_SCOPED_SUB_TYPES = ("match", "live_activity", "la_started", "la_channel")
+
+
 def remove_match_notification_subs(
     match_id: str,
     competition: str = "",
     db_path: Optional[Path] = None,
+    sync_key: str = "",
+    sub_types: Optional[Iterable[str]] = None,
 ) -> int:
-    """Remove all subscriptions for a specific match upon completion."""
+    """Remove all match-scoped subscriptions for a match upon completion.
+
+    Covers regular match subscriptions, Live Activity registrations, and
+    push-to-start dedupe markers, matched by ESPN ``match_id`` and by
+    ``sync_key`` (target or stored sync_key column).
+    """
     mid = str(match_id or "").strip()
-    if not mid:
+    skey = str(sync_key or "").strip()
+    if not mid and not skey:
         return 0
+    types = tuple(sub_types) if sub_types else _MATCH_SCOPED_SUB_TYPES
     ensure_store(db_path)
+    clauses: list[str] = []
+    params: list[Any] = list(types)
+    for ident in (mid, skey):
+        if ident:
+            clauses.append("sub_target = ? OR sub_target LIKE ? OR sync_key = ?")
+            params.extend([ident, f"{ident}|%", ident])
+    type_marks = ",".join("?" for _ in types)
     with _WRITE_LOCK:
         conn = _open_ready(db_path)
         try:
             conn.execute("BEGIN IMMEDIATE")
             cur = conn.execute(
-                f"DELETE FROM {_NOTIF_SUBS_TABLE} WHERE sub_type = 'match' AND (sub_target = ? OR sub_target LIKE ?)",
-                (mid, f"{mid}|%"),
+                f"DELETE FROM {_NOTIF_SUBS_TABLE} WHERE sub_type IN ({type_marks}) AND ("
+                + " OR ".join(clauses)
+                + ")",
+                params,
             )
             deleted = cur.rowcount
             _durable_commit(conn)
@@ -2038,33 +2330,352 @@ def remove_all_token_subscriptions(
             conn.close()
 
 
+def remove_token_match_subs(
+    token: str,
+    match_id: str,
+    db_path: Optional[Path] = None,
+) -> int:
+    """Remove one token's regular match subscription(s) for a match, across competition keys."""
+    t = str(token or "").strip()
+    mid = str(match_id or "").strip()
+    if not t or not mid:
+        return 0
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"DELETE FROM {_NOTIF_SUBS_TABLE} WHERE token = ? AND sub_type = 'match' "
+                "AND (sub_target = ? OR sub_target LIKE ?)",
+                (t, mid, f"{mid}|%"),
+            )
+            deleted = cur.rowcount
+            _durable_commit(conn)
+            return deleted
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def remove_push_to_start_for_device(
+    device_token: str,
+    db_path: Optional[Path] = None,
+) -> int:
+    """Remove push-to-start token rows owned by a device token."""
+    d = str(device_token or "").strip()
+    if not d:
+        return 0
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"DELETE FROM {_NOTIF_SUBS_TABLE} WHERE sub_type = 'la_push_to_start' AND sub_target = ?",
+                (d,),
+            )
+            deleted = cur.rowcount
+            _durable_commit(conn)
+            return deleted
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def update_notification_token_environment(
+    token: str,
+    environment: str,
+    db_path: Optional[Path] = None,
+) -> int:
+    """Persist the detected APNs environment ("sandbox"/"production") on every row for a token."""
+    t = str(token or "").strip()
+    env = str(environment or "").strip().lower()
+    if not t or env not in ("sandbox", "production"):
+        return 0
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"UPDATE {_NOTIF_SUBS_TABLE} SET environment = ? WHERE token = ?",
+                (env, t),
+            )
+            updated = cur.rowcount
+            _durable_commit(conn)
+            return updated
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def save_live_activity_channel(
+    match_key: str,
+    environment: str,
+    channel_id: str,
+    match_id: str = "",
+    sync_key: str = "",
+    competition: str = "",
+    db_path: Optional[Path] = None,
+) -> bool:
+    """Persist an APNs broadcast channel for a match + environment."""
+    mk = str(match_key or "").strip()
+    env = str(environment or "").strip().lower()
+    cid = str(channel_id or "").strip()
+    if not mk or not env or not cid:
+        return False
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                f"""
+                INSERT INTO {_LA_CHANNELS_TABLE}(
+                    match_key, environment, channel_id, match_id, sync_key, competition, created_at, ended_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+                ON CONFLICT(match_key, environment) DO UPDATE SET
+                    channel_id = excluded.channel_id,
+                    match_id = COALESCE(excluded.match_id, match_id),
+                    sync_key = COALESCE(excluded.sync_key, sync_key),
+                    competition = COALESCE(excluded.competition, competition),
+                    created_at = excluded.created_at,
+                    ended_at = NULL
+                """,
+                (
+                    mk, env, cid,
+                    str(match_id or "").strip() or None,
+                    str(sync_key or "").strip() or None,
+                    str(competition or "").strip() or None,
+                    _utc_now(),
+                ),
+            )
+            _durable_commit(conn)
+            return True
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def update_live_activity_channel(
+    match_key: str,
+    environment: str,
+    match_id: Optional[str] = None,
+    ended_at: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> int:
+    """Attach a late-arriving ESPN match_id and/or mark a channel's match as ended."""
+    mk = str(match_key or "").strip()
+    env = str(environment or "").strip().lower()
+    if not mk or not env:
+        return 0
+    sets, params = [], []
+    if match_id:
+        sets.append("match_id = ?")
+        params.append(str(match_id).strip())
+    if ended_at:
+        sets.append("ended_at = COALESCE(ended_at, ?)")
+        params.append(str(ended_at))
+    if not sets:
+        return 0
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"UPDATE {_LA_CHANNELS_TABLE} SET {', '.join(sets)} WHERE match_key = ? AND environment = ?",
+                (*params, mk, env),
+            )
+            _durable_commit(conn)
+            return cur.rowcount
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def delete_live_activity_channel(match_key: str, environment: str, db_path: Optional[Path] = None) -> int:
+    """Remove a channel row (after the APNs channel has been deleted)."""
+    mk = str(match_key or "").strip()
+    env = str(environment or "").strip().lower()
+    if not mk or not env:
+        return 0
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"DELETE FROM {_LA_CHANNELS_TABLE} WHERE match_key = ? AND environment = ?",
+                (mk, env),
+            )
+            _durable_commit(conn)
+            return cur.rowcount
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def load_live_activity_channels(db_path: Optional[Path] = None) -> list[dict]:
+    """Load every stored broadcast channel."""
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        rows = conn.execute(f"SELECT * FROM {_LA_CHANNELS_TABLE}").fetchall()
+        return [
+            {
+                "match_key": r["match_key"],
+                "environment": r["environment"],
+                "channel_id": r["channel_id"],
+                "match_id": r["match_id"] or "",
+                "sync_key": r["sync_key"] or "",
+                "competition": r["competition"] or "",
+                "created_at": r["created_at"],
+                "ended_at": r["ended_at"] or "",
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def save_live_activity_device_settings(
+    device_token: str,
+    frequent_updates: Optional[bool] = None,
+    activities_enabled: Optional[bool] = None,
+    supports_broadcast: Optional[bool] = None,
+    ios_version: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> bool:
+    """Upsert a device's Live Activity settings; ``None`` values keep the stored value."""
+    d = str(device_token or "").strip()
+    if not d:
+        return False
+
+    def _b(v: Optional[bool]) -> Optional[int]:
+        return None if v is None else (1 if v else 0)
+
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                f"""
+                INSERT INTO {_LA_DEVICE_SETTINGS_TABLE}(
+                    device_token, frequent_updates, activities_enabled, supports_broadcast, ios_version, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(device_token) DO UPDATE SET
+                    frequent_updates = COALESCE(excluded.frequent_updates, frequent_updates),
+                    activities_enabled = COALESCE(excluded.activities_enabled, activities_enabled),
+                    supports_broadcast = COALESCE(excluded.supports_broadcast, supports_broadcast),
+                    ios_version = COALESCE(excluded.ios_version, ios_version),
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    d, _b(frequent_updates), _b(activities_enabled), _b(supports_broadcast),
+                    str(ios_version).strip() if ios_version else None, _utc_now(),
+                ),
+            )
+            _durable_commit(conn)
+            return True
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def delete_live_activity_device_settings(device_token: str, db_path: Optional[Path] = None) -> int:
+    """Remove a device's Live Activity settings row."""
+    d = str(device_token or "").strip()
+    if not d:
+        return 0
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(f"DELETE FROM {_LA_DEVICE_SETTINGS_TABLE} WHERE device_token = ?", (d,))
+            _durable_commit(conn)
+            return cur.rowcount
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+
+def load_live_activity_device_settings(db_path: Optional[Path] = None) -> list[dict]:
+    """Load every device's Live Activity settings."""
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        rows = conn.execute(f"SELECT * FROM {_LA_DEVICE_SETTINGS_TABLE}").fetchall()
+
+        def _o(v):
+            return None if v is None else bool(v)
+
+        return [
+            {
+                "device_token": r["device_token"],
+                "frequent_updates": _o(r["frequent_updates"]),
+                "activities_enabled": _o(r["activities_enabled"]),
+                "supports_broadcast": _o(r["supports_broadcast"]),
+                "ios_version": r["ios_version"] or "",
+                "updated_at": r["updated_at"],
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
 def load_all_notification_subs(db_path: Optional[Path] = None) -> list[dict]:
-    """Load all notification subscriptions from SQLite store."""
+    """Load all notification subscriptions (with device/sync/environment metadata) from SQLite."""
     ensure_store(db_path)
     conn = _open_ready(db_path)
     try:
         rows = conn.execute(
             f"""
-            SELECT token, sub_type, sub_target, competition, events, created_at
+            SELECT *
             FROM {_NOTIF_SUBS_TABLE}
             ORDER BY created_at ASC
             """
         ).fetchall()
-        return [
-            {
+        out = []
+        for r in rows:
+            keys = r.keys()
+            out.append({
                 "token": r["token"],
                 "sub_type": r["sub_type"],
                 "sub_target": r["sub_target"],
                 "competition": r["competition"] or "",
                 "events": (
                     [e.strip() for e in r["events"].split(",") if e.strip()]
-                    if "events" in r.keys() and r["events"]
+                    if "events" in keys and r["events"]
                     else None
                 ),
                 "created_at": r["created_at"],
-            }
-            for r in rows
-        ]
+                "device_token": (r["device_token"] or "") if "device_token" in keys else "",
+                "sync_key": (r["sync_key"] or "") if "sync_key" in keys else "",
+                "environment": (r["environment"] or "") if "environment" in keys else "",
+                "team_id": (r["team_id"] or "") if "team_id" in keys else "",
+            })
+        return out
     finally:
         conn.close()
 

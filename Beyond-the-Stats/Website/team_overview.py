@@ -454,6 +454,107 @@ def build_team_overview(team_name: str) -> dict:
     return payload
 
 
+_RESULT_REFRESH_LOCK = threading.Lock()
+_RESULT_REFRESH_PENDING: set[str] = set()
+_RESULT_REFRESH_RUNNING = False
+
+
+def _team_identity_keys(name: str) -> set[str]:
+    """Lower-cased spellings + team id that identify *name* in overview caches."""
+    keys: set[str] = set()
+    raw = str(name or "").strip()
+    if not raw:
+        return keys
+    keys.add(raw.lower())
+    try:
+        canon = canonical_team_name(raw)
+        if canon:
+            keys.add(canon.lower())
+        info = resolve_team_info(canon or raw) or {}
+        for field in ("full_name", "short_name", "id"):
+            val = str(info.get(field) or "").strip()
+            if val:
+                keys.add(val.lower() if field != "id" else f"id:{val}")
+    except Exception:
+        pass
+    return keys
+
+
+def invalidate_team_overviews(team_names) -> list[str]:
+    """Drop cached overviews for teams whose match just finished.
+
+    Matches on raw/canonical/full/short names and resolved team id so every
+    alias key of the payload is removed. Returns the canonical team names
+    whose payloads were dropped (used to re-warm them).
+    """
+    wanted: set[str] = set()
+    for name in team_names or ():
+        wanted |= _team_identity_keys(name)
+    if not wanted:
+        return []
+    dropped: list[str] = []
+    with _TEAM_OVERVIEW_CACHE_LOCK:
+        for key in list(_TEAM_OVERVIEW_CACHE.keys()):
+            _exp, payload = _TEAM_OVERVIEW_CACHE[key]
+            ids = {key}
+            if isinstance(payload, dict):
+                for field in ("team", "canonical_name", "team_full", "team_short"):
+                    val = str(payload.get(field) or "").strip()
+                    if val:
+                        ids.add(val.lower())
+                if payload.get("team_id"):
+                    ids.add(f"id:{payload.get('team_id')}")
+            if ids & wanted:
+                _TEAM_OVERVIEW_CACHE.pop(key, None)
+                if isinstance(payload, dict) and payload.get("team"):
+                    dropped.append(str(payload["team"]))
+    return sorted(set(dropped))
+
+
+def refresh_team_overviews_after_results(team_names) -> None:
+    """Invalidate + asynchronously rebuild overviews after match results.
+
+    Season averages / lineups come from the global index, so it is rebuilt
+    (once per burst of results) before re-warming the dropped payloads.
+    """
+    global _RESULT_REFRESH_RUNNING
+    dropped = invalidate_team_overviews(team_names)
+    with _RESULT_REFRESH_LOCK:
+        _RESULT_REFRESH_PENDING.update(dropped or [])
+        _RESULT_REFRESH_PENDING.update(str(t) for t in (team_names or ()) if t)
+        if _RESULT_REFRESH_RUNNING:
+            return
+        _RESULT_REFRESH_RUNNING = True
+
+    def _worker():
+        global _RESULT_REFRESH_RUNNING
+        try:
+            while True:
+                with _RESULT_REFRESH_LOCK:
+                    teams = sorted(_RESULT_REFRESH_PENDING)
+                    _RESULT_REFRESH_PENDING.clear()
+                    if not teams:
+                        _RESULT_REFRESH_RUNNING = False
+                        return
+                try:
+                    _build_global_team_indexes(force=True)
+                except Exception as exc:
+                    logger.warning("Team index rebuild after results failed: %s", exc)
+                # Results in the same burst may have re-cached stale payloads
+                # built from the old index while it was rebuilding.
+                invalidate_team_overviews(teams)
+                for team in teams:
+                    try:
+                        build_team_overview(team)
+                    except Exception as exc:
+                        logger.warning("Re-warming overview for %s failed: %s", team, exc)
+        except Exception:
+            with _RESULT_REFRESH_LOCK:
+                _RESULT_REFRESH_RUNNING = False
+
+    threading.Thread(target=_worker, name="team-overview-results", daemon=True).start()
+
+
 def precache_popular_teams() -> int:
     """Pre-cache overview payloads for popular clubs (Top 5 European Leagues & MLS)."""
     _build_global_team_indexes(force=True)

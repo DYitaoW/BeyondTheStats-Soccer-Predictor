@@ -201,7 +201,11 @@ def convert_mls_raw_to_standard(df):
         return pd.DataFrame()
 
     out = pd.DataFrame()
-    out["Date"] = pd.to_datetime(df["Date"], dayfirst=False, format="mixed", errors="coerce")
+    # football-data.co.uk MLS / Liga MX feeds are DD/MM/YYYY (same as the
+    # europe / extra pipelines). dayfirst=False swapped day and month for
+    # every match on days 1-12 (e.g. 02/11 became 11 Feb, 12/04 became 4 Dec,
+    # creating "completed" results dated in the future).
+    out["Date"] = pd.to_datetime(df["Date"], dayfirst=True, format="mixed", errors="coerce")
     out["HomeTeam"] = df["Home"].astype(str).str.strip()
     out["AwayTeam"] = df["Away"].astype(str).str.strip()
     out["FTHG"] = pd.to_numeric(df["HG"], errors="coerce")

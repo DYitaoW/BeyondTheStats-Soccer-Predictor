@@ -2,6 +2,14 @@
 
 This guide explains how to test, debug, and monitor Push Notifications and Apple Live Activities end-to-end between the BeyondTheStats backend and your physical iOS device.
 
+> [!IMPORTANT]
+> **Admin token required.** Every `/api/test/*` route, `GET /api/live-activities`, `POST /api/live-activities/update|end`, and the broadcast `POST /api/notifications` require
+> `X-Admin-Token: <MUTATION_API_TOKEN>` (or `Authorization: Bearer <MUTATION_API_TOKEN>`). Requests without it return `401`.
+>
+> **Live Activity `event` values.** ActivityKit only accepts `"start"`, `"update"`, or `"end"` in `aps.event`. Passing a label such as
+> `"goal"` to `/api/test/live-activities/push` is sent as `"update"` with `content-state.event = "goal"`. The response includes the exact `payload` sent.
+> Use `"event": "start"` with a push-to-start token to test server-started activities (requires `attributes`; defaults are derived from the content-state).
+
 ---
 
 ## 1. Why Might Notifications Not Be Arriving on Your Phone?

@@ -4,9 +4,11 @@ import importlib.util
 import json
 import os
 import queue
+import re
 import sys
 import threading
 import time
+import unicodedata
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
@@ -125,6 +127,105 @@ def _flush_completed_live_scores_to_history():
     return _merge_completed_to_history()
 
 
+# ── Result finalization bookkeeping ────────────────────────────────────
+# Every caller of _merge_completed_to_history (poller loop, on-demand refresh,
+# overnight rollover) records finished / corrected results here; the poller
+# drains it once per cycle (_drain_finalized_results) so league tables, team
+# form, overviews and response caches update no matter which path saw the
+# final whistle first.
+_past_synced_scores: dict[str, tuple] = {}
+_result_pending_lock = threading.Lock()
+_pending_result_comps: set[str] = set()
+_pending_result_teams: set[str] = set()
+_result_drain_lock = threading.Lock()
+
+# Response-cache path prefixes whose payloads depend on match results.
+_RESULT_DEPENDENT_ENDPOINTS = (
+    "/api/league-data", "/api/league-tables", "/api/real-tables",
+    "/api/competition-data", "/api/cup-data", "/api/real-cup-data",
+    "/api/cup-bracket", "/api/tournament", "/api/world-cup", "/api/stats",
+    "/api/scorers", "/api/team", "/api/past-games", "/api/past-live-scores",
+    "/api/h2h", "/api/upcoming", "/api/home", "/api/mobile/widget",
+)
+
+
+def _is_synthetic_game(game: dict, comp_name: str = "") -> bool:
+    mid = str(game.get("match_id", "") or "").strip().lower()
+    comp = str(comp_name or game.get("competition", "") or "")
+    return (
+        mid.startswith("test-")
+        or mid.startswith("sim-")
+        or "test-past-games" in mid
+        or comp.startswith("Test/")
+    )
+
+
+def _result_signature(game: dict) -> tuple:
+    return (
+        str(game.get("home_score", "")).strip(),
+        str(game.get("away_score", "")).strip(),
+    )
+
+
+def _result_memo_key(game: dict) -> str:
+    mid = str(game.get("match_id", "") or "").strip()
+    if mid:
+        return f"id:{mid}"
+    return f"sync:{game.get('sync_key') or ''}|{game.get('home_team')}|{game.get('away_team')}"
+
+
+def _sync_finished_games_to_past_games(games) -> int:
+    """Write finished live games to SQLite ``past_games`` right away.
+
+    Previously finals only reached ``past_games`` during the nightly full
+    pipeline archive, so team last-5 / momentum / H2H (which read
+    ``past_games``) lagged a day behind the live tables. Rows reuse the
+    archive's converter (ET match date, canonical names, sync key) and merge
+    the pre-match prediction so the stored row matches ``/api/past-games``.
+    Upserts are idempotent with the nightly archive (same storage key).
+    """
+    games = [g for g in (games or []) if isinstance(g, dict)]
+    if not games:
+        return 0
+    try:
+        from predictions import (
+            _build_past_game_prediction_lookup,
+            _is_placeholder_game,
+            _json_safe_row,
+            _live_game_to_past_row,
+            _merge_prediction_onto_past_row,
+        )
+        from shared import sqlite_store as _store
+    except Exception as exc:
+        print(f"[past-games] live result sync unavailable: {exc}")
+        return 0
+
+    rows: list[dict] = []
+    lookup = None
+    for g in games:
+        if str(g.get("status", "")).strip().lower() != "post":
+            continue
+        if _is_synthetic_game(g):
+            continue
+        row = _live_game_to_past_row(g, g.get("competition"))
+        if not row or _is_placeholder_game(row):
+            continue
+        if lookup is None:
+            try:
+                lookup = _build_past_game_prediction_lookup()
+            except Exception:
+                lookup = {}
+        try:
+            row = _merge_prediction_onto_past_row(dict(row), lookup)
+        except Exception:
+            pass
+        rows.append(_json_safe_row(row))
+    if not rows:
+        return 0
+    _store.upsert_past_games(rows)
+    return len(rows)
+
+
 def _merge_completed_to_history():
     """Move finished games from _live_scores into persistent history.
 
@@ -134,6 +235,10 @@ def _merge_completed_to_history():
     Always upserts current ``post`` games (not only first-seen) so a later
     summary fetch can enrich the SQLite/JSON row with full stats. SQLite never
     prunes these rows.
+
+    Newly finished games (and post-FT score corrections) are also written to
+    ``past_games`` and queued for ``_drain_finalized_results`` (standings,
+    team form, overview and response-cache refresh).
 
     Returns the set of competition names that received newly completed games.
     """
@@ -167,15 +272,151 @@ def _merge_completed_to_history():
                 elif not mid:
                     new_games.append(entry)
                     cleared_standings.add(comp_name)
+
+    # Decide which finals must be (re)written to past_games: first time this
+    # process sees them, or the score changed after full time (VAR/admin fix).
+    new_keys = {_result_memo_key(g) for g in new_games}
+    to_sync: list[dict] = []
+    finalized: list[dict] = []
+    for entry in all_post:
+        if _is_synthetic_game(entry):
+            continue
+        memo_key = _result_memo_key(entry)
+        sig = _result_signature(entry)
+        prev_sig = _past_synced_scores.get(memo_key)
+        if prev_sig == sig:
+            continue
+        to_sync.append(entry)
+        if memo_key in new_keys or prev_sig is not None:
+            # Brand-new final, or a corrected score → tables/form must change.
+            finalized.append(entry)
+            cleared_standings.add(entry.get("competition", ""))
+
+    cleared_standings.discard("")
     for comp in cleared_standings:
         _clear_standings_cache(comp)
         _clear_leaders_cache(comp)
     if all_post:
         _upsert_live_score_history(all_post)
+    if to_sync:
+        try:
+            _sync_finished_games_to_past_games(to_sync)
+            for entry in to_sync:
+                _past_synced_scores[_result_memo_key(entry)] = _result_signature(entry)
+        except Exception as exc:
+            print(f"[past-games] live result sync failed: {exc}")
+    if finalized or cleared_standings:
+        with _result_pending_lock:
+            _pending_result_comps.update(cleared_standings)
+            for entry in finalized:
+                comp = entry.get("competition", "")
+                for side in ("home_team", "away_team"):
+                    name = str(entry.get(side, "") or "").strip()
+                    if name:
+                        _pending_result_teams.add(name)
+                        canon = canonical_team_name(name, comp)
+                        if canon:
+                            _pending_result_teams.add(canon)
     # Track predictions for newly completed games against our CSV predictions.
     if new_games:
         _track_prediction_results(new_games)
     return cleared_standings
+
+
+def _invalidate_result_dependent_caches(teams) -> None:
+    """Drop every cache whose payload embeds match results or team form."""
+    steps = []
+
+    def _step(label, fn):
+        try:
+            fn()
+        except Exception as exc:
+            steps.append(f"{label}: {exc}")
+
+    def _analytics():
+        from match_analytics import invalidate_match_history_cache
+        invalidate_match_history_cache()
+
+    def _form():
+        from predictions import clear_team_form_caches
+        clear_team_form_caches()
+
+    def _next_game():
+        from routes.predictions import _invalidate_team_next_game_index
+        _invalidate_team_next_game_index()
+
+    def _leaders():
+        from routes.leagues import clear_league_leaders_cache
+        clear_league_leaders_cache()
+
+    def _responses():
+        from cache import _cache_clear_endpoints
+        _cache_clear_endpoints(_RESULT_DEPENDENT_ENDPOINTS)
+
+    def _overviews():
+        from team_overview import refresh_team_overviews_after_results
+        refresh_team_overviews_after_results(sorted(teams))
+
+    _step("analytics", _analytics)
+    _step("form", _form)
+    _step("next-game", _next_game)
+    _step("leaders", _leaders)
+    # Overviews last: their rebuild reads the freshly invalidated sources.
+    _step("overviews", _overviews)
+    _step("responses", _responses)
+    if steps:
+        print(f"[results] cache invalidation issues: {'; '.join(steps)}")
+
+
+def _drain_finalized_results(extra_comps=()) -> list[str]:
+    """Apply queued results: recompute real tables, then invalidate caches.
+
+    Safe to call from any thread; concurrent calls coalesce (the running
+    drain loops until the queue is empty). Returns refreshed competitions.
+    """
+    with _result_pending_lock:
+        _pending_result_comps.update(c for c in (extra_comps or ()) if c)
+    if not _result_drain_lock.acquire(blocking=False):
+        return []
+    refreshed: list[str] = []
+    try:
+        while True:
+            with _result_pending_lock:
+                comps = sorted(_pending_result_comps)
+                teams = set(_pending_result_teams)
+                _pending_result_comps.clear()
+                _pending_result_teams.clear()
+            if not comps and not teams:
+                break
+            for comp_name in comps:
+                try:
+                    refreshed.extend(refresh_real_standings_after_live_final(comp_name))
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+            _invalidate_result_dependent_caches(teams)
+            if teams:
+                print(
+                    f"[results] finalized {len(teams)} team result(s); "
+                    f"tables refreshed: {', '.join(comps) or 'none'}"
+                )
+    finally:
+        _result_drain_lock.release()
+    return refreshed
+
+
+def _sync_backfilled_finals_to_past_games(games) -> None:
+    """Startup catch-up: finals that never reached past_games (e.g. finished
+    while the backend was down, or before live sync existed)."""
+    try:
+        n = _sync_finished_games_to_past_games(games)
+        for g in games or []:
+            if str(g.get("status", "")).strip().lower() == "post":
+                _past_synced_scores.setdefault(_result_memo_key(g), _result_signature(g))
+        if n:
+            print(f"[past-games] startup sync: {n} recent final(s) upserted to past_games")
+    except Exception as exc:
+        print(f"[past-games] startup sync failed: {exc}")
 
 
 def _persist_post_games_full_stats():
@@ -384,6 +625,9 @@ def _backfill_recent_live_score_history():
             f"{len(completed)} final(s), {result['inserted']} inserted, "
             f"{result['updated']} updated, {result['total']} total."
         )
+        for entry in completed:
+            _stamp_game_sync_fields(entry, entry.get("competition", ""))
+        _sync_backfilled_finals_to_past_games(completed)
     return len(completed)
 
 
@@ -484,20 +728,166 @@ def _la_probabilities(game, comp_name, live_prediction):
     return (third, third, third)
 
 
-def _la_content_state(game, comp_name) -> dict:
-    """Full Live Activity content-state in the iOS app's expected schema."""
+def _la_score(value) -> int | None:
+    """Coerce a scoreboard score to int (or None) so ContentState `Int?` decoding never fails on "-"."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+# ── Live Activity match clock (Apple's built-in timer) ───────────
+# ActivityKit decodes content-state with Swift's default JSONDecoder, which
+# reads ``Date`` as seconds since 2001-01-01 (timeIntervalSinceReferenceDate).
+# Sending timer fields in that unit lets the widget declare them as ``Date``
+# and drive ``Text(timerInterval:pauseTime:countsDown:)`` directly, so the
+# system ticks the clock locally — no per-second pushes.
+_SWIFT_REFERENCE_EPOCH = 978307200.0  # 2001-01-01T00:00:00Z as Unix seconds
+_la_timer_anchors: dict[str, dict] = {}
+_la_timer_lock = threading.Lock()
+# Re-anchor only when the computed zero point drifts more than this (seconds),
+# so minute-granularity ESPN clocks don't make the on-device timer jump.
+_LA_TIMER_DRIFT_TOLERANCE_S = 75.0
+
+
+def _swift_date(ts: float | None) -> float | None:
+    """Unix seconds → Swift ``Date`` (reference-date seconds) for content-state."""
+    return None if ts is None else round(float(ts) - _SWIFT_REFERENCE_EPOCH, 3)
+
+
+def _la_period_base_minutes(period: str) -> int:
+    """Match minute at which the current period starts (0 / 45 / 90 / 105)."""
+    p = str(period or "").strip().lower()
+    if p.startswith("et") or "extra" in p:
+        return 105 if "2nd" in p or "second" in p else 90
+    if "2nd" in p or "second" in p:
+        return 45
+    return 0
+
+
+def _la_clock_state(game) -> str:
+    """"pre" | "running" | "paused" (HT / ET HT / end of regular time) | "stopped" (FT / shootout)."""
+    status = str(game.get("status", "")).strip().lower()
+    status_type = str(game.get("status_type", "")).strip().upper()
+    period = str(game.get("period", "")).strip().lower()
+    if status == "pre":
+        return "pre"
+    if status == "post":
+        return "stopped"
+    if "pen" in period or "shootout" in period or status_type == "STATUS_SHOOTOUT":
+        return "stopped"
+    if status_type == "STATUS_END_REGULAR_TIME" or _is_halftime_break(
+        game.get("period"), game.get("status_type"), game.get("clock")
+    ):
+        return "paused"
+    return "running"
+
+
+def _la_elapsed_seconds(game) -> float:
+    """Elapsed match time in seconds (ESPN raw clock when available, else minute display)."""
+    raw = game.get("clock_seconds")
+    base = _la_period_base_minutes(game.get("period", "")) * 60
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool) and raw > 0:
+        return max(float(raw), float(base))
+    minutes = _parse_elapsed_minutes(game.get("clock", ""), game.get("period", ""))
+    if minutes <= 0:
+        return float(base)
+    # ESPN shows the minute in progress ("23'" ≈ 22:00–22:59) → aim mid-minute.
+    return max(float(base), minutes * 60.0 - 30.0)
+
+
+def _la_pause_elapsed_seconds(game) -> float:
+    """Clock value to freeze at during a break (45:00 at HT, 90:00 end of regular time, 105:00 ET HT)."""
+    status_type = str(game.get("status_type", "")).strip().upper()
+    period = str(game.get("period", "")).strip().lower()
+    if status_type == "STATUS_EXTRA_HALFTIME" or "et" in period.split() or period.startswith("et"):
+        return 105 * 60.0
+    if status_type == "STATUS_END_REGULAR_TIME":
+        return 90 * 60.0
+    return 45 * 60.0
+
+
+def _la_timer_fields(game, polled_at: float | None = None) -> dict:
+    """Timer fields for the Live Activity clock.
+
+    - ``timer_start``     (Date): virtual 0:00 — ``now - timer_start`` = match time.
+    - ``timer_paused_at`` (Date): when set, the clock is frozen at
+      ``timer_paused_at - timer_start`` (e.g. 45:00 at halftime).
+    - ``timer_running``   (Bool): True while the ball is in play.
+    - ``kickoff_time``    (Date): scheduled kickoff (pre-match countdown).
+    """
+    mid = str(game.get("match_id") or "").strip()
+    ref = float(polled_at) if polled_at else time.time()
+    state = _la_clock_state(game)
+    period = str(game.get("period") or "")
+    fields: dict = {
+        "timer_running": state == "running",
+        "timer_start": None,
+        "timer_paused_at": None,
+        "kickoff_time": _swift_date(_la_kickoff_ts(game)),
+    }
+    if state == "pre" or not mid:
+        return fields
+    with _la_timer_lock:
+        prev = _la_timer_anchors.get(mid)
+        if state == "running":
+            anchor = ref - _la_elapsed_seconds(game)
+            if (
+                prev
+                and prev.get("period") == period
+                and abs(float(prev["anchor"]) - anchor) < _LA_TIMER_DRIFT_TOLERANCE_S
+            ):
+                anchor = float(prev["anchor"])
+            _la_timer_anchors[mid] = {"period": period, "anchor": anchor}
+            fields["timer_start"] = _swift_date(anchor)
+        else:
+            frozen = (
+                _la_pause_elapsed_seconds(game) if state == "paused"
+                else max(_la_elapsed_seconds(game), 90 * 60.0)
+            )
+            anchor = float(prev["anchor"]) if prev else ref - frozen
+            fields["timer_start"] = _swift_date(anchor)
+            fields["timer_paused_at"] = _swift_date(anchor + frozen)
+    return fields
+
+
+def _la_forget_timer(match_id: str) -> None:
+    with _la_timer_lock:
+        _la_timer_anchors.pop(str(match_id or "").strip(), None)
+
+
+def _la_content_state(game, comp_name, polled_at: float | None = None) -> dict:
+    """Full Live Activity content-state in the iOS app's expected schema.
+
+    Every update/end/start push carries this complete shape (plus ``event`` /
+    ``event_text`` labels) so ActivityKit can always decode it into the app's
+    ContentState type. Scores are int or null; ``half_start_time`` /
+    ``kickoff_date`` are ISO-8601 strings; ``timer_start`` / ``timer_paused_at``
+    / ``kickoff_time`` are Swift ``Date`` values (reference-date seconds).
+    """
     kickoff_iso = _la_kickoff_iso(game)
     prob_home, prob_draw, prob_away = _la_probabilities(
         game, comp_name, game.get("live_prediction")
     )
+    timer = _la_timer_fields(game, polled_at=polled_at)
+    half_start_iso = _la_half_start_iso(game, kickoff_iso)
+    if timer.get("timer_running") and timer.get("timer_start") is not None:
+        half_start_ts = (
+            timer["timer_start"] + _SWIFT_REFERENCE_EPOCH
+            + _la_period_base_minutes(game.get("period", "")) * 60
+        )
+        half_start_iso = datetime.fromtimestamp(half_start_ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
-        "match_id": game.get("match_id"),
+        **timer,
+        "match_id": str(game.get("match_id") or ""),
         "sync_key": game.get("sync_key", ""),
         "competition": comp_name,
         "home_team": game.get("home_team", ""),
         "away_team": game.get("away_team", ""),
-        "home_score": game.get("home_score"),
-        "away_score": game.get("away_score"),
+        "home_score": _la_score(game.get("home_score")),
+        "away_score": _la_score(game.get("away_score")),
         "status": game.get("status", ""),
         "clock": game.get("clock", ""),
         "period": game.get("period", ""),
@@ -507,9 +897,59 @@ def _la_content_state(game, comp_name) -> dict:
         "prob_home": prob_home,
         "prob_draw": prob_draw,
         "prob_away": prob_away,
-        "half_start_time": _la_half_start_iso(game, kickoff_iso),
+        "half_start_time": half_start_iso,
         "kickoff_date": kickoff_iso,
     }
+
+
+def _la_attributes(game, comp_name) -> dict:
+    """Static ActivityAttributes for push-to-start payloads (fixed for the activity's lifetime)."""
+    return {
+        "match_id": str(game.get("match_id") or ""),
+        "sync_key": game.get("sync_key", ""),
+        "competition": comp_name,
+        "home_team": game.get("home_team", ""),
+        "away_team": game.get("away_team", ""),
+        "home_team_logo": game.get("home_team_logo", ""),
+        "away_team_logo": game.get("away_team_logo", ""),
+        "kickoff_date": _la_kickoff_iso(game),
+    }
+
+
+def _polled_ts(comp_data) -> float | None:
+    """Epoch seconds of a competition's last ESPN poll (when its clock values were sampled)."""
+    raw = comp_data.get("last_polled_utc") if isinstance(comp_data, dict) else None
+    if not raw:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        value = ts.timestamp()
+    except ValueError:
+        return None
+    # Ignore implausible values (clock skew / stale fixtures in tests).
+    now = time.time()
+    return value if now - 600 <= value <= now + 5 else None
+
+
+def _la_kickoff_ts(game) -> float | None:
+    """Scheduled kickoff as epoch seconds (None if unknown)."""
+    iso = _la_kickoff_iso(game)
+    if not iso:
+        return None
+    try:
+        return datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        return None
+
+
+def _la_stale_date(game) -> int:
+    """stale-date: kickoff + configured window, so an activity whose "end" never arrives shows as outdated."""
+    after = int(getattr(config, "APNS_LA_STALE_AFTER_KICKOFF_SECONDS", 10800))
+    ko = _la_kickoff_ts(game)
+    base = ko if ko is not None else time.time()
+    return int(max(base + after, time.time() + 1800))
 
 
 def _upcoming_csv_scan_paths():
@@ -1107,6 +1547,96 @@ def get_live_scores_snapshot() -> dict:
         return dict(_live_scores)
 
 
+# ── Red-card dedupe ───────────────────────────────────────────────
+# ESPN reports the same red card twice — in scoreboard ``details`` (parsed to
+# ``red_cards``: full name, "67'") and in summary ``keyEvents`` (sometimes an
+# abbreviated name like "B. Saka", sometimes no athlete at all, minute format
+# can differ). Cards are fingerprinted as (player surname, side, minute) and a
+# new card is a duplicate when the surname matches, or when the minute matches
+# and the side matches/is unknown or either player name is unknown.
+
+def _rc_minute_key(minute) -> str:
+    """Normalize "67'", "67", "90'+2'" → "67" / "90+2"."""
+    s = str(minute or "")
+    nums = re.findall(r"\d+", s)
+    if not nums:
+        return ""
+    return f"{nums[0]}+{nums[1]}" if "+" in s and len(nums) > 1 else nums[0]
+
+
+def _rc_player_key(name) -> str:
+    """Accent-folded lowercase surname ("B. Saka" / "Bukayo Saka" → "saka"); "" if unknown."""
+    raw = unicodedata.normalize("NFKD", str(name or "")).encode("ascii", "ignore").decode().lower()
+    tokens = [t for t in re.findall(r"[a-z]+", raw) if t not in {"jr", "junior", "sr", "ii", "iii"}]
+    if not tokens or tokens == ["player"]:
+        return ""
+    return tokens[-1]
+
+
+def _rc_fingerprints(notified: set, mid: str) -> list[tuple[str, str, str]]:
+    prefix = f"rcseen|{mid}|"
+    out = []
+    for item in notified:
+        if isinstance(item, str) and item.startswith(prefix):
+            parts = item[len(prefix):].split("|")
+            if len(parts) == 3:
+                out.append((parts[0], parts[1], parts[2]))
+    return out
+
+
+def _rc_is_duplicate(notified: set, mid: str, pkey: str, side: str, mkey: str) -> bool:
+    for seen_p, seen_side, seen_m in _rc_fingerprints(notified, mid):
+        if pkey and seen_p and pkey == seen_p:
+            return True
+        if mkey and seen_m == mkey:
+            sides_compatible = not side or not seen_side or side == seen_side
+            names_compatible = not pkey or not seen_p
+            if sides_compatible and (names_compatible or side == seen_side):
+                return True
+    return False
+
+
+def _rc_mark(notified: set, mid: str, pkey: str, side: str, mkey: str) -> None:
+    notified.add(f"rcseen|{mid}|{pkey}|{side}|{mkey}")
+
+
+def _game_red_cards(game) -> list[dict]:
+    """All red cards for a game from both ESPN sources, normalized.
+
+    Returns dicts: player (display), pkey, side ("home"/"away"/""), minute (display), mkey.
+    """
+    cards = []
+    home_id = str(game.get("home_team_id") or "")
+    away_id = str(game.get("away_team_id") or "")
+    for rc in (game.get("red_cards") or []):
+        player = str(rc.get("player", "")).strip()
+        minute = str(rc.get("minute", "")).strip()
+        cards.append({
+            "player": player or "Player",
+            "pkey": _rc_player_key(player),
+            "side": str(rc.get("team", "") or ""),
+            "minute": minute,
+            "mkey": _rc_minute_key(minute),
+            "source": "scoreboard",
+        })
+    for ev in (game.get("key_events") or []):
+        if "red card" not in str(ev.get("type", "")).lower():
+            continue
+        athlete = str(ev.get("athlete_name", "")).strip()
+        minute = str(ev.get("clock", "")).strip()
+        team_id = str(ev.get("team_id", "") or "")
+        side = "home" if team_id and team_id == home_id else ("away" if team_id and team_id == away_id else "")
+        cards.append({
+            "player": athlete or str(ev.get("text", "")).strip() or "Player",
+            "pkey": _rc_player_key(athlete),  # never fingerprint free text as a name
+            "side": side,
+            "minute": minute,
+            "mkey": _rc_minute_key(minute),
+            "source": "key_events",
+        })
+    return cards
+
+
 def _dispatch_match_event_notifications() -> int:
     """Inspect current match states, detect kickoff, goals, halftime, fulltime, and red cards,
     and dispatch deduplicated push alerts and Live Activity updates.
@@ -1133,6 +1663,7 @@ def _dispatch_match_event_notifications() -> int:
 
         with _live_scores_lock, _notified_events_lock, _match_tracker_lock:
             for comp_name, comp_data in _live_scores.items():
+                polled_at = _polled_ts(comp_data)
                 for g in comp_data.get("games", []):
                     mid = str(g.get("match_id", "")).strip()
                     if not mid:
@@ -1152,7 +1683,7 @@ def _dispatch_match_event_notifications() -> int:
                     at = g.get("away_team", "")
                     hs = g.get("home_score")
                     as_ = g.get("away_score")
-                    state_base = _la_content_state(g, comp_name)
+                    state_base = _la_content_state(g, comp_name, polled_at=polled_at)
                     cur_minute = state_base.get("match_minute") or 0
 
                     prev_meta = _match_tracker.get(mid)
@@ -1161,6 +1692,9 @@ def _dispatch_match_event_notifications() -> int:
                     if is_first_observation:
                         # Pre-mark completed or mid-game milestones on initial observation
                         # to avoid spamming historical/past milestones.
+                        for card in _game_red_cards(g):
+                            if not _rc_is_duplicate(notified, mid, card["pkey"], card["side"], card["mkey"]):
+                                _rc_mark(notified, mid, card["pkey"], card["side"], card["mkey"])
                         if cur_status == "post":
                             notified.add(f"start|{mid}")
                             notified.add(f"halftime|{mid}")
@@ -1170,6 +1704,19 @@ def _dispatch_match_event_notifications() -> int:
                             if hs is not None and as_ is not None and hs != "-" and as_ != "-":
                                 notified.add(f"goal|{mid}|{hs}-{as_}")
                                 notified.add(f"score_goal|{mid}|{hs}-{as_}")
+                            # Match finished while we weren't watching (e.g. backend
+                            # restart): silently end any Live Activities still
+                            # registered so they don't linger, and drop match subs.
+                            first_sync = str(g.get("sync_key", "")).strip()
+                            if f"cleared|{mid}" not in notified:
+                                notified.add(f"cleared|{mid}")
+                                send_live_activity_end(
+                                    mid, comp_name,
+                                    {**state_base, "status": "FT", "event": "fulltime"},
+                                    sync_key=first_sync,
+                                )
+                                clear_match_subscriptions(mid, comp_name, sync_key=first_sync)
+                                _la_forget_timer(mid)
                         elif cur_status == "in":
                             if cur_minute > 5 or g.get("period") in ("2nd Half", "Halftime", "ET"):
                                 notified.add(f"start|{mid}")
@@ -1193,7 +1740,15 @@ def _dispatch_match_event_notifications() -> int:
                     prev_a = prev_meta.get("away_score")
                     sync_k = str(g.get("sync_key", "")).strip()
 
-                    def _queue_event_alert(event_type: str, title: str, body: str):
+                    la_stale = _la_stale_date(g)
+                    la_pushed = False
+
+                    def _queue_event_alert(event_type: str, title: str, body: str, collapse_id: str = ""):
+                        """Record the feed event and queue regular pushes.
+
+                        Devices that own an active Live Activity for this match are
+                        skipped — the Live Activity alert already notifies them.
+                        """
                         try:
                             record_notification_event(
                                 title=title,
@@ -1210,7 +1765,8 @@ def _dispatch_match_event_notifications() -> int:
                         except Exception:
                             pass
                         tokens = for_game_or_team_subscribers(
-                            mid, comp_name, home_team=ht, away_team=at, event=event_type, sync_key=sync_k
+                            mid, comp_name, home_team=ht, away_team=at, event=event_type, sync_key=sync_k,
+                            exclude_live_activity_devices=True,
                         )
                         for token in tokens:
                             from notifications import _apns_notification_queue
@@ -1223,6 +1779,7 @@ def _dispatch_match_event_notifications() -> int:
                                 "sync_key": sync_k,
                                 "competition": comp_name,
                                 "event": event_type,
+                                "collapse_id": collapse_id,
                             })
                         from notifications import _notify_apns_queue
                         _notify_apns_queue()
@@ -1250,14 +1807,16 @@ def _dispatch_match_event_notifications() -> int:
                             notified.add(start_id)
                             start_title = "Match Started"
                             start_body = f"{ht} vs {at} - Kickoff!"
-                            _queue_event_alert("start", start_title, start_body)
+                            _queue_event_alert("start", start_title, start_body, collapse_id=start_id)
                             la_state = {**state_base, "event": "kickoff"}
                             send_live_activity_update(
                                 mid, comp_name, la_state,
                                 event="kickoff",
                                 alert={"title": start_title, "body": start_body},
                                 sync_key=sync_k,
+                                stale_date=la_stale,
                             )
+                            la_pushed = True
                             total_dispatched += 1
 
                     # 2. Halftime detection (robust check across period, status_type, and clock)
@@ -1271,14 +1830,16 @@ def _dispatch_match_event_notifications() -> int:
                             as_disp = as_ if as_ is not None and as_ != "-" else 0
                             ht_title = "Halftime"
                             ht_body = f"{ht} {hs_disp}-{as_disp} {at} - Halftime"
-                            _queue_event_alert("ht", ht_title, ht_body)
+                            _queue_event_alert("ht", ht_title, ht_body, collapse_id=ht_id)
                             la_state = {**state_base, "event": "halftime"}
                             send_live_activity_update(
                                 mid, comp_name, la_state,
                                 event="halftime",
                                 alert={"title": ht_title, "body": ht_body},
                                 sync_key=sync_k,
+                                stale_date=la_stale,
                             )
+                            la_pushed = True
                             total_dispatched += 1
 
                     # 3. Goal detection (strict deduplication by match ID and scoreline)
@@ -1345,7 +1906,7 @@ def _dispatch_match_event_notifications() -> int:
                                 clk = g.get("clock", "")
                                 goal_body = f"{ht} {hs}-{as_} {at} ({clk})" if clk else f"{ht} {hs}-{as_} {at}"
 
-                            _queue_event_alert("goal", goal_title, goal_body)
+                            _queue_event_alert("goal", goal_title, goal_body, collapse_id=goal_id)
 
                             la_event_label = (
                                 "own goal" if "own" in scorer_type
@@ -1360,66 +1921,154 @@ def _dispatch_match_event_notifications() -> int:
                             if scorer_name:
                                 la_state["event_text"] = scorer_name
                             la_alert = {"title": goal_title, "body": goal_body}
-                            send_live_activity_update(mid, comp_name, la_state, event=la_event_label, alert=la_alert, sync_key=sync_k)
+                            send_live_activity_update(
+                                mid, comp_name, la_state, event=la_event_label, alert=la_alert,
+                                sync_key=sync_k, stale_date=la_stale,
+                            )
+                            la_pushed = True
                             total_dispatched += 1
 
-                    # 4. Red Cards (from details/red_cards or key_events)
-                    for rc in (g.get("red_cards") or []):
-                        rc_player = rc.get("player", "").strip() or "Player"
-                        rc_min = rc.get("minute", "").strip()
-                        rc_side = rc.get("team", "")
-                        rc_id = f"red_card|{mid}|{rc_player}|{rc_min}"
-                        if rc_id not in notified:
-                            notified.add(rc_id)
-                            carded_team = ht if rc_side == "home" else (at if rc_side == "away" else "")
-                            team_info = f" ({carded_team})" if carded_team else ""
-                            min_info = f" ({rc_min})" if rc_min else ""
-                            rc_body = f"{rc_player}{team_info} Red Card{min_info}"
-                            _queue_event_alert("red_card", "Red Card", rc_body)
-                            la_state = {**state_base, "event": "red card", "clock": rc_min, "event_text": rc_body}
-                            send_live_activity_update(mid, comp_name, la_state, event="red card", alert={"title": "Red Card", "body": rc_body}, sync_key=sync_k)
-                            total_dispatched += 1
+                    # 4. Red Cards — merged from scoreboard details (red_cards) and
+                    # summary key_events, deduplicated by (surname, side, minute) so
+                    # the same card reported by both feeds alerts exactly once.
+                    for card in _game_red_cards(g):
+                        if _rc_is_duplicate(notified, mid, card["pkey"], card["side"], card["mkey"]):
+                            continue
+                        _rc_mark(notified, mid, card["pkey"], card["side"], card["mkey"])
+                        rc_player = card["player"]
+                        rc_min = card["minute"]
+                        carded_team = ht if card["side"] == "home" else (at if card["side"] == "away" else "")
+                        team_info = f" ({carded_team})" if carded_team else ""
+                        min_info = f" ({rc_min})" if rc_min else ""
+                        rc_body = f"{rc_player}{team_info} Red Card{min_info}"
+                        rc_id = f"red_card|{mid}|{card['pkey'] or card['side']}|{card['mkey']}"
+                        _queue_event_alert("red_card", "Red Card", rc_body, collapse_id=rc_id)
+                        la_state = {**state_base, "event": "red card", "clock": rc_min, "event_text": rc_body}
+                        send_live_activity_update(
+                            mid, comp_name, la_state, event="red card",
+                            alert={"title": "Red Card", "body": rc_body},
+                            sync_key=sync_k, stale_date=la_stale,
+                        )
+                        la_pushed = True
+                        total_dispatched += 1
 
-                    for ev in (g.get("key_events") or []):
-                        ev_type = str(ev.get("type", "")).lower().strip()
-                        if "red card" in ev_type:
-                            rc_player = ev.get("athlete_name", "").strip() or ev.get("text", "").strip() or "Player"
-                            rc_min = ev.get("clock", "").strip()
-                            rc_id = f"red_card|{mid}|{rc_player}|{rc_min}"
-                            if rc_id not in notified:
-                                notified.add(rc_id)
-                                rc_body = f"{rc_player} Red Card ({rc_min})" if rc_min else f"{rc_player} Red Card"
-                                _queue_event_alert("red_card", "Red Card", rc_body)
-                                la_state = {**state_base, "event": "red card", "clock": rc_min, "event_text": rc_body}
-                                send_live_activity_update(mid, comp_name, la_state, event="red card", alert={"title": "Red Card", "body": rc_body}, sync_key=sync_k)
-                                total_dispatched += 1
-
-                    # 5. Full time detection
+                    # 5. Full time detection.
+                    # STATUS_END_REGULAR_TIME is deliberately NOT full time: in cup
+                    # ties it precedes extra time / penalties, and ending the Live
+                    # Activity there would drop the rest of the match.
                     is_ft = (
                         cur_status == "post"
                         or str(g.get("status_type", "")).upper() in {
-                            "STATUS_FULL_TIME", "STATUS_FINAL", "STATUS_END_REGULAR_TIME"
+                            "STATUS_FULL_TIME", "STATUS_FINAL", "STATUS_FINAL_AET", "STATUS_FINAL_PEN",
                         }
                     )
+
+                    # 4b. Period transitions. Halftime ending (2nd-half kickoff), extra
+                    # time and a penalty shootout are first-class events: alert + regular
+                    # push + Live Activity update carrying the re-anchored timer, so the
+                    # on-device clock resumes from 45:00 / 90:00 / 105:00. Quieter
+                    # transitions (ET 2nd half, end of regular time) update silently.
+                    # Priority 10 (timer correctness); devices with frequent updates
+                    # disabled are downgraded to 5 by the notifications priority policy.
+                    prev_period = str(prev_meta.get("period") or "")
+                    cur_period = str(g.get("period") or "")
+                    if (
+                        not is_ft
+                        and cur_status == "in"
+                        and cur_period
+                        and prev_period
+                        and cur_period != prev_period
+                        and not _is_halftime_break(cur_period, g.get("status_type"), g.get("clock"))
+                    ):
+                        period_id = f"period|{mid}|{cur_period}"
+                        if period_id not in notified:
+                            notified.add(period_id)
+                            low = cur_period.lower()
+                            is_et = low.startswith("et") or "extra" in low or "et" in low.split()
+                            score_txt = f"{_la_score(hs) or 0}-{_la_score(as_) or 0}"
+                            alert_event = None  # regular-push event type
+                            if "pen" in low or "shootout" in low:
+                                period_label = "penalties"
+                                alert_event = "penalties"
+                                p_title, p_body = "Penalties", f"{ht} {score_txt} {at} - Penalty shootout"
+                            elif low in ("ft", "full time") or "regular" in low:
+                                # ESPN labels STATUS_END_REGULAR_TIME as "FT" while the
+                                # tie is still live (extra time / penalties follow).
+                                period_label = "end of regular time"
+                            elif is_et and ("2nd" in low or "second" in low):
+                                period_label = "extra time second half"
+                            elif is_et:
+                                period_label = "extra time"
+                                alert_event = "extra_time"
+                                p_title, p_body = "Extra Time", f"{ht} {score_txt} {at} - Extra time underway"
+                            elif "2nd" in low or "second" in low:
+                                period_label = "second half"
+                                alert_event = "second_half"
+                                p_title, p_body = "Second Half", f"{ht} {score_txt} {at} - Second half underway"
+                            else:
+                                period_label = "period"
+                            if alert_event:
+                                _queue_event_alert(alert_event, p_title, p_body, collapse_id=period_id)
+                                send_live_activity_update(
+                                    mid, comp_name, {**state_base, "event": period_label},
+                                    event=period_label, alert={"title": p_title, "body": p_body},
+                                    sync_key=sync_k, stale_date=la_stale,
+                                )
+                                total_dispatched += 1
+                            else:
+                                send_live_activity_update(
+                                    mid, comp_name, {**state_base, "event": period_label},
+                                    event=period_label, sync_key=sync_k, priority=10, stale_date=la_stale,
+                                )
+                            la_pushed = True
+
+                    # 4c. Score changed without a goal alert (VAR reversal, missed
+                    # cycle, corrected feed): keep the activity's scoreboard in sync.
+                    if (
+                        not is_ft
+                        and not la_pushed
+                        and cur_status == "in"
+                        and prev_h is not None
+                        and prev_a is not None
+                        and (_la_score(hs), _la_score(as_)) != (_la_score(prev_h), _la_score(prev_a))
+                    ):
+                        send_live_activity_update(
+                            mid, comp_name, {**state_base, "event": "score"},
+                            event="score", sync_key=sync_k, priority=10, stale_date=la_stale,
+                        )
+                        la_pushed = True
+
                     if is_ft:
                         ft_id = f"fulltime|{mid}"
                         if ft_id not in notified:
                             notified.add(ft_id)
                             notified.add(f"ft|{mid}")
-                            hs_disp = hs if hs is not None and hs != "-" else g.get("home_score", 0)
-                            as_disp = as_ if as_ is not None and as_ != "-" else g.get("away_score", 0)
+                            hs_disp = _la_score(hs)
+                            as_disp = _la_score(as_)
+                            hs_txt = hs_disp if hs_disp is not None else 0
+                            as_txt = as_disp if as_disp is not None else 0
                             ft_title = "Full Time"
-                            ft_body = f"{ht} {hs_disp}-{as_disp} {at} - Full Time"
-                            _queue_event_alert("end", ft_title, ft_body)
+                            ft_body = f"{ht} {hs_txt}-{as_txt} {at} - Full Time"
+                            _queue_event_alert("end", ft_title, ft_body, collapse_id=ft_id)
+                            # Full final content-state (same schema as updates) so
+                            # ActivityKit can decode the "end" push.
                             state = {
-                                "home_score": hs_disp,
-                                "away_score": as_disp,
+                                **state_base,
+                                "home_score": hs_txt,
+                                "away_score": as_txt,
                                 "status": "FT",
+                                "event": "fulltime",
                                 "match_minute": state_base.get("match_minute") or 90,
                             }
-                            send_live_activity_end(mid, comp_name, state, alert={"title": ft_title, "body": ft_body}, sync_key=sync_k)
+                            send_live_activity_end(
+                                mid, comp_name, state,
+                                alert={"title": ft_title, "body": ft_body}, sync_key=sync_k,
+                            )
                             total_dispatched += 1
-                        clear_match_subscriptions(mid, comp_name)
+                            _la_forget_timer(mid)
+                        if f"cleared|{mid}" not in notified:
+                            notified.add(f"cleared|{mid}")
+                            clear_match_subscriptions(mid, comp_name, sync_key=sync_k)
 
                     # Update tracker for next cycle
                     _match_tracker[mid] = {
@@ -1756,6 +2405,11 @@ def refresh_live_scores_now(*, force: bool = False) -> dict:
             _dispatch_match_event_notifications()
         except Exception:
             pass
+        # Finals observed here would otherwise only refresh tables/form on the
+        # poller's next cycle (up to 30 min when nothing else is live).
+        threading.Thread(
+            target=_drain_finalized_results, name="results-drain", daemon=True
+        ).start()
         _last_on_demand_refresh_ts = time.time()
         try:
             _update_cached_live_scores_payload()
@@ -1823,9 +2477,12 @@ def _live_score_poller_loop():
             # Persist any newly completed games to history file.
             merged_comps = _merge_completed_to_history()
 
-            # ── Standings refresh on game completion ────────────────
+            # ── Standings / form refresh on game completion ─────────
             # Recompute real tables as soon as a match finishes so standings
-            # update before the nightly pipeline refresh.
+            # update before the nightly pipeline refresh. Finals seen by any
+            # path (this cycle, on-demand refresh, overnight rollover) are
+            # queued by _merge_completed_to_history; status transitions seen
+            # here are added as a safety net.
             try:
                 comps_to_refresh = set(merged_comps)
                 with _live_scores_lock:
@@ -1838,42 +2495,17 @@ def _live_score_poller_loop():
                             prev = prev_statuses.get(mid)
                             if prev and prev[1] != "post" and cur_status == "post":
                                 comps_to_refresh.add(comp_name)
-                for comp_name in sorted(comps_to_refresh):
-                    refresh_real_standings_after_live_final(comp_name)
+                _drain_finalized_results(comps_to_refresh)
             except Exception:
                 import traceback
                 traceback.print_exc()
 
             # ── Live Activity updates (iOS 16.1+) ─────────────────────
-            # Push content-state whenever the scoreboard changes so Live
-            # Activities refresh the score. Goals also push via the key-event
-            # block below (with an ``event`` label for the UI).
-            try:
-                import notifications as _la
-
-                with _live_scores_lock:
-                    for comp_name, comp_data in _live_scores.items():
-                        for g in comp_data.get("games", []):
-                            mid = g.get("match_id")
-                            if not mid:
-                                continue
-                            cur_status = g.get("status", "")
-                            prev = prev_statuses.get(mid)
-                            prev_home, prev_away = prev_scores.get(mid, (None, None))
-                            cur_home = g.get("home_score")
-                            cur_away = g.get("away_score")
-                            state = _la_content_state(g, comp_name)
-                            # Score changed while live/finished — update Live Activity scoreboard content-state silently.
-                            # Notification banners with goalscorer names are dispatched in the unified block below.
-                            if cur_status in ("in", "post") and (
-                                prev_home is not None and prev_away is not None and (prev_home != cur_home or prev_away != cur_away)
-                            ):
-                                score_state = dict(state)
-                                score_state["event"] = "score"
-                                _la.send_live_activity_update(mid, comp_name, score_state, event="score")
-            except Exception:
-                import traceback
-                traceback.print_exc()
+            # All Live Activity pushes (kickoff, goals, halftime, period changes,
+            # red cards, score corrections, full time) are sent from
+            # _dispatch_match_event_notifications() so each scoreboard change
+            # produces exactly one ActivityKit push. Push-to-start ("start") is
+            # sent by the separate _live_activity_start_loop() thread.
 
             # ── Fetch summary data for active games ──────────────────
             # - pre:   fetch once, then re-attempt at most every
@@ -2077,6 +2709,139 @@ def _live_score_poller_loop():
         time.sleep(max(10, int(interval or 60)))
 
 
+# ── Live Activity push-to-start scheduler ─────────────────────────
+# ActivityKit "start" pushes are sent APNS_LA_START_LEAD_SECONDS (default 5 min)
+# before scheduled kickoff to every device that (a) registered a push-to-start
+# token and (b) follows the match or either team. A separate fast thread is used
+# because the main poller sleeps up to 15 min during the pre-match window.
+
+_LA_START_LOOP_INTERVAL_S = 20
+_la_start_thread: threading.Thread | None = None
+
+
+def _dispatch_live_activity_starts(now_ts: float | None = None) -> int:
+    """Send push-to-start payloads for games entering the pre-kickoff window. Returns starts queued."""
+    from notifications import (
+        broadcast_enabled,
+        for_game_or_team_subscribers,
+        get_device_la_settings,
+        get_or_create_match_channel,
+        get_token_environment,
+        live_activity_device_tokens,
+        mark_push_started,
+        push_to_start_devices,
+        push_to_start_token_for_device,
+        register_channel_activity,
+        send_live_activity_start,
+        was_push_started,
+    )
+
+    pts_devices = set(push_to_start_devices())
+    if not pts_devices:
+        return 0
+    lead = int(getattr(config, "APNS_LA_START_LEAD_SECONDS", 300))
+    grace = int(getattr(config, "APNS_LA_START_GRACE_SECONDS", 900))
+    now = float(now_ts if now_ts is not None else time.time())
+
+    candidates: list[tuple[str, dict, float]] = []
+    with _live_scores_lock:
+        for comp_name, comp_data in _live_scores.items():
+            for g in comp_data.get("games", []):
+                mid = str(g.get("match_id") or "").strip()
+                status = str(g.get("status", "")).strip().lower()
+                if not mid or status not in ("pre", "in"):
+                    continue
+                ko = _la_kickoff_ts(g)
+                if ko is None or not (ko - lead <= now <= ko + grace):
+                    continue
+                candidates.append((comp_name, dict(g), ko))
+
+    queued = 0
+    for comp_name, g, ko in candidates:
+        mid = str(g.get("match_id") or "").strip()
+        sync_k = str(g.get("sync_key", "")).strip()
+        home, away = g.get("home_team", ""), g.get("away_team", "")
+        subscribers = for_game_or_team_subscribers(
+            mid, comp_name, home_team=home, away_team=away, event=None, sync_key=sync_k,
+        )
+        targets = [d for d in subscribers if d in pts_devices and not was_push_started(d, mid)]
+        if not targets:
+            continue
+        # Devices that already started an activity in-app for this match.
+        already_active = live_activity_device_tokens(mid, comp_name, sync_key=sync_k)
+        is_live = str(g.get("status", "")).strip().lower() == "in"
+        state = {**_la_content_state(g, comp_name), "event": "live" if is_live else "prematch"}
+        attributes = _la_attributes(g, comp_name)
+        mins = int(round((ko - now) / 60.0))
+        if is_live or mins <= 0:
+            title = "Live now" if is_live else "Kicking off"
+        else:
+            title = f"Kickoff in {mins} min"
+        alert = {"title": title, "body": f"{home} vs {away}"}
+        stale = _la_stale_date(g)
+        for device in targets:
+            if device in already_active:
+                mark_push_started(device, mid, competition=comp_name, sync_key=sync_k)
+                continue
+            settings = get_device_la_settings(device)
+            if settings.get("activities_enabled") is False:
+                continue  # user turned Live Activities off in iOS Settings
+            # iOS 18+: subscribe the new activity to the match's broadcast channel.
+            channel_id = ""
+            if broadcast_enabled() and settings.get("supports_broadcast"):
+                env = get_token_environment(push_to_start_token_for_device(device))
+                if env is None:
+                    env = get_token_environment(device)
+                ch = get_or_create_match_channel(mid, sync_k, comp_name, environment=env)
+                if ch.get("ok"):
+                    channel_id = ch["channel_id"]
+            if send_live_activity_start(
+                device, mid, comp_name, state, attributes, alert,
+                sync_key=sync_k, stale_date=stale, channel_id=channel_id,
+            ):
+                if channel_id:
+                    # The device won't register a per-activity token, so record
+                    # its activity here (duplicate-banner suppression).
+                    register_channel_activity(device, mid, sync_key=sync_k, competition=comp_name)
+                queued += 1
+    return queued
+
+
+_LA_CHANNEL_CLEANUP_INTERVAL_S = 600
+
+
+def _live_activity_start_loop() -> None:
+    last_cleanup = 0.0
+    while True:
+        try:
+            _dispatch_live_activity_starts()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        # Delete broadcast channels of finished matches (10k-per-env cap).
+        if time.time() - last_cleanup >= _LA_CHANNEL_CLEANUP_INTERVAL_S:
+            last_cleanup = time.time()
+            try:
+                import notifications as _n
+                if _n.broadcast_enabled():
+                    _n.cleanup_expired_channels()
+            except Exception:
+                import traceback
+                traceback.print_exc()
+        time.sleep(_LA_START_LOOP_INTERVAL_S)
+
+
+def start_live_activity_start_scheduler() -> None:
+    """Start the push-to-start scheduler thread once per process."""
+    global _la_start_thread
+    if _la_start_thread is not None and _la_start_thread.is_alive():
+        return
+    _la_start_thread = threading.Thread(
+        target=_live_activity_start_loop, daemon=True, name="live-activity-start",
+    )
+    _la_start_thread.start()
+
+
 def start_live_score_poller(*, force: bool = False) -> None:
     """Start the live score poller thread if not already running.
 
@@ -2085,6 +2850,7 @@ def start_live_score_poller(*, force: bool = False) -> None:
     Pass ``force=True`` (or call via status) to revive a dead thread.
     """
     global _poller_started, _poller_thread
+    start_live_activity_start_scheduler()
     if _poller_thread_is_alive() and not force:
         return
     if _poller_thread_is_alive() and force:

@@ -119,8 +119,45 @@ class TestCupMappingAndDeduplication(unittest.TestCase):
         self.assertEqual(res["live_status"], "scheduled")
 
     def test_api_upcoming_deduplication_and_match_id(self):
-        """GET /api/upcoming/global must return non-duplicated fixtures with match_id."""
-        resp = self.client.get("/api/upcoming/global?date=2026-11-06")
+        """GET /api/upcoming/global must return non-duplicated fixtures with match_id.
+
+        Seeds its own fixtures (relative date) instead of relying on whatever
+        happened to be in the production store on a hardcoded day.
+        """
+        from unittest import mock
+        import routes.predictions as rp
+        from shared import sqlite_store
+
+        day = (datetime.now(timezone.utc) + timedelta(days=4)).strftime("%Y-%m-%d")
+        prediction_rows = [
+            {
+                "match_date": day, "match_date_iso": day, "competition": "England/FA Cup",
+                "home_team": home, "away_team": away, "has_prediction": True,
+                "prediction_quality": "prediction", "prob_home": 20.0, "prob_draw": 25.0,
+                "prob_away": 55.0, "pred_home_goals": 1, "pred_away_goals": 2,
+                "sync_key": make_match_sync_key(day, "England/FA Cup", home, away), "match_id": None,
+            }
+            for home, away in (("Oxford City", "Leicester City"), ("Bristol Rovers", "Cambridge United"))
+        ]
+        espn_rows = [
+            {
+                "match_date": day, "match_date_iso": day, "competition": "England/FA Cup",
+                "home_team": home, "away_team": away, "has_prediction": False,
+                "prediction_quality": "no_prediction", "schedule_only": True,
+                "sync_key": make_match_sync_key(day, "England/FA Cup", home, away),
+                "match_id": mid, "live_status": "scheduled",
+            }
+            for home, away, mid in (
+                ("Oxford City FC", "Leicester", "401999001"),
+                ("Bristol Rovers FC", "Cambridge United", "401999002"),
+            )
+        ]
+        with mock.patch.object(rp, "merged_upcoming_file_is_fresh", return_value=False), \
+                mock.patch.object(sqlite_store, "count_rows", return_value=len(prediction_rows)), \
+                mock.patch.object(sqlite_store, "load_upcoming_games", return_value=[dict(r) for r in prediction_rows]), \
+                mock.patch.object(rp, "regional_espn_schedule_fallback",
+                                  side_effect=lambda rows: list(rows) + [dict(r) for r in espn_rows]):
+            resp = self.client.get(f"/api/upcoming/global?date={day}&no_cache=1")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertTrue(data.get("ok"))
@@ -139,12 +176,14 @@ class TestCupMappingAndDeduplication(unittest.TestCase):
         self.assertEqual(len(bristol_rows), 1, "Bristol Rovers match should appear exactly once")
 
         ox_match = oxford_rows[0]
-        self.assertEqual(ox_match.get("match_id"), "401931109")
-        self.assertEqual(ox_match.get("sync_key"), "2026-11-06|oxfordcity|leicester")
+        self.assertEqual(ox_match.get("match_id"), "401999001")
+        self.assertEqual(ox_match.get("sync_key"), f"{day}|oxfordcity|leicester")
+        self.assertTrue(ox_match.get("has_prediction"))
 
         br_match = bristol_rows[0]
-        self.assertEqual(br_match.get("match_id"), "401931085")
-        self.assertEqual(br_match.get("sync_key"), "2026-11-06|bristolrovers|cambridgeunited")
+        self.assertEqual(br_match.get("match_id"), "401999002")
+        self.assertEqual(br_match.get("sync_key"), f"{day}|bristolrovers|cambridgeunited")
+        self.assertTrue(br_match.get("has_prediction"))
 
 
 if __name__ == "__main__":

@@ -22,6 +22,39 @@ from shared import sqlite_store
 
 
 class TestMatchDetailPredictionStats(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Tests run against an isolated SQLite store (never production), so
+        # seed one predicted upcoming fixture instead of relying on whatever
+        # the live database happened to contain (these tests used to skip or
+        # depend on production data).
+        from datetime import datetime, timedelta, timezone
+        from competition_rules import make_match_sync_key
+
+        day = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%d")
+        cls.seed_day = day
+        comp, home, away = "England/Premier League", "Arsenal", "Chelsea"
+        sqlite_store.upsert_upcoming_games(
+            [{
+                "match_date": day,
+                "match_date_iso": day,
+                "competition": comp,
+                "home_team": home,
+                "away_team": away,
+                "sync_key": make_match_sync_key(day, comp, home, away),
+                "prediction_key": f"detail-stats-{day}|{home}|{away}",
+                "predicted_result": "H",
+                "prob_home": 48.0,
+                "prob_draw": 27.0,
+                "prob_away": 25.0,
+                "pred_home_goals": 2,
+                "pred_away_goals": 1,
+                "has_prediction": True,
+                "prediction_quality": "prediction",
+            }],
+            source="global",
+        )
+
     def setUp(self):
         clear_match_detail_cache()
         self.client = TestClient(app)
@@ -173,7 +206,13 @@ class TestMatchDetailPredictionStats(unittest.TestCase):
 
     def test_parity_between_upcoming_global_and_single_match(self):
         """Verify exact field parity between /api/upcoming/global and /api/match/<sync_key>."""
-        up_resp = self.client.get("/api/upcoming/global?limit=1")
+        # Read the seeded SQLite fixture through the feed's SQLite branch and
+        # skip the live ESPN schedule fallback (no network in tests).
+        import routes.predictions as rp
+
+        with patch.object(rp, "merged_upcoming_file_is_fresh", return_value=False), \
+                patch.object(rp, "regional_espn_schedule_fallback", side_effect=lambda rows: rows):
+            up_resp = self.client.get(f"/api/upcoming/global?date={self.seed_day}&limit=1&no_cache=1")
         self.assertEqual(up_resp.status_code, 200)
         up_data = up_resp.json()
         if not up_data.get("rows"):

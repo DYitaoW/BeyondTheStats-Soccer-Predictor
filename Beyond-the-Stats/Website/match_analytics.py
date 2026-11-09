@@ -36,11 +36,25 @@ def _load_unified_match_history() -> dict[str, list[dict]]:
 
         history: dict[str, list[dict]] = defaultdict(list)
         seen: set[str] = set()
+        # Completed history can never be dated after today; drop pipeline
+        # rows with swapped/placeholder future dates.
+        try:
+            from shared.sqlite_store import _latest_completed_date_iso
 
-        # 1. Load from past_games in SQLite
-        db_path = getattr(config, "SQLITE_STORE_PATH", None) or os.path.join(
-            config.PROJECT_DIR, "Output", "Status", "bts_store.db"
-        )
+            latest_date = _latest_completed_date_iso()
+        except Exception:
+            latest_date = "9999-12-31"
+
+        # 1. Load from past_games in SQLite (same path resolution as the store,
+        # including the BTS_SQLITE_STORE_PATH override).
+        try:
+            from shared import sqlite_store as _store
+
+            db_path = str(_store._db_path())
+        except Exception:
+            db_path = getattr(config, "SQLITE_STORE_FILE", None) or os.path.join(
+                config.PROJECT_DIR, "Output", "Status", "bts_store.db"
+            )
         if os.path.exists(db_path):
             try:
                 conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
@@ -57,7 +71,7 @@ def _load_unified_match_history() -> dict[str, list[dict]]:
                     comp = str(p.get("competition", "")).strip()
                     ht = str(p.get("home_team", "")).strip()
                     at = str(p.get("away_team", "")).strip()
-                    if not dt or not ht or not at:
+                    if not dt or not ht or not at or str(dt)[:10] > latest_date:
                         continue
                     c_h = canonical_team_name(ht, comp) or ht
                     c_a = canonical_team_name(at, comp) or at
@@ -109,7 +123,7 @@ def _load_unified_match_history() -> dict[str, list[dict]]:
                         comp = str(r.get("competition", "")).strip()
                         ht = str(r.get("home_team", "")).strip()
                         at = str(r.get("away_team", "")).strip()
-                        if not dt or not ht or not at:
+                        if not dt or not ht or not at or str(dt)[:10] > latest_date:
                             continue
                         c_h = canonical_team_name(ht, comp) or ht
                         c_a = canonical_team_name(at, comp) or at
@@ -166,7 +180,7 @@ def _load_unified_match_history() -> dict[str, list[dict]]:
                                 dt = str(r.get("Date", "")).strip()
                                 ht = str(r.get("HomeTeam", "")).strip()
                                 at = str(r.get("AwayTeam", "")).strip()
-                                if not dt or not ht or not at:
+                                if not dt or not ht or not at or str(dt)[:10] > latest_date:
                                     continue
                                 c_h = canonical_team_name(ht, comp) or ht
                                 c_a = canonical_team_name(at, comp) or at
@@ -218,6 +232,85 @@ def _load_unified_match_history() -> dict[str, list[dict]]:
         return _ANALYTICS_HISTORY_CACHE
 
 
+_HISTORY_ID_INDEX: dict[str, list[str]] = {}
+_HISTORY_ID_INDEX_FOR: int = 0
+
+
+def _team_id(name: str) -> str:
+    try:
+        from shared import sqlite_store as _store
+
+        return _store._team_identity_id(name)
+    except Exception:
+        return ""
+
+
+def _history_id_index(history: dict) -> dict[str, list[str]]:
+    """team id -> every history key (spelling) that resolves to it."""
+    global _HISTORY_ID_INDEX, _HISTORY_ID_INDEX_FOR
+    with _ANALYTICS_CACHE_LOCK:
+        if _HISTORY_ID_INDEX_FOR == id(history) and _HISTORY_ID_INDEX:
+            return _HISTORY_ID_INDEX
+    index: dict[str, list[str]] = defaultdict(list)
+    for key in list(history.keys()):
+        tid = _team_id(key)
+        if tid:
+            index[tid].append(key)
+    with _ANALYTICS_CACHE_LOCK:
+        _HISTORY_ID_INDEX = dict(index)
+        _HISTORY_ID_INDEX_FOR = id(history)
+    return _HISTORY_ID_INDEX
+
+
+def _team_history(history: dict, team_name: str, competition: str = "") -> list[dict]:
+    """All completed matches for a team, newest first, across spellings.
+
+    Canonical names depend on competition ("Manchester United" is stored as
+    "Man United" for the Premier League), so callers without a competition
+    (team overview) used to get an empty history. Keys are also grouped by
+    resolved team id, and split spellings are merged one-match-per-date.
+    """
+    raw = str(team_name or "").strip()
+    c_team = canonical_team_name(raw, competition) or raw
+    if not c_team:
+        return []
+    keys: list[str] = [c_team]
+    if c_team not in history:
+        c_lower = c_team.lower()
+        keys.extend(k for k in history.keys() if k.lower() == c_lower)
+    tid = _team_id(raw) or _team_id(c_team)
+    if tid:
+        keys.extend(_history_id_index(history).get(tid, []))
+    pools = [history.get(k) or [] for k in dict.fromkeys(keys)]
+    if len(pools) == 1:
+        return pools[0]
+    merged: list[dict] = []
+    seen_dates: set[str] = set()
+    for m in sorted((m for pool in pools for m in pool), key=lambda x: str(x.get("date", "")), reverse=True):
+        d = str(m.get("date", ""))[:10]
+        if d in seen_dates:
+            continue
+        seen_dates.add(d)
+        merged.append(m)
+    return merged
+
+
+def invalidate_match_history_cache() -> None:
+    """Drop the unified history index so the next read includes new results.
+
+    Called by the live poller when a match finishes (after the result is
+    written to ``past_games``) so last-5 / momentum / H2H update immediately
+    instead of after the 5-minute TTL.
+    """
+    global _ANALYTICS_HISTORY_CACHE, _ANALYTICS_CACHE_EXPIRY
+    global _HISTORY_ID_INDEX, _HISTORY_ID_INDEX_FOR
+    with _ANALYTICS_CACHE_LOCK:
+        _ANALYTICS_HISTORY_CACHE = {}
+        _ANALYTICS_CACHE_EXPIRY = 0.0
+        _HISTORY_ID_INDEX = {}
+        _HISTORY_ID_INDEX_FOR = 0
+
+
 def get_team_comprehensive_form(
     team_name: str,
     competition: str = "",
@@ -230,14 +323,7 @@ def get_team_comprehensive_form(
     if not c_team:
         return []
     history = _load_unified_match_history()
-    matches = history.get(c_team, [])
-    if not matches:
-        # Fallback lowercase lookup
-        c_lower = c_team.lower()
-        for k, v in history.items():
-            if k.lower() == c_lower:
-                matches = v
-                break
+    matches = _team_history(history, team_name, competition)
 
     out: list[dict] = []
     for m in matches:
@@ -268,13 +354,14 @@ def get_head_to_head(
         return [], {}
 
     history = _load_unified_match_history()
-    matches_raw = history.get(c_home, [])
+    matches_raw = _team_history(history, home_team, competition)
+    away_id = _team_id(away_team) or _team_id(c_away)
     h2h_matches: list[dict] = []
     seen = set()
 
     for m in matches_raw:
         opp = m.get("opponent", "")
-        if opp == c_away or opp.lower() == c_away.lower():
+        if opp == c_away or opp.lower() == c_away.lower() or (away_id and _team_id(opp) == away_id):
             comp = str(m.get("competition", "")).lower()
             if exclude_friendlies and ("friendly" in comp or "friendlies" in comp):
                 continue

@@ -160,7 +160,10 @@ class TestNotificationFeedAndSync(unittest.TestCase):
         init_subscriptions_from_sqlite()
 
         self.assertIn(token, ios_device_tokens)
-        self.assertIn("chelsea", _team_notification_subscriptions)
+        # Follows are keyed by resolved team id; ESPN's names must still match.
+        import notifications as _n
+        self.assertIn(token, _n.for_team_tokens("Chelsea", competition="England/Premier League"))
+        self.assertIn(token, _n.for_team_tokens("Swansea City", competition="England/Championship"))
 
     def test_sync_key_and_team_matching_for_game_subscribers(self):
         tok_match = "tok-subscribed-by-sync-key"

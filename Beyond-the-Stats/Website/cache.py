@@ -24,6 +24,9 @@ if config.REDIS_URL:
 _mem_cache: dict[str, tuple[float, str]] = {}
 _mem_cache_lock = threading.Lock()
 _MAX_MEM_CACHE_ENTRIES = 500
+# cache key -> request path, so result-driven invalidation can target endpoints
+# (keys are md5 hashes and cannot be matched by path otherwise).
+_key_paths: dict[str, str] = {}
 
 
 def _cache_key(endpoint: str, query_str: str = "") -> str:
@@ -39,7 +42,15 @@ def _cache_key(endpoint: str, query_str: str = "") -> str:
         except Exception:
             pass
     raw = f"{endpoint}:{norm_query}"
-    return f"api:{hashlib.md5(raw.encode()).hexdigest()}"
+    key = f"api:{hashlib.md5(raw.encode()).hexdigest()}"
+    try:
+        with _mem_cache_lock:
+            if len(_key_paths) > 20000:
+                _key_paths.clear()
+            _key_paths[key] = str(endpoint or "")
+    except Exception:
+        pass
+    return key
 
 
 def _cache_get(key: str) -> str | None:
@@ -96,6 +107,28 @@ def _cache_clear_pattern(pattern: str = "api:*") -> None:
             pass
     with _mem_cache_lock:
         _mem_cache.clear()
+
+
+def _cache_clear_endpoints(prefixes) -> int:
+    """Drop cached responses whose request path starts with any of *prefixes*.
+
+    Used after a match finishes so standings / team form / past-games
+    responses are recomputed instead of served stale for up to the TTL.
+    Returns the number of cache keys removed.
+    """
+    prefixes = tuple(str(p) for p in (prefixes or ()) if p)
+    if not prefixes:
+        return 0
+    with _mem_cache_lock:
+        keys = [k for k, path in _key_paths.items() if path.startswith(prefixes)]
+        for k in keys:
+            _mem_cache.pop(k, None)
+    if _redis_client is not None and keys:
+        try:
+            _redis_client.delete(*keys)
+        except Exception:
+            pass
+    return len(keys)
 
 
 def _extract_request(args: tuple, kwargs: dict) -> Request | None:

@@ -65,9 +65,16 @@ class SecurityAndCacheHeadersMiddleware(BaseHTTPMiddleware):
                     headers={"Retry-After": str(retry_after or 60)},
                 )
         response: Response = await call_next(request)
-        if path.startswith("/api/"):
+        if path.startswith("/api/") or path.startswith("/live-activities"):
             if "Cache-Control" not in response.headers:
-                if any(path.startswith(p) for p in (
+                # Per-device / mutable state must never be cached by URLSession,
+                # Cloudflare, or other intermediaries (stale subscription prefs,
+                # leaked tokens). Mutations are never cacheable either.
+                if request.method not in ("GET", "HEAD") or any(path.startswith(p) for p in (
+                    "/api/notifications", "/api/live-activities", "/live-activities", "/api/test/",
+                )):
+                    response.headers["Cache-Control"] = "no-store"
+                elif any(path.startswith(p) for p in (
                     "/api/past-games", "/api/scorers", "/api/stats",
                     "/api/league-leaders", "/api/pipeline/status", "/api/key-errors",
                     "/api/help", "/api/legal",

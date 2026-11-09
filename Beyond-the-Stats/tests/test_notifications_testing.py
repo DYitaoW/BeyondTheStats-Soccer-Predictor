@@ -22,7 +22,34 @@ import notifications
 class TestNotificationsTestingSuite(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.client = TestClient(app, raise_server_exceptions=False)
+        import config
+        cls._orig_mutation_token = config.MUTATION_API_TOKEN
+        config.MUTATION_API_TOKEN = "test-admin-token"
+        # Every /api/test/* route is admin-only.
+        cls.client = TestClient(
+            app, raise_server_exceptions=False, headers={"X-Admin-Token": "test-admin-token"}
+        )
+        cls.anon_client = TestClient(app, raise_server_exceptions=False)
+
+    @classmethod
+    def tearDownClass(cls):
+        import config
+        config.MUTATION_API_TOKEN = cls._orig_mutation_token
+
+    def test_testing_routes_require_admin_token(self):
+        """Every /api/test/* route rejects callers without the admin token."""
+        for method, path in (
+            ("get", "/api/test/env"),
+            ("get", "/api/test/notifications/status"),
+            ("get", "/api/test/notifications/logs"),
+            ("post", "/api/test/notifications/push"),
+            ("post", "/api/test/live-activities/push"),
+            ("post", "/api/test/simulate-game/start"),
+        ):
+            res = getattr(self.anon_client, method)(path)
+            self.assertEqual(res.status_code, 401, path)
+        bad = self.anon_client.get("/api/test/env", headers={"X-Admin-Token": "wrong"})
+        self.assertEqual(bad.status_code, 401)
 
     def tearDown(self):
         # Reset any simulated matches
