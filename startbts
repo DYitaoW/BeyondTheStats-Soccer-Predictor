@@ -6,6 +6,7 @@ Usage:
     python startbts              # Restart/reload background backend service with new changes
     python startbts.py           # Same as above
     ./startbts                   # Same as above
+    python startbts refresh      # Trigger pipeline refresh (recalculates upcoming predictions)
     python startbts status       # Check service status & API health
     python startbts logs         # Tail live backend logs
     python startbts stop         # Stop the background service
@@ -210,6 +211,52 @@ def run_foreground(app_dir: Path) -> None:
         print("\n[+] Backend stopped.")
 
 
+def trigger_pipeline_refresh(app_dir: Path) -> None:
+    """Trigger a fast pipeline refresh (updates upcoming predictions with new mappings)."""
+    env_file = app_dir / ".env"
+    token = ""
+    if env_file.is_file():
+        for line in env_file.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if line.startswith("MUTATION_API_TOKEN="):
+                token = line.split("=", 1)[1].strip().strip('"').strip("'")
+                break
+
+    print("[+] Triggering pipeline prediction refresh...")
+    healthy, _ = check_health(8000, timeout=1.0)
+    if healthy:
+        url = "http://127.0.0.1:8000/api/refresh"
+        headers = {"User-Agent": "startbts/1.0"}
+        if token:
+            headers["X-Admin-Token"] = token
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(url, data=b"{}", headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10.0) as resp:
+                data = resp.read().decode("utf-8", errors="replace")
+                print(f"[+] Pipeline refresh triggered in background: {data}")
+                print("[+] You can watch live progress via: python startbts logs")
+                return
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            print(f"[!] API /api/refresh returned HTTP {e.code}: {err_body}")
+        except Exception as e:
+            print(f"[!] Could not reach /api/refresh: {e}")
+
+    # Fallback if server offline: run via venv python directly
+    py_bin = find_python_bin(app_dir)
+    print(f"[+] Running upcoming prediction refresh directly via {py_bin}...")
+    scripts = [
+        app_dir / "pipelines" / "europe" / "files" / "Predict_Upcoming_Matchweek.py",
+        app_dir / "pipelines" / "europe" / "files" / "Predict_Upcoming_Cups.py",
+    ]
+    for s in scripts:
+        if s.is_file():
+            print(f"  -> Running {s.name}...")
+            subprocess.run([str(py_bin), str(s)], cwd=str(app_dir))
+    print("[+] Direct prediction refresh complete.")
+
+
 def main() -> int:
     _, app_dir = find_directories()
     args = sys.argv[1:]
@@ -217,6 +264,9 @@ def main() -> int:
 
     if cmd in ("-h", "--help", "help"):
         print(__doc__)
+        return 0
+    elif cmd in ("refresh", "--refresh", "pipeline", "--pipeline", "sync"):
+        trigger_pipeline_refresh(app_dir)
         return 0
     elif cmd in ("status", "--status", "-s"):
         print_status(app_dir)

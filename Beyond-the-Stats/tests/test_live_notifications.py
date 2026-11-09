@@ -61,7 +61,10 @@ class TestLivePollerNotifications(unittest.TestCase):
 
         # Set up a subscriber device and Live Activity for test match
         subscribe_match("device-tok-abc", "match-100", "England/Premier League")
-        register("la-tok-xyz", "device-tok-abc", "match-100", "England/Premier League")
+        # The Live Activity belongs to a different device, so device-tok-abc keeps
+        # receiving regular pushes (devices with an active LA are deduped).
+        subscribe_match("la-owner-tok", "match-100", "England/Premier League")
+        register("la-tok-xyz", "la-owner-tok", "match-100", "England/Premier League")
 
     def _set_game(self, game_dict):
         with _live_scores_lock:
@@ -115,7 +118,8 @@ class TestLivePollerNotifications(unittest.TestCase):
         self.assertEqual(len(reg_tokens), len(set(reg_tokens)))
 
         self.assertEqual(len(la_pushes), 1)
-        self.assertEqual(la_pushes[0]["event"], "kickoff")
+        self.assertEqual(la_pushes[0]["event"], "update")  # APNs aps.event
+        self.assertEqual(la_pushes[0]["content_state"]["event"], "kickoff")  # UI label
 
         # 3. Next poll cycle: match is at 2' — must NOT re-alert kickoff
         _apns_notification_queue.clear()
@@ -183,7 +187,8 @@ class TestLivePollerNotifications(unittest.TestCase):
 
         la_pushes = [e for e in _apns_notification_queue if e.get("type") == "liveactivity"]
         self.assertEqual(len(la_pushes), 1)
-        self.assertEqual(la_pushes[0]["event"], "goal")
+        self.assertEqual(la_pushes[0]["event"], "update")  # APNs aps.event
+        self.assertEqual(la_pushes[0]["content_state"]["event"], "goal")  # UI label
         self.assertEqual(la_pushes[0]["alert"]["body"], device_pushes[0]["body"])
 
         # 3. Subsequent poll cycles: ESPN enriches text with assist and description
@@ -282,7 +287,8 @@ class TestLivePollerNotifications(unittest.TestCase):
 
         la_pushes = [e for e in _apns_notification_queue if e.get("type") == "liveactivity"]
         self.assertEqual(len(la_pushes), 1)
-        self.assertEqual(la_pushes[0]["event"], "halftime")
+        self.assertEqual(la_pushes[0]["event"], "update")  # APNs aps.event
+        self.assertEqual(la_pushes[0]["content_state"]["event"], "halftime")  # UI label
 
         # 3. Next poll cycle: still Halftime — must NOT duplicate
         _apns_notification_queue.clear()

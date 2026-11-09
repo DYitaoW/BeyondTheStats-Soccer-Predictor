@@ -60,9 +60,12 @@ class LiveActivityGoalUpdateTests(unittest.TestCase):
         """Own goals and penalties must also refresh Live Activity scores."""
         source = (WEBSITE_DIR / "live_poller.py").read_text(encoding="utf-8")
         self.assertIn('_SCORING_EVENT_TYPES = frozenset({"goal", "own goal", "penalty"})', source)
-        self.assertIn("send_live_activity_update(mid, comp_name, la_state", source)
-        self.assertIn('score_state["event"] = "score"', source)
-        self.assertIn("send_live_activity_end(mid, comp_name, state", source)
+        self.assertIn("mid, comp_name, la_state, event=la_event_label", source)
+        # Score corrections are pushed from the dispatcher (single push per change)…
+        self.assertIn('event="score"', source)
+        # …and the old duplicate score-change block in the poller loop is gone.
+        self.assertNotIn("score_state", source)
+        self.assertIn("send_live_activity_end(", source)
 
     def test_score_change_helper_used_by_poller(self):
         source = (WEBSITE_DIR / "live_poller.py").read_text(encoding="utf-8")
@@ -81,7 +84,7 @@ class LiveActivityGoalUpdateTests(unittest.TestCase):
         )
         sent_payloads = []
 
-        def _fake_send(token, payload, topic, live_activity=False):
+        def _fake_send(token, payload, topic, live_activity=False, **kwargs):
             sent_payloads.append((token, payload, topic, live_activity))
             return True
 

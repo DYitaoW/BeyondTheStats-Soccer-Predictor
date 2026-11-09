@@ -6,6 +6,7 @@ Usage:
     python startbts              # Restart/reload background backend service with new changes
     python startbts.py           # Same as above
     ./startbts                   # Same as above
+    python startbts refresh      # Trigger pipeline refresh (recalculates upcoming predictions)
     python startbts status       # Check service status & API health
     python startbts logs         # Tail live backend logs
     python startbts stop         # Stop the background service
@@ -74,17 +75,33 @@ def restart_launchd_service(app_dir: Path) -> bool:
 
     print(f"[+] Reloading Beyond the Stats backend (gui/{uid}/{service_label})...")
 
-    # 1. Try kickstart first (fastest restart if already registered)
-    res = subprocess.run(
-        ["launchctl", "kickstart", "-k", f"gui/{uid}/{service_label}"],
-        capture_output=True,
-        text=True,
-    )
-    if res.returncode == 0:
-        print("[+] Sent reload signal to background service.")
-    else:
-        # If not active, bootstrap it
-        print(f"[-] Kickstart: {res.stderr.strip() or 'service not active'}. Bootstrapping plist...")
+    # Ensure launchd plist enforces --no-run-on-start so reloads do not trigger the pipeline
+    plist_updated = False
+    if plist_path.is_file():
+        try:
+            content = plist_path.read_text(encoding="utf-8", errors="replace")
+            if "--no-run-on-start" not in content and "</array>" in content:
+                content = content.replace("</array>", "    <string>--no-run-on-start</string>\n    </array>", 1)
+                plist_path.write_text(content, encoding="utf-8")
+                plist_updated = True
+        except Exception:
+            pass
+
+    # If plist was updated, or not active, bootstrap it; otherwise kickstart for fastest reload
+    res_returncode = 1
+    if not plist_updated:
+        res = subprocess.run(
+            ["launchctl", "kickstart", "-k", f"gui/{uid}/{service_label}"],
+            capture_output=True,
+            text=True,
+        )
+        res_returncode = res.returncode
+        if res_returncode == 0:
+            print("[+] Sent reload signal to background service.")
+
+    if res_returncode != 0:
+        # If not active or plist was updated, re-bootstrap it
+        print("[-] Bootstrapping launchd service with latest configuration...")
         if not plist_path.is_file():
             setup_script = app_dir / "deploy" / "macos" / "setup_mac_mini.sh"
             if setup_script.is_file():
@@ -203,11 +220,57 @@ def tail_logs(app_dir: Path) -> None:
 def run_foreground(app_dir: Path) -> None:
     py_bin = find_python_bin(app_dir)
     entry = app_dir / "main" / "run_backend.py"
-    print(f"[+] Running in foreground mode: {py_bin} {entry}...")
+    print(f"[+] Running in foreground mode: {py_bin} {entry} --no-run-on-start...")
     try:
-        subprocess.run([str(py_bin), str(entry)], cwd=str(app_dir))
+        subprocess.run([str(py_bin), str(entry), "--no-run-on-start"], cwd=str(app_dir))
     except KeyboardInterrupt:
         print("\n[+] Backend stopped.")
+
+
+def trigger_pipeline_refresh(app_dir: Path) -> None:
+    """Trigger a fast pipeline refresh (updates upcoming predictions with new mappings)."""
+    env_file = app_dir / ".env"
+    token = ""
+    if env_file.is_file():
+        for line in env_file.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if line.startswith("MUTATION_API_TOKEN="):
+                token = line.split("=", 1)[1].strip().strip('"').strip("'")
+                break
+
+    print("[+] Triggering pipeline prediction refresh...")
+    healthy, _ = check_health(8000, timeout=1.0)
+    if healthy:
+        url = "http://127.0.0.1:8000/api/refresh"
+        headers = {"User-Agent": "startbts/1.0"}
+        if token:
+            headers["X-Admin-Token"] = token
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(url, data=b"{}", headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10.0) as resp:
+                data = resp.read().decode("utf-8", errors="replace")
+                print(f"[+] Pipeline refresh triggered in background: {data}")
+                print("[+] You can watch live progress via: python startbts logs")
+                return
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            print(f"[!] API /api/refresh returned HTTP {e.code}: {err_body}")
+        except Exception as e:
+            print(f"[!] Could not reach /api/refresh: {e}")
+
+    # Fallback if server offline: run via venv python directly
+    py_bin = find_python_bin(app_dir)
+    print(f"[+] Running upcoming prediction refresh directly via {py_bin}...")
+    scripts = [
+        app_dir / "pipelines" / "europe" / "files" / "Predict_Upcoming_Matchweek.py",
+        app_dir / "pipelines" / "europe" / "files" / "Predict_Upcoming_Cups.py",
+    ]
+    for s in scripts:
+        if s.is_file():
+            print(f"  -> Running {s.name}...")
+            subprocess.run([str(py_bin), str(s)], cwd=str(app_dir))
+    print("[+] Direct prediction refresh complete.")
 
 
 def main() -> int:
@@ -217,6 +280,9 @@ def main() -> int:
 
     if cmd in ("-h", "--help", "help"):
         print(__doc__)
+        return 0
+    elif cmd in ("refresh", "--refresh", "pipeline", "--pipeline", "sync"):
+        trigger_pipeline_refresh(app_dir)
         return 0
     elif cmd in ("status", "--status", "-s"):
         print_status(app_dir)

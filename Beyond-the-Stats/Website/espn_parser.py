@@ -543,6 +543,13 @@ def _parse_espn_live_event(event):
             "period": period_label,
             "period_number": period_num,
             "clock": display_clock.strip(),
+            # Raw ESPN elapsed match time in seconds (soccer ``status.clock``);
+            # anchors the Live Activity count-up timer to the second.
+            "clock_seconds": (
+                float(status.get("clock"))
+                if isinstance(status.get("clock"), (int, float)) and status.get("clock") >= 0
+                else None
+            ),
             "kickoff_utc": _utc_to_et(raw_date),
             "match_date": match_date_str,
             "goalscorers": goalscorers,

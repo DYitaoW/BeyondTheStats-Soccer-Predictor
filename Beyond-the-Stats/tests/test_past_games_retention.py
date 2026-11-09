@@ -53,7 +53,16 @@ class PastGamesRetentionTests(unittest.TestCase):
                     }
                 ]
             )
-            with mock.patch.dict(os.environ, {"BTS_PAST_GAMES_RETENTION_DAYS": "0"}):
+            # save_completed_rows_to_past_games also upserts into SQLite; keep it
+            # out of the production store (it used to insert this fake
+            # Liverpool-Everton game into the live Premier League table).
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "BTS_PAST_GAMES_RETENTION_DAYS": "0",
+                    "BTS_SQLITE_STORE_PATH": str(Path(tmp) / "bts_store.db"),
+                },
+            ):
                 with mock.patch.object(live, "PAST_GAMES_FILE", str(past)), mock.patch.object(
                     live, "PAST_GAMES_JOURNAL_FILE", str(journal)
                 ), mock.patch.object(live, "PAST_GAMES_BACKUP_FILE", str(backup)):

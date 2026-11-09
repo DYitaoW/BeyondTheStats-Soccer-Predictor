@@ -448,8 +448,13 @@ def resolve_competition_query(comp_name: str) -> tuple[str, str | None]:
 def normalize_team_key(name: str) -> str:
     text = str(name or "").strip().lower()
     text = re.sub(r"[^a-z0-9]+", "", text)
-    for token in ("fc", "cf", "sc", "united", "city", "club"):
-        text = text.replace(token, "")
+    for token in ("afc", "cfc", "fc", "cf", "sc", "club"):
+        if text.endswith(token) and len(text) > len(token) + 2:
+            text = text[:-len(token)]
+            break
+        if text.startswith(token) and len(text) > len(token) + 2:
+            text = text[len(token):]
+            break
     return text
 
 
@@ -589,6 +594,28 @@ def canonical_team_name(name: str, competition: str = "") -> str:
                 sibling_map = payload.get(sibling)
                 if isinstance(sibling_map, dict) and sibling_map not in maps_to_try:
                     maps_to_try.append(sibling_map)
+
+        # Sibling-league fallback strictly by country (no global fallback to prevent cross-country collisions)
+        country = None
+        for c in (base_comp, competition):
+            if c and "/" in c:
+                prefix = c.split("/", 1)[0].strip()
+                if prefix not in {"Europe", "International", "North America"}:
+                    country = prefix
+                    break
+        if not country and (base_comp or competition):
+            comp_candidate = (base_comp or competition).strip().lower()
+            for known_comp in payload.keys():
+                if "/" in known_comp:
+                    known_prefix, known_name = known_comp.split("/", 1)
+                    if known_prefix not in {"Europe", "International", "North America"} and known_name.strip().lower() == comp_candidate:
+                        country = known_prefix
+                        break
+        if country:
+            for comp_key, comp_dict in payload.items():
+                if isinstance(comp_dict, dict) and comp_dict not in maps_to_try:
+                    if "/" in comp_key and comp_key.split("/", 1)[0].strip() == country:
+                        maps_to_try.append(comp_dict)
         lower = text.lower()
         lower_and = lower.replace(" & ", " and ").replace("&", " and ")
         key = normalize_team_key(text)

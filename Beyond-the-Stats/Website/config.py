@@ -722,6 +722,35 @@ APNS_AUTH_KEY_PATH = (
 APNS_TOPIC = os.environ.get("APNS_TOPIC", "Yitao.BeyondTheStatsApp").strip()
 APNS_LIVE_ACTIVITY_TOPIC = os.environ.get("APNS_LIVE_ACTIVITY_TOPIC", f"{APNS_TOPIC}.push-type.liveactivity").strip()
 APNS_USE_SANDBOX = os.environ.get("APNS_USE_SANDBOX", "0").strip().lower() in {"1", "true", "yes"}
+
+# ── Live Activities (ActivityKit) ─────────────────────────────────
+# Swift type name of the app's ActivityAttributes struct. Must match exactly or
+# push-to-start ("event": "start") payloads are silently dropped by iOS.
+APNS_LA_ATTRIBUTES_TYPE = os.environ.get("APNS_LA_ATTRIBUTES_TYPE", "MatchActivityAttributes").strip()
+# Push-to-start window: send "start" this many seconds before scheduled kickoff…
+APNS_LA_START_LEAD_SECONDS = int(os.environ.get("APNS_LA_START_LEAD_SECONDS", "300"))
+# …and still allow a late start (e.g. backend restarted) up to this long after kickoff.
+APNS_LA_START_GRACE_SECONDS = int(os.environ.get("APNS_LA_START_GRACE_SECONDS", "900"))
+# iOS 18+: ask the system to issue a fresh update push token for push-started activities.
+APNS_LA_INPUT_PUSH_TOKEN = os.environ.get("APNS_LA_INPUT_PUSH_TOKEN", "1").strip().lower() in {"1", "true", "yes"}
+# stale-date = kickoff + this many seconds (marks the activity outdated if "end" never arrives).
+APNS_LA_STALE_AFTER_KICKOFF_SECONDS = int(os.environ.get("APNS_LA_STALE_AFTER_KICKOFF_SECONDS", "10800"))
+
+# ── Live Activity broadcast channels (iOS 18+) ────────────────────
+# Requires "Broadcast Capability" enabled for the App ID in the Apple Developer
+# portal (Identifiers → App ID → Push Notifications). Off by default so the
+# backend never calls the channel API before the capability exists.
+APNS_BROADCAST_ENABLED = os.environ.get("APNS_BROADCAST_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
+# Bundle ID used in the broadcast/channel URL paths (defaults to APNS_TOPIC).
+APNS_BUNDLE_ID = os.environ.get("APNS_BUNDLE_ID", APNS_TOPIC).strip()
+# 0 = No Message Stored (higher publishing budget; Apple's recommendation for
+# sports scores; requires apns-expiration 0). 1 = Most Recent Message Stored.
+APNS_BROADCAST_STORAGE_POLICY = 1 if os.environ.get("APNS_BROADCAST_STORAGE_POLICY", "0").strip() == "1" else 0
+# Delete a match's channel this long after its "end" push (Apple caps apps at
+# 10,000 channels per environment).
+APNS_BROADCAST_DELETE_AFTER_END_SECONDS = int(os.environ.get("APNS_BROADCAST_DELETE_AFTER_END_SECONDS", "3600"))
+# Safety cap on concurrently open channels per environment (abuse guard).
+APNS_BROADCAST_MAX_ACTIVE_CHANNELS = int(os.environ.get("APNS_BROADCAST_MAX_ACTIVE_CHANNELS", "1000"))
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
 # ── Compression ───────────────────────────────────────────────────

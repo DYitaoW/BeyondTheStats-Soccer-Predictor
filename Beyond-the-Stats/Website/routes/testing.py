@@ -32,7 +32,24 @@ from notifications import (
     subscribe_team,
 )
 
-testing_bp = Blueprint("testing", __name__)
+from fastapi import Depends, HTTPException, Request
+
+
+def _require_admin_token(req: Request) -> None:
+    """Router-wide guard: every /api/test/* route sends real pushes or exposes config.
+
+    Accepts ``X-Admin-Token: <MUTATION_API_TOKEN>`` or ``Authorization: Bearer <MUTATION_API_TOKEN>``.
+    """
+    token = req.headers.get("X-Admin-Token", "").strip()
+    if not token:
+        auth = req.headers.get("Authorization", "").strip()
+        if auth.lower().startswith("bearer "):
+            token = auth[7:].strip()
+    if not (token and config.MUTATION_API_TOKEN and token == config.MUTATION_API_TOKEN):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+testing_bp = Blueprint("testing", __name__, dependencies=[Depends(_require_admin_token)])
 testing_router = testing_bp
 
 
@@ -104,12 +121,19 @@ def api_test_notifications_push():
     sandbox_override = payload.get("sandbox")
     topic = payload.get("topic")
 
-    targets = [device_token] if device_token else list(ios_device_tokens)
+    # Never fan out to every installed device by accident: no device_token means
+    # nothing is sent unless the caller explicitly asks for audience="all".
+    if device_token:
+        targets = [device_token]
+    elif str(payload.get("audience", "")).strip().lower() == "all":
+        targets = list(ios_device_tokens)
+    else:
+        targets = []
     if not targets:
         return jsonify({
             "ok": False,
             "error": "No device_token provided in request, and no device tokens are registered in memory.",
-            "hint": "Pass 'device_token' in JSON body, or have your iOS app subscribe via /api/notifications/subscribe first.",
+            "hint": "Pass 'device_token' in the JSON body (or \"audience\": \"all\" to push every registered device).",
         }), 400
 
     apns_payload = {
@@ -185,18 +209,26 @@ def api_test_live_activities_push():
             "body": str(payload.get("alert_body", "")),
         }
 
-    aps: dict = {
-        "content-state": content_state,
-        "timestamp": int(time.time()),
+    # Same builder as production pushes: aps.event is coerced to start/update/end
+    # (a UI label like "goal" becomes "update" + content-state.event), sound goes
+    # inside the alert, and start payloads carry attributes-type/attributes.
+    attributes = payload.get("attributes")
+    if not isinstance(attributes, dict):
+        attributes = {
+            k: content_state.get(k, "")
+            for k in ("match_id", "sync_key", "competition", "home_team", "away_team",
+                      "home_team_logo", "away_team_logo", "kickoff_date")
+        }
+    entry = {
         "event": event,
+        "content_state": content_state,
+        "alert": alert,
+        "sound": payload.get("sound", "default"),
+        "attributes": attributes,
+        "priority": payload.get("priority"),
+        "dismissal_date": int(time.time() + 60) if event == "end" else None,
     }
-    if alert:
-        aps["alert"] = alert
-        aps["sound"] = payload.get("sound", "default")
-    if event == "end":
-        aps["dismissal-date"] = int(time.time() + 60)
-
-    apns_payload = {"aps": aps}
+    apns_payload, priority = notifications.build_live_activity_aps(entry)
 
     res = apns_send_detailed(
         push_token=activity_token,
@@ -204,10 +236,12 @@ def api_test_live_activities_push():
         topic=topic,
         live_activity=True,
         sandbox=sandbox_override,
+        priority=priority,
     )
     return jsonify({
         "ok": res.get("ok", False),
-        "event": event,
+        "event": apns_payload["aps"]["event"],
+        "payload": apns_payload,
         "apns_result": res,
     })
 

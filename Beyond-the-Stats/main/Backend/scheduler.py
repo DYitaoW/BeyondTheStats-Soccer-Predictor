@@ -216,6 +216,10 @@ class FutureGamesWatcher:
                     # changed in the same cycle -- the upcoming script picks
                     # up everything anyway.
                     break
+                # Refresh signatures after callback finishes so files written
+                # by the refresh do not re-trigger a loop on the next poll cycle.
+                for p in self._paths:
+                    self._last_signatures[p] = self._signature(p)
 
 
 def run_subprocess_with_logging(cmd: list[str], cwd: Path, log_path: Optional[Path] = None) -> int:

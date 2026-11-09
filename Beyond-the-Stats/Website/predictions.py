@@ -74,7 +74,11 @@ _static_team_cache = {}
 _last_pipeline_run = None
 
 _LAST_5_FORM_CACHE: dict = {}
-_LAST_5_FORM_CACHE_TIME: float = 0.0
+_LAST_5_FORM_CACHE_TIME: float = 0.0  # legacy; per-mode times live below
+_LAST_5_FORM_CACHE_TIMES: dict = {}
+# Settled results overlaid onto the CSV last-5 index (finished live games land
+# in past_games immediately, Processed_Data CSVs only refresh nightly).
+_LAST_5_OVERLAY_DAYS = 120
 _STRENGTH_CACHE: dict = {}
 _STRENGTH_CACHE_TIME: float = 0.0
 
@@ -234,7 +238,7 @@ def _build_last5_form_index(mode):
     now = time.time()
     cache_key = mode
     cached = _LAST_5_FORM_CACHE.get(cache_key)
-    if cached and (now - _LAST_5_FORM_CACHE_TIME) < 300:
+    if cached is not None and (now - _LAST_5_FORM_CACHE_TIMES.get(cache_key, 0.0)) < 300:
         return cached
 
     # Map mode to processed data directory
@@ -244,15 +248,13 @@ def _build_last5_form_index(mode):
         "extra": config.EXTRA_PROCESSED_DIR,
     }
     processed_dir = mode_dirs.get(mode)
+    team_matches = defaultdict(list)
     if not processed_dir or not os.path.exists(processed_dir):
-        _LAST_5_FORM_CACHE[cache_key] = {}
-        _LAST_5_FORM_CACHE_TIME = now
-        return {}
+        processed_dir = None
 
     # Walk CSVs and build team -> matches. Sort files descending so the latest
     # seasons are read first, and cap to the latest 3 files per league folder.
-    team_matches = defaultdict(list)
-    for root, _, files in os.walk(processed_dir):
+    for root, _, files in (os.walk(processed_dir) if processed_dir else ()):
         csv_files = [f for f in sorted(files, reverse=True) if f.endswith(".csv")][:3]
         for name in csv_files:
             path = os.path.join(root, name)
@@ -295,15 +297,123 @@ def _build_last5_form_index(mode):
             except Exception:
                 continue
 
-    # Keep only last-5 per team, sorted by date descending
+    # Overlay settled results (incl. games finished today via the live poller)
+    # so form updates at the final whistle, not at the next pipeline run.
+    _overlay_recent_settled_results(team_matches)
+
+    # A completed match can never be dated after today (guards against
+    # day/month-swapped pipeline dates and placeholder future rows).
+    try:
+        from shared.sqlite_store import _latest_completed_date_iso
+
+        latest_date = _latest_completed_date_iso()
+    except Exception:
+        latest_date = "9999-12-31"
+    for team in list(team_matches.keys()):
+        team_matches[team] = [m for m in team_matches[team] if str(m.get("date", ""))[:10] <= latest_date]
+
+    # Keep only last-5 per team, sorted by date descending. A team plays at
+    # most once per day, so one entry per date removes CSV/ESPN duplicates
+    # that spell the opponent differently.
     result_index = {}
     for team, matches in team_matches.items():
-        matches.sort(key=lambda x: x["date"], reverse=True)
-        result_index[team] = matches[:5]
+        matches.sort(key=lambda x: (x["date"], 1 if x.get("source") == "settled" else 0), reverse=True)
+        by_date = []
+        seen_dates = set()
+        for m in matches:
+            d = str(m.get("date", ""))[:10]
+            if d in seen_dates:
+                continue
+            seen_dates.add(d)
+            by_date.append(m)
+            if len(by_date) >= 5:
+                break
+        result_index[team] = by_date
 
     _LAST_5_FORM_CACHE[cache_key] = result_index
+    _LAST_5_FORM_CACHE_TIMES[cache_key] = now
     _LAST_5_FORM_CACHE_TIME = now
     return result_index
+
+
+def _overlay_recent_settled_results(team_matches) -> None:
+    """Append recent settled past_games rows to a team -> matches index.
+
+    Entries use the same shape as the CSV index (``result`` is from the
+    team's perspective: H = won, A = lost, D = draw) and are filed under the
+    raw *and* canonical team names so lookups by either spelling see them.
+    """
+    try:
+        from shared import sqlite_store
+
+        cutoff = (
+            datetime.now(ZoneInfo("America/New_York")).date()
+            - timedelta(days=_LAST_5_OVERLAY_DAYS)
+        ).isoformat()
+        rows = sqlite_store.load_past_games(from_date=cutoff)
+    except Exception:
+        return
+    for p in rows:
+        if not isinstance(p, dict):
+            continue
+        comp = str(p.get("competition", "")).strip()
+        if "friendl" in comp.lower():
+            continue
+        date_str = str(p.get("match_date_iso") or p.get("match_date") or "")[:10]
+        home = str(p.get("home_team", "")).strip()
+        away = str(p.get("away_team", "")).strip()
+        if not date_str or not home or not away:
+            continue
+        hg = p.get("actual_home_goals") if p.get("actual_home_goals") is not None else p.get("home_score")
+        ag = p.get("actual_away_goals") if p.get("actual_away_goals") is not None else p.get("away_score")
+        try:
+            hg = int(float(hg))
+            ag = int(float(ag))
+        except (TypeError, ValueError):
+            continue
+        ftr = "H" if hg > ag else ("A" if ag > hg else "D")
+        c_home = str(p.get("canonical_home_team") or canonical_team_name(home, comp) or home)
+        c_away = str(p.get("canonical_away_team") or canonical_team_name(away, comp) or away)
+        home_entry = {
+            "opponent": away, "date": date_str, "result": ftr,
+            "home_score": hg, "away_score": ag, "is_home": True,
+            "venue": "home", "competition": comp, "source": "settled",
+        }
+        away_entry = {
+            "opponent": home, "date": date_str,
+            "result": "H" if ftr == "A" else ("A" if ftr == "H" else "D"),
+            "home_score": hg, "away_score": ag, "is_home": False,
+            "venue": "away", "competition": comp, "source": "settled",
+        }
+        for key in {home, c_home}:
+            if key:
+                team_matches[key].append(dict(home_entry))
+        for key in {away, c_away}:
+            if key:
+                team_matches[key].append(dict(away_entry))
+
+
+def _last5_for(form_index: dict, *names) -> list:
+    """Merge last-5 entries for every spelling of a team (raw + canonical)."""
+    merged = []
+    seen_dates = set()
+    pools = [form_index.get(n) or [] for n in dict.fromkeys(n for n in names if n)]
+    for m in sorted((m for pool in pools for m in pool), key=lambda x: str(x.get("date", "")), reverse=True):
+        d = str(m.get("date", ""))[:10]
+        if d in seen_dates:
+            continue
+        seen_dates.add(d)
+        merged.append(m)
+        if len(merged) >= 5:
+            break
+    return merged
+
+
+def clear_team_form_caches() -> None:
+    """Drop last-5 and recent-match caches (called when a match finishes)."""
+    _LAST_5_FORM_CACHE.clear()
+    _LAST_5_FORM_CACHE_TIMES.clear()
+    _RECENT_MATCHES_CACHE.clear()
 
 
 def _build_strength_index(mode):
@@ -1045,6 +1155,20 @@ def _build_live_games_index() -> tuple[dict[tuple[str, str, str], dict], dict[st
                     continue
                 for alias in config.competition_live_aliases(comp_name):
                     team_index[(home, away, alias)] = game
+
+    # Also preload recent completed/scheduled matches from SQLite live_score_history
+    try:
+        from shared import sqlite_store
+        for h_game in sqlite_store.load_live_score_history(limit=500):
+            h_mid = str(h_game.get("match_id") or "").strip()
+            if h_mid and h_mid not in id_index:
+                id_index[h_mid] = h_game
+            h_sync = str(h_game.get("sync_key") or "").strip()
+            if h_sync and h_sync not in sync_index:
+                sync_index[h_sync] = h_game
+    except Exception:
+        pass
+
     return team_index, id_index, sync_index
 
 
@@ -1103,6 +1227,7 @@ def _find_live_game_for_row(
                 return game
             if (home in idx_away or idx_away in home) and (away in idx_home or idx_home in away):
                 return game
+
     return None
 
 
@@ -1165,8 +1290,7 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
         live_game = _find_live_game_for_row(row, team_index, id_index, sync_index)
         if not live_game:
             row["live_updates"] = False
-            row["live_status"] = None
-            row.pop("match_id", None)
+            row["live_status"] = "scheduled" if row.get("match_id") else None
             continue
 
         _apply_live_scores_to_row(row, live_game, eligible, comp)
@@ -1449,9 +1573,13 @@ def _load_upcoming_rows(
             weekday = date_val.strftime("%A")
             date_label = date_val.strftime("%B %d, %Y")
         try:
-            ph_raw = float(row["prob_home"]) * 100
-            pdv_raw = float(row["prob_draw"]) * 100
-            pa_raw = float(row["prob_away"]) * 100
+            ph_raw = float(row["prob_home"])
+            pdv_raw = float(row["prob_draw"])
+            pa_raw = float(row["prob_away"])
+            if ph_raw <= 1.0 and pdv_raw <= 1.0 and pa_raw <= 1.0 and (ph_raw + pdv_raw + pa_raw) <= 1.05:
+                ph_raw *= 100
+                pdv_raw *= 100
+                pa_raw *= 100
             ph = round(ph_raw, 3)
             pdv = round(pdv_raw, 3)
             pa = round(pa_raw, 3)
@@ -1520,8 +1648,8 @@ def _load_upcoming_rows(
                     prob_away=pa_raw / 100.0 if pa_raw else None,
                 ),
                 # Last-5 form with opponent details
-                "last_5_home": form_index.get(home, []),
-                "last_5_away": form_index.get(away, []),
+                "last_5_home": _last5_for(form_index, home, c_home),
+                "last_5_away": _last5_for(form_index, away, c_away),
                 # Attack / defence strength ratings (relative to league avg)
                 "home_attack_rating": strength_index.get(home, {}).get("attack_rating"),
                 "home_defence_rating": strength_index.get(home, {}).get("defence_rating"),
@@ -2232,15 +2360,16 @@ def _load_team_recent_matches(team, processed_dir, limit=10):
     now = time.time()
     cache_key = f"{team}|{limit}"
     cached = _RECENT_MATCHES_CACHE.get(cache_key)
-    if cached and (now - _RECENT_MATCHES_CACHE_TIME) < 300:
-        return cached
+    # Each entry carries its own timestamp; a single shared timestamp let new
+    # entries keep older teams' results "fresh" indefinitely.
+    if cached and (now - cached[0]) < 300:
+        return cached[1]
 
     try:
         from shared import sqlite_store
         db_matches = sqlite_store.load_team_recent_matches(team, limit=limit)
         if db_matches:
-            _RECENT_MATCHES_CACHE[cache_key] = db_matches
-            _RECENT_MATCHES_CACHE_TIME = now
+            _RECENT_MATCHES_CACHE[cache_key] = (now, db_matches)
             return db_matches
     except Exception:
         pass
@@ -2278,8 +2407,7 @@ def _load_team_recent_matches(team, processed_dir, limit=10):
                 })
     rows.sort(key=lambda x: x["date"], reverse=True)
     result = rows[:limit]
-    _RECENT_MATCHES_CACHE[cache_key] = result
-    _RECENT_MATCHES_CACHE_TIME = now
+    _RECENT_MATCHES_CACHE[cache_key] = (now, result)
     return result
 
 
