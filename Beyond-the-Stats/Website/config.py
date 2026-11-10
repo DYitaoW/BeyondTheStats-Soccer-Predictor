@@ -179,7 +179,7 @@ LEAGUE_API_EXCLUDED_COMPETITIONS = {
 # national-team pipeline and must not leak into league-facing APIs even when a
 # stale projected-tables CSV still contains rows for them.
 NATIONAL_TEAM_COMPETITION_PREFIXES = frozenset({
-    "FIFA", "UEFA", "CONMEBOL", "CONCACAF", "CAF", "AFC", "OFC",
+    "FIFA", "UEFA", "CONMEBOL", "CONCACAF", "CAF", "AFC", "OFC", "INTERNATIONAL",
 })
 
 
@@ -188,7 +188,15 @@ def is_national_team_competition(competition) -> bool:
     name = str(competition or "").strip()
     if not name:
         return False
-    if "World Cup Qualifying" in name or "Nations League" in name:
+    if (
+        "World Cup" in name
+        or "Nations League" in name
+        or "European Championship" in name
+        or "Copa America" in name
+        or "Gold Cup" in name
+        or "Africa Cup of Nations" in name
+        or "Asian Cup" in name
+    ):
         return True
     head = name.split("/", 1)[0].strip().upper()
     return head in NATIONAL_TEAM_COMPETITION_PREFIXES
@@ -231,6 +239,18 @@ LIVE_SCORE_COMPETITIONS = {
     # National team & World Cup
     "International/World Cup": "fifa.world",
     "International/Friendly": "fifa.friendly",
+    "International/European Championship": "uefa.euro",
+    "Europe/European Championship": "uefa.euro",
+    "Europe/Euros": "uefa.euro",
+    "Europe/Euro": "uefa.euro",
+    "International/Nations League": "uefa.nations",
+    "North America/Concacaf Nations League": "concacaf.nations.league",
+    "North America/CONCACAF Nations League": "concacaf.nations.league",
+    "International/Concacaf Nations League": "concacaf.nations.league",
+    "International/CONCACAF Nations League": "concacaf.nations.league",
+    "South America/Copa America": "conmebol.america",
+    "North America/Gold Cup": "concacaf.gold",
+    "Africa/Africa Cup of Nations": "caf.nations",
     # Mexico/Liga MX, Belgium/First Division A, Scotland/Premiership, Turkey/Super Lig
     # are result-only (post-match fetch, no in-play polling).
     "Mexico/Liga MX": "mex.1",
@@ -644,6 +664,9 @@ TOURNAMENT_KEY_MAP = {
     "conference-league": "Europe/Conference League",
     "euros": "International/European Championship",
     "copa-america": "South America/Copa America",
+    "nations-league": "International/Nations League",
+    "uefa-nations-league": "International/Nations League",
+    "concacaf-nations-league": "North America/Concacaf Nations League",
     "fa-cup": "England/FA Cup",
     "efl-cup": "England/League Cup",
     "league-cup": "England/League Cup",

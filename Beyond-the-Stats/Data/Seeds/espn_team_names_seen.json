@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-11-08T07:18:48+00:00",
+  "generated_at_utc": "2026-11-10T05:52:39+00:00",
   "global": {
     "England/Championship": [],
     "England/Premier League": [],
@@ -9,11 +9,15 @@
     "Portugal/Liga Portugal": [],
     "Spain/La Liga": []
   },
-  "mls": {},
+  "mls": {
+    "United States/MLS": []
+  },
   "extra": {},
   "cup": {},
   "national": {
-    "International/Friendly": []
+    "International/Friendly": [],
+    "International/Nations League": [],
+    "North America/Concacaf Nations League": []
   },
   "friendlies": {
     "International/Friendly": []

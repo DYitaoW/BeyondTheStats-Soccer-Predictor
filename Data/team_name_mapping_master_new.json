@@ -494,7 +494,10 @@
     "Vitre": "",
     "Saint-Pierre Milizac": ""
   },
-  "United States/MLS": {},
+  "United States/MLS": {
+    "TBD Away": "",
+    "TBD Home": ""
+  },
   "France/Ligue 2": {
     "Nantes": "Nantes",
     "Orléans": "Orleans",

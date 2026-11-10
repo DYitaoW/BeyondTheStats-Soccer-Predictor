@@ -77,6 +77,7 @@ _UEFA_COMPETITIONS = frozenset({
 # standings tables entirely (non-whitelisted cups → no table layout).
 _MAJOR_INTERNATIONAL_TABLES = frozenset({
     "International/World Cup",
+    "International/European Championship",
     "Europe/European Championship", "Europe/Euros", "Europe/Euro",
     "South America/Copa America", "South America/Copa América",
     "Africa/Africa Cup of Nations", "Africa/AFCON",

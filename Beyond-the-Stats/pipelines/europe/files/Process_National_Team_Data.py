@@ -150,13 +150,14 @@ UPCOMING_ESPN_COMPETITIONS = {
     "North America/Gold Cup": {"espn_id": "concacaf.gold", "priority": 8, "ranges": []},
     "Africa/Africa Cup of Nations": {"espn_id": "caf.nations", "priority": 9, "ranges": []},
     "International/Nations League": {"espn_id": "uefa.nations", "priority": 10, "ranges": []},
+    "North America/Concacaf Nations League": {"espn_id": "concacaf.nations.league", "priority": 11, "ranges": []},
 }
 
 RECENT_ESPN_COMPETITIONS = {
     **UPCOMING_ESPN_COMPETITIONS,
-    "International/World Cup Qualifying - AFC": {"espn_id": "fifa.worldq.afc", "priority": 11, "ranges": []},
-    "International/World Cup Qualifying - CAF": {"espn_id": "fifa.worldq.caf", "priority": 12, "ranges": []},
-    "Asia/Asian Cup": {"espn_id": "afc.cup", "priority": 13, "ranges": []},
+    "International/World Cup Qualifying - AFC": {"espn_id": "fifa.worldq.afc", "priority": 12, "ranges": []},
+    "International/World Cup Qualifying - CAF": {"espn_id": "fifa.worldq.caf", "priority": 13, "ranges": []},
+    "Asia/Asian Cup": {"espn_id": "afc.cup", "priority": 14, "ranges": []},
 }
 
 FOOTBALL_DATA_COMPETITIONS = {

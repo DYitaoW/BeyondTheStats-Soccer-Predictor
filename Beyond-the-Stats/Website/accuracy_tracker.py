@@ -56,6 +56,8 @@ _UPCOMING_CSV_MODE_MAP = {
     "Club Friendlies": "friendlies",
     "International/European Championship": "national",
     "International/Nations League": "national",
+    "North America/Concacaf Nations League": "national",
+    "North America/CONCACAF Nations League": "national",
     "South America/Copa America": "national",
     "United States/MLS": "mls",
     "Belgium/First Division A": "extra",
