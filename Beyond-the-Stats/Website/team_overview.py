@@ -290,12 +290,13 @@ def build_team_overview(team_name: str) -> dict:
 
     # Check memory cache
     now = time.time()
-    cache_key = raw_name.lower()
+    id_keys = _team_identity_keys(raw_name)
     with _TEAM_OVERVIEW_CACHE_LOCK:
-        if cache_key in _TEAM_OVERVIEW_CACHE:
-            exp_ts, cached_payload = _TEAM_OVERVIEW_CACHE[cache_key]
-            if now < exp_ts:
-                return cached_payload
+        for k in id_keys:
+            if k in _TEAM_OVERVIEW_CACHE:
+                exp_ts, cached_payload = _TEAM_OVERVIEW_CACHE[k]
+                if now < exp_ts:
+                    return cached_payload
 
     # Ensure indexes are ready
     _build_global_team_indexes()
@@ -445,11 +446,10 @@ def build_team_overview(team_name: str) -> dict:
         "next_game": next_game,
     }
 
-    # Store in memory cache
+    # Store in memory cache under all identity keys
     with _TEAM_OVERVIEW_CACHE_LOCK:
-        _TEAM_OVERVIEW_CACHE[cache_key] = (now + _TEAM_OVERVIEW_TTL, payload)
-        if canon_name and canon_name.lower() != cache_key:
-            _TEAM_OVERVIEW_CACHE[canon_name.lower()] = (now + _TEAM_OVERVIEW_TTL, payload)
+        for k in id_keys:
+            _TEAM_OVERVIEW_CACHE[k] = (now + _TEAM_OVERVIEW_TTL, payload)
 
     return payload
 
@@ -558,6 +558,18 @@ def refresh_team_overviews_after_results(team_names) -> None:
 def precache_popular_teams() -> int:
     """Pre-cache overview payloads for popular clubs (Top 5 European Leagues & MLS)."""
     _build_global_team_indexes(force=True)
+
+    try:
+        from routes.predictions import _get_or_build_team_upcoming_and_next_game_indexes
+        _get_or_build_team_upcoming_and_next_game_indexes()
+    except Exception as e:
+        logger.debug("Warmup upcoming index failed: %s", e)
+
+    try:
+        from match_analytics import _load_unified_match_history
+        _load_unified_match_history()
+    except Exception as e:
+        logger.debug("Warmup unified match history failed: %s", e)
 
     league_teams_path = getattr(config, "LEAGUE_TEAMS_FILE", None) or os.path.join(
         getattr(config, "PROJECT_DIR", ""), "Data", "Seeds", "league_teams.json"

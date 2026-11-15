@@ -12,6 +12,7 @@ import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from collections import defaultdict
 from zoneinfo import ZoneInfo
 
 from .compat import Blueprint, Request, redirect, render_template, send_from_directory, request, jsonify
@@ -93,6 +94,7 @@ _UPCOMING_MODE_MAP = {
     "cups": (config.CUP_UPCOMING_FILE, "cups"),
     "world-cup": (config.NATIONAL_UPCOMING_FILE, "national"),
     "friendlies": (config.FRIENDLIES_UPCOMING_FILE, "friendlies"),
+    "womens": (config.WOMENS_UPCOMING_FILE, "womens"),
 }
 
 
@@ -195,16 +197,23 @@ def _clean_float(val: Any) -> Optional[float]:
         return None
 
 
-# In-memory index of next upcoming fixtures per team
+# In-memory index of next upcoming fixtures and upcoming games per team
 _TEAM_NEXT_GAME_INDEX: dict[str, tuple[dict, bool]] = {}
-_TEAM_NEXT_GAME_INDEX_TS: float = 0.0
-_TEAM_NEXT_GAME_INDEX_LOCK = threading.Lock()
-_TEAM_NEXT_GAME_INDEX_TTL = 30.0  # seconds
+_TEAM_UPCOMING_GAMES_INDEX: dict[str, list[dict]] = {}
+_TEAM_UPCOMING_INDEX_TS: float = 0.0
+_TEAM_UPCOMING_AND_NEXT_LOCK = threading.Lock()
+_TEAM_UPCOMING_INDEX_TTL = 60.0  # seconds
+
+_TEAM_PAYLOAD_CACHE: dict[str, tuple[float, dict]] = {}
+_TEAM_PAYLOAD_CACHE_LOCK = threading.Lock()
+_TEAM_PAYLOAD_CACHE_TTL = 60.0  # seconds
 
 
 def _invalidate_team_next_game_index() -> None:
-    global _TEAM_NEXT_GAME_INDEX_TS
-    _TEAM_NEXT_GAME_INDEX_TS = 0.0
+    global _TEAM_UPCOMING_INDEX_TS
+    _TEAM_UPCOMING_INDEX_TS = 0.0
+    with _TEAM_PAYLOAD_CACHE_LOCK:
+        _TEAM_PAYLOAD_CACHE.clear()
 
 
 def _clean_fixture_datetime_sort_key(r: dict) -> str:
@@ -223,6 +232,13 @@ def _clean_fixture_datetime_sort_key(r: dict) -> str:
                 break
     if not raw_val:
         return "9999-99-99"
+
+    # Fast path: standardized UTC ISO string ending with Z (already UTC)
+    if raw_val.endswith("Z") and len(raw_val) >= 20 and raw_val[4] == "-" and raw_val[7] == "-":
+        return f"{raw_val[:10]}T{raw_val[11:19]}Z"
+    if len(raw_val) == 10 and raw_val[4] == "-" and raw_val[7] == "-":
+        return f"{raw_val}T00:00:00Z"
+
     try:
         dt = pd.to_datetime(raw_val, utc=True)
         if not pd.isna(dt):
@@ -230,6 +246,79 @@ def _clean_fixture_datetime_sort_key(r: dict) -> str:
     except Exception:
         pass
     return raw_val[:19]
+
+
+def _format_team_upcoming_fixture(
+    r: dict,
+    is_h: bool,
+    canon_h: str,
+    canon_a: str,
+    comp: str,
+    home: str,
+    away: str,
+    m_date: str,
+) -> dict:
+    dt_utc = str(r.get("match_datetime_utc") or r.get("kickoff_utc") or "").strip()
+    dt_et = str(r.get("match_datetime_et") or "").strip()
+    if dt_utc.lower() in ("none", "nan", "null"):
+        dt_utc = ""
+    if dt_et.lower() in ("none", "nan", "null"):
+        dt_et = ""
+
+    if not dt_et and dt_utc:
+        dt_et = _utc_to_et(dt_utc)
+    elif not dt_utc and dt_et:
+        try:
+            p_dt = pd.to_datetime(dt_et)
+            if p_dt.tzinfo is None:
+                p_dt = p_dt.tz_localize("America/New_York")
+            dt_utc = p_dt.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            pass
+
+    if not m_date or m_date.lower() in ("none", "nan", "null") or len(m_date) < 10 or not m_date[:4].isdigit():
+        if dt_et and len(dt_et) >= 10 and dt_et[:4].isdigit():
+            m_date = dt_et[:10]
+        elif dt_utc and len(dt_utc) >= 10 and dt_utc[:4].isdigit():
+            m_date = dt_utc[:10]
+
+    opponent = away if is_h else home
+    canon_opponent = canon_a if is_h else canon_h
+    opponent_display = _team_name_for_display(canon_opponent or opponent)
+
+    sync_k = str(r.get("sync_key") or "").strip()
+    if not sync_k or sync_k.startswith("|"):
+        sync_k = make_match_sync_key(
+            dt_et or dt_utc or m_date,
+            comp,
+            canon_h,
+            canon_a,
+        )
+
+    return {
+        "sync_key": sync_k,
+        "match_id": str(r.get("match_id", "") or "").strip(),
+        "competition": comp,
+        "match_date": m_date,
+        "match_date_iso": m_date,
+        "match_datetime_utc": dt_et or dt_utc,
+        "match_datetime_et": dt_et,
+        "match_datetime_iso_utc": dt_utc,
+        "home_team": home,
+        "away_team": away,
+        "canonical_home_team": canon_h,
+        "canonical_away_team": canon_a,
+        "is_home": is_h,
+        "opponent": opponent,
+        "opponent_display": opponent_display,
+        "predicted_result": str(r.get("predicted_result", "") or "").strip(),
+        "prob_home": _clean_float(r.get("prob_home")),
+        "prob_draw": _clean_float(r.get("prob_draw")),
+        "prob_away": _clean_float(r.get("prob_away")),
+        "pred_home_goals": _clean_float(r.get("pred_home_goals")),
+        "pred_away_goals": _clean_float(r.get("pred_away_goals")),
+        "venue": str(r.get("venue", "") or "").strip(),
+    }
 
 
 def _fixture_dedup_key(r: dict) -> str:
@@ -248,7 +337,7 @@ def _fixture_dedup_key(r: dict) -> str:
     return f"{m_date}|{comp.lower()}|{_clean_team_slug(c_home)}|{_clean_team_slug(c_away)}"
 
 
-def _build_team_next_game_index() -> dict[str, tuple[dict, bool]]:
+def _build_team_upcoming_and_next_game_indexes() -> tuple[dict[str, tuple[dict, bool]], dict[str, list[dict]]]:
     try:
         now_et = datetime.now(ZoneInfo("America/New_York"))
     except Exception:
@@ -277,18 +366,22 @@ def _build_team_next_game_index() -> dict[str, tuple[dict, bool]]:
 
         else:
             existing = seen_map[ck]
-            for fld in ("match_datetime_utc", "match_datetime_et", "kickoff_utc", "predicted_result", "match_id"):
+            for fld in (
+                "match_datetime_utc", "match_datetime_et", "kickoff_utc",
+                "predicted_result", "match_id", "prob_home", "prob_draw",
+                "prob_away", "pred_home_goals", "pred_away_goals",
+            ):
                 ev = str(existing.get(fld) or "").strip()
                 rv = str(r.get(fld) or "").strip()
                 if (not ev or ev.lower() in ("none", "nan", "null")) and rv and rv.lower() not in ("none", "nan", "null"):
                     existing[fld] = r[fld]
 
-    # 2. Also merge with CSV sources (especially cup fixtures) to guarantee full coverage
+    # 2. Also merge with CSV sources (using mtime-cached fixtures_only)
     for source, csv_path in _ALL_UPCOMING_SOURCES:
         if not csv_path or not os.path.exists(csv_path):
             continue
         try:
-            rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="upcoming")
+            rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="upcoming", fixtures_only=True)
             for r in rows:
                 ck = _fixture_dedup_key(r)
                 if not ck:
@@ -297,7 +390,11 @@ def _build_team_next_game_index() -> dict[str, tuple[dict, bool]]:
                     seen_map[ck] = dict(r)
                 else:
                     existing = seen_map[ck]
-                    for fld in ("match_datetime_utc", "match_datetime_et", "kickoff_utc", "predicted_result", "match_id"):
+                    for fld in (
+                        "match_datetime_utc", "match_datetime_et", "kickoff_utc",
+                        "predicted_result", "match_id", "prob_home", "prob_draw",
+                        "prob_away", "pred_home_goals", "pred_away_goals",
+                    ):
                         ev = str(existing.get(fld) or "").strip()
                         rv = str(r.get(fld) or "").strip()
                         if (not ev or ev.lower() in ("none", "nan", "null")) and rv and rv.lower() not in ("none", "nan", "null"):
@@ -327,38 +424,49 @@ def _build_team_next_game_index() -> dict[str, tuple[dict, bool]]:
             continue
         valid_fixtures.append(r)
 
-    # Sort chronological (soonest match first) using robust sort key
+    # Sort chronological (soonest match first) using fast sort key
     valid_fixtures.sort(key=_clean_fixture_datetime_sort_key)
 
     next_game_by_team: dict[str, tuple[dict, bool]] = {}
+    upcoming_by_team: dict[str, list[dict]] = defaultdict(list)
 
     for r in valid_fixtures:
         home = str(r.get("home_team", "") or "").strip()
         away = str(r.get("away_team", "") or "").strip()
         comp = str(r.get("competition", "") or "").strip()
 
-        # Home team variations
-        home_canon = canonical_team_name(home, comp)
+        canon_h = canonical_team_name(home, comp) or home
+        canon_a = canonical_team_name(away, comp) or away
         home_db = _team_name_for_db(home)
+        away_db = _team_name_for_db(away)
+
+        m_date = str(r.get("match_date_iso") or r.get("match_date") or "").strip()[:10]
+        if not m_date or m_date.lower() in ("none", "nan", "null"):
+            val_et = str(r.get("match_datetime_et") or "").strip()[:10]
+            val_utc = str(r.get("match_datetime_utc") or "").strip()[:10]
+            m_date = val_et if (val_et and val_et[:4].isdigit()) else (val_utc if (val_utc and val_utc[:4].isdigit()) else "")
+
+        home_formatted = _format_team_upcoming_fixture(r, True, canon_h, canon_a, comp, home, away, m_date)
+        away_formatted = _format_team_upcoming_fixture(r, False, canon_h, canon_a, comp, home, away, m_date)
+
+        # Home team variations
         home_keys = {
             home.lower(),
-            home_canon.lower(),
+            canon_h.lower(),
             home_db.lower(),
             normalize_team_key(home),
-            normalize_team_key(home_canon),
+            normalize_team_key(canon_h),
             normalize_team_key(home_db),
         }
         home_keys.discard("")
 
         # Away team variations
-        away_canon = canonical_team_name(away, comp)
-        away_db = _team_name_for_db(away)
         away_keys = {
             away.lower(),
-            away_canon.lower(),
+            canon_a.lower(),
             away_db.lower(),
             normalize_team_key(away),
-            normalize_team_key(away_canon),
+            normalize_team_key(canon_a),
             normalize_team_key(away_db),
         }
         away_keys.discard("")
@@ -366,25 +474,32 @@ def _build_team_next_game_index() -> dict[str, tuple[dict, bool]]:
         for hk in home_keys:
             if hk not in next_game_by_team:
                 next_game_by_team[hk] = (r, True)
+            upcoming_by_team[hk].append(home_formatted)
 
         for ak in away_keys:
             if ak not in next_game_by_team:
                 next_game_by_team[ak] = (r, False)
+            upcoming_by_team[ak].append(away_formatted)
 
-    return next_game_by_team
+    return next_game_by_team, dict(upcoming_by_team)
+
+
+def _get_or_build_team_upcoming_and_next_game_indexes() -> tuple[dict[str, tuple[dict, bool]], dict[str, list[dict]]]:
+    global _TEAM_NEXT_GAME_INDEX, _TEAM_UPCOMING_GAMES_INDEX, _TEAM_UPCOMING_INDEX_TS
+    now = time.time()
+    if _TEAM_NEXT_GAME_INDEX and (now - _TEAM_UPCOMING_INDEX_TS < _TEAM_UPCOMING_INDEX_TTL):
+        return _TEAM_NEXT_GAME_INDEX, _TEAM_UPCOMING_GAMES_INDEX
+    with _TEAM_UPCOMING_AND_NEXT_LOCK:
+        if _TEAM_NEXT_GAME_INDEX and (time.time() - _TEAM_UPCOMING_INDEX_TS < _TEAM_UPCOMING_INDEX_TTL):
+            return _TEAM_NEXT_GAME_INDEX, _TEAM_UPCOMING_GAMES_INDEX
+        _TEAM_NEXT_GAME_INDEX, _TEAM_UPCOMING_GAMES_INDEX = _build_team_upcoming_and_next_game_indexes()
+        _TEAM_UPCOMING_INDEX_TS = time.time()
+        return _TEAM_NEXT_GAME_INDEX, _TEAM_UPCOMING_GAMES_INDEX
 
 
 def _get_or_build_team_next_game_index() -> dict[str, tuple[dict, bool]]:
-    global _TEAM_NEXT_GAME_INDEX, _TEAM_NEXT_GAME_INDEX_TS
-    now = time.time()
-    if _TEAM_NEXT_GAME_INDEX and (now - _TEAM_NEXT_GAME_INDEX_TS < _TEAM_NEXT_GAME_INDEX_TTL):
-        return _TEAM_NEXT_GAME_INDEX
-    with _TEAM_NEXT_GAME_INDEX_LOCK:
-        if _TEAM_NEXT_GAME_INDEX and (time.time() - _TEAM_NEXT_GAME_INDEX_TS < _TEAM_NEXT_GAME_INDEX_TTL):
-            return _TEAM_NEXT_GAME_INDEX
-        _TEAM_NEXT_GAME_INDEX = _build_team_next_game_index()
-        _TEAM_NEXT_GAME_INDEX_TS = time.time()
-        return _TEAM_NEXT_GAME_INDEX
+    next_index, _ = _get_or_build_team_upcoming_and_next_game_indexes()
+    return next_index
 
 
 def _format_next_game_payload(
@@ -697,196 +812,21 @@ def _load_team_upcoming_games(team_name: str, mode: str = "global") -> list[dict
     if not team_name:
         return []
 
-    try:
-        now_et = datetime.now(ZoneInfo("America/New_York"))
-        today_iso = now_et.strftime("%Y-%m-%d")
-    except Exception:
-        today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
     team_db = _team_name_for_db(team_name)
     team_canon = canonical_team_name(team_db) or team_db
-    target_names = {
+    target_names = [
         team_name.lower().strip(),
         team_db.lower().strip(),
         team_canon.lower().strip(),
         normalize_team_key(team_name),
         normalize_team_key(team_db),
         normalize_team_key(team_canon),
-    }
-    target_names.discard("")
-
-    candidates: list[dict] = []
-    # 1. SQLite store
-    try:
-        from shared import sqlite_store
-        db_rows = sqlite_store.load_upcoming_games(from_date=today_iso, status="upcoming")
-        if not db_rows:
-            db_rows = sqlite_store.load_upcoming_games(from_date=today_iso)
-        if db_rows:
-            candidates.extend(r if isinstance(r, dict) else dict(r) for r in db_rows)
-    except Exception:
-        pass
-
-    # 2. Merge with CSV sources (mode league CSV + cup CSV + others)
-    for source, csv_path in _ALL_UPCOMING_SOURCES:
-        if not csv_path or not os.path.exists(csv_path):
-            continue
-        try:
-            csv_rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="upcoming")
-            candidates.extend(csv_rows)
-        except Exception:
-            pass
-
-    seen_map: dict[str, dict] = {}
-    for r in candidates:
-        if not isinstance(r, dict):
-            continue
-        ck = _fixture_dedup_key(r)
-        if not ck:
-            continue
-        if ck not in seen_map:
-            seen_map[ck] = dict(r)
-
-        else:
-            existing = seen_map[ck]
-            for fld in (
-                "match_datetime_utc",
-                "match_datetime_et",
-                "kickoff_utc",
-                "predicted_result",
-                "match_id",
-                "prob_home",
-                "prob_draw",
-                "prob_away",
-                "pred_home_goals",
-                "pred_away_goals",
-            ):
-                ev = str(existing.get(fld) or "").strip()
-                rv = str(r.get(fld) or "").strip()
-                if (not ev or ev.lower() in ("none", "nan", "null")) and rv and rv.lower() not in ("none", "nan", "null"):
-                    existing[fld] = r[fld]
-
-    team_fixtures = []
-    for r in seen_map.values():
-        actual = str(r.get("actual_result", "") or "").strip().upper()
-        if actual in {"H", "D", "A"}:
-            continue
-        st = str(r.get("status", "") or "").strip().lower()
-        if st in {"settled", "post"}:
-            continue
-
-        home = str(r.get("home_team", "") or "").strip()
-        away = str(r.get("away_team", "") or "").strip()
-        if not home or not away:
-            continue
-
-        comp = str(r.get("competition", "") or "").strip()
-        canon_h = canonical_team_name(home, comp) or home
-        canon_a = canonical_team_name(away, comp) or away
-
-        h_set = {
-            home.lower(),
-            canon_h.lower(),
-            _team_name_for_db(home).lower(),
-            normalize_team_key(home),
-            normalize_team_key(canon_h),
-            normalize_team_key(_team_name_for_db(home)),
-        }
-        h_set.discard("")
-        a_set = {
-            away.lower(),
-            canon_a.lower(),
-            _team_name_for_db(away).lower(),
-            normalize_team_key(away),
-            normalize_team_key(canon_a),
-            normalize_team_key(_team_name_for_db(away)),
-        }
-        a_set.discard("")
-
-        is_h = bool(target_names.intersection(h_set))
-        is_a = bool(target_names.intersection(a_set))
-        if not (is_h or is_a):
-            continue
-
-        m_date = str(r.get("match_date_iso") or r.get("match_date") or "").strip()[:10]
-        if not m_date or m_date.lower() in ("none", "nan", "null"):
-            val_et = str(r.get("match_datetime_et") or "").strip()[:10]
-            val_utc = str(r.get("match_datetime_utc") or "").strip()[:10]
-            m_date = val_et if (val_et and val_et[:4].isdigit()) else (val_utc if (val_utc and val_utc[:4].isdigit()) else "")
-
-        if m_date and m_date < today_iso:
-            continue
-
-        team_fixtures.append((r, is_h, canon_h, canon_a, comp, home, away, m_date))
-
-    team_fixtures.sort(key=lambda t: _clean_fixture_datetime_sort_key(t[0]))
-
-    results: list[dict] = []
-    for r, is_h, canon_h, canon_a, comp, home, away, m_date in team_fixtures:
-        dt_utc = str(r.get("match_datetime_utc") or r.get("kickoff_utc") or "").strip()
-        dt_et = str(r.get("match_datetime_et") or "").strip()
-        if dt_utc.lower() in ("none", "nan", "null"):
-            dt_utc = ""
-        if dt_et.lower() in ("none", "nan", "null"):
-            dt_et = ""
-
-        if not dt_et and dt_utc:
-            dt_et = _utc_to_et(dt_utc)
-
-        elif not dt_utc and dt_et:
-            try:
-                p_dt = pd.to_datetime(dt_et)
-                if p_dt.tzinfo is None:
-                    p_dt = p_dt.tz_localize("America/New_York")
-                dt_utc = p_dt.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
-            except Exception:
-                pass
-
-        if not m_date or m_date.lower() in ("none", "nan", "null") or len(m_date) < 10 or not m_date[:4].isdigit():
-            if dt_et and len(dt_et) >= 10 and dt_et[:4].isdigit():
-                m_date = dt_et[:10]
-            elif dt_utc and len(dt_utc) >= 10 and dt_utc[:4].isdigit():
-                m_date = dt_utc[:10]
-
-        opponent = away if is_h else home
-        canon_opponent = canon_a if is_h else canon_h
-        opponent_display = _team_name_for_display(canon_opponent or opponent)
-
-        sync_k = str(r.get("sync_key") or "").strip()
-        if not sync_k or sync_k.startswith("|"):
-            sync_k = make_match_sync_key(
-                dt_et or dt_utc or m_date,
-                comp,
-                canon_h,
-                canon_a,
-            )
-
-        results.append({
-            "sync_key": sync_k,
-            "match_id": str(r.get("match_id", "") or "").strip(),
-            "competition": comp,
-            "match_date": m_date,
-            "match_date_iso": m_date,
-            "match_datetime_utc": dt_et or dt_utc,
-            "match_datetime_et": dt_et,
-            "match_datetime_iso_utc": dt_utc,
-            "home_team": home,
-            "away_team": away,
-            "canonical_home_team": canon_h,
-            "canonical_away_team": canon_a,
-            "is_home": is_h,
-            "opponent": opponent,
-            "opponent_display": opponent_display,
-            "predicted_result": str(r.get("predicted_result", "") or "").strip(),
-            "prob_home": _clean_float(r.get("prob_home")),
-            "prob_draw": _clean_float(r.get("prob_draw")),
-            "prob_away": _clean_float(r.get("prob_away")),
-            "pred_home_goals": _clean_float(r.get("pred_home_goals")),
-            "pred_away_goals": _clean_float(r.get("pred_away_goals")),
-            "venue": str(r.get("venue", "") or "").strip(),
-        })
-
-    return results
+    ]
+    _, upcoming_by_team = _get_or_build_team_upcoming_and_next_game_indexes()
+    for k in target_names:
+        if k and k in upcoming_by_team:
+            return upcoming_by_team[k]
+    return []
 
 
 def _resolve_team_api_payload(team_input: str, mode: str):
@@ -894,6 +834,19 @@ def _resolve_team_api_payload(team_input: str, mode: str):
     mode = (mode or "global").strip().lower()
     if mode not in {"global", "mls", "extra"}:
         mode = "global"
+
+    team = _team_name_for_db(team_input)
+    t_info = resolve_team_info(team_input)
+    canon_slug = _clean_team_slug(t_info.get("canonical_name") or team)
+    input_slug = _clean_team_slug(team_input)
+
+    now = time.time()
+    cache_key = f"{canon_slug or input_slug}|{mode}"
+    with _TEAM_PAYLOAD_CACHE_LOCK:
+        if cache_key in _TEAM_PAYLOAD_CACHE:
+            cached_ts, cached_payload = _TEAM_PAYLOAD_CACHE[cache_key]
+            if now - cached_ts < _TEAM_PAYLOAD_CACHE_TTL:
+                return cached_payload
 
     if mode == "mls":
         pm_mod = pm_mls
@@ -906,7 +859,6 @@ def _resolve_team_api_payload(team_input: str, mode: str):
     form_teams = current_form.get("teams", {}) if isinstance(current_form, dict) else {}
     h2h_root = head_to_head if isinstance(head_to_head, dict) else {}
 
-    team = _team_name_for_db(team_input)
     team_lower = team.lower()
 
     form_key = team if team in form_teams else next(
@@ -945,15 +897,18 @@ def _resolve_team_api_payload(team_input: str, mode: str):
 
     next_game_payload = _get_team_next_game_payload(team_input)
     next_game = next_game_payload.get("game") if next_game_payload.get("has_game") else None
-    t_info = resolve_team_info(team_input)
-    for m in recent_matches:
+
+    recent_matches_copy = [dict(m) for m in recent_matches] if recent_matches else []
+    upcoming_copy = [dict(g) for g in upcoming] if upcoming else []
+
+    for m in recent_matches_copy:
         if isinstance(m, dict):
             decorate_game_team_names(m)
-    for g in upcoming:
+    for g in upcoming_copy:
         if isinstance(g, dict):
             decorate_game_team_names(g)
 
-    return {
+    payload = {
         "ok": True,
         "team": team,
         "display_team": _team_name_for_display(team),
@@ -966,12 +921,21 @@ def _resolve_team_api_payload(team_input: str, mode: str):
         "mode": mode,
         "form": team_form,
         "weighted_form": weighted_form,
-        "recent_matches": recent_matches,
-        "upcoming_games": upcoming,
+        "recent_matches": recent_matches_copy,
+        "upcoming_games": upcoming_copy,
         "next_game": next_game,
         "head_to_head": all_h2h,
         "prediction_accuracy": team_pred_data,
     }
+
+    with _TEAM_PAYLOAD_CACHE_LOCK:
+        _TEAM_PAYLOAD_CACHE[cache_key] = (now, payload)
+        if input_slug and input_slug != canon_slug:
+            _TEAM_PAYLOAD_CACHE[f"{input_slug}|{mode}"] = (now, payload)
+        if t_info.get("id"):
+            _TEAM_PAYLOAD_CACHE[f"{t_info['id']}|{mode}"] = (now, payload)
+
+    return payload
 
 
 def _build_home_league_sidebar_entries() -> list[dict]:

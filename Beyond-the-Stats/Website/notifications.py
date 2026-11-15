@@ -665,6 +665,9 @@ def record_notification_event(
     away_team: str = "",
     home_score: Any = None,
     away_score: Any = None,
+    prob_home: Optional[float] = None,
+    prob_draw: Optional[float] = None,
+    prob_away: Optional[float] = None,
 ) -> dict:
     """Record an event notification in the in-memory feed and SQLite store for GET /api/notifications."""
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -681,6 +684,9 @@ def record_notification_event(
         "away_team": str(away_team or "").strip(),
         "home_score": home_score,
         "away_score": away_score,
+        "prob_home": prob_home,
+        "prob_draw": prob_draw,
+        "prob_away": prob_away,
     }
     with _notifications_lock:
         entry["id"] = len(_notifications) + 1
@@ -701,6 +707,9 @@ def record_notification_event(
                 away_team=entry["away_team"],
                 home_score=entry["home_score"],
                 away_score=entry["away_score"],
+                prob_home=entry["prob_home"],
+                prob_draw=entry["prob_draw"],
+                prob_away=entry["prob_away"],
                 created_at=now_iso,
             )
         except Exception as exc:
@@ -844,6 +853,9 @@ def send_match_notification(
     away_team: str = "",
     sync_key: str = "",
     collapse_id: str = "",
+    prob_home: Optional[float] = None,
+    prob_draw: Optional[float] = None,
+    prob_away: Optional[float] = None,
 ) -> int:
     """Queue a regular alert push only to subscribers of ``match_id`` / teams who requested this event.
 
@@ -855,7 +867,7 @@ def send_match_notification(
         exclude_live_activity_devices=True,
     )
     for token in tokens:
-        _apns_notification_queue.append({
+        entry_payload: dict[str, Any] = {
             "token": token,
             "title": title,
             "body": body,
@@ -865,7 +877,14 @@ def send_match_notification(
             "competition": normalize_live_competition(competition),
             "event": normalize_event_type(event) if event else "alert",
             "collapse_id": collapse_id or "",
-        })
+        }
+        if prob_home is not None:
+            entry_payload["prob_home"] = prob_home
+        if prob_draw is not None:
+            entry_payload["prob_draw"] = prob_draw
+        if prob_away is not None:
+            entry_payload["prob_away"] = prob_away
+        _apns_notification_queue.append(entry_payload)
     _notify_apns_queue()
     return len(tokens)
 
@@ -2187,13 +2206,20 @@ def build_alert_payload(entry: dict) -> dict:
     thread = mid or sync_key
     if thread:
         aps["thread-id"] = f"match-{thread}"
-    return {
+    payload: dict[str, Any] = {
         "aps": aps,
         "match_id": mid,
         "sync_key": sync_key,
         "competition": entry.get("competition", ""),
         "event": entry.get("event", "alert"),
     }
+    for prob_k in ("prob_home", "prob_draw", "prob_away"):
+        if entry.get(prob_k) is not None:
+            try:
+                payload[prob_k] = float(entry[prob_k])
+            except (TypeError, ValueError):
+                pass
+    return payload
 
 
 def _drain_queue() -> None:

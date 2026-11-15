@@ -100,7 +100,10 @@ class TestLiveActivitiesAndAPNs(unittest.TestCase):
         notifications._apns_jwt_cache = None
         notifications._apns_jwt_expiry = 0
         sqlite_store._default_db_path = self._orig_default_db
-        self.temp_dir.cleanup()
+        try:
+            self.temp_dir.cleanup()
+        except Exception:
+            pass
 
     # ── 1. Live Activity API & Persistence Tests ────────────────────────
 

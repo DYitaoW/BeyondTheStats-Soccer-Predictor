@@ -55,10 +55,12 @@ TESTS_DIR = SP_DIR / "tests"
 EUROPE_DIR = PIPELINES_DIR / "europe"
 MLS_DIR = PIPELINES_DIR / "mls"
 EXTRA_DIR = PIPELINES_DIR / "extra"
+WOMENS_DIR = PIPELINES_DIR / "womens"
 
 EUROPE_FILES_DIR = EUROPE_DIR / "files"
 MLS_FILES_DIR = MLS_DIR / "files"
 EXTRA_FILES_DIR = EXTRA_DIR / "files"
+WOMENS_FILES_DIR = WOMENS_DIR / "files"
 
 # Shared non-generated / seed data (+ Europe working Raw/Processed/Team_Data)
 DATA_DIR = SP_DIR / "Data"
@@ -73,6 +75,7 @@ DATA_TEAM_DIR = DATA_DIR / "Team_Data"  # legacy shared team artifacts
 EUROPE_DATA_DIR = DATA_DIR  # alias: not pipelines/europe/Data
 MLS_DATA_DIR = MLS_DIR / "Data"
 EXTRA_DATA_DIR = EXTRA_DIR / "Data"
+WOMENS_DATA_DIR = WOMENS_DIR / "Data"
 
 # Repo-level shared mapping (outside Beyond-the-Stats/)
 REPO_DATA_DIR = REPO_ROOT / "Data"
@@ -89,6 +92,7 @@ OUTPUT_PRED_EXTRA = OUTPUT_PREDICTIONS_DIR / "extra"
 OUTPUT_PRED_CUPS = OUTPUT_PREDICTIONS_DIR / "cups"
 OUTPUT_PRED_NATIONAL = OUTPUT_PREDICTIONS_DIR / "national"
 OUTPUT_PRED_FRIENDLIES = OUTPUT_PREDICTIONS_DIR / "friendlies"
+OUTPUT_PRED_WOMENS = OUTPUT_PREDICTIONS_DIR / "womens"
 OUTPUT_PRED_SHARED = OUTPUT_PREDICTIONS_DIR / "shared"
 
 OUTPUT_LEAGUE_DATA_DIR = OUTPUT_DIR / "LeagueData"
@@ -132,6 +136,8 @@ CUP_UPCOMING_FILE = OUTPUT_PRED_CUPS / "upcoming_cup_predictions.csv"
 CUP_COMPLETED_FILE = OUTPUT_PRED_CUPS / "completed_cup_predictions.csv"
 NATIONAL_UPCOMING_FILE = OUTPUT_PRED_NATIONAL / "upcoming_national_team_predictions.csv"
 FRIENDLIES_UPCOMING_FILE = OUTPUT_PRED_FRIENDLIES / "upcoming_club_friendlies.csv"
+WOMENS_UPCOMING_FILE = OUTPUT_PRED_WOMENS / "upcoming_womens_predictions.csv"
+WOMENS_COMPLETED_FILE = OUTPUT_PRED_WOMENS / "completed_womens_matches.csv"
 PAST_GAMES_FILE = OUTPUT_PRED_SHARED / "past_games.json"
 # Never-pruned append-only journal + previous snapshot for recoverability.
 PAST_GAMES_JOURNAL_FILE = OUTPUT_PRED_SHARED / "past_games_journal.jsonl"
@@ -147,6 +153,8 @@ MLS_PROJECTED_TABLE_FILE = OUTPUT_PRED_MLS / "projected_league_tables.csv"
 MLS_PROJECTED_BRACKET_FILE = OUTPUT_PRED_MLS / "projected_mls_playoff_bracket.json"
 EXTRA_PROJECTED_TABLE_FILE = OUTPUT_PRED_EXTRA / "projected_league_tables.csv"
 EXTRA_PROJECTED_MATCHES_FILE = OUTPUT_PRED_EXTRA / "projected_future_matches.csv"
+WOMENS_PROJECTED_TABLE_FILE = OUTPUT_PRED_WOMENS / "projected_league_tables.csv"
+WOMENS_PROJECTED_MATCHES_FILE = OUTPUT_PRED_WOMENS / "projected_future_matches.csv"
 CUP_PROJECTED_TABLE_FILE = OUTPUT_PRED_CUPS / "projected_cup_tables.csv"
 CUP_REAL_TABLE_FILE = OUTPUT_PRED_CUPS / "real_cup_tables.csv"
 CUP_PROJECTED_BRACKET_FILE = OUTPUT_PRED_CUPS / "projected_cup_brackets.json"
@@ -176,6 +184,7 @@ def ensure_output_dirs() -> None:
         OUTPUT_PRED_CUPS,
         OUTPUT_PRED_NATIONAL,
         OUTPUT_PRED_FRIENDLIES,
+        OUTPUT_PRED_WOMENS,
         OUTPUT_PRED_SHARED,
         OUTPUT_LEAGUE_DATA_DIR,
         OUTPUT_CUP_DATA_DIR,
@@ -195,6 +204,10 @@ def ensure_output_dirs() -> None:
         EXTRA_DATA_DIR / "Processed_Data",
         EXTRA_DATA_DIR / "Team_Data",
         EXTRA_DATA_DIR / "Predictions",
+        WOMENS_DATA_DIR / "Raw_Data",
+        WOMENS_DATA_DIR / "Processed_Data",
+        WOMENS_DATA_DIR / "Team_Data",
+        WOMENS_DATA_DIR / "Predictions",
     ):
         os.makedirs(path, exist_ok=True)
     migrate_legacy_runtime_files()

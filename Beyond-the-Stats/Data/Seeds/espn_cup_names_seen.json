@@ -1,16 +1,7 @@
 {
-  "generated_at_utc": "2026-11-09T07:25:13+00:00",
+  "generated_at_utc": "2026-11-14T07:17:17+00:00",
   "cups": {
-    "England/FA Cup": [
-      "Crawley Town",
-      "Cray Wanderers",
-      "Grimsby Town",
-      "Oldham Athletic",
-      "Sheffield Wednesday",
-      "Stafford Rangers",
-      "Stockport County",
-      "Wimborne Town"
-    ],
+    "England/FA Cup": [],
     "England/League Cup": [],
     "Europe/Champions League": [
       "AEK Athens",
@@ -126,7 +117,14 @@
       "Union St.-Gilloise",
       "Viktoria Plzen"
     ],
-    "France/Coupe de France": [],
+    "France/Coupe de France": [
+      "Dijon FCO",
+      "La Roche-sur-Yon",
+      "Neuvillette-Jamin",
+      "Orléans",
+      "US Saint-Philbert-de-Grand-Lieu",
+      "Valenciennes"
+    ],
     "Germany/DFB-Pokal": [],
     "Italy/Coppa Italia": [],
     "Spain/Copa del Rey": [],

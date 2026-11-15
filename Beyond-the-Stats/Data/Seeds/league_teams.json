@@ -1548,5 +1548,35 @@
     "Silkeborg IF",
     "Sønderjyske Fodbold",
     "Viborg FF"
+  ],
+  "United States/NWSL": [
+    "Angel City FC",
+    "Bay FC",
+    "Chicago Red Stars",
+    "Houston Dash",
+    "Kansas City Current",
+    "NJ/NY Gotham FC",
+    "North Carolina Courage",
+    "Orlando Pride",
+    "Portland Thorns",
+    "Racing Louisville",
+    "San Diego Wave",
+    "Seattle Reign",
+    "Utah Royals",
+    "Washington Spirit"
+  ],
+  "England/Women's Super League": [
+    "Arsenal Women",
+    "Aston Villa Women",
+    "Brighton Women",
+    "Chelsea Women",
+    "Crystal Palace Women",
+    "Everton Women",
+    "Leicester City Women",
+    "Liverpool Women",
+    "Manchester City Women",
+    "Manchester United Women",
+    "Tottenham Hotspur Women",
+    "West Ham United Women"
   ]
 }

@@ -304,6 +304,29 @@ def _parse_standings_entry(entry):
                 result[our_name] = int(float(val))
             except (ValueError, TypeError):
                 result[our_name] = str(val)
+
+    note = entry.get("note")
+    if isinstance(note, dict) and (note.get("description") or note.get("color")):
+        result["note"] = {
+            "color": str(note.get("color") or ""),
+            "description": str(note.get("description") or ""),
+            "rank": note.get("rank"),
+        }
+        result["qualification"] = {
+            "name": str(note.get("description") or ""),
+            "short_name": str(note.get("description") or "")[:6],
+            "color": str(note.get("color") or "#1976D2"),
+            "type": "espn_rule",
+        }
+    elif isinstance(note, str) and note.strip():
+        result["note"] = {"color": "", "description": note.strip()}
+        result["qualification"] = {
+            "name": note.strip(),
+            "short_name": note.strip()[:6],
+            "color": "#1976D2",
+            "type": "espn_rule",
+        }
+
     return result
 
 
@@ -362,11 +385,27 @@ def _fetch_standings(comp_name, espn_id):
     if not groups:
         return None
 
-    return {
+    raw_rules = primary.get("rules") or primary.get("notes") or data.get("rules") or data.get("notes") or []
+    rules = []
+    if isinstance(raw_rules, list):
+        for r in raw_rules:
+            if isinstance(r, dict):
+                desc = str(r.get("description") or r.get("name") or "").strip()
+                if desc:
+                    rules.append({
+                        "name": desc,
+                        "color": str(r.get("color") or "#1976D2"),
+                        "positions": r.get("ranks") or r.get("positions") or [],
+                    })
+
+    out = {
         "competition": comp_name,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "groups": groups,
     }
+    if rules:
+        out["rules"] = rules
+    return out
 
 
 def _fetch_leaders(comp_name, espn_id):

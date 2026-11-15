@@ -443,6 +443,16 @@ def resolve_competition_query(comp_name: str) -> tuple[str, str | None]:
     if comp_name in MLS_TABLE_VIEWS:
         base, view = MLS_TABLE_VIEWS[comp_name]
         return base, view
+    _WOMENS_ALIASES = {
+        "North America/NWSL": "United States/NWSL",
+        "NWSL": "United States/NWSL",
+        "USA/NWSL": "United States/NWSL",
+        "England/WSL": "England/Women's Super League",
+        "WSL": "England/Women's Super League",
+        "Women's Super League": "England/Women's Super League",
+    }
+    if comp_name in _WOMENS_ALIASES:
+        return _WOMENS_ALIASES[comp_name], None
     return comp_name, None
 
 
@@ -1960,6 +1970,21 @@ def competition_format_spec(comp_name: str) -> dict:
             )
             spec["position_stages"] = cup_position_stages_for(base_comp)
 
+    if base_comp == "United States/NWSL":
+        spec["playoff_format"] = "nwsl_playoffs"
+        spec["playoff_qualifiers"] = 8
+        spec["regular_season_matches"] = 26
+        spec["extensions"]["playoff_format"] = "nwsl_playoffs"
+        spec["extensions"]["playoff_qualifiers"] = 8
+        spec["extensions"]["regular_season_matches"] = 26
+        spec["notes"].append("NWSL: Top 8 clubs qualify for single-elimination playoffs. 1st place wins the NWSL Shield.")
+    elif base_comp == "England/Women's Super League":
+        spec["relegation_spots"] = 1
+        spec["regular_season_matches"] = 22
+        spec["extensions"]["relegation_spots"] = 1
+        spec["extensions"]["regular_season_matches"] = 22
+        spec["notes"].append("WSL: Top 3 clubs qualify for UEFA Women's Champions League; bottom club is relegated.")
+
     if tiebreaker == "h2h":
         spec["notes"].append("Among tied teams: head-to-head points before overall goal difference.")
     else:
@@ -2298,3 +2323,244 @@ def should_use_persisted_table(cached: dict | None, force_refresh: bool = False)
     if not comp_name:
         return False
     return standings_shape_is_valid(cached, comp_name)
+
+
+# ---------------------------------------------------------------------------
+# League Qualification & Relegation Zones Specification
+# ---------------------------------------------------------------------------
+
+LEAGUE_QUALIFICATION_ZONES: dict[str, list[dict]] = {
+    "England/Premier League": [
+        {"name": "Champions League", "short_name": "UCL", "positions": [1, 2, 3, 4], "color": "#1976D2", "type": "champions_league"},
+        {"name": "Europa League", "short_name": "UEL", "positions": [5], "color": "#F57C00", "type": "europa_league"},
+        {"name": "Conference League Play-offs", "short_name": "UECL", "positions": [6], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [18, 19, 20], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Spain/La Liga": [
+        {"name": "Champions League", "short_name": "UCL", "positions": [1, 2, 3, 4], "color": "#1976D2", "type": "champions_league"},
+        {"name": "Europa League", "short_name": "UEL", "positions": [5], "color": "#F57C00", "type": "europa_league"},
+        {"name": "Conference League Play-offs", "short_name": "UECL", "positions": [6], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [18, 19, 20], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Italy/Serie A": [
+        {"name": "Champions League", "short_name": "UCL", "positions": [1, 2, 3, 4], "color": "#1976D2", "type": "champions_league"},
+        {"name": "Europa League", "short_name": "UEL", "positions": [5], "color": "#F57C00", "type": "europa_league"},
+        {"name": "Conference League Play-offs", "short_name": "UECL", "positions": [6], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [18, 19, 20], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Germany/Bundesliga": [
+        {"name": "Champions League", "short_name": "UCL", "positions": [1, 2, 3, 4], "color": "#1976D2", "type": "champions_league"},
+        {"name": "Europa League", "short_name": "UEL", "positions": [5], "color": "#F57C00", "type": "europa_league"},
+        {"name": "Conference League Play-offs", "short_name": "UECL", "positions": [6], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation Play-offs", "short_name": "Rel PO", "positions": [16], "color": "#E64A19", "type": "relegation_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [17, 18], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "France/Ligue 1": [
+        {"name": "Champions League", "short_name": "UCL", "positions": [1, 2, 3], "color": "#1976D2", "type": "champions_league"},
+        {"name": "Champions League Qualifiers", "short_name": "UCL Q", "positions": [4], "color": "#42A5F5", "type": "champions_league_qual"},
+        {"name": "Europa League", "short_name": "UEL", "positions": [5], "color": "#F57C00", "type": "europa_league"},
+        {"name": "Conference League Play-offs", "short_name": "UECL", "positions": [6], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation Play-offs", "short_name": "Rel PO", "positions": [16], "color": "#E64A19", "type": "relegation_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [17, 18], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Netherlands/Eredivisie": [
+        {"name": "Champions League", "short_name": "UCL", "positions": [1, 2], "color": "#1976D2", "type": "champions_league"},
+        {"name": "Champions League Qualifiers", "short_name": "UCL Q", "positions": [3], "color": "#42A5F5", "type": "champions_league_qual"},
+        {"name": "Europa League Qualifiers", "short_name": "UEL Q", "positions": [4], "color": "#F57C00", "type": "europa_league"},
+        {"name": "European Competition Play-offs", "short_name": "EC PO", "positions": [5, 6, 7, 8], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation Play-offs", "short_name": "Rel PO", "positions": [16], "color": "#E64A19", "type": "relegation_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [17, 18], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Portugal/Liga Portugal": [
+        {"name": "Champions League", "short_name": "UCL", "positions": [1, 2], "color": "#1976D2", "type": "champions_league"},
+        {"name": "Champions League Qualifiers", "short_name": "UCL Q", "positions": [3], "color": "#42A5F5", "type": "champions_league_qual"},
+        {"name": "Europa League Qualifiers", "short_name": "UEL Q", "positions": [4], "color": "#F57C00", "type": "europa_league"},
+        {"name": "Conference League Qualifiers", "short_name": "UECL Q", "positions": [5], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation Play-offs", "short_name": "Rel PO", "positions": [16], "color": "#E64A19", "type": "relegation_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [17, 18], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "England/Championship": [
+        {"name": "Promotion to Premier League", "short_name": "Prom", "positions": [1, 2], "color": "#2E7D32", "type": "promotion"},
+        {"name": "Promotion Play-offs", "short_name": "Prom PO", "positions": [3, 4, 5, 6], "color": "#26A69A", "type": "promotion_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [22, 23, 24], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Spain/La Liga 2": [
+        {"name": "Promotion", "short_name": "Prom", "positions": [1, 2], "color": "#2E7D32", "type": "promotion"},
+        {"name": "Promotion Play-offs", "short_name": "Prom PO", "positions": [3, 4, 5, 6], "color": "#26A69A", "type": "promotion_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [19, 20, 21, 22], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Germany/Bundesliga 2": [
+        {"name": "Promotion", "short_name": "Prom", "positions": [1, 2], "color": "#2E7D32", "type": "promotion"},
+        {"name": "Promotion Play-offs", "short_name": "Prom PO", "positions": [3], "color": "#26A69A", "type": "promotion_playoffs"},
+        {"name": "Relegation Play-offs", "short_name": "Rel PO", "positions": [16], "color": "#E64A19", "type": "relegation_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [17, 18], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Italy/Serie B": [
+        {"name": "Promotion", "short_name": "Prom", "positions": [1, 2], "color": "#2E7D32", "type": "promotion"},
+        {"name": "Promotion Play-offs", "short_name": "Prom PO", "positions": [3, 4, 5, 6, 7, 8], "color": "#26A69A", "type": "promotion_playoffs"},
+        {"name": "Relegation Play-outs", "short_name": "Rel PO", "positions": [16, 17], "color": "#E64A19", "type": "relegation_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [18, 19, 20], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "France/Ligue 2": [
+        {"name": "Promotion", "short_name": "Prom", "positions": [1, 2], "color": "#2E7D32", "type": "promotion"},
+        {"name": "Promotion Play-offs", "short_name": "Prom PO", "positions": [3, 4, 5], "color": "#26A69A", "type": "promotion_playoffs"},
+        {"name": "Relegation Play-offs", "short_name": "Rel PO", "positions": [16], "color": "#E64A19", "type": "relegation_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [17, 18], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "United States/MLS": [
+        {"name": "MLS Cup Playoffs (Round One)", "short_name": "Playoffs", "positions": [1, 2, 3, 4, 5, 6, 7], "color": "#1976D2", "type": "playoffs"},
+        {"name": "MLS Cup Playoffs (Wildcard)", "short_name": "Wildcard", "positions": [8, 9], "color": "#0097A7", "type": "wildcard"},
+    ],
+    "United States/MLS - Supporters Shield Table": [
+        {"name": "Supporters' Shield / CCC", "short_name": "Shield", "positions": [1], "color": "#FFA000", "type": "champions_league"},
+        {"name": "Concacaf Champions Cup", "short_name": "CCC", "positions": [2, 3, 4], "color": "#1976D2", "type": "champions_league"},
+    ],
+    "United States/NWSL": [
+        {"name": "NWSL Shield / Playoffs", "short_name": "Shield", "positions": [1], "color": "#FFA000", "type": "playoffs"},
+        {"name": "NWSL Playoffs", "short_name": "Playoffs", "positions": [2, 3, 4, 5, 6, 7, 8], "color": "#1976D2", "type": "playoffs"},
+    ],
+    "England/Women's Super League": [
+        {"name": "Champions League (Group Stage)", "short_name": "UWCL", "positions": [1], "color": "#1976D2", "type": "champions_league"},
+        {"name": "Champions League (Qualifiers)", "short_name": "UWCL Q", "positions": [2, 3], "color": "#42A5F5", "type": "champions_league_qual"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [12], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Mexico/Liga MX": [
+        {"name": "Liguilla (Quarterfinals)", "short_name": "Liguilla", "positions": [1, 2, 3, 4, 5, 6], "color": "#1976D2", "type": "playoffs"},
+        {"name": "Play-in", "short_name": "Play-in", "positions": [7, 8, 9, 10], "color": "#0097A7", "type": "wildcard"},
+    ],
+    "Europe/Champions League": [
+        {"name": "Round of 16 (Direct)", "short_name": "R16", "positions": list(range(1, 9)), "color": "#1976D2", "type": "round_of_16"},
+        {"name": "Knockout Phase Play-offs", "short_name": "Play-offs", "positions": list(range(9, 25)), "color": "#F57C00", "type": "playoffs"},
+        {"name": "Eliminated", "short_name": "Elim", "positions": list(range(25, 37)), "color": "#757575", "type": "elimination"},
+    ],
+    "Europe/Europa League": [
+        {"name": "Round of 16 (Direct)", "short_name": "R16", "positions": list(range(1, 9)), "color": "#F57C00", "type": "round_of_16"},
+        {"name": "Knockout Phase Play-offs", "short_name": "Play-offs", "positions": list(range(9, 25)), "color": "#FFA000", "type": "playoffs"},
+        {"name": "Eliminated", "short_name": "Elim", "positions": list(range(25, 37)), "color": "#757575", "type": "elimination"},
+    ],
+    "Europe/Conference League": [
+        {"name": "Round of 16 (Direct)", "short_name": "R16", "positions": list(range(1, 9)), "color": "#388E3C", "type": "round_of_16"},
+        {"name": "Knockout Phase Play-offs", "short_name": "Play-offs", "positions": list(range(9, 25)), "color": "#26A69A", "type": "playoffs"},
+        {"name": "Eliminated", "short_name": "Elim", "positions": list(range(25, 37)), "color": "#757575", "type": "elimination"},
+    ],
+    "Brazil/Brasileirão": [
+        {"name": "Copa Libertadores", "short_name": "Libertadores", "positions": [1, 2, 3, 4], "color": "#FFA000", "type": "libertadores"},
+        {"name": "Copa Libertadores Qualifiers", "short_name": "Libertadores Q", "positions": [5, 6], "color": "#FFD54F", "type": "libertadores_qual"},
+        {"name": "Copa Sudamericana", "short_name": "Sudamericana", "positions": [7, 8, 9, 10, 11, 12], "color": "#1976D2", "type": "sudamericana"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [17, 18, 19, 20], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Japan/J1 League": [
+        {"name": "AFC Champions League Elite", "short_name": "ACLE", "positions": [1, 2], "color": "#1976D2", "type": "afc_champions_league"},
+        {"name": "AFC Champions League 2", "short_name": "ACL2", "positions": [3], "color": "#42A5F5", "type": "afc_champions_league"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [18, 19, 20], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Scotland/Premiership": [
+        {"name": "Championship Group", "short_name": "Champ", "positions": [1, 2, 3, 4, 5, 6], "color": "#1976D2", "type": "championship_group"},
+        {"name": "Relegation Group", "short_name": "Rel Grp", "positions": [7, 8, 9, 10, 11, 12], "color": "#E64A19", "type": "relegation_group"},
+    ],
+    "Turkey/Super Lig": [
+        {"name": "Champions League Qualifiers", "short_name": "UCL Q", "positions": [1, 2], "color": "#1976D2", "type": "champions_league_qual"},
+        {"name": "Europa League Qualifiers", "short_name": "UEL Q", "positions": [3], "color": "#F57C00", "type": "europa_league"},
+        {"name": "Conference League Qualifiers", "short_name": "UECL Q", "positions": [4], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [16, 17, 18, 19], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Belgium/First Division A": [
+        {"name": "Champions' Play-offs", "short_name": "Champ PO", "positions": [1, 2, 3, 4, 5, 6], "color": "#1976D2", "type": "championship_group"},
+        {"name": "Europe Play-offs", "short_name": "Europe PO", "positions": [7, 8, 9, 10, 11, 12], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation Play-offs", "short_name": "Rel PO", "positions": [13, 14, 15, 16], "color": "#D32F2F", "type": "relegation_playoffs"},
+    ],
+    "Austria/Bundesliga": [
+        {"name": "Championship Round", "short_name": "Champ", "positions": [1, 2, 3, 4, 5, 6], "color": "#1976D2", "type": "championship_group"},
+        {"name": "Relegation Round", "short_name": "Rel Grp", "positions": [7, 8, 9, 10, 11, 12], "color": "#E64A19", "type": "relegation_group"},
+    ],
+    "Greece/Super League": [
+        {"name": "Championship Round", "short_name": "Champ", "positions": [1, 2, 3, 4, 5, 6], "color": "#1976D2", "type": "championship_group"},
+        {"name": "Relegation Round", "short_name": "Rel Grp", "positions": [7, 8, 9, 10, 11, 12, 13, 14], "color": "#E64A19", "type": "relegation_group"},
+    ],
+    "Norway/Eliteserien": [
+        {"name": "Champions League Qualifiers", "short_name": "UCL Q", "positions": [1], "color": "#1976D2", "type": "champions_league_qual"},
+        {"name": "Conference League Qualifiers", "short_name": "UECL Q", "positions": [2, 3], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation Play-offs", "short_name": "Rel PO", "positions": [14], "color": "#E64A19", "type": "relegation_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [15, 16], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Sweden/Allsvenskan": [
+        {"name": "Champions League Qualifiers", "short_name": "UCL Q", "positions": [1], "color": "#1976D2", "type": "champions_league_qual"},
+        {"name": "Conference League Qualifiers", "short_name": "UECL Q", "positions": [2, 3], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation Play-offs", "short_name": "Rel PO", "positions": [14], "color": "#E64A19", "type": "relegation_playoffs"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [15, 16], "color": "#D32F2F", "type": "relegation"},
+    ],
+    "Poland/Ekstraklasa": [
+        {"name": "Champions League Qualifiers", "short_name": "UCL Q", "positions": [1], "color": "#1976D2", "type": "champions_league_qual"},
+        {"name": "Conference League Qualifiers", "short_name": "UECL Q", "positions": [2, 3], "color": "#388E3C", "type": "conference_league"},
+        {"name": "Relegation", "short_name": "Rel", "positions": [16, 17, 18], "color": "#D32F2F", "type": "relegation"},
+    ],
+}
+
+
+def get_league_qualification_zones(comp_name: str) -> list[dict]:
+    """Return qualification and relegation zones for a competition."""
+    if not comp_name:
+        return []
+    base_comp, view = resolve_competition_query(comp_name)
+
+    # Handle MLS view variations
+    if base_comp == "United States/MLS":
+        if view == "shield" or "Supporters Shield" in comp_name:
+            zones = LEAGUE_QUALIFICATION_ZONES.get("United States/MLS - Supporters Shield Table")
+        else:
+            zones = LEAGUE_QUALIFICATION_ZONES.get("United States/MLS")
+        if zones:
+            import copy
+            return copy.deepcopy(zones)
+
+    zones = LEAGUE_QUALIFICATION_ZONES.get(comp_name) or LEAGUE_QUALIFICATION_ZONES.get(base_comp)
+    if not zones:
+        comp_clean = (
+            comp_name.replace("ü", "u")
+            .replace("ã", "a")
+            .replace("é", "e")
+            .replace("í", "i")
+        )
+        base_clean = (
+            base_comp.replace("ü", "u")
+            .replace("ã", "a")
+            .replace("é", "e")
+            .replace("í", "i")
+        )
+        zones = LEAGUE_QUALIFICATION_ZONES.get(comp_clean) or LEAGUE_QUALIFICATION_ZONES.get(base_clean)
+
+    if zones:
+        import copy
+        return copy.deepcopy(zones)
+    return []
+
+
+def get_qualification_for_position(
+    comp_name: str,
+    position: int | None,
+    group_name: str | None = None,
+) -> dict | None:
+    """Return qualification badge metadata for a team's position in a competition/group."""
+    if position is None:
+        return None
+    try:
+        pos = int(position)
+    except (ValueError, TypeError):
+        return None
+
+    query = comp_name
+    if group_name and "Supporters Shield" in group_name:
+        query = "United States/MLS - Supporters Shield Table"
+    elif group_name and ("Eastern Conference" in group_name or "Western Conference" in group_name):
+        query = "United States/MLS"
+
+    zones = get_league_qualification_zones(query)
+    for zone in zones:
+        if pos in zone.get("positions", []):
+            return {
+                "name": zone["name"],
+                "short_name": zone.get("short_name", zone["name"]),
+                "color": zone.get("color", "#1976D2"),
+                "type": zone.get("type", "qualification"),
+            }
+    return None

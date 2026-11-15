@@ -391,13 +391,24 @@ class StandardizedTeamManager:
 
         return game
 
-    def decorate_standings_entry(self, entry: dict, competition: str = "") -> dict:
+    def decorate_standings_entry(self, entry: dict, competition: str = "", group_name: str = "") -> dict:
         """
         Add standardized 3-tier names, id, and logo to a league table row
         without mutating existing score/ranking keys.
+        Also attaches qualification badge metadata based on position and competition.
         """
         if not isinstance(entry, dict):
             return entry
+
+        if "qualification" not in entry:
+            pos = entry.get("position") or entry.get("rank")
+            if pos is not None:
+                try:
+                    from competition_rules import get_qualification_for_position
+                    entry["qualification"] = get_qualification_for_position(competition, pos, group_name)
+                except Exception:
+                    pass
+
         if entry.get("team_info"):
             return entry
 
@@ -443,9 +454,10 @@ class StandardizedTeamManager:
                 comp = table_data.get("competition") or competition
                 for group in table_data["groups"]:
                     if isinstance(group, dict) and isinstance(group.get("entries"), list):
+                        gname = group.get("name", "")
                         for entry in group["entries"]:
                             if isinstance(entry, dict):
-                                self.decorate_standings_entry(entry, comp)
+                                self.decorate_standings_entry(entry, comp, group_name=gname)
             # Dict with "tables"
             elif "tables" in table_data and isinstance(table_data["tables"], dict):
                 for comp, tbl in table_data["tables"].items():
@@ -475,8 +487,8 @@ def resolve_team_info(team_name: Any, competition: str = "") -> dict:
 def decorate_game_team_names(game: dict, competition: str = "") -> dict:
     return _MANAGER.decorate_game_team_names(game, competition)
 
-def decorate_standings_entry(entry: dict, competition: str = "") -> dict:
-    return _MANAGER.decorate_standings_entry(entry, competition)
+def decorate_standings_entry(entry: dict, competition: str = "", group_name: str = "") -> dict:
+    return _MANAGER.decorate_standings_entry(entry, competition, group_name=group_name)
 
 def decorate_standings_table(table_data: Any, competition: str = "") -> Any:
     return _MANAGER.decorate_standings_table(table_data, competition)

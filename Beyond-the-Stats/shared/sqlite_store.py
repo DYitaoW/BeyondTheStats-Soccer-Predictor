@@ -17,7 +17,7 @@ import json
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -38,6 +38,7 @@ _LA_CHANNELS_TABLE = "live_activity_channels"
 _LA_DEVICE_SETTINGS_TABLE = "live_activity_device_settings"
 _NOTIF_HIST_TABLE = "notification_history"
 _POINTS_ADJ_TABLE = "team_points_adjustments"
+_LEAGUE_PROJ_HIST_TABLE = "league_projection_history"
 _META_TABLE = "store_meta"
 
 
@@ -482,10 +483,21 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             away_team TEXT,
             home_score TEXT,
             away_score TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            prob_home REAL,
+            prob_draw REAL,
+            prob_away REAL
         )
         """
     )
+    try:
+        cur = conn.execute(f"PRAGMA table_info({_NOTIF_HIST_TABLE})")
+        hist_cols = {row[1] for row in cur.fetchall()}
+        for col in ("prob_home", "prob_draw", "prob_away"):
+            if hist_cols and col not in hist_cols:
+                conn.execute(f"ALTER TABLE {_NOTIF_HIST_TABLE} ADD COLUMN {col} REAL")
+    except Exception:
+        pass
     conn.execute(
         f"""
         CREATE INDEX IF NOT EXISTS idx_notif_hist_created
@@ -537,6 +549,34 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         f"""
         CREATE INDEX IF NOT EXISTS idx_pts_adj_team
         ON {_POINTS_ADJ_TABLE}(team)
+        """
+    )
+
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {_LEAGUE_PROJ_HIST_TABLE} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            competition TEXT NOT NULL,
+            season TEXT NOT NULL,
+            snapshot_date TEXT NOT NULL,
+            snapshot_type TEXT NOT NULL DEFAULT 'refresh',
+            matchweek INTEGER,
+            winner_odds_json TEXT NOT NULL DEFAULT '[]',
+            table_snapshot_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_proj_hist_comp_date
+        ON {_LEAGUE_PROJ_HIST_TABLE}(competition, snapshot_date DESC)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_proj_hist_comp_mw
+        ON {_LEAGUE_PROJ_HIST_TABLE}(competition, season, matchweek)
         """
     )
 
@@ -1375,7 +1415,7 @@ def load_team_recent_matches(
 
 
 def count_rows(table: str, db_path: Optional[Path] = None) -> int:
-    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE, _NOTIF_SUBS_TABLE, _NOTIF_HIST_TABLE, _POINTS_ADJ_TABLE}:
+    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE, _NOTIF_SUBS_TABLE, _NOTIF_HIST_TABLE, _POINTS_ADJ_TABLE, _LEAGUE_PROJ_HIST_TABLE}:
         raise ValueError(f"unknown table: {table}")
     ensure_store(db_path)
     conn = _open_ready(db_path)
@@ -1830,6 +1870,7 @@ def _default_upcoming_sources() -> list[tuple[str, Path]]:
             ("cups", base / "cups" / "upcoming_cup_predictions.csv"),
             ("national", base / "national" / "upcoming_national_team_predictions.csv"),
             ("friendlies", base / "friendlies" / "upcoming_club_friendlies.csv"),
+            ("womens", base / "womens" / "upcoming_womens_predictions.csv"),
         ]
     return [
         ("global", Path(_paths.GLOBAL_UPCOMING_FILE)),
@@ -1838,6 +1879,7 @@ def _default_upcoming_sources() -> list[tuple[str, Path]]:
         ("cups", Path(_paths.CUP_UPCOMING_FILE)),
         ("national", Path(_paths.NATIONAL_UPCOMING_FILE)),
         ("friendlies", Path(_paths.FRIENDLIES_UPCOMING_FILE)),
+        ("womens", Path(_paths.WOMENS_UPCOMING_FILE)),
     ]
 
 
@@ -1944,6 +1986,7 @@ def store_info(db_path: Optional[Path] = None) -> dict:
             _SQUAD_VALUES_TABLE: count_rows(_SQUAD_VALUES_TABLE, path),
             _NOTIF_SUBS_TABLE: count_rows(_NOTIF_SUBS_TABLE, path),
             _POINTS_ADJ_TABLE: count_rows(_POINTS_ADJ_TABLE, path),
+            _LEAGUE_PROJ_HIST_TABLE: count_rows(_LEAGUE_PROJ_HIST_TABLE, path),
         },
         "never_deletes": True,
         "persists_across_reboot": True,
@@ -2692,6 +2735,9 @@ def save_notification_event(
     home_score: Any = None,
     away_score: Any = None,
     created_at: Optional[str] = None,
+    prob_home: Optional[float] = None,
+    prob_draw: Optional[float] = None,
+    prob_away: Optional[float] = None,
     db_path: Optional[Path] = None,
 ) -> int:
     """Persist a live or system notification event to SQLite."""
@@ -2712,8 +2758,9 @@ def save_notification_event(
                 f"""
                 INSERT INTO {_NOTIF_HIST_TABLE}(
                     title, body, notif_type, match_id, sync_key, competition,
-                    home_team, away_team, home_score, away_score, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    home_team, away_team, home_score, away_score, created_at,
+                    prob_home, prob_draw, prob_away
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     t_title,
@@ -2727,6 +2774,9 @@ def save_notification_event(
                     hs_str,
                     as_str,
                     now,
+                    float(prob_home) if prob_home is not None else None,
+                    float(prob_draw) if prob_draw is not None else None,
+                    float(prob_away) if prob_away is not None else None,
                 ),
             )
             event_id = cur.lastrowid or 0
@@ -2751,9 +2801,11 @@ def load_recent_notification_events(
     ensure_store(db_path)
     conn = _open_ready(db_path)
     try:
+        cur_cols = {row[1] for row in conn.execute(f"PRAGMA table_info({_NOTIF_HIST_TABLE})").fetchall()}
+        prob_cols = ", prob_home, prob_draw, prob_away" if "prob_home" in cur_cols else ""
         query = (
             f"SELECT id, title, body, notif_type, match_id, sync_key, competition, "
-            f"home_team, away_team, home_score, away_score, created_at "
+            f"home_team, away_team, home_score, away_score, created_at{prob_cols} "
             f"FROM {_NOTIF_HIST_TABLE}"
         )
         clauses = []
@@ -2793,6 +2845,9 @@ def load_recent_notification_events(
                 "home_score": int(r["home_score"]) if r["home_score"] is not None and str(r["home_score"]).isdigit() else r["home_score"],
                 "away_score": int(r["away_score"]) if r["away_score"] is not None and str(r["away_score"]).isdigit() else r["away_score"],
                 "created_at": r["created_at"],
+                "prob_home": float(r["prob_home"]) if "prob_home" in r.keys() and r["prob_home"] is not None else None,
+                "prob_draw": float(r["prob_draw"]) if "prob_draw" in r.keys() and r["prob_draw"] is not None else None,
+                "prob_away": float(r["prob_away"]) if "prob_away" in r.keys() and r["prob_away"] is not None else None,
             }
             for r in rows
         ]
@@ -3233,4 +3288,208 @@ def cleanup_canonical_team_names(db_path: Optional[Path] = None) -> dict:
             raise
         finally:
             conn.close()
+
+
+# ---------------------------------------------------------------------------
+# League Projection History & Weekly Snapshot Storage
+# ---------------------------------------------------------------------------
+
+def save_league_projection_snapshot(
+    competition: str,
+    season: str = "",
+    winner_odds: Optional[list | dict] = None,
+    table_rows: Optional[list] = None,
+    matchweek: Optional[int] = None,
+    snapshot_date: Optional[str] = None,
+    snapshot_type: str = "refresh",
+    db_path: Optional[Path] = None,
+) -> bool:
+    """Save a weekly or pipeline refresh snapshot of projected standings and winner odds.
+
+    Idempotent per (competition, season, snapshot_date): updates existing row
+    if a snapshot already exists for that calendar date.
+    """
+    comp = str(competition or "").strip()
+    if not comp:
+        return False
+
+    if not snapshot_date:
+        snapshot_date = date.today().isoformat()
+    else:
+        snapshot_date = str(snapshot_date)[:10]
+
+    season_str = str(season or "").strip() or "active"
+    odds_json = json.dumps(winner_odds or [], ensure_ascii=False, default=str, separators=(",", ":"))
+    table_json = json.dumps(table_rows or [], ensure_ascii=False, default=str, separators=(",", ":"))
+    now_utc = _utc_now()
+
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"""
+                SELECT id FROM {_LEAGUE_PROJ_HIST_TABLE}
+                WHERE competition = ? AND season = ? AND snapshot_date = ?
+                LIMIT 1
+                """,
+                (comp, season_str, snapshot_date),
+            )
+            existing = cur.fetchone()
+            if existing:
+                conn.execute(
+                    f"""
+                    UPDATE {_LEAGUE_PROJ_HIST_TABLE}
+                    SET snapshot_type = ?, matchweek = ?, winner_odds_json = ?, table_snapshot_json = ?, created_at = ?
+                    WHERE id = ?
+                    """,
+                    (snapshot_type, matchweek, odds_json, table_json, now_utc, existing[0]),
+                )
+            else:
+                conn.execute(
+                    f"""
+                    INSERT INTO {_LEAGUE_PROJ_HIST_TABLE} (
+                        competition, season, snapshot_date, snapshot_type, matchweek,
+                        winner_odds_json, table_snapshot_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (comp, season_str, snapshot_date, snapshot_type, matchweek, odds_json, table_json, now_utc),
+                )
+            _durable_commit(conn)
+            return True
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            return False
+        finally:
+            conn.close()
+
+
+def load_previous_projection_snapshot(
+    competition: str,
+    before_date: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> Optional[dict]:
+    """Return the most recent league projection snapshot strictly before before_date (default: today)."""
+    comp = str(competition or "").strip()
+    if not comp:
+        return None
+    cutoff = str(before_date)[:10] if before_date else date.today().isoformat()
+
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        row = conn.execute(
+            f"""
+            SELECT id, competition, season, snapshot_date, snapshot_type, matchweek,
+                   winner_odds_json, table_snapshot_json, created_at
+            FROM {_LEAGUE_PROJ_HIST_TABLE}
+            WHERE competition = ? AND snapshot_date < ?
+            ORDER BY snapshot_date DESC, id DESC
+            LIMIT 1
+            """,
+            (comp, cutoff),
+        ).fetchone()
+
+        if not row:
+            alt_comp = comp.split("/")[-1] if "/" in comp else comp
+            if alt_comp != comp:
+                row = conn.execute(
+                    f"""
+                    SELECT id, competition, season, snapshot_date, snapshot_type, matchweek,
+                           winner_odds_json, table_snapshot_json, created_at
+                    FROM {_LEAGUE_PROJ_HIST_TABLE}
+                    WHERE competition LIKE ? AND snapshot_date < ?
+                    ORDER BY snapshot_date DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (f"%{alt_comp}%", cutoff),
+                ).fetchone()
+
+        if not row:
+            return None
+
+        winner_odds = []
+        try:
+            winner_odds = json.loads(row["winner_odds_json"])
+        except Exception:
+            pass
+
+        table_rows = []
+        try:
+            table_rows = json.loads(row["table_snapshot_json"])
+        except Exception:
+            pass
+
+        return {
+            "id": row["id"],
+            "competition": row["competition"],
+            "season": row["season"],
+            "snapshot_date": row["snapshot_date"],
+            "snapshot_type": row["snapshot_type"],
+            "matchweek": row["matchweek"],
+            "winner_odds": winner_odds,
+            "table": table_rows,
+            "created_at": row["created_at"],
+        }
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def load_projection_history_series(
+    competition: str,
+    limit: int = 10,
+    db_path: Optional[Path] = None,
+) -> list[dict]:
+    """Return chronological series of projection snapshots for a competition."""
+    comp = str(competition or "").strip()
+    if not comp:
+        return []
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT id, competition, season, snapshot_date, snapshot_type, matchweek,
+                   winner_odds_json, table_snapshot_json, created_at
+            FROM {_LEAGUE_PROJ_HIST_TABLE}
+            WHERE competition = ?
+            ORDER BY snapshot_date DESC, id DESC
+            LIMIT ?
+            """,
+            (comp, max(1, int(limit))),
+        ).fetchall()
+        result = []
+        for row in reversed(rows):
+            w = []
+            try:
+                w = json.loads(row["winner_odds_json"])
+            except Exception:
+                pass
+            t = []
+            try:
+                t = json.loads(row["table_snapshot_json"])
+            except Exception:
+                pass
+            result.append({
+                "id": row["id"],
+                "competition": row["competition"],
+                "season": row["season"],
+                "snapshot_date": row["snapshot_date"],
+                "snapshot_type": row["snapshot_type"],
+                "matchweek": row["matchweek"],
+                "winner_odds": w,
+                "table": t,
+                "created_at": row["created_at"],
+            })
+        return result
+    except Exception:
+        return []
+    finally:
+        conn.close()
 

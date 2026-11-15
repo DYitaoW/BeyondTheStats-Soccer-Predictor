@@ -405,13 +405,18 @@ def api_test_simulate_game_event():
         }), 400
 
     updated_game = update_simulated_live_game(match_id, updates, comp_name=comp_name)
+    live_pred = updated_game.get("live_prediction") or {}
+    prob_h = live_pred.get("prob_home")
+    prob_d = live_pred.get("prob_draw")
+    prob_a = live_pred.get("prob_away")
 
     # 1. Dispatch regular push notifications to match & team subscribers
     subscribers = for_game_or_team_subscribers(
         match_id, comp_name, home_team=ht, away_team=at, event=canonical_event
     )
     regular_pushes_queued = send_match_notification(
-        match_id, comp_name, notif_title, notif_body, event=canonical_event
+        match_id, comp_name, notif_title, notif_body, event=canonical_event,
+        prob_home=prob_h, prob_draw=prob_d, prob_away=prob_a,
     )
 
     # 2. Dispatch Live Activity updates (with alert banner)
@@ -426,6 +431,10 @@ def api_test_simulate_game_event():
         "competition": comp_name,
         "event": canonical_event,
     }
+    if prob_h is not None:
+        la_state["prob_home"] = prob_h
+        la_state["prob_draw"] = prob_d
+        la_state["prob_away"] = prob_a
 
     if is_ft:
         la_sent = send_live_activity_end(match_id, comp_name, content_state=la_state, alert=la_alert)

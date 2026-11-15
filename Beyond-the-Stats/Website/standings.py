@@ -2002,3 +2002,152 @@ def _build_fallback_standings(comp_name):
         return None
     response = package_real_standings(comp_name, groups, "placeholder")
     return _sanitize_real_standings(response, comp_name) or response
+
+
+# ---------------------------------------------------------------------------
+# League Form Table Computation
+# ---------------------------------------------------------------------------
+
+def compute_league_form_table(comp_name: str, window: int = 5) -> dict:
+    """Compute league form tables (overall, home, away splits) for the past N matches.
+
+    Returns dict with keys:
+        competition, window, overall, home, away
+    Where each split contains ranked rows with P, W, D, L, GF, GA, GD, Pts, ppg, form, form_details.
+    """
+    from competition_rules import (
+        collect_competition_games,
+        canonical_team_name,
+        resolve_competition_query,
+    )
+    from team_utils import decorate_standings_entry, _to_int
+
+    base_comp, _view = resolve_competition_query(comp_name)
+    all_games = collect_competition_games(comp_name)
+    if not all_games and base_comp != comp_name:
+        all_games = collect_competition_games(base_comp)
+
+    # Filter to completed games with valid scores
+    valid_games = []
+    for g in (all_games or []):
+        hg = _to_int(g.get("home_score"))
+        ag = _to_int(g.get("away_score"))
+        if hg is None or ag is None:
+            continue
+        status = str(g.get("status") or "").lower()
+        if status in {"pre", "in", "live", "sched", "scheduled"}:
+            continue
+        dt_str = str(g.get("match_date") or g.get("date") or g.get("kickoff_utc") or "")[:10]
+        h_team = canonical_team_name(str(g.get("home_team") or ""), base_comp)
+        a_team = canonical_team_name(str(g.get("away_team") or ""), base_comp)
+        if not h_team or not a_team or h_team == a_team:
+            continue
+        valid_games.append({
+            "date": dt_str,
+            "home_team": h_team,
+            "away_team": a_team,
+            "home_score": hg,
+            "away_score": ag,
+            "match_id": str(g.get("match_id") or ""),
+        })
+
+    # Sort games chronologically ascending (oldest to newest)
+    valid_games.sort(key=lambda x: (x["date"], x["match_id"]))
+
+    team_matches_overall: dict[str, list[dict]] = {}
+    team_matches_home: dict[str, list[dict]] = {}
+    team_matches_away: dict[str, list[dict]] = {}
+
+    for g in valid_games:
+        ht = g["home_team"]
+        at = g["away_team"]
+        hg = g["home_score"]
+        ag = g["away_score"]
+        dt = g["date"]
+
+        # Home perspective
+        if hg > ag:
+            res_h = "W"
+        elif hg < ag:
+            res_h = "L"
+        else:
+            res_h = "D"
+        h_info = {
+            "date": dt,
+            "opponent": at,
+            "venue": "H",
+            "gf": hg,
+            "ga": ag,
+            "result": res_h,
+            "score": f"{hg}-{ag}",
+        }
+        team_matches_overall.setdefault(ht, []).append(h_info)
+        team_matches_home.setdefault(ht, []).append(h_info)
+
+        # Away perspective
+        if ag > hg:
+            res_a = "W"
+        elif ag < hg:
+            res_a = "L"
+        else:
+            res_a = "D"
+        a_info = {
+            "date": dt,
+            "opponent": ht,
+            "venue": "A",
+            "gf": ag,
+            "ga": hg,
+            "result": res_a,
+            "score": f"{ag}-{hg}",
+        }
+        team_matches_overall.setdefault(at, []).append(a_info)
+        team_matches_away.setdefault(at, []).append(a_info)
+
+    def _build_split_table(matches_map: dict[str, list[dict]]) -> list[dict]:
+        rows = []
+        for team, matches in matches_map.items():
+            recent = matches[-window:] if len(matches) >= window else matches
+            p = len(recent)
+            w = sum(1 for m in recent if m["result"] == "W")
+            d = sum(1 for m in recent if m["result"] == "D")
+            l = sum(1 for m in recent if m["result"] == "L")
+            gf = sum(m["gf"] for m in recent)
+            ga = sum(m["ga"] for m in recent)
+            gd = gf - ga
+            pts = w * 3 + d
+            ppg = round(pts / p, 2) if p > 0 else 0.0
+            form_seq = [m["result"] for m in recent]
+            rows.append({
+                "team": team,
+                "P": p,
+                "W": w,
+                "D": d,
+                "L": l,
+                "GF": gf,
+                "GA": ga,
+                "GD": gd,
+                "Pts": pts,
+                "ppg": ppg,
+                "form": form_seq,
+                "form_string": "".join(form_seq),
+                "form_details": recent,
+            })
+
+        rows.sort(key=lambda r: (-r["Pts"], -r["GD"], -r["GF"], -r["W"], r["team"]))
+        for idx, r in enumerate(rows, start=1):
+            r["rank"] = idx
+            r["position"] = idx
+            decorate_standings_entry(r, comp_name)
+        return rows
+
+    overall_table = _build_split_table(team_matches_overall)
+    home_table = _build_split_table(team_matches_home)
+    away_table = _build_split_table(team_matches_away)
+
+    return {
+        "competition": comp_name,
+        "window": window,
+        "overall": overall_table,
+        "home": home_table,
+        "away": away_table,
+    }
