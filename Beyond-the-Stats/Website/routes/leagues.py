@@ -720,7 +720,9 @@ def api_stats():
     })
 
 
-_LEAGUE_LEADERS_CACHE_FILE = os.path.join(config.PROJECT_DIR, "Output", "Status", "league_leaders_cache.json")
+from shared import paths as _paths  # noqa: E402
+
+_LEAGUE_LEADERS_CACHE_FILE = str(_paths.LEAGUE_LEADERS_CACHE_FILE)
 _LEAGUE_LEADERS_MEMO_CACHE: dict = {
     "data": None,
     "bytes": None,

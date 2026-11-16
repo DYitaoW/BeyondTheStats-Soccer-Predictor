@@ -1087,6 +1087,21 @@ def _live_standings_refresh_targets(comp_name: str) -> list[str]:
     return targets
 
 
+def table_age_seconds(updated) -> float | None:
+    """Age of a cached table's ``updated_at`` (naive local or tz-aware ISO-8601).
+
+    Returns None when it cannot be parsed. The old inline check subtracted an
+    aware timestamp from naive ``datetime.now()``, raised, and treated the
+    table as fresh forever (a one-game WSL/NWSL table was served for hours).
+    """
+    try:
+        ts = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    now = datetime.now(timezone.utc) if ts.tzinfo is not None else datetime.now()
+    return (now - ts).total_seconds()
+
+
 def refresh_real_standings_after_live_final(comp_name: str) -> list[str]:
     """Recompute and persist real standings when a live match finishes.
 
@@ -1153,11 +1168,8 @@ def _compute_standings_from_history(comp_name, force_recompute=False):
         updated = cached.get("updated_at", "")
         if not updated:
             return cached
-        try:
-            age = (datetime.now() - datetime.fromisoformat(str(updated))).total_seconds()
-        except Exception:
-            return cached
-        if age < float(getattr(config, "REAL_TABLES_CACHE_TTL", 300)):
+        age = table_age_seconds(updated)
+        if age is not None and age < float(getattr(config, "REAL_TABLES_CACHE_TTL", 300)):
             return cached
 
     base_comp, mls_view = resolve_competition_query(comp_name)

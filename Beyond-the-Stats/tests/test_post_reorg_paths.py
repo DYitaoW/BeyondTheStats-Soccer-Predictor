@@ -46,8 +46,13 @@ class PostReorgPathConstantsTests(unittest.TestCase):
             self.config.REAL_TABLES_PERSIST_FILE,
             str(self.paths.STANDINGS_CACHE_FILE),
         )
+        # Under the test runner derived caches live in a temp dir (never the
+        # production Output/Status); otherwise under Output/Status.
+        expected_root = (
+            self.paths.TEST_OUTPUT_DIR / "Status" if self.paths.TEST_OUTPUT_DIR is not None else status
+        )
         self.assertTrue(
-            str(self.paths.STANDINGS_CACHE_FILE).startswith(str(status))
+            str(self.paths.STANDINGS_CACHE_FILE).startswith(str(expected_root))
         )
 
     def test_prediction_csvs_under_output_predictions(self):

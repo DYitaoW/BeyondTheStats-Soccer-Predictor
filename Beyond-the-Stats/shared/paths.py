@@ -127,6 +127,7 @@ CURRENT_SEASON_TEAMS_FILE = DATA_SEEDS_DIR / "current_season_teams.json"
 ESPN_TEAM_NAMES_FILE = DATA_SEEDS_DIR / "espn_team_names_seen.json"
 ESPN_CUP_NAMES_FILE = DATA_SEEDS_DIR / "espn_cup_names_seen.json"
 POINTS_ADJUSTMENTS_FILE = DATA_DIR / "team_points_adjustments.json"
+LEAGUE_LEADERS_CACHE_FILE = OUTPUT_STATUS_DIR / "league_leaders_cache.json"
 
 # Common prediction artifacts
 GLOBAL_UPCOMING_FILE = OUTPUT_PRED_EUROPE / "upcoming_matchweek_predictions.csv"
@@ -138,6 +139,7 @@ NATIONAL_UPCOMING_FILE = OUTPUT_PRED_NATIONAL / "upcoming_national_team_predicti
 FRIENDLIES_UPCOMING_FILE = OUTPUT_PRED_FRIENDLIES / "upcoming_club_friendlies.csv"
 WOMENS_UPCOMING_FILE = OUTPUT_PRED_WOMENS / "upcoming_womens_predictions.csv"
 WOMENS_COMPLETED_FILE = OUTPUT_PRED_WOMENS / "completed_womens_matches.csv"
+WOMENS_NWSL_BRACKET_FILE = OUTPUT_PRED_WOMENS / "projected_nwsl_playoff_bracket.json"
 PAST_GAMES_FILE = OUTPUT_PRED_SHARED / "past_games.json"
 # Never-pruned append-only journal + previous snapshot for recoverability.
 PAST_GAMES_JOURNAL_FILE = OUTPUT_PRED_SHARED / "past_games_journal.jsonl"
@@ -358,3 +360,62 @@ def migrate_legacy_runtime_files() -> None:
 
 def as_str(path: Path | str) -> str:
     return str(path)
+
+
+# ── Test isolation for derived caches ────────────────────────────
+# Under unittest / pytest, the derived caches the website writes (real-table
+# standings, LeagueData / CupData payloads, league leaders, ESPN response
+# cache) and the points-adjustments JSON point at a per-process temp folder.
+# Tests compute tables from their own throwaway SQLite store; writing those
+# results to the production files made the live WSL / NWSL tables show one
+# game per club (a test table persisted in standings_cache.json was then
+# served as "fresh"). Same opt-out as the SQLite store:
+# BTS_ALLOW_REAL_STORE_IN_TESTS=1.
+
+def running_under_test_runner() -> bool:
+    """True when the current process is a unittest / pytest run."""
+    import sys as _sys
+
+    if "pytest" in _sys.modules or "_pytest" in _sys.modules:
+        return True
+    main = _sys.modules.get("__main__")
+    main_file = str(getattr(main, "__file__", "") or "").replace("\\", "/")
+    main_spec = str(getattr(getattr(main, "__spec__", None), "name", "") or "")
+    if main_spec.startswith("unittest") or main_file.endswith("unittest/__main__.py"):
+        return True
+    argv0 = os.path.basename(str(_sys.argv[0] if _sys.argv else ""))
+    return argv0.startswith("test_") and argv0.endswith(".py")
+
+
+TEST_OUTPUT_DIR: Path | None = None
+
+
+def _isolate_outputs_for_tests() -> None:
+    global TEST_OUTPUT_DIR, STANDINGS_CACHE_FILE, LEAGUE_LEADERS_CACHE_FILE
+    global OUTPUT_LEAGUE_DATA_DIR, OUTPUT_CUP_DATA_DIR, OUTPUT_CACHE_DIR, POINTS_ADJUSTMENTS_FILE
+    import atexit
+    import shutil
+    import tempfile
+
+    TEST_OUTPUT_DIR = Path(tempfile.mkdtemp(prefix="bts-test-output-"))
+    atexit.register(shutil.rmtree, str(TEST_OUTPUT_DIR), True)
+    status = TEST_OUTPUT_DIR / "Status"
+    status.mkdir(parents=True, exist_ok=True)
+    STANDINGS_CACHE_FILE = status / "standings_cache.json"
+    LEAGUE_LEADERS_CACHE_FILE = status / "league_leaders_cache.json"
+    OUTPUT_LEAGUE_DATA_DIR = TEST_OUTPUT_DIR / "LeagueData"
+    OUTPUT_CUP_DATA_DIR = TEST_OUTPUT_DIR / "CupData"
+    OUTPUT_CACHE_DIR = TEST_OUTPUT_DIR / "Cache"
+    # Tests read the real adjustments (copy) but never rewrite the tracked file.
+    real_adjustments = POINTS_ADJUSTMENTS_FILE
+    POINTS_ADJUSTMENTS_FILE = TEST_OUTPUT_DIR / "team_points_adjustments.json"
+    try:
+        if real_adjustments.is_file():
+            shutil.copy2(real_adjustments, POINTS_ADJUSTMENTS_FILE)
+    except OSError:
+        pass
+
+
+if running_under_test_runner() and os.environ.get("BTS_ALLOW_REAL_STORE_IN_TESTS", "").strip() != "1":
+    _isolate_outputs_for_tests()
+

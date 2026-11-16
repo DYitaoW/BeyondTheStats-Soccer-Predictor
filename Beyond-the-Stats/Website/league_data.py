@@ -503,10 +503,11 @@ def _standings_entry_fresh(entry: dict | None) -> bool:
     updated = entry.get("updated_at", "")
     if not updated:
         return True  # Persisted tables without timestamp are still usable.
-    try:
-        age = (datetime.now() - datetime.fromisoformat(str(updated))).total_seconds()
-    except Exception:
-        return True
+    from standings import table_age_seconds
+
+    age = table_age_seconds(updated)
+    if age is None:
+        return False  # unparseable timestamp: recompute rather than trust it
     return age < float(getattr(config, "REAL_TABLES_CACHE_TTL", 300))
 
 
@@ -1044,6 +1045,126 @@ def _mls_bracket_to_cup_knockout(projected: dict) -> dict:
     }
 
 
+NWSL_COMPETITION = "United States/NWSL"
+_NWSL_STAGE_LABELS = {"quarterfinals": "Quarterfinal", "semifinals": "Semifinal", "final": "NWSL Championship"}
+
+
+def _load_nwsl_projected_bracket() -> dict | None:
+    """Pipeline NWSL playoff projection (pipelines/womens Project_League_Table)."""
+    data = _load_json_payload(getattr(config, "NWSL_PROJECTED_BRACKET_FILE", ""))
+    return data if isinstance(data, dict) and data.get("seeds") else None
+
+
+def _nwsl_bracket_to_cup_knockout(projected: dict) -> dict:
+    """NWSL playoff JSON -> cup-style knockout / odds / real maps (same shape as MLS)."""
+    knockout: dict = {}
+    real_knockout: dict = {}
+    for stage in ("quarterfinals", "semifinals", "final"):
+        games = projected.get(stage)
+        games = [games] if isinstance(games, dict) else (games or [])
+        rows, real_rows = [], []
+        for g in games:
+            if not isinstance(g, dict):
+                continue
+            p_home = g.get("prob_home_advances")
+            entry = _mls_match_entry(
+                g.get("home_team"), g.get("away_team"), g.get("winner"),
+                label=f"{_NWSL_STAGE_LABELS[stage]} {g.get('label', '')}".strip() if stage != "final"
+                else _NWSL_STAGE_LABELS[stage],
+                stage=stage,
+                extras={
+                    "home_seed": g.get("home_seed"), "away_seed": g.get("away_seed"),
+                    "played": bool(g.get("played")), "score": g.get("score"),
+                    "match_id": g.get("match_id"), "date": g.get("date"), "time": g.get("time"),
+                    "kickoff_utc": g.get("kickoff_utc"),
+                },
+            )
+            if g.get("played"):
+                entry["status"] = "FT"
+                entry["prob_home"] = 100.0 if g.get("winner") == g.get("home_team") else 0.0
+                entry["prob_away"] = 100.0 - entry["prob_home"]
+            elif p_home is not None:
+                entry["status"] = "Scheduled" if g.get("scheduled") else "Projected"
+                entry["prob_home"] = p_home
+                entry["prob_away"] = round(100.0 - float(p_home), 1)
+            rows.append(entry)
+            real = dict(entry)
+            if not g.get("played"):
+                real.update({"winner": None, "predicted_result": "NONE",
+                             "status": "Scheduled" if g.get("scheduled") else "pre"})
+            real["from_live"] = bool(g.get("played"))
+            real_rows.append(real)
+        if rows:
+            knockout[stage] = rows
+            real_knockout[stage] = real_rows
+    return {
+        "format_style": "knockout",
+        "no_draws": True,
+        "knockout": knockout,
+        "odds_knockout": {k: [dict(x, odds_weighted=True) for x in v] for k, v in knockout.items()},
+        "real_knockout": real_knockout,
+        "position_stages": ["Winner", "Final", "SF", "QF", "Playoff"],
+        "stages": list(knockout.keys()),
+    }
+
+
+def _enrich_nwsl_payload(comp: str, payload: dict) -> dict:
+    """Attach the NWSL playoff bracket (seeded from the regular season) and
+    Championship odds beside the NWSL Shield table odds."""
+    base_comp, _view = resolve_competition_query(comp)
+    if base_comp != NWSL_COMPETITION:
+        return payload
+    projected = _load_nwsl_projected_bracket()
+    if not projected:
+        return payload
+    cup_ko = _nwsl_bracket_to_cup_knockout(projected)
+    bracket_section = payload.get("bracket") if isinstance(payload.get("bracket"), dict) else {}
+    bracket_section.update({
+        "projected": projected,
+        "knockout": cup_ko.get("knockout"),
+        "odds_knockout": cup_ko.get("odds_knockout"),
+        "real_knockout": cup_ko.get("real_knockout"),
+        "knockout_rounds": [
+            {"name": _NWSL_STAGE_LABELS[s], "stage": s, "order": i + 1,
+             "matches_count": len(cup_ko["knockout"].get(s, []))}
+            for i, s in enumerate(cup_ko.get("stages") or [])
+        ],
+    })
+    payload["bracket"] = bracket_section
+    predicted = payload.setdefault("predicted", {})
+    for key in ("knockout", "odds_knockout", "real_knockout"):
+        payload[key] = cup_ko.get(key)
+        predicted[key] = cup_ko.get(key)
+    payload["round_reach_probabilities"] = projected.get("round_reach_probabilities") or {}
+    payload["elimination_round_odds"] = projected.get("elimination_round_probabilities") or {}
+    predicted["round_reach_probabilities"] = payload["round_reach_probabilities"]
+    predicted["elimination_round_odds"] = payload["elimination_round_odds"]
+
+    champ_probs = projected.get("championship_winner_probabilities") or {}
+    championship = {
+        "winner_probabilities": champ_probs,
+        "winners_odds": [{"team": t, "win_pct": p} for t, p in champ_probs.items()],
+        "champion": projected.get("champion"),
+        "status": projected.get("status"),
+        "simulations_run": projected.get("simulations_run"),
+    }
+    shield = {
+        "winners_odds": payload.get("winners_odds"),
+        "winner_probabilities": (payload.get("predicted") or {}).get("winner", {}).get("probabilities"),
+    }
+    payload["nwsl_winners_odds"] = {"nwsl_shield": shield, "nwsl_championship": championship}
+    predicted["nwsl_winner_views"] = payload["nwsl_winners_odds"]
+    payload["nwsl_playoffs"] = {
+        "status": projected.get("status"),
+        "champion": projected.get("champion"),
+        "seeds": projected.get("seeds"),
+        "regular_season_complete": projected.get("regular_season_complete"),
+        "generated_at_utc": projected.get("generated_at_utc"),
+    }
+    payload.setdefault("format", {}).setdefault("extensions", {})["nwsl_winner_views"] = list(payload["nwsl_winners_odds"])
+    return payload
+
+
 def _enrich_mls_payload(comp: str, payload: dict) -> dict:
     """Attach MLS Cup playoff bracket + Shield/East/West/Cup winner odds."""
     if not str(comp or "").startswith("United States/MLS"):
@@ -1520,6 +1641,7 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
     payload["predicted"] = predicted
 
     payload = _enrich_mls_payload(comp, payload)
+    payload = _enrich_nwsl_payload(comp, payload)
 
     # Attach League Qualification & Relegation Zones
     zones = get_league_qualification_zones(comp)

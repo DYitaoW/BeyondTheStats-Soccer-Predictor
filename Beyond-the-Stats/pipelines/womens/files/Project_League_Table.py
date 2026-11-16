@@ -130,7 +130,11 @@ def load_league_state(raw_csv_path: str, competition: str, model_probs: dict | N
     return teams, standings, remaining_fixtures
 
 
-def simulate_league(competition: str, teams: list[str], current_standings: dict, remaining: list, sim_runs: int = SIM_RUNS):
+def simulate_league(competition: str, teams: list[str], current_standings: dict, remaining: list,
+                    sim_runs: int = SIM_RUNS, final_tables: list | None = None):
+    """Monte Carlo season finish. If ``final_tables`` is a list, each run's
+    final regular-season table ({team: {Pts, W, GD, GF, ...}}) is appended
+    (NWSL playoff seeding)."""
     rng = random.Random(42)
     position_counts = {t: defaultdict(int) for t in teams}
     total_pts = {t: 0 for t in teams}
@@ -187,6 +191,9 @@ def simulate_league(competition: str, teams: list[str], current_standings: dict,
                 sim_table[ht]["GF"] += 1
                 sim_table[ht]["GA"] += 2
                 sim_table[ht]["GD"] -= 1
+
+        if final_tables is not None:
+            final_tables.append({t: dict(v) for t, v in sim_table.items()})
 
         # Rank teams: Pts, GD, GF
         ranked = sorted(
@@ -249,6 +256,87 @@ def simulate_league(competition: str, teams: list[str], current_standings: dict,
     return projected_rows
 
 
+NWSL_COMPETITION = "United States/NWSL"
+NWSL_BRACKET_FILE = str(_bts_paths.WOMENS_NWSL_BRACKET_FILE)
+
+
+def _model_pair_probabilities(competition: str = NWSL_COMPETITION):
+    """(home, away) -> (p_home, p_draw, p_away) from the trained womens model.
+
+    Any pairing can be asked for (playoff matchups that are not fixtures);
+    falls back to a neutral home-advantage prior if the model is unavailable.
+    """
+    cache: dict = {}
+    try:
+        import __main__
+        import Predict_Match as pm
+        import Predict_Upcoming_Matchweek as pu
+        import Womens_Data_Manager as wdm
+
+        # The pickled ensemble references this class by module path.
+        if not hasattr(__main__, "AveragedProbaClassifier"):
+            __main__.AveragedProbaClassifier = pu.AveragedProbaClassifier
+        ctx = pu.load_context()
+        cfg = wdm.LEAGUES[competition]
+        league_dir = os.path.relpath(str(cfg["raw_dir"]), pu.RAW_DATA_DIR).replace(os.sep, "/")
+        season_key = f"{league_dir}/{cfg['prefix']}stat{wdm.current_season(competition)}"
+        strength = ctx["league_strength"].get(league_dir, ctx["league_strength"].get(competition, 0.85))
+    except Exception as exc:
+        print(f"[WARN] womens model unavailable for playoff matchups ({exc}); using neutral prior")
+        return lambda home, away: (0.44, 0.26, 0.30)
+
+    def probs(home: str, away: str):
+        key = (home, away)
+        if key not in cache:
+            try:
+                X = pm.build_features(
+                    pm.build_match_input(home, away), season_key, league_dir, strength,
+                    ctx["overall_teams"], ctx["season_teams"], ctx["head_to_head"],
+                    ctx["current_form"], ctx["league_strength"],
+                )
+                X = pd.get_dummies(X, columns=["competition"], dtype=float).reindex(
+                    columns=ctx["train_columns"], fill_value=0.0)
+                values = ctx["clf"].predict_proba(X)[0]
+                out = {"H": 0.0, "D": 0.0, "A": 0.0}
+                for idx, enc in enumerate(ctx["clf"].classes_):
+                    out[ctx["result_le"].inverse_transform([enc])[0]] = float(values[idx])
+                cache[key] = (out["H"], out["D"], out["A"])
+            except Exception:
+                cache[key] = (0.44, 0.26, 0.30)
+        return cache[key]
+
+    return probs
+
+
+def write_nwsl_playoff_projection(csv_path: str, standings: dict, remaining: list,
+                                  final_tables: list | None, pair_probs=None) -> dict:
+    """Seed the NWSL playoffs from the regular season and project the bracket.
+
+    With the regular season complete the seeding is the real final table;
+    otherwise every simulated season finish seeds its own bracket.
+    """
+    import Nwsl_Playoffs as nwsl
+
+    raw = pd.read_csv(csv_path, dtype=str).fillna("")
+    raw_rows = raw.to_dict(orient="records")
+    if remaining or not final_tables:
+        rankings = [nwsl.rank_table(t) for t in (final_tables or [])] or [nwsl.rank_table(standings)]
+    else:
+        rankings = [nwsl.rank_table(standings)]
+    projection = nwsl.project_playoffs(rankings, pair_probs or _model_pair_probabilities(), raw_rows)
+    projection["competition"] = NWSL_COMPETITION
+    projection["regular_season_complete"] = not remaining
+    os.makedirs(os.path.dirname(NWSL_BRACKET_FILE), exist_ok=True)
+    tmp = NWSL_BRACKET_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(projection, fh, indent=2)
+    os.replace(tmp, NWSL_BRACKET_FILE)
+    final = projection.get("final") or {}
+    print(f"  NWSL playoffs ({projection['status']}): final {final.get('home_team')} v {final.get('away_team')}; "
+          f"title odds {dict(list(projection['championship_winner_probabilities'].items())[:3])}")
+    return projection
+
+
 def project_all():
     print("=== Projecting Womens League Tables ===")
     all_rows = []
@@ -263,8 +351,14 @@ def project_all():
         print(f"Simulating {comp} from {csv_path}...")
         teams, standings, remaining = load_league_state(csv_path, comp, model_probs)
         print(f"  {len(teams)} teams, {sum(s['P'] for s in standings.values()) // 2} played, {len(remaining)} remaining fixtures.")
-        rows = simulate_league(comp, teams, standings, remaining, sim_runs=SIM_RUNS)
+        final_tables: list | None = [] if comp == NWSL_COMPETITION else None
+        rows = simulate_league(comp, teams, standings, remaining, sim_runs=SIM_RUNS, final_tables=final_tables)
         all_rows.extend(rows)
+        if comp == NWSL_COMPETITION:
+            try:
+                write_nwsl_playoff_projection(csv_path, standings, remaining, final_tables)
+            except Exception as exc:
+                print(f"[WARN] NWSL playoff projection failed: {exc}")
 
     os.makedirs(os.path.dirname(OUT_CSV), exist_ok=True)
     df_out = pd.DataFrame(all_rows)
