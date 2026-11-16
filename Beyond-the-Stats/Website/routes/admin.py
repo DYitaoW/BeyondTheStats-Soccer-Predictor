@@ -718,7 +718,7 @@ def api_admin_recalculate_standings():
     else:
         _clear_all_real_data_caches()
         for comp in config.LIVE_SCORE_COMPETITIONS:
-            if comp not in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+            if comp not in config.LEAGUE_API_EXCLUDED_COMPETITIONS and not config.is_one_off_competition(comp):
                 try:
                     res = _compute_standings_from_history(comp)
                     if res:
@@ -774,7 +774,7 @@ def api_admin_competitions_catalog():
 
     comps = []
     for comp_name in sorted(config.LIVE_SCORE_COMPETITIONS.keys()):
-        if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
+        if comp_name in config.LEAGUE_API_EXCLUDED_COMPETITIONS or config.is_one_off_competition(comp_name):
             continue
         comp_adjs = adjs_by_comp.get(comp_name, [])
         try:

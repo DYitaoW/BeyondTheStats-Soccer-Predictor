@@ -155,6 +155,45 @@ UPCOMING_ONLY_COMPETITIONS = {
     "International/Friendly",
 }
 
+# One-off competitions (friendlies): every game stands alone, so there are no
+# tables, simulated seasons, projections, form tables or snapshots. Their
+# /api/league-data payload is just the upcoming games (``upcoming_only``).
+# Games still appear in the normal upcoming / live feeds.
+ONE_OFF_COMPETITIONS = frozenset({
+    CLUB_FRIENDLIES_COMPETITION,
+    "International/Friendly",
+})
+# /api/upcoming/<mode> feed that carries each one-off competition's games.
+ONE_OFF_UPCOMING_MODE = {
+    CLUB_FRIENDLIES_COMPETITION: "friendlies",
+    "International/Friendly": "friendlies",
+}
+
+
+def one_off_competition_name(competition: str) -> str:
+    """Canonical one-off competition for ``competition`` (any alias), or ""."""
+    comp = str(competition or "").strip()
+    if not comp:
+        return ""
+    if comp in ONE_OFF_COMPETITIONS:
+        return comp
+    try:
+        for alias in competition_live_aliases(comp):
+            if alias in ONE_OFF_COMPETITIONS:
+                return alias
+    except NameError:  # aliases helper defined later in this module
+        pass
+    lowered = comp.lower()
+    for name in ONE_OFF_COMPETITIONS:
+        if name.lower() == lowered:
+            return name
+    return ""
+
+
+def is_one_off_competition(competition: str) -> bool:
+    """True for friendlies and other one-off competitions (no league tables)."""
+    return bool(one_off_competition_name(competition))
+
 # Domestic leagues used only for UEFA/cup roster fallback (or upcoming API with no
 # domestic model history). Kept in fetch_league_teams / UEFA_Data_Manager but
 # omitted from league-facing APIs (tables, upcoming-global, league-data, leaders).

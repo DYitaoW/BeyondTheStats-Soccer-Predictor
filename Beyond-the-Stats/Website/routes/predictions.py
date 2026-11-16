@@ -5,6 +5,7 @@ Match prediction, team query, fixture and head-to-head API routes.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import random as _random
 import threading
@@ -16,6 +17,8 @@ from collections import defaultdict
 from zoneinfo import ZoneInfo
 
 from .compat import Blueprint, Request, redirect, render_template, send_from_directory, request, jsonify
+
+logger = logging.getLogger(__name__)
 import pandas as pd
 
 import config
@@ -1282,6 +1285,101 @@ def _deduplicate_and_merge_upcoming_rows(rows: list[dict]) -> list[dict]:
     return merged_rows
 
 
+def load_upcoming_mode_rows(mode: str, date_range: str = "upcoming", window_days=None,
+                            from_date=None, to_date=None):
+    """Rows behind ``/api/upcoming/<mode>`` (CSV + SQLite, live-annotated, deduplicated).
+
+    Returns ``(rows, stats, league_stats)``; raises KeyError for an unknown mode.
+    """
+    csv_path, source_mode = _UPCOMING_MODE_MAP[mode]
+    rows, stats, league_stats = _load_upcoming_rows(
+        csv_path, source_mode, date_range=date_range, window_days=window_days,
+        from_date=from_date, to_date=to_date,
+    )
+    try:
+        from shared import sqlite_store
+        db_rows = sqlite_store.load_upcoming_games(mode=source_mode, from_date=from_date, to_date=to_date)
+        if not db_rows and mode == "mls":
+            db_rows = sqlite_store.load_upcoming_games(competition_substr="MLS", from_date=from_date, to_date=to_date)
+        if db_rows:
+            rows = list(rows or []) + list(db_rows)
+    except Exception:
+        pass
+    if mode == "mls":
+        rows = regional_espn_schedule_fallback(rows)
+    rows = _annotate_upcoming_rows_with_live(rows)
+    rows = _deduplicate_and_merge_upcoming_rows(rows)
+    return rows, stats, league_stats
+
+
+_FINISHED_LIVE_STATUSES = {"post", "final", "ft", "full_time", "finished", "completed"}
+
+
+def build_one_off_competition_payload(competition: str, compact: bool = False) -> dict:
+    """``/api/league-data`` payload for one-off competitions (friendlies).
+
+    No tables, simulations, odds, form table or projection comparison: just
+    the competition's upcoming games (today ET onward, not finished), sorted by
+    kickoff, with the same prediction fields as ``/api/upcoming/<mode>``.
+    """
+    comp = config.one_off_competition_name(competition) or str(competition or "").strip()
+    mode = config.ONE_OFF_UPCOMING_MODE.get(comp, "friendlies")
+    try:
+        today_et = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    except Exception:
+        today_et = datetime.now(timezone.utc).date().isoformat()
+    try:
+        rows, _stats, _league_stats = load_upcoming_mode_rows(mode, date_range="upcoming", from_date=today_et)
+    except Exception as exc:
+        logger.warning(f"[league-data] one-off upcoming load failed for {comp}: {exc}")
+        rows = []
+
+    def _is_upcoming(row: dict) -> bool:
+        if config.one_off_competition_name(row.get("competition", "")) != comp:
+            return False
+        if (row_date_iso(row) or "") < today_et:
+            return False
+        status = str(row.get("live_status") or row.get("status") or "").strip().lower()
+        if status in _FINISHED_LIVE_STATUSES:
+            return False
+        if str(row.get("actual_result", "") or "").strip().upper() in {"H", "D", "A"}:
+            return False
+        # Kicked off more than 3 h ago and not live: already played (a final
+        # that never reached this feed must not show as "upcoming").
+        if status not in {"in", "live", "in_progress", "halftime"}:
+            kickoff = pd.to_datetime(
+                str(row.get("match_datetime_utc") or row.get("kickoff_utc") or ""), utc=True, errors="coerce")
+            if pd.notna(kickoff) and kickoff < pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3):
+                return False
+        return True
+
+    games = [r for r in rows if _is_upcoming(r)]
+    games.sort(key=lambda r: (
+        row_date_iso(r),
+        str(r.get("match_datetime_utc", "") or r.get("match_datetime_et", "")),
+        str(r.get("home_team", "")),
+    ))
+    if compact:
+        games = [_to_compact_upcoming_row(r) for r in games]
+    else:
+        games = [decorate_game_team_names(dict(r), r.get("competition", "")) for r in games]
+    return {
+        "ok": True,
+        "competition": comp,
+        "upcoming_only": True,
+        "format": {
+            "competition": comp,
+            "competition_type": "friendlies",
+            "standings_layout": "none",
+            "upcoming_only": True,
+        },
+        "total": len(games),
+        "next_match_date": row_date_iso(games[0]) if games else None,
+        "upcoming_games": games,
+        "generated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
 @predictions_bp.get("/api/upcoming/<mode>")
 @_cached_response(ttl=_upcoming_cache_ttl)
 def api_upcoming(mode):
@@ -1437,21 +1535,9 @@ def api_upcoming(mode):
     entry = _UPCOMING_MODE_MAP.get(mode)
     if not entry:
         return jsonify({"ok": False, "error": f"Unknown mode: {mode}"}), 400
-    csv_path, source_mode = entry
-    rows, stats, league_stats = _load_upcoming_rows(csv_path, source_mode, date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to)
-    try:
-        from shared import sqlite_store
-        db_rows = sqlite_store.load_upcoming_games(mode=source_mode, from_date=target_from, to_date=target_to)
-        if not db_rows and mode == "mls":
-            db_rows = sqlite_store.load_upcoming_games(competition_substr="MLS", from_date=target_from, to_date=target_to)
-        if db_rows:
-            rows = list(rows or []) + list(db_rows)
-    except Exception:
-        pass
-    if mode == "mls":
-        rows = regional_espn_schedule_fallback(rows)
-    rows = _annotate_upcoming_rows_with_live(rows)
-    rows = _deduplicate_and_merge_upcoming_rows(rows)
+    rows, stats, league_stats = load_upcoming_mode_rows(
+        mode, date_range=date_range, window_days=window_days, from_date=target_from, to_date=target_to,
+    )
     if is_filtered:
         rows = [r for r in rows if _match_window(r)]
     league_names = sorted({r.get("competition", "") for r in rows if r.get("competition")})

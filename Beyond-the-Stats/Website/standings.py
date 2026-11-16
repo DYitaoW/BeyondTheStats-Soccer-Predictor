@@ -1064,6 +1064,8 @@ _MLS_LIVE_TABLE_VIEWS = (
 
 def _live_standings_refresh_targets(comp_name: str) -> list[str]:
     """Competition keys whose real tables should refresh after a live final."""
+    if config.is_one_off_competition(comp_name):
+        return []  # friendlies have no table
     base, _view = resolve_competition_query(comp_name)
     live_keys = set(config.LIVE_SCORE_COMPETITIONS.keys())
     if base not in live_keys and comp_name not in _MLS_LIVE_TABLE_VIEWS:
@@ -1156,8 +1158,11 @@ def _compute_standings_from_history(comp_name, force_recompute=False):
       - Scottish Premiership split (top 6 / bottom 6 after 33 games)
       - UEFA league-phase format (single table, then knockout)
     Applies correct tiebreakers per league (GD-first vs H2H-first).
-    Returns ``None`` if no completed games are available.
+    Returns ``None`` if no completed games are available, and always for
+    one-off competitions (friendlies: no league table).
     """
+    if config.is_one_off_competition(comp_name):
+        return None
     # Prefer a fresh in-memory / persisted table before re-scanning history files.
     if not force_recompute:
         with _real_tables_lock:
@@ -2034,6 +2039,8 @@ def compute_league_form_table(comp_name: str, window: int = 5) -> dict:
         competition, window, overall, home, away
     Where each split contains ranked rows with P, W, D, L, GF, GA, GD, Pts, ppg, form, form_details.
     """
+    if config.is_one_off_competition(comp_name):
+        return {"competition": comp_name, "window": window, "overall": [], "home": [], "away": []}
     from competition_rules import (
         collect_competition_games,
         canonical_team_name,

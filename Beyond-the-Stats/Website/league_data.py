@@ -177,6 +177,8 @@ def _build_lock_for(comp_name: str) -> threading.Lock:
 
 
 def _load_league_data_from_cache(comp_name):
+    if config.is_one_off_competition(comp_name):
+        return None  # one-off competitions are never cached (always current upcoming list)
     mem = _mem_get_league_data(comp_name)
     if mem is not None:
         if _league_data_cache_is_stale_zeroed(comp_name, mem):
@@ -270,6 +272,8 @@ def _mls_league_data_cache_missing_cup(comp_name: str, payload: dict) -> bool:
 
 
 def _write_league_data_cache(comp_name, payload):
+    if config.is_one_off_competition(comp_name):
+        return  # no tables / projection snapshots for friendlies
     path = _league_data_cache_path(comp_name)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1456,6 +1460,8 @@ def _load_usable_projected_table(comp_name: str) -> list[dict]:
 def build_league_data_payload(comp_name: str) -> dict:
     """Build the canonical league-data API payload for one competition."""
     comp = str(comp_name or "").strip()
+    if config.is_one_off_competition(comp):
+        return _one_off_payload(comp)
 
     cached = _load_league_data_from_cache(comp)
     if cached is not None:
@@ -1512,7 +1518,16 @@ def build_league_data_payload(comp_name: str) -> dict:
             }
 
 
+def _one_off_payload(comp: str) -> dict:
+    """Friendlies: upcoming games only (no tables, simulations or snapshots)."""
+    from routes.predictions import build_one_off_competition_payload
+
+    return build_one_off_competition_payload(comp)
+
+
 def _build_league_data_payload_uncached(comp: str) -> dict:
+    if config.is_one_off_competition(comp):
+        return _one_off_payload(comp)
     fmt = competition_format_spec(comp)
     layout = standings_layout_for(comp)
     # Pure knockout cups have no league/group table — keep bracket + finish odds only.
