@@ -123,7 +123,7 @@
     "Atlético Madrid": "Ath Madrid",
     "Celta Vigo": "Celta",
     "Espanyol": "Espanol",
-    "Racing Santander": "Racing Santander",
+    "Racing Santander": "Santander",
     "Rayo Vallecano": "Vallecano",
     "Real Betis": "Betis",
     "Real Sociedad": "Sociedad",
@@ -150,7 +150,9 @@
     "Deportivo Alaves": "Alaves",
     "Real Betis Balompie": "Betis",
     "Deportivo La Coruña": "La Coruna",
-    "Málaga": "Malaga"
+    "Málaga": "Malaga",
+    "Racing de Santander": "Santander",
+    "Deportivo": "La Coruna"
   },
   "Italy/Serie A": {
     "AC Milan": "Milan",
@@ -537,7 +539,7 @@
     "1. FSV Mainz 05": "1. FSV Mainz 05",
     "Bayer 04 Leverkusen": "Bayer 04 Leverkusen",
     "Bayer Leverkusen": "Leverkusen",
-    "borussia Dortmund": "borussia Dortmund",
+    "borussia Dortmund": "Dortmund",
     "Borussia Mönchengladbach": "M'gladbach",
     "Eintracht Frankfurt": "Ein Frankfurt",
     "FC Augsburg": "Augsburg",
@@ -1022,7 +1024,7 @@
     "1. FSV Mainz 05": "1. FSV Mainz 05",
     "Bayer 04 Leverkusen": "Bayer 04 Leverkusen",
     "Bayer Leverkusen": "Leverkusen",
-    "borussia Dortmund": "borussia Dortmund",
+    "borussia Dortmund": "Dortmund",
     "Borussia Mönchengladbach": "M'gladbach",
     "Eintracht Frankfurt": "Ein Frankfurt",
     "FC Augsburg": "Augsburg",
@@ -1971,7 +1973,7 @@
     "Atlético Madrid": "Ath Madrid",
     "Celta Vigo": "Celta",
     "Espanyol": "Espanol",
-    "Racing Santander": "Racing Santander",
+    "Racing Santander": "Santander",
     "Rayo Vallecano": "Vallecano",
     "Real Betis": "Betis",
     "Almeria": "Almeria",
@@ -2035,7 +2037,9 @@
     "UD Castellonense": "Castellon",
     "UD Logroñés": "Logrones",
     "FC Cartagena": "Cartagena",
-    "Gimnástica Torrelavega": "Gimnastic"
+    "Gimnástica Torrelavega": "Gimnastic",
+    "Racing de Santander": "Santander",
+    "Deportivo": "La Coruna"
   },
   "France/Coupe de France": {
     "Paris FC": "Paris FC",
@@ -2671,6 +2675,19 @@
     "West Ham": "West Ham United Women",
     "West Ham United": "West Ham United Women",
     "West Ham United Women": "West Ham United Women",
-    "West Ham Women": "West Ham United Women"
+    "West Ham Women": "West Ham United Women",
+    "Birmingham": "Birmingham City Women",
+    "Birmingham City": "Birmingham City Women",
+    "Birmingham City Women": "Birmingham City Women",
+    "Birmingham Women": "Birmingham City Women",
+    "Birmingham City WFC": "Birmingham City Women",
+    "Charlton": "Charlton Athletic Women",
+    "Charlton Athletic": "Charlton Athletic Women",
+    "Charlton Athletic Women": "Charlton Athletic Women",
+    "Charlton Women": "Charlton Athletic Women",
+    "London City Lionesses": "London City Lionesses",
+    "London City": "London City Lionesses",
+    "London City Lionesses Women": "London City Lionesses",
+    "Brighton & Hove Albion Women": "Brighton Women"
   }
 }

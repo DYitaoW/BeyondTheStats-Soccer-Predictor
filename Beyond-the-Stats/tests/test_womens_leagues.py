@@ -4,9 +4,14 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
-# Enable real store inspection in tests for integration verification
-os.environ["BTS_ALLOW_REAL_STORE_IN_TESTS"] = "1"
+# This suite inspects real data (women's fixtures, league data). It runs
+# against a snapshot COPY of the production store, so anything the endpoints
+# write (projection snapshots, caches) lands in the copy. It used to set
+# BTS_ALLOW_REAL_STORE_IN_TESTS=1 at import time, which disabled store
+# isolation for the WHOLE test run (discovery imports every module first), so
+# other suites wrote fake devices, feed events and fixtures into production.
 
 # Setup paths
 TEST_DIR = Path(__file__).resolve().parent
@@ -35,6 +40,25 @@ from app import app
 class TestWomensLeaguesIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        import shutil
+        import sqlite3
+        import tempfile
+
+        from shared import paths as _paths
+
+        tmp_dir = tempfile.mkdtemp(prefix="bts-womens-store-")
+        cls.addClassCleanup(shutil.rmtree, tmp_dir, True)
+        snapshot = Path(tmp_dir) / "bts_store.db"
+        src = sqlite3.connect(f"file:{_paths.SQLITE_STORE_FILE}?mode=ro", uri=True)
+        dst = sqlite3.connect(str(snapshot))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        cls._store_env = mock.patch.dict(os.environ, {"BTS_SQLITE_STORE_PATH": str(snapshot)})
+        cls._store_env.start()
+        cls.addClassCleanup(cls._store_env.stop)
         from competition_rules import warm_competition_games_cache
         warm_competition_games_cache(force=True)
         cls.client = TestClient(app)
@@ -85,12 +109,12 @@ class TestWomensLeaguesIntegration(unittest.TestCase):
         # WSL Zones: 1st UWCL Group, 2-3 UWCL Q, 12th Relegation
         wsl_zones = get_league_qualification_zones("England/Women's Super League")
         self.assertIsNotNone(wsl_zones)
-        self.assertEqual(len(wsl_zones), 3)
+        self.assertEqual(len(wsl_zones), 3)  # 14 clubs from 2026-27
         self.assertEqual(wsl_zones[0]["positions"], [1])
         self.assertEqual(wsl_zones[0]["type"], "champions_league")
         self.assertEqual(wsl_zones[1]["positions"], [2, 3])
         self.assertEqual(wsl_zones[1]["type"], "champions_league_qual")
-        self.assertEqual(wsl_zones[2]["positions"], [12])
+        self.assertEqual(wsl_zones[2]["positions"], [14])
         self.assertEqual(wsl_zones[2]["type"], "relegation")
 
         # Formats
@@ -103,25 +127,30 @@ class TestWomensLeaguesIntegration(unittest.TestCase):
 
     def test_canonical_rosters(self):
         """Verify all clubs exist in canonical roster definitions."""
+        # Real 2026 / 2026-27 rosters (ESPN): NWSL added Boston Legacy and
+        # Denver Summit; WSL has 14 clubs incl. promoted Birmingham, Charlton
+        # and London City Lionesses (Leicester gone).
         nwsl_teams = _canonical_roster_teams("United States/NWSL")
-        self.assertEqual(len(nwsl_teams), 14)
-        self.assertIn("Orlando Pride", nwsl_teams)
-        self.assertIn("NJ/NY Gotham FC", nwsl_teams)
+        self.assertEqual(len(nwsl_teams), 16)
+        for team in ("Orlando Pride", "NJ/NY Gotham FC", "Boston Legacy FC", "Denver Summit FC"):
+            self.assertIn(team, nwsl_teams)
 
         wsl_teams = _canonical_roster_teams("England/Women's Super League")
-        self.assertEqual(len(wsl_teams), 12)
-        self.assertIn("Chelsea Women", wsl_teams)
-        self.assertIn("Arsenal Women", wsl_teams)
+        self.assertEqual(len(wsl_teams), 14)
+        for team in ("Chelsea Women", "Arsenal Women", "London City Lionesses", "Birmingham City Women",
+                     "Charlton Athletic Women"):
+            self.assertIn(team, wsl_teams)
+        self.assertNotIn("Leicester City Women", wsl_teams)
 
     def test_form_table_calculation(self):
         """Verify dynamic form table calculation for NWSL and WSL."""
         nwsl_form = compute_league_form_table("United States/NWSL", window=5)
         self.assertEqual(nwsl_form.get("competition"), "United States/NWSL")
-        self.assertEqual(len(nwsl_form.get("overall", [])), 14)
+        self.assertEqual(len(nwsl_form.get("overall", [])), 16)
 
         wsl_form = compute_league_form_table("England/Women's Super League", window=5)
         self.assertEqual(wsl_form.get("competition"), "England/Women's Super League")
-        self.assertEqual(len(wsl_form.get("overall", [])), 12)
+        self.assertEqual(len(wsl_form.get("overall", [])), 14)
 
         # Check entry fields
         entry = nwsl_form["overall"][0]
@@ -138,6 +167,9 @@ class TestWomensLeaguesIntegration(unittest.TestCase):
         self.assertGreater(len(past_wsl), 0)
         self.assertIn("actual_result", past_nwsl[0])
         self.assertIn("actual_home_goals", past_nwsl[0])
+        # No rows from the old synthetic generator (source "womens") remain.
+        womens_past = past_nwsl + past_wsl
+        self.assertFalse([g for g in womens_past if g.get("source") == "womens"])
 
         # Upcoming games
         upcoming = store.load_upcoming_games()
@@ -146,8 +178,13 @@ class TestWomensLeaguesIntegration(unittest.TestCase):
         self.assertGreater(len(nwsl_up), 0)
         self.assertGreater(len(wsl_up), 0)
 
+        # Real fixtures: every prediction has the ESPN kickoff time and match id.
+        for g in nwsl_up + wsl_up:
+            self.assertTrue(g.get("kickoff_utc"), g.get("sync_key"))
+            self.assertTrue(g.get("match_id"), g.get("sync_key"))
+
         # Verify 79+ statistical parity keys in sample upcoming fixture
-        sample = nwsl_up[0]
+        sample = (nwsl_up + wsl_up)[0]
         parity_keys = [
             "prob_home", "prob_draw", "prob_away",
             "pred_home_goals", "pred_away_goals",
@@ -182,7 +219,7 @@ class TestWomensLeaguesIntegration(unittest.TestCase):
         self.assertEqual(resp_nwsl.status_code, 200)
         nwsl_data = resp_nwsl.json()
         self.assertTrue(nwsl_data.get("ok"))
-        self.assertEqual(len(nwsl_data.get("predicted_table", [])), 14)
+        self.assertEqual(len(nwsl_data.get("predicted_table", [])), 16)
         self.assertIsNotNone(nwsl_data.get("qualification_zones"))
         self.assertGreater(len(nwsl_data.get("winners_odds", [])), 0)
 
@@ -191,7 +228,7 @@ class TestWomensLeaguesIntegration(unittest.TestCase):
         self.assertEqual(resp_wsl.status_code, 200)
         wsl_data = resp_wsl.json()
         self.assertTrue(wsl_data.get("ok"))
-        self.assertEqual(len(wsl_data.get("predicted_table", [])), 12)
+        self.assertEqual(len(wsl_data.get("predicted_table", [])), 14)
         self.assertIsNotNone(wsl_data.get("qualification_zones"))
         self.assertGreater(len(wsl_data.get("winners_odds", [])), 0)
 

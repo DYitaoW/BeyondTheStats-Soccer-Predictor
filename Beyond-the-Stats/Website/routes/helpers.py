@@ -70,7 +70,22 @@ def mutation_authorized() -> bool:
         auth = request.headers.get("Authorization", "").strip()
         if auth.lower().startswith("bearer "):
             token = auth[7:].strip()
-    return bool(token and config.MUTATION_API_TOKEN and token == config.MUTATION_API_TOKEN)
+    return admin_token_matches(token)
+
+
+def admin_token_matches(token: str) -> bool:
+    """Constant-time check of an admin token against MUTATION_API_TOKEN.
+
+    Always False when MUTATION_API_TOKEN is unset (admin routes then reject
+    every caller instead of accepting an empty token).
+    """
+    import hmac
+
+    expected = str(config.MUTATION_API_TOKEN or "")
+    supplied = str(token or "")
+    if not expected or not supplied:
+        return False
+    return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
 
 
 # ── Redeem Code Parsing ──────────────────────────────────────────────

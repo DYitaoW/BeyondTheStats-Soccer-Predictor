@@ -1021,6 +1021,14 @@ def _run_womens_subpipeline(args, api_token):
         )
         return sub
 
+    # Real fixtures + results from ESPN. The womens raw CSVs used to be
+    # generated once (fictional fixtures/scores) and never refreshed.
+    sub["womens_download"] = run_step(
+        "[womens] Download real NWSL/WSL fixtures and results (ESPN)",
+        [py, str(WOMENS_FILES_DIR / "Womens_Data_Manager.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=600,
+    )
     sub["womens_download_process"] = run_step(
         "[womens] Process raw match data",
         [py, str(WOMENS_FILES_DIR / "Process_Data.py")],

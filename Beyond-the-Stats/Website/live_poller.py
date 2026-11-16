@@ -1218,6 +1218,13 @@ def _compute_poll_interval(results, todays_comps):
     - wakes up at nearest_future − 1h when games are 1-2h away (drops to
       15-min pre-match polling mode at the 1h mark)
     - 1800 seconds otherwise (no games or all finished)
+
+    The result is the minimum over ALL of today's kickoffs, and a pre-match
+    sleep never runs past a kickoff (it ends ~2 min before it). The old version
+    returned on the first kickoff it looked at, so a game 50 min away in one
+    competition put the poller to sleep for 15 min straight through another
+    competition's kickoff: "start" alerts arrived up to 15 min late and goals
+    scored before the first "in" observation never alerted.
     """
     try:
         # Check live results for in-progress games
@@ -1227,36 +1234,49 @@ def _compute_poll_interval(results, todays_comps):
                     return 60
 
         now_et = datetime.now(ZoneInfo("America/New_York"))
+        interval = 1800
         nearest_future = None
 
-        for _comp_name, kickoffs in (todays_comps or {}).items():
+        # Kickoffs from the pipeline schedule plus the real ESPN kickoff of every
+        # scheduled game on the scoreboards just polled. Pipeline fixtures can be
+        # date-only or wrong (the women's leagues' are), so ESPN's kickoff_utc
+        # is what keeps "start"/goal alerts on time for every league.
+        all_kickoffs: dict[str, list] = {k: list(v or []) for k, v in (todays_comps or {}).items()}
+        for comp_name, comp_data in (results or {}).items():
+            for g in (comp_data or {}).get("games", []) or []:
+                if str(g.get("status", "")).strip().lower() != "pre":
+                    continue
+                ko_ts = _la_kickoff_ts(g)
+                if ko_ts is not None:
+                    all_kickoffs.setdefault(comp_name, []).append(
+                        datetime.fromtimestamp(ko_ts, ZoneInfo("America/New_York"))
+                    )
+
+        for _comp_name, kickoffs in all_kickoffs.items():
             for kt in kickoffs or []:
                 try:
-                    if isinstance(kt, datetime):
-                        diff = (kt - now_et).total_seconds()
-                        # Game started within last 90 min -> poll at 60s
-                        if -5400 <= diff <= 0:
-                            return 60
-                        # Within 3 minutes of kickoff -> poll every 60s so we catch
-                        # the pre→in transition within seconds.
-                        if 0 < diff <= 180:
-                            return 60
-                        # Future kickoff within 60 min -> poll every 15 min
-                        if 0 < diff <= 3600:
-                            return 900
-                        # Future kickoff — track the nearest one
-                        if diff > 0 and (nearest_future is None or diff < nearest_future):
-                            nearest_future = diff
+                    if not isinstance(kt, datetime):
+                        continue
+                    diff = (kt - now_et).total_seconds()
+                    # Game started within last 90 min, or kicks off within 3
+                    # minutes -> poll at 60s (catches pre→in within seconds).
+                    if -5400 <= diff <= 180:
+                        return 60
+                    if diff <= 0:
+                        continue
+                    if diff <= 3600:
+                        # Pre-match: 15-min polling, but wake ~2 min before kickoff.
+                        interval = min(interval, 900, max(60, int(diff - 120)))
+                    elif nearest_future is None or diff < nearest_future:
+                        nearest_future = diff
                 except Exception:
                     continue
 
         # Wake up at nearest future − 1h so pre-match 15-min polling starts on time.
-        # If the nearest kickoff is within 3 min, we'd already have returned 60 above.
         if nearest_future is not None and nearest_future < 7200:
-            wake_at = nearest_future - 3600
-            return max(10, int(wake_at))
+            interval = min(interval, max(10, int(nearest_future - 3600)))
 
-        return 1800
+        return interval
     except Exception:
         # Never let interval math kill the poller thread.
         return 60
@@ -2810,8 +2830,15 @@ def _dispatch_live_activity_starts(now_ts: float | None = None) -> int:
             title = f"Kickoff in {mins} min"
         alert = {"title": title, "body": f"{home} vs {away}"}
         stale = _la_stale_date(g)
+        # One start per push-to-start token: several device tokens of one phone
+        # (rotated tokens) must not open duplicate activities for the match.
+        started_pts: set[str] = set()
         for device in targets:
             if device in already_active:
+                mark_push_started(device, mid, competition=comp_name, sync_key=sync_k)
+                continue
+            pts_tok = push_to_start_token_for_device(device)
+            if pts_tok and pts_tok in started_pts:
                 mark_push_started(device, mid, competition=comp_name, sync_key=sync_k)
                 continue
             settings = get_device_la_settings(device)
@@ -2834,6 +2861,8 @@ def _dispatch_live_activity_starts(now_ts: float | None = None) -> int:
                     # The device won't register a per-activity token, so record
                     # its activity here (duplicate-banner suppression).
                     register_channel_activity(device, mid, sync_key=sync_k, competition=comp_name)
+                if pts_tok:
+                    started_pts.add(pts_tok)
                 queued += 1
     return queued
 

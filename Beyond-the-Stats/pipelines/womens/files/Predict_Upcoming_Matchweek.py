@@ -24,6 +24,7 @@ import os
 import sys
 import time
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import joblib
 import pandas as pd
 
@@ -89,44 +90,95 @@ def load_context():
     }
 
 
-def find_upcoming_unplayed_fixtures():
-    """Extract upcoming fixtures with no score from 2026 raw CSVs."""
+def find_upcoming_unplayed_fixtures(window_days: int = 365):
+    """Real unplayed fixtures of the current season (from Womens_Data_Manager's ESPN CSVs).
+
+    Kickoff time and ESPN match id come from the CSV, so the app, the live
+    poller and push-to-start all see the real kickoff (no invented 19:00 UTC).
+    """
+    import Womens_Data_Manager as wdm
+
+    now = datetime.now(timezone.utc)
+    horizon = now + timedelta(days=max(1, int(window_days)))
     upcoming = []
-    configs = [
-        ("United States/NWSL", os.path.join(RAW_DATA_DIR, "United States", "NWSL", "nwslstat2026.csv")),
-        ("England/Women's Super League", os.path.join(RAW_DATA_DIR, "England", "WSL", "wslstat2026.csv")),
-    ]
-    for comp, path in configs:
+    for comp, cfg in wdm.LEAGUES.items():
+        season = wdm.current_season(comp)
+        path = os.path.join(str(cfg["raw_dir"]), f"{cfg['prefix']}stat{season}.csv")
         if not os.path.exists(path):
             continue
-        df = pd.read_csv(path)
+        df = pd.read_csv(path, dtype=str).fillna("")
         for _, row in df.iterrows():
-            res = str(row.get("Res", "")).strip()
-            if res in ("H", "D", "A"):
+            if str(row.get("Res", "")).strip() in ("H", "D", "A"):
                 continue  # already played
-            d_str = str(row.get("Date", "")).strip()
-            if not d_str:
-                continue
+            kickoff_raw = str(row.get("KickoffUTC", "")).strip()
             try:
-                dt = datetime.strptime(d_str, "%d/%m/%Y")
-            except Exception:
+                kickoff = datetime.strptime(kickoff_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            # Skip fixtures that should already be over (ESPN marks them post
+            # once played) and fixtures beyond the prediction window.
+            if kickoff < now - timedelta(hours=3) or kickoff > horizon:
                 continue
             ht = str(row.get("Home", "")).strip()
             at = str(row.get("Away", "")).strip()
-            if ht and at:
-                upcoming.append({
-                    "date": dt.strftime("%Y-%m-%d"),
-                    "competition": comp,
-                    "home_team": ht,
-                    "away_team": at,
-                })
+            if not ht or not at:
+                continue
+            kickoff_et = kickoff.astimezone(ZoneInfo("America/New_York"))
+            league_dir = os.path.relpath(str(cfg["raw_dir"]), RAW_DATA_DIR).replace(os.sep, "/")
+            upcoming.append({
+                # Model keys (as trained): processed folder + season file stem.
+                "model_competition": league_dir,
+                "season_key": f"{league_dir}/{cfg['prefix']}stat{season}",
+                "date": kickoff_et.strftime("%Y-%m-%d"),
+                "kickoff_utc": kickoff.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "kickoff_et": kickoff_et.strftime("%Y-%m-%d %H:%M"),
+                "match_time": kickoff_et.strftime("%H:%M"),
+                "match_id": str(row.get("MatchId", "")).strip(),
+                "stage": str(row.get("Stage", "")).strip() or "regular",
+                "season": str(season),
+                "competition": comp,
+                "home_team": ht,
+                "away_team": at,
+            })
+    upcoming.sort(key=lambda f: f["kickoff_utc"])
     return upcoming
+
+
+def _replace_womens_upcoming_rows(rows: list[dict]) -> dict:
+    """Upsert this run's predictions and drop earlier womens rows not in it.
+
+    Fixtures that were rescheduled, cancelled or already played must not stay
+    behind in upcoming_games (the old generator's rows also lived there).
+    """
+    # Compare on prediction_key: the upsert may re-key rows that merge by sync_key.
+    keep = {str(r.get("prediction_key")) for r in rows}
+    res = store.upsert_upcoming_games(rows, source="womens")
+    removed = 0
+    with store._WRITE_LOCK:
+        conn = store._open_ready(None)
+        try:
+            stale = [
+                r["storage_key"]
+                for r in conn.execute(
+                    "SELECT storage_key, json_extract(payload_json, '$.prediction_key') AS pk "
+                    "FROM upcoming_games WHERE json_extract(payload_json, '$.source') = 'womens'"
+                ).fetchall()
+                if str(r["pk"]) not in keep
+            ]
+            if stale:
+                conn.executemany("DELETE FROM upcoming_games WHERE storage_key = ?", [(k,) for k in stale])
+                conn.commit()
+                removed = len(stale)
+        finally:
+            conn.close()
+    res["removed_stale"] = removed
+    return res
 
 
 def predict_upcoming(window_days: int = 365):
     print("=== Predicting Upcoming Womens Fixtures ===")
     ctx = load_context()
-    fixtures = find_upcoming_unplayed_fixtures()
+    fixtures = find_upcoming_unplayed_fixtures(window_days)
     print(f"Found {len(fixtures)} unplayed fixtures.")
 
     now_utc = datetime.now(timezone.utc)
@@ -144,14 +196,17 @@ def predict_upcoming(window_days: int = 365):
         skey = make_match_sync_key(m_date, comp, c_home, c_away)
         pkey = f"pred:{skey}"
 
-        # Baseline ratings & expectations
-        season_key = "2026"
-        ls = ctx["league_strength"].get(comp, 0.85)
+        # Baseline ratings & expectations. The model was trained with the
+        # processed-folder competition ("England/WSL") and path season keys;
+        # passing the app label made every WSL competition dummy zero.
+        season_key = fix["season_key"]
+        model_comp = fix["model_competition"]
+        ls = ctx["league_strength"].get(model_comp, ctx["league_strength"].get(comp, 0.85))
 
         X_match = pm.build_features(
             pm.build_match_input(ht, at),
             season_key,
-            comp,
+            model_comp,
             ls,
             ctx["overall_teams"],
             ctx["season_teams"],
@@ -218,8 +273,12 @@ def predict_upcoming(window_days: int = 365):
             "created_at_utc": now_iso,
             "match_date": m_date,
             "match_date_iso": m_date,
-            "match_datetime_utc": f"{m_date}T19:00:00Z",
-            "match_datetime_et": f"{m_date} 15:00",
+            "match_datetime_utc": fix["kickoff_utc"],
+            "match_datetime_et": fix["kickoff_et"],
+            "kickoff_utc": fix["kickoff_utc"],
+            "match_time": fix["match_time"],
+            "match_id": fix["match_id"] or None,
+            "stage": fix["stage"],
             "competition": comp,
             "home_team": ht,
             "away_team": at,
@@ -296,8 +355,9 @@ def predict_upcoming(window_days: int = 365):
     print(f"Saved {len(rows)} predictions to {PREDICTIONS_FILE}")
 
     # Upsert to SQLite
-    res = store.upsert_upcoming_games(rows, source="womens")
-    print(f"Upserted {res.get('upserted', 0)} predictions to SQLite upcoming_games.")
+    res = _replace_womens_upcoming_rows(rows)
+    print(f"Upserted {res.get('upserted', 0)} predictions to SQLite upcoming_games "
+          f"(removed {res.get('removed_stale', 0)} stale womens rows).")
 
 
 def main():

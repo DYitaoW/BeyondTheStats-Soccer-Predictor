@@ -36,7 +36,10 @@ SEASON_PATTERN = re.compile(r"^(?:[a-z0-9]+stat)(\d{4})(?:-(\d{2}))?\.csv$", re.
 MIN_START_YEAR = 2020
 
 DEFAULT_LEAGUE_STRENGTH = {
+    # Model keys = processed-data folders (what Predict_Match trains on) ...
     "United States/NWSL": 0.85,
+    "England/WSL": 0.88,
+    # ... plus the app's competition label.
     "England/Women's Super League": 0.88,
 }
 
@@ -155,10 +158,11 @@ def sort_all_seasons():
 
     for rel_path in target_files:
         full_path = os.path.join(PROCESSED_DIR, rel_path)
-        parts = rel_path.split(os.sep)
-        comp_name = "United States/NWSL" if "NWSL" in parts else "England/Women's Super League"
-        season_match = SEASON_PATTERN.match(parts[-1])
-        season_str = season_match.group(1) if season_match else "2026"
+        # Season key = processed path without ".csv" ("England/WSL/wslstat2026"),
+        # the format Predict_Match / Build_Historical_Tables parse (start year
+        # from the filename, competition from the folder). Bare years ("2026")
+        # parsed as start year -1 and merged NWSL + WSL into one season bucket.
+        season_str = rel_path.replace(os.sep, "/")[: -len(".csv")]
 
         df = pd.read_csv(full_path)
         for _, row in df.iterrows():

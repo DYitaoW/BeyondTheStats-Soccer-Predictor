@@ -30,23 +30,56 @@ from competition_rules import canonical_team_name
 OUT_CSV = str(_bts_paths.WOMENS_PROJECTED_TABLE_FILE)
 SIM_RUNS = 1000
 
-LEAGUES = [
-    {
-        "competition": "United States/NWSL",
-        "raw_csv": os.path.join(BASE_DIR, "Data", "Raw_Data", "United States", "NWSL", "nwslstat2026.csv"),
-        "total_games_per_team": 26,
-    },
-    {
-        "competition": "England/Women's Super League",
-        "raw_csv": os.path.join(BASE_DIR, "Data", "Raw_Data", "England", "WSL", "wslstat2026.csv"),
-        "total_games_per_team": 22,
-    },
-]
+def _league_configs() -> list[dict]:
+    """Current-season raw CSV of each league (written by Womens_Data_Manager from ESPN)."""
+    import Womens_Data_Manager as wdm
+
+    configs = []
+    for comp, cfg in wdm.LEAGUES.items():
+        season = wdm.current_season(comp)
+        configs.append({
+            "competition": comp,
+            "raw_csv": os.path.join(str(cfg["raw_dir"]), f"{cfg['prefix']}stat{season}.csv"),
+        })
+    return configs
 
 
-def load_league_state(raw_csv_path: str, competition: str):
-    df = pd.read_csv(raw_csv_path)
-    teams = sorted(set(df["Home"].dropna().str.strip()) | set(df["Away"].dropna().str.strip()))
+def _model_probabilities() -> dict:
+    """(home, away, date) -> (p_home, p_draw, p_away) from this run's upcoming predictions."""
+    path = str(_bts_paths.WOMENS_UPCOMING_FILE)
+    out: dict = {}
+    if not os.path.exists(path):
+        return out
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return out
+    for _, row in df.iterrows():
+        try:
+            probs = (float(row["prob_home"]), float(row["prob_draw"]), float(row["prob_away"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if any(p != p for p in probs):  # NaN
+            continue
+        tot = sum(probs)
+        if tot <= 0:
+            continue
+        if tot > 1.5:  # percentages
+            probs = tuple(p / 100.0 for p in probs)
+            tot = sum(probs)
+        key = (str(row.get("home_team", "")).strip(), str(row.get("away_team", "")).strip(),
+               str(row.get("match_date_iso", row.get("match_date", ""))).strip()[:10])
+        out[key] = tuple(p / tot for p in probs)
+    return out
+
+
+def load_league_state(raw_csv_path: str, competition: str, model_probs: dict | None = None):
+    """Current table + remaining league fixtures. Playoff games never count."""
+    df = pd.read_csv(raw_csv_path, dtype=str).fillna("")
+    if "Stage" in df.columns:
+        df = df[df["Stage"].str.strip().isin(("", "regular"))]
+    teams = sorted((set(df["Home"].str.strip()) | set(df["Away"].str.strip())) - {""})
+    model_probs = model_probs or {}
 
     standings = {
         t: {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "GD": 0, "Pts": 0}
@@ -60,8 +93,8 @@ def load_league_state(raw_csv_path: str, competition: str):
         res = str(row.get("Res", "")).strip()
 
         if res in ("H", "D", "A"):
-            hg = int(row["HG"])
-            ag = int(row["AG"])
+            hg = int(float(row["HG"]))
+            ag = int(float(row["AG"]))
             standings[ht]["P"] += 1
             standings[at]["P"] += 1
             standings[ht]["GF"] += hg
@@ -85,15 +118,14 @@ def load_league_state(raw_csv_path: str, competition: str):
                 standings[ht]["Pts"] += 1
                 standings[at]["Pts"] += 1
         else:
-            # Estimate probabilities based on Avg odds or 1/3 fallback
-            avgh = float(row.get("AvgH") or 2.2)
-            avgd = float(row.get("AvgD") or 3.2)
-            avga = float(row.get("AvgA") or 3.2)
-            raw_ph = 1.0 / max(1.05, avgh)
-            raw_pd = 1.0 / max(1.05, avgd)
-            raw_pa = 1.0 / max(1.05, avga)
-            tot = raw_ph + raw_pd + raw_pa
-            remaining_fixtures.append((ht, at, raw_ph / tot, raw_pd / tot, raw_pa / tot))
+            # Model probabilities for the fixture (Predict_Upcoming_Matchweek);
+            # neutral home-advantage prior if the fixture was not predicted.
+            try:
+                d_iso = pd.to_datetime(row["Date"], format="%d/%m/%Y").strftime("%Y-%m-%d")
+            except Exception:
+                d_iso = ""
+            ph, pd_prob, pa = model_probs.get((ht, at, d_iso), (0.44, 0.26, 0.30))
+            remaining_fixtures.append((ht, at, ph, pd_prob, pa))
 
     return teams, standings, remaining_fixtures
 
@@ -220,11 +252,16 @@ def simulate_league(competition: str, teams: list[str], current_standings: dict,
 def project_all():
     print("=== Projecting Womens League Tables ===")
     all_rows = []
-    for cfg in LEAGUES:
+    leagues = _league_configs()
+    model_probs = _model_probabilities()
+    for cfg in leagues:
         comp = cfg["competition"]
         csv_path = cfg["raw_csv"]
+        if not os.path.exists(csv_path):
+            print(f"[WARN] {comp}: missing {csv_path} (run Womens_Data_Manager.py)")
+            continue
         print(f"Simulating {comp} from {csv_path}...")
-        teams, standings, remaining = load_league_state(csv_path, comp)
+        teams, standings, remaining = load_league_state(csv_path, comp, model_probs)
         print(f"  {len(teams)} teams, {sum(s['P'] for s in standings.values()) // 2} played, {len(remaining)} remaining fixtures.")
         rows = simulate_league(comp, teams, standings, remaining, sim_runs=SIM_RUNS)
         all_rows.extend(rows)
@@ -234,13 +271,18 @@ def project_all():
     df_out.to_csv(OUT_CSV, index=False)
     print(f"Saved {len(all_rows)} rows to {OUT_CSV}")
 
-    # Rebuild league data caches
+    # Rebuild league data caches from the refreshed history. build_league_data_payload
+    # returns the existing cache file when there is one, so it never rebuilt
+    # anything here: after the switch to real ESPN data the app kept serving a
+    # stale table (1 game per team). rebuild_league_data_caches re-indexes games,
+    # drops cached real tables and rebuilds these competitions uncached.
     try:
-        from league_data import build_league_data_payload
-        for cfg in LEAGUES:
-            comp = cfg["competition"]
-            payload = build_league_data_payload(comp)
-            print(f"  Rebuilt LeagueData for {comp} (ok: {payload.get('ok')})")
+        from league_data import rebuild_league_data_caches
+
+        comps = [cfg["competition"] for cfg in leagues]
+        results = rebuild_league_data_caches(comps, clear_first=False)
+        for comp in comps:
+            print(f"  Rebuilt LeagueData for {comp} (ok: {results.get(comp)})")
     except Exception as exc:
         print(f"[WARN] Error rebuilding league data caches: {exc}")
 

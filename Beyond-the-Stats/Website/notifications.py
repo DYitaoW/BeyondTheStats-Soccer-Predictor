@@ -749,6 +749,7 @@ def init_subscriptions_from_sqlite() -> dict:
         loaded_devices = 0
         loaded_live_activities = 0
         loaded_push_to_start = 0
+        stale_pts_owners: list[tuple[str, str]] = []  # (push-to-start token, superseded owner)
         with (
             _match_notification_subscriptions_lock,
             _team_notification_subscriptions_lock,
@@ -804,6 +805,20 @@ def init_subscriptions_from_sqlite() -> dict:
                         })
                         loaded_live_activities += 1
                 elif sub_type == "la_push_to_start":
+                    # One owner per push-to-start token: keep the most recent
+                    # registration (rows from rotated device tokens are stale).
+                    pts_clean = str(token).strip()
+                    created = r.get("created_at") or ""
+                    owner = next(
+                        (d for d, info in _push_to_start_tokens.items() if info.get("token") == pts_clean),
+                        None,
+                    )
+                    if owner is not None and owner != target:
+                        if str(_push_to_start_tokens[owner].get("registered_at") or "") > created:
+                            stale_pts_owners.append((pts_clean, target))
+                            continue
+                        stale_pts_owners.append((pts_clean, owner))
+                        _push_to_start_tokens.pop(owner, None)
                     _push_to_start_tokens[target] = {
                         "token": str(token).strip(),
                         "device_token": target,
@@ -817,6 +832,15 @@ def init_subscriptions_from_sqlite() -> dict:
                     _channel_activity_devices.setdefault(target, set()).add(token)
                     if r.get("sync_key"):
                         _channel_activity_devices.setdefault(r["sync_key"], set()).add(token)
+
+        # Drop push-to-start rows of superseded owners (rotated device tokens).
+        for pts_tok, dev in dict.fromkeys(stale_pts_owners):
+            try:
+                sqlite_store.remove_notification_sub(pts_tok, "la_push_to_start", dev)
+            except Exception as exc:
+                logger.warning(f"[notifications] failed to drop stale push-to-start owner: {exc}")
+        if stale_pts_owners:
+            logger.info(f"[notifications] removed {len(set(stale_pts_owners))} stale push-to-start owner(s)")
 
         _load_la_settings_and_channels_from_sqlite()
 
@@ -1088,6 +1112,12 @@ def all_activities() -> list[dict]:
 
 # ── Push-to-start (iOS 17.2+) ─────────────────────────────────────
 
+def _is_hex_apns_token(token: str) -> bool:
+    """True for a real APNs hex token (64 hex chars classic, longer on newer iOS)."""
+    t = str(token or "")
+    return 64 <= len(t) <= 400 and len(t) % 2 == 0 and all(c in "0123456789abcdefABCDEF" for c in t)
+
+
 def register_push_to_start(
     push_to_start_token: str,
     device_token: str,
@@ -1108,6 +1138,16 @@ def register_push_to_start(
         set_token_environment(device, environment)
     with _push_to_start_lock:
         prior = _push_to_start_tokens.get(device)
+        # A push-to-start token belongs to exactly one app install. When the
+        # device token rotates (reinstall, new build) the same push-to-start
+        # token arrives with a new device token; leaving the old owner in place
+        # would send one start per owner, i.e. duplicate Live Activities.
+        stale_owners = [
+            dev for dev, info in _push_to_start_tokens.items()
+            if dev != device and info.get("token") == pts
+        ]
+        for dev in stale_owners:
+            _push_to_start_tokens.pop(dev, None)
         _push_to_start_tokens[device] = {
             "token": pts,
             "device_token": device,
@@ -1116,6 +1156,8 @@ def register_push_to_start(
     ios_device_tokens.add(device)
     if sqlite_store is not None:
         try:
+            for dev in stale_owners:
+                sqlite_store.remove_push_to_start_for_device(dev)
             if prior and prior.get("token") != pts:
                 sqlite_store.remove_push_to_start_for_device(device)
             sqlite_store.save_notification_sub(
@@ -1926,12 +1968,20 @@ def apns_send_detailed(
         # Automatic fallback between Sandbox and Production:
         # If Apple returns BadDeviceToken and caller didn't explicitly force sandbox,
         # retry against the opposite environment (Xcode Simulator/Debug vs TestFlight Beta)
+        both_envs_rejected = False
         if not resp.is_success and resp.status_code == 400 and reason == "BadDeviceToken" and not explicit_sandbox:
             alt_sandbox = not use_sandbox
             alt_base = _APNS_SANDBOX if alt_sandbox else _APNS_PRODUCTION
             alt_endpoint = f"{alt_base}/3/device/{clean_token}"
             try:
                 alt_resp = client.post(alt_endpoint, json=payload, headers=headers)
+                if not alt_resp.is_success and alt_resp.status_code == 400:
+                    try:
+                        alt_reason = (alt_resp.json() or {}).get("reason")
+                    except Exception:
+                        alt_reason = None
+                    # Only an explicit BadDeviceToken from the other environment too.
+                    both_envs_rejected = alt_reason == "BadDeviceToken"
                 if alt_resp.is_success:
                     resp = alt_resp
                     use_sandbox = alt_sandbox
@@ -1969,13 +2019,18 @@ def apns_send_detailed(
         result["hint"] = _derive_apns_hint(result["status_code"], result["reason"], live_activity, use_sandbox)
 
         if not result["ok"]:
-            # Auto-prune dead/expired tokens (APNs 410 Unregistered or fatal BadDeviceToken on real hex tokens)
+            # Auto-prune dead/expired tokens: APNs 410 Unregistered, or
+            # BadDeviceToken from BOTH environments on a real hex token. Token
+            # length varies (64 hex classic, 160 hex on current iOS builds), so
+            # any even-length hex token of 64+ chars qualifies. A single-env
+            # rejection (caller forced an environment) is never pruned — the
+            # token may simply belong to the other environment.
             is_unregistered = result["status_code"] == 410
             is_fatal_bad_token = (
                 result["status_code"] == 400
                 and result.get("reason") == "BadDeviceToken"
-                and len(clean_token) == 64
-                and all(c in "0123456789abcdefABCDEF" for c in clean_token)
+                and both_envs_rejected
+                and _is_hex_apns_token(clean_token)
             )
             if is_unregistered or is_fatal_bad_token:
                 prune_dead_token(clean_token, is_live_activity=live_activity)

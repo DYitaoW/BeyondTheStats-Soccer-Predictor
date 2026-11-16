@@ -685,6 +685,15 @@ def data_fingerprint(season_files, processed_dir=None):
             digest.update(str(stat.st_size).encode("utf-8"))
         except OSError:
             digest.update(b"missing")
+    # Features also come from the Team_Data JSONs Sort_Data writes (season keys,
+    # league strength): a change there must retrain too, not reuse the cache.
+    team_data_dir = os.path.join(os.path.dirname(processed_dir), "Team_Data")
+    for name in ("season_teams.json", "overall_teams.json", "league_strength.json", "historical_tables.json"):
+        try:
+            stat = os.stat(os.path.join(team_data_dir, name))
+            digest.update(f"{name}:{stat.st_mtime_ns}:{stat.st_size}".encode("utf-8"))
+        except OSError:
+            digest.update(f"{name}:missing".encode("utf-8"))
     return digest.hexdigest()
 
 

@@ -2804,6 +2804,11 @@ def _live_game_to_past_row(game: dict, competition: str | None = None) -> dict |
         "match_datetime_utc": str(game.get("kickoff_utc", "") or game.get("match_datetime_utc", "")).strip(),
         "source": "live_score_history",
     }
+    # Carry the stage (ESPN season slug) so league tables can exclude playoffs.
+    for key in ("stage", "round", "season_slug"):
+        value = str(game.get(key, "") or "").strip()
+        if value:
+            row[key] = value
     _enrich_json_past_row(row)
     return row
 

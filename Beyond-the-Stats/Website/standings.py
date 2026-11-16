@@ -1182,6 +1182,13 @@ def _compute_standings_from_history(comp_name, force_recompute=False):
         # Never count Open Cup / Leagues Cup / friendlies / playoffs toward
         # Supporters Shield or conference tables.
         comp_games = filter_mls_regular_season_games(comp_games)
+    if base_comp == "United States/NWSL":
+        # NWSL Shield table = regular season only (ESPN season slug
+        # "playoffs---..." -> stage "playoffs" on live and past rows).
+        comp_games = [
+            g for g in comp_games
+            if "playoff" not in f"{g.get('stage', '')} {g.get('round', '')}".lower()
+        ]
     if not comp_games:
         return None
 

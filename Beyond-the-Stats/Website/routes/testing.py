@@ -45,7 +45,9 @@ def _require_admin_token(req: Request) -> None:
         auth = req.headers.get("Authorization", "").strip()
         if auth.lower().startswith("bearer "):
             token = auth[7:].strip()
-    if not (token and config.MUTATION_API_TOKEN and token == config.MUTATION_API_TOKEN):
+    from .helpers import admin_token_matches
+
+    if not admin_token_matches(token):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 

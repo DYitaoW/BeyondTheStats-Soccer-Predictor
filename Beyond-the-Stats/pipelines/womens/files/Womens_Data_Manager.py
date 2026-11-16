@@ -1,433 +1,458 @@
-"""Womens Data Manager — Historical match data generation, raw CSV management,
-and SQLite past_games synchronization for NWSL and WSL.
+"""Womens Data Manager — real NWSL / WSL fixtures and results from ESPN.
+
+Downloads every season's schedule and results from the ESPN scoreboard API
+(``usa.nwsl``, ``eng.w.1``), month by month, and writes them as the raw season
+CSVs the rest of the womens pipeline reads (``Raw_Data/<country>/<league>/
+<prefix>stat<start year>.csv``). Completed results of the current season are
+synced into SQLite ``past_games`` (real scores only, no invented predictions).
+
+History: this module used to GENERATE every season (round-robin fixtures from
+a shuffled roster, Poisson scores from hard-coded ratings, fake odds/shots) and
+wrote those fictional results into production ``past_games``. ``main()`` now
+removes those rows (``purge_generated_rows``) so only real data remains.
+
+Raw CSV columns: Country, League, Season, Date (dd/mm/YYYY, US Eastern),
+Time (HH:MM ET), KickoffUTC (ISO-8601), MatchId (ESPN event id), Stage
+(``regular`` / ``playoffs``), Status (ESPN status name), Home, Away (canonical
+team names), HG, AG, Res (blank until played), HS, HST, AS, AST, HC, AC, HF,
+AF, HPoss, APoss, AvgH, AvgD, AvgA (no bookmaker odds on ESPN: blank).
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
-import random
-import json
-from datetime import datetime, date, timedelta, timezone
+import time
+from datetime import date, datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
 import pandas as pd
 
 _FILES_DIR = Path(__file__).resolve().parent
 _REGION_DIR = _FILES_DIR.parent
 _SP_DIR = _REGION_DIR.parent.parent
-if str(_SP_DIR) not in sys.path:
-    sys.path.insert(0, str(_SP_DIR))
-if str(_SP_DIR / "shared") not in sys.path:
-    sys.path.insert(0, str(_SP_DIR / "shared"))
-if str(_SP_DIR / "Website") not in sys.path:
-    sys.path.insert(0, str(_SP_DIR / "Website"))
+for _p in (_SP_DIR, _SP_DIR / "shared", _SP_DIR / "Website"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
-from shared import paths as _paths
-from shared import sqlite_store as store
-from competition_rules import canonical_team_name, make_match_sync_key
+from shared import sqlite_store as store  # noqa: E402
+from competition_rules import canonical_team_name, make_match_sync_key  # noqa: E402
 
 RAW_DATA_DIR = _REGION_DIR / "Data" / "Raw_Data"
-NWSL_RAW_DIR = RAW_DATA_DIR / "United States" / "NWSL"
-WSL_RAW_DIR = RAW_DATA_DIR / "England" / "WSL"
+ET = ZoneInfo("America/New_York")
+ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard"
+FIRST_SEASON = 2021
 
-# Canonical rosters
-NWSL_TEAMS = [
-    "Angel City FC",
-    "Bay FC",
-    "Chicago Red Stars",
-    "Houston Dash",
-    "Kansas City Current",
-    "NJ/NY Gotham FC",
-    "North Carolina Courage",
-    "Orlando Pride",
-    "Portland Thorns FC",
-    "Racing Louisville FC",
-    "San Diego Wave FC",
-    "Seattle Reign FC",
-    "Utah Royals FC",
-    "Washington Spirit",
-]
-
-WSL_TEAMS = [
-    "Arsenal Women",
-    "Aston Villa Women",
-    "Brighton & Hove Albion Women",
-    "Chelsea Women",
-    "Crystal Palace Women",
-    "Everton Women",
-    "Leicester City Women",
-    "Liverpool Women",
-    "Manchester City Women",
-    "Manchester United Women",
-    "Tottenham Hotspur Women",
-    "West Ham United Women",
-]
-
-# Baseline team strength ratings (attack, defense)
-NWSL_RATINGS = {
-    "Orlando Pride": (1.85, 0.75),
-    "Washington Spirit": (1.75, 0.85),
-    "NJ/NY Gotham FC": (1.65, 0.80),
-    "Kansas City Current": (1.80, 0.90),
-    "North Carolina Courage": (1.50, 0.95),
-    "Portland Thorns FC": (1.55, 1.05),
-    "Racing Louisville FC": (1.30, 1.10),
-    "Bay FC": (1.35, 1.15),
-    "Angel City FC": (1.30, 1.20),
-    "San Diego Wave FC": (1.25, 1.15),
-    "Seattle Reign FC": (1.20, 1.25),
-    "Utah Royals FC": (1.10, 1.40),
-    "Chicago Red Stars": (1.25, 1.30),
-    "Houston Dash": (1.05, 1.45),
+# ESPN states / statuses
+_COMPLETED_STATUSES = {
+    "STATUS_FULL_TIME", "STATUS_FINAL", "STATUS_FINAL_AET", "STATUS_FINAL_PEN",
+    "STATUS_END_OF_EXTRATIME", "STATUS_FINAL_ET",
+}
+_DROPPED_STATUSES = {
+    "STATUS_POSTPONED", "STATUS_CANCELED", "STATUS_CANCELLED", "STATUS_ABANDONED",
+    "STATUS_FORFEIT", "STATUS_DELAYED",
 }
 
-WSL_RATINGS = {
-    "Chelsea Women": (2.25, 0.65),
-    "Manchester City Women": (2.10, 0.70),
-    "Arsenal Women": (2.00, 0.75),
-    "Manchester United Women": (1.65, 0.85),
-    "Liverpool Women": (1.45, 1.05),
-    "Brighton & Hove Albion Women": (1.40, 1.10),
-    "Tottenham Hotspur Women": (1.35, 1.15),
-    "Aston Villa Women": (1.25, 1.25),
-    "Everton Women": (1.15, 1.30),
-    "Leicester City Women": (1.10, 1.35),
-    "West Ham United Women": (1.10, 1.40),
-    "Crystal Palace Women": (0.95, 1.55),
+LEAGUES = {
+    "United States/NWSL": {
+        "slug": "usa.nwsl",
+        "country": "USA",
+        "league": "NWSL",
+        "raw_dir": RAW_DATA_DIR / "United States" / "NWSL",
+        "prefix": "nwsl",
+        # Calendar-year season: (start month, end month) within the start year.
+        "season_months": lambda y: [(y, m) for m in range(1, 13)],
+        "season_of": lambda d: d.year,
+    },
+    "England/Women's Super League": {
+        "slug": "eng.w.1",
+        "country": "England",
+        "league": "WSL",
+        "raw_dir": RAW_DATA_DIR / "England" / "WSL",
+        "prefix": "wsl",
+        # Aug(start year) .. Jul(start year + 1); labelled by start year.
+        "season_months": lambda y: [(y, m) for m in range(8, 13)] + [(y + 1, m) for m in range(1, 8)],
+        "season_of": lambda d: d.year if d.month >= 8 else d.year - 1,
+    },
 }
 
-
-def _simulate_match_score(home_team: str, away_team: str, ratings: dict, rng: random.Random) -> tuple[int, int, int, int, int, int]:
-    h_att, h_def = ratings.get(home_team, (1.3, 1.1))
-    a_att, a_def = ratings.get(away_team, (1.2, 1.2))
-
-    # Home advantage factor ~1.15
-    lambda_home = max(0.2, (h_att * a_def * 1.12))
-    lambda_away = max(0.15, (a_att * h_def * 0.92))
-
-    import math
-    def poisson(lam):
-        L = math.exp(-lam)
-        k = 0
-        p = 1.0
-        while p > L:
-            k += 1
-            p *= rng.random()
-        return k - 1
-
-    hg = min(8, poisson(lambda_home))
-    ag = min(8, poisson(lambda_away))
-
-    # Realistic shots, SOT
-    hs = max(hg, int(lambda_home * 6.5 + rng.randint(-3, 4)))
-    as_shots = max(ag, int(lambda_away * 6.0 + rng.randint(-3, 4)))
-    hst = max(hg, min(hs, int(hs * 0.40 + rng.randint(0, 2))))
-    ast = max(ag, min(as_shots, int(as_shots * 0.38 + rng.randint(0, 2))))
-
-    return hg, ag, hs, hst, as_shots, ast
+RAW_COLUMNS = [
+    "Country", "League", "Season", "Date", "Time", "KickoffUTC", "MatchId", "Stage", "Status",
+    "Home", "Away", "HG", "AG", "Res", "HS", "HST", "AS", "AST", "HC", "AC", "HF", "AF",
+    "HPoss", "APoss", "AvgH", "AvgD", "AvgA",
+]
 
 
-def generate_season_fixtures(teams: list[str], start_date: date, interval_days: int = 7, seed: int = 42) -> list[tuple[date, str, str]]:
-    rng = random.Random(seed)
-    n = len(teams)
-    t = list(teams)
-    rng.shuffle(t)
-
-    fixtures = []
-    # Double round-robin
-    # First half
-    rounds = []
-    team_list = list(t)
-    for r in range(n - 1):
-        round_matches = []
-        for i in range(n // 2):
-            home = team_list[i]
-            away = team_list[n - 1 - i]
-            if (r + i) % 2 == 1:
-                home, away = away, home
-            round_matches.append((home, away))
-        rounds.append(round_matches)
-        team_list = [team_list[0]] + [team_list[-1]] + team_list[1:-1]
-
-    # Second half (reverse home/away)
-    second_half = []
-    for r in rounds:
-        second_half.append([(away, home) for home, away in r])
-
-    all_rounds = rounds + second_half
-    cur_date = start_date
-    for r in all_rounds:
-        for home, away in r:
-            fixtures.append((cur_date, home, away))
-        cur_date += timedelta(days=interval_days)
-
-    return fixtures
+def current_season(competition: str, today: date | None = None) -> int:
+    today = today or datetime.now(ET).date()
+    return LEAGUES[competition]["season_of"](today)
 
 
-def build_nwsl_data():
-    NWSL_RAW_DIR.mkdir(parents=True, exist_ok=True)
-    rng = random.Random(2024)
+def _http_get_json(client, url: str, params: dict, retries: int = 3) -> dict:
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            resp = client.get(url, params=params)
+            if resp.status_code == 200:
+                return resp.json() or {}
+            last_exc = RuntimeError(f"HTTP {resp.status_code} for {url} {params}")
+        except Exception as exc:  # network hiccup
+            last_exc = exc
+        time.sleep(1.5 * (attempt + 1))
+    raise RuntimeError(f"ESPN request failed: {last_exc}")
 
-    seasons = [
-        (2024, date(2024, 3, 16), 182, 182),
-        (2025, date(2025, 3, 15), 182, 182),
-        (2026, date(2026, 6, 28), 182, 140), # 140 played up to Nov 8, 42 upcoming from Nov 15
+
+def fetch_season_events(competition: str, season: int, client=None) -> list[dict]:
+    """All ESPN events of one season (deduplicated by event id)."""
+    import httpx
+
+    cfg = LEAGUES[competition]
+    own_client = client is None
+    client = client or httpx.Client(timeout=30, headers={"User-Agent": "BeyondTheStats/1.0"})
+    events: dict[str, dict] = {}
+    try:
+        for year, month in cfg["season_months"](season):
+            payload = _http_get_json(
+                client, ESPN_SCOREBOARD.format(slug=cfg["slug"]),
+                {"dates": f"{year}{month:02d}", "limit": 1000},
+            )
+            for ev in payload.get("events") or []:
+                if ev.get("id"):
+                    events[str(ev["id"])] = ev
+    finally:
+        if own_client:
+            client.close()
+    # Keep only events ESPN files under this season (a month query can return
+    # the neighbouring season's games around the turn of the season).
+    out = []
+    for ev in events.values():
+        try:
+            kickoff = datetime.fromisoformat(str(ev.get("date", "")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if cfg["season_of"](kickoff.astimezone(ET).date()) == season:
+            out.append(ev)
+    out.sort(key=lambda e: (e.get("date") or "", str(e.get("id"))))
+    return out
+
+
+def _stat(competitor: dict, name: str):
+    for s in competitor.get("statistics") or []:
+        if s.get("name") == name:
+            val = s.get("displayValue", s.get("value"))
+            try:
+                return float(val) if "." in str(val) else int(val)
+            except (TypeError, ValueError):
+                return ""
+    return ""
+
+
+def _canonical(name: str, competition: str) -> str:
+    return canonical_team_name(name, competition) or str(name or "").strip()
+
+
+def event_to_raw_row(ev: dict, competition: str, season: int) -> dict | None:
+    """One raw CSV row for an ESPN event (None for postponed / cancelled games)."""
+    cfg = LEAGUES[competition]
+    comp = (ev.get("competitions") or [{}])[0]
+    status = ((ev.get("status") or {}).get("type") or {})
+    status_name = str(status.get("name") or "")
+    state = str(status.get("state") or "")
+    if status_name in _DROPPED_STATUSES:
+        return None
+    competitors = comp.get("competitors") or []
+    home = next((c for c in competitors if c.get("homeAway") == "home"), None)
+    away = next((c for c in competitors if c.get("homeAway") == "away"), None)
+    if not home or not away:
+        return None
+    kickoff = datetime.fromisoformat(str(ev.get("date", "")).replace("Z", "+00:00")).astimezone(timezone.utc)
+    kickoff_et = kickoff.astimezone(ET)
+    completed = state == "post" and (status_name in _COMPLETED_STATUSES or bool(status.get("completed")))
+    if state == "post" and not completed:
+        return None
+    slug = str((ev.get("season") or {}).get("slug") or "")
+    # NWSL slugs: "regular-season", "playoffs---quarterfinals", ...; WSL: "2026-27-english-womens-super-league".
+    stage = "playoffs" if "playoff" in slug else "regular"
+
+    row = {
+        "Country": cfg["country"],
+        "League": cfg["league"],
+        "Season": str(season),
+        "Date": kickoff_et.strftime("%d/%m/%Y"),
+        "Time": kickoff_et.strftime("%H:%M"),
+        "KickoffUTC": kickoff.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "MatchId": str(ev.get("id") or ""),
+        "Stage": stage,
+        "Status": status_name,
+        "Home": _canonical(home["team"].get("displayName", ""), competition),
+        "Away": _canonical(away["team"].get("displayName", ""), competition),
+        **{k: "" for k in RAW_COLUMNS if k not in (
+            "Country", "League", "Season", "Date", "Time", "KickoffUTC", "MatchId", "Stage", "Status", "Home", "Away")},
+    }
+    if completed:
+        try:
+            hg, ag = int(home.get("score")), int(away.get("score"))
+        except (TypeError, ValueError):
+            return None
+        row.update({
+            "HG": hg, "AG": ag, "Res": "H" if hg > ag else ("A" if ag > hg else "D"),
+            "HS": _stat(home, "totalShots"), "HST": _stat(home, "shotsOnTarget"),
+            "AS": _stat(away, "totalShots"), "AST": _stat(away, "shotsOnTarget"),
+            "HC": _stat(home, "wonCorners"), "AC": _stat(away, "wonCorners"),
+            "HF": _stat(home, "foulsCommitted"), "AF": _stat(away, "foulsCommitted"),
+            "HPoss": _stat(home, "possessionPct"), "APoss": _stat(away, "possessionPct"),
+        })
+    return row
+
+
+def _atomic_write_csv(df: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    df.to_csv(tmp, index=False)
+    os.replace(tmp, path)
+
+
+def build_league_data(competition: str, first_season: int = FIRST_SEASON, client=None) -> dict:
+    """Download every season of a league and write its raw CSVs.
+
+    Returns {"seasons": {season: rows}, "current": season, "current_rows": [...]}.
+    A failed or empty CURRENT season raises (never fall back to stale data);
+    an empty past season is skipped.
+    """
+    cfg = LEAGUES[competition]
+    current = current_season(competition)
+    out: dict = {"seasons": {}, "current": current, "current_rows": []}
+    for season in range(first_season, current + 1):
+        try:
+            events = fetch_season_events(competition, season, client=client)
+        except Exception as exc:
+            if season == current:
+                raise
+            print(f"[Womens_Data_Manager] {competition} {season}: fetch failed ({exc}); skipped")
+            continue
+        rows = [r for r in (event_to_raw_row(ev, competition, season) for ev in events) if r]
+        if not rows:
+            if season == current:
+                raise RuntimeError(f"{competition}: ESPN returned no fixtures for current season {season}")
+            continue
+        df = pd.DataFrame(rows, columns=RAW_COLUMNS)
+        path = cfg["raw_dir"] / f"{cfg['prefix']}stat{season}.csv"
+        _atomic_write_csv(df, path)
+        played = int((df["Res"] != "").sum())
+        print(f"[Womens_Data_Manager] {competition} {season}: {len(df)} fixtures ({played} played) -> {path}")
+        out["seasons"][season] = len(df)
+        if season == current:
+            out["current_rows"] = rows
+    # Remove raw/processed files of seasons ESPN does not have (old generated files).
+    keep = {f"{cfg['prefix']}stat{s}.csv" for s in out["seasons"]}
+    for folder in (cfg["raw_dir"], Path(str(cfg["raw_dir"]).replace("Raw_Data", "Processed_Data"))):
+        if folder.is_dir():
+            for f in folder.glob(f"{cfg['prefix']}stat*.csv"):
+                if f.name not in keep:
+                    f.unlink()
+                    print(f"[Womens_Data_Manager] removed stale {f}")
+    return out
+
+
+def raw_row_to_past_row(row: dict, competition: str) -> dict:
+    date_iso = datetime.strptime(row["Date"], "%d/%m/%Y").strftime("%Y-%m-%d")
+    home, away = row["Home"], row["Away"]
+    return {
+        "match_id": row["MatchId"],
+        "match_date": date_iso,
+        "match_date_iso": date_iso,
+        "match_datetime_utc": row["KickoffUTC"],
+        "competition": competition,
+        "home_team": home,
+        "away_team": away,
+        "canonical_home_team": home,
+        "canonical_away_team": away,
+        "sync_key": make_match_sync_key(date_iso, competition, home, away),
+        "actual_home_goals": int(row["HG"]),
+        "actual_away_goals": int(row["AG"]),
+        "actual_result": row["Res"],
+        "stage": row.get("Stage", "regular"),
+        "has_prediction": False,
+        "schedule_only": "1",
+        "prediction_quality": "no_prediction",
+        "source": "womens_espn",
+        "settled_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _existing_past_match_ids(competition_aliases: set[str]) -> set[str]:
+    conn = store._open_ready(None)
+    try:
+        q = ",".join("?" * len(competition_aliases))
+        rows = conn.execute(
+            f"SELECT json_extract(payload_json, '$.match_id') AS mid FROM past_games "
+            f"WHERE competition IN ({q})", tuple(competition_aliases),
+        ).fetchall()
+    finally:
+        conn.close()
+    return {str(r["mid"]) for r in rows if r["mid"]}
+
+
+def sync_current_season_results(competition: str, rows: list[dict]) -> int:
+    """Upsert the current season's completed real results into past_games.
+
+    Games the live poller already wrote (same ESPN match_id, any competition
+    label) are left alone so its pre-match prediction stays attached.
+    """
+    import config
+
+    aliases = set(config.competition_live_aliases(competition)) | {competition}
+    resolved = config.resolve_live_competition(competition)
+    if resolved:
+        aliases |= set(config.competition_live_aliases(resolved)) | {resolved}
+    existing = _existing_past_match_ids(aliases)
+    past_rows = [
+        raw_row_to_past_row(r, competition)
+        for r in rows
+        if r.get("Res") in ("H", "D", "A") and str(r.get("MatchId")) not in existing
     ]
-
-    all_completed_games = []
-    upcoming_fixtures = []
-
-    for season_year, start_dt, total_matches, completed_matches in seasons:
-        fixtures = generate_season_fixtures(NWSL_TEAMS, start_dt, interval_days=7, seed=season_year)
-        rows = []
-        for idx, (match_dt, home, away) in enumerate(fixtures):
-            is_completed = idx < completed_matches
-            if is_completed:
-                hg, ag, hs, hst, as_shots, ast = _simulate_match_score(home, away, NWSL_RATINGS, rng)
-                res = "H" if hg > ag else ("A" if ag > hg else "D")
-            else:
-                hg, ag, hs, hst, as_shots, ast = "", "", "", "", "", ""
-                res = ""
-
-            # Standard odds based on ratings
-            h_att, h_def = NWSL_RATINGS.get(home, (1.3, 1.1))
-            a_att, a_def = NWSL_RATINGS.get(away, (1.2, 1.2))
-            prob_raw_h = (h_att / a_def) * 1.2
-            prob_raw_a = (a_att / h_def)
-            prob_tot = prob_raw_h + prob_raw_a + 0.9
-            avgh = round(1.05 / (prob_raw_h / prob_tot), 2)
-            avga = round(1.05 / (prob_raw_a / prob_tot), 2)
-            avgd = round(1.05 / (0.9 / prob_tot), 2)
-
-            date_str = match_dt.strftime("%d/%m/%Y")
-            row = {
-                "Country": "USA",
-                "League": "NWSL",
-                "Season": str(season_year),
-                "Date": date_str,
-                "Time": "19:30",
-                "Home": home,
-                "Away": away,
-                "HG": hg,
-                "AG": ag,
-                "Res": res,
-                "HS": hs,
-                "HST": hst,
-                "AS": as_shots,
-                "AST": ast,
-                "AvgH": avgh,
-                "AvgD": avgd,
-                "AvgA": avga,
-                "SeasonInt": season_year,
-            }
-            rows.append(row)
-
-            if is_completed:
-                all_completed_games.append({
-                    "date": match_dt.isoformat(),
-                    "competition": "United States/NWSL",
-                    "home_team": home,
-                    "away_team": away,
-                    "hg": int(hg),
-                    "ag": int(ag),
-                    "res": res,
-                    "season": season_year,
-                    "avgh": avgh,
-                    "avgd": avgd,
-                    "avga": avga,
-                    "hs": hs,
-                    "hst": hst,
-                    "as": as_shots,
-                    "ast": ast,
-                })
-            elif season_year == 2026:
-                upcoming_fixtures.append({
-                    "date": match_dt.isoformat(),
-                    "competition": "United States/NWSL",
-                    "home_team": home,
-                    "away_team": away,
-                    "season": season_year,
-                })
-
-        df = pd.DataFrame(rows)
-        out_csv = NWSL_RAW_DIR / f"nwslstat{season_year}.csv"
-        df.to_csv(out_csv, index=False)
-        print(f"[Womens_Data_Manager] Wrote {len(df)} rows to {out_csv}")
-
-    return all_completed_games, upcoming_fixtures
-
-
-def build_wsl_data():
-    WSL_RAW_DIR.mkdir(parents=True, exist_ok=True)
-    rng = random.Random(2025)
-
-    seasons = [
-        (2024, date(2023, 10, 1), 132, 132), # 2023-2024
-        (2025, date(2024, 9, 21), 132, 132), # 2024-2025
-        (2026, date(2026, 8, 9), 132, 84),   # 84 played up to Nov 8, 48 upcoming from Nov 15
-    ]
-
-    all_completed_games = []
-    upcoming_fixtures = []
-
-    for season_year, start_dt, total_matches, completed_matches in seasons:
-        fixtures = generate_season_fixtures(WSL_TEAMS, start_dt, interval_days=7, seed=season_year)
-        rows = []
-        for idx, (match_dt, home, away) in enumerate(fixtures):
-            is_completed = idx < completed_matches
-            if is_completed:
-                hg, ag, hs, hst, as_shots, ast = _simulate_match_score(home, away, WSL_RATINGS, rng)
-                res = "H" if hg > ag else ("A" if ag > hg else "D")
-            else:
-                hg, ag, hs, hst, as_shots, ast = "", "", "", "", "", ""
-                res = ""
-
-            h_att, h_def = WSL_RATINGS.get(home, (1.3, 1.1))
-            a_att, a_def = WSL_RATINGS.get(away, (1.2, 1.2))
-            prob_raw_h = (h_att / a_def) * 1.15
-            prob_raw_a = (a_att / h_def)
-            prob_tot = prob_raw_h + prob_raw_a + 0.85
-            avgh = round(1.05 / (prob_raw_h / prob_tot), 2)
-            avga = round(1.05 / (prob_raw_a / prob_tot), 2)
-            avgd = round(1.05 / (0.85 / prob_tot), 2)
-
-            date_str = match_dt.strftime("%d/%m/%Y")
-            row = {
-                "Country": "England",
-                "League": "WSL",
-                "Season": str(season_year),
-                "Date": date_str,
-                "Time": "14:00",
-                "Home": home,
-                "Away": away,
-                "HG": hg,
-                "AG": ag,
-                "Res": res,
-                "HS": hs,
-                "HST": hst,
-                "AS": as_shots,
-                "AST": ast,
-                "AvgH": avgh,
-                "AvgD": avgd,
-                "AvgA": avga,
-                "SeasonInt": season_year,
-            }
-            rows.append(row)
-
-            if is_completed:
-                all_completed_games.append({
-                    "date": match_dt.isoformat(),
-                    "competition": "England/Women's Super League",
-                    "home_team": home,
-                    "away_team": away,
-                    "hg": int(hg),
-                    "ag": int(ag),
-                    "res": res,
-                    "season": season_year,
-                    "avgh": avgh,
-                    "avgd": avgd,
-                    "avga": avga,
-                    "hs": hs,
-                    "hst": hst,
-                    "as": as_shots,
-                    "ast": ast,
-                })
-            elif season_year == 2026:
-                upcoming_fixtures.append({
-                    "date": match_dt.isoformat(),
-                    "competition": "England/Women's Super League",
-                    "home_team": home,
-                    "away_team": away,
-                    "season": season_year,
-                })
-
-        df = pd.DataFrame(rows)
-        out_csv = WSL_RAW_DIR / f"wslstat{season_year}.csv"
-        df.to_csv(out_csv, index=False)
-        print(f"[Womens_Data_Manager] Wrote {len(df)} rows to {out_csv}")
-
-    return all_completed_games, upcoming_fixtures
-
-
-def sync_historical_to_sqlite(all_completed_games: list[dict]):
-    """Upsert completed matches into SQLite past_games with full attributes."""
-    store.ensure_store()
-    past_rows = []
-    now_iso = datetime.now(timezone.utc).isoformat()
-
-    for g in all_completed_games:
-        dt_str = g["date"]
-        comp = g["competition"]
-        ht = g["home_team"]
-        at = g["away_team"]
-        hg = g["hg"]
-        ag = g["ag"]
-        res = g["res"]
-
-        c_home = canonical_team_name(ht, comp) or ht
-        c_away = canonical_team_name(at, comp) or at
-        skey = make_match_sync_key(dt_str, comp, c_home, c_away)
-
-        # Baseline probabilities
-        avgh = g.get("avgh", 2.0)
-        avgd = g.get("avgd", 3.2)
-        avga = g.get("avga", 3.5)
-        raw_ph = 1.0 / avgh
-        raw_pd = 1.0 / avgd
-        raw_pa = 1.0 / avga
-        tot = raw_ph + raw_pd + raw_pa
-        ph = round(raw_ph / tot, 3)
-        pd_prob = round(raw_pd / tot, 3)
-        pa = round(raw_pa / tot, 3)
-
-        pred_res = "H" if ph >= max(pd_prob, pa) else ("A" if pa >= max(ph, pd_prob) else "D")
-        is_corr = (pred_res == res)
-
-        row = {
-            "match_date": dt_str,
-            "match_date_iso": dt_str,
-            "match_datetime_utc": f"{dt_str}T19:00:00Z",
-            "match_datetime_et": f"{dt_str} 15:00",
-            "competition": comp,
-            "home_team": ht,
-            "away_team": at,
-            "canonical_home_team": c_home,
-            "canonical_away_team": c_away,
-            "sync_key": skey,
-            "prediction_key": f"pred:{skey}",
-            "schedule_only": "0",
-            "prediction_quality": "good",
-            "has_prediction": True,
-            "predicted_result": pred_res,
-            "actual_home_goals": hg,
-            "actual_away_goals": ag,
-            "actual_result": res,
-            "is_correct": 1 if is_corr else 0,
-            "prob_home": ph,
-            "prob_draw": pd_prob,
-            "prob_away": pa,
-            "prob_home_text": f"{round(ph * 100, 1)}%",
-            "prob_draw_text": f"{round(pd_prob * 100, 1)}%",
-            "prob_away_text": f"{round(pa * 100, 1)}%",
-            "pred_home_goals": round(hg * 0.8 + 0.3, 1),
-            "pred_away_goals": round(ag * 0.8 + 0.3, 1),
-            "source": "womens",
-            "settled_at_utc": now_iso,
-        }
-        past_rows.append(row)
-
+    if not past_rows:
+        return 0
     res = store.upsert_past_games(past_rows)
-    print(f"[Womens_Data_Manager] Upserted {res.get('upserted', 0)} matches into SQLite past_games.")
+    return int(res.get("upserted", len(past_rows)) or 0)
 
 
-def main():
-    print("=== Womens Data Manager: Generating historical data ===")
-    nwsl_completed, nwsl_upcoming = build_nwsl_data()
-    wsl_completed, wsl_upcoming = build_wsl_data()
+def mark_playoff_rows(rows: list[dict]) -> int:
+    """Stamp ``stage = 'playoffs'`` on stored copies of playoff games.
 
-    all_completed = nwsl_completed + wsl_completed
-    print(f"Total completed matches generated: {len(all_completed)}")
-    sync_historical_to_sqlite(all_completed)
+    The live poller writes finals before it knew the ESPN season slug, so its
+    past_games / live_score_history rows have no stage; league tables (NWSL
+    Shield) must not count them.
+    """
+    playoff_ids = sorted({str(r["MatchId"]) for r in rows if r.get("Stage") == "playoffs" and r.get("MatchId")})
+    if not playoff_ids:
+        return 0
+    marked = 0
+    q = ",".join("?" * len(playoff_ids))
+    with store._WRITE_LOCK:
+        conn = store._open_ready(None)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for table, id_expr in (
+                ("past_games", "json_extract(payload_json, '$.match_id')"),
+                ("live_score_history", "match_id"),
+            ):
+                marked += conn.execute(
+                    f"UPDATE {table} SET payload_json = json_set(payload_json, '$.stage', 'playoffs') "
+                    f"WHERE {id_expr} IN ({q}) "
+                    "AND coalesce(json_extract(payload_json, '$.stage'), '') != 'playoffs'",
+                    tuple(playoff_ids),
+                ).rowcount
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    return marked
+
+
+_WOMENS_COMPETITION_LABELS = (
+    "United States/NWSL", "North America/NWSL", "England/Women's Super League", "England/WSL",
+)
+
+
+def purge_generated_rows() -> dict:
+    """Delete rows produced by the old synthetic generator.
+
+    Generated past_games rows have ``source = 'womens'`` (real ones written
+    here use ``womens_espn``); generated upcoming rows have ``source =
+    'womens'`` and no ``kickoff_utc``. Idempotent: a no-op once clean.
+
+    past_games: generated results; upcoming_games: predictions for generated
+    fixtures (Predict_Upcoming_Matchweek rewrites the real ones);
+    league_projection_history: projections computed from generated tables
+    (only cleared in the run that finds generated results, i.e. once).
+    """
+    removed = {"past_games": 0, "upcoming_games": 0, "league_projection_history": 0}
+    with store._WRITE_LOCK:
+        conn = store._open_ready(None)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            removed["past_games"] = conn.execute(
+                "DELETE FROM past_games WHERE json_extract(payload_json, '$.source') = 'womens'"
+            ).rowcount
+            # Real predictions keep source 'womens' (the mode label the API
+            # reads) but always carry the ESPN kickoff_utc; generated ones never did.
+            removed["upcoming_games"] = conn.execute(
+                "DELETE FROM upcoming_games WHERE json_extract(payload_json, '$.source') = 'womens' "
+                "AND coalesce(json_extract(payload_json, '$.kickoff_utc'), '') = ''"
+            ).rowcount
+            q = ",".join("?" * len(_WOMENS_COMPETITION_LABELS))
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if removed["past_games"] and "league_projection_history" in tables:
+                removed["league_projection_history"] = conn.execute(
+                    f"DELETE FROM league_projection_history WHERE competition IN ({q})",
+                    _WOMENS_COMPETITION_LABELS,
+                ).rowcount
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    return removed
+
+
+def update_roster_seeds(rosters: dict[str, list[str]]) -> None:
+    """Keep the app's team catalog rosters equal to the real current season."""
+    import config
+
+    for path in (config.LEAGUE_TEAMS_FILE, config.CURRENT_SEASON_TEAMS_FILE):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                raw_text = fh.read()
+            data = json.loads(raw_text)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        changed = False
+        for comp, teams in rosters.items():
+            if teams and data.get(comp) != teams:
+                data[comp] = teams
+                changed = True
+        if changed:
+            tmp = f"{path}.tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=2, ensure_ascii=False)
+                if raw_text.endswith("\n"):
+                    fh.write("\n")
+            os.replace(tmp, path)
+            print(f"[Womens_Data_Manager] updated rosters in {path}")
+
+
+def main(first_season: int = FIRST_SEASON) -> dict:
+    print("=== Womens Data Manager: downloading real NWSL / WSL data from ESPN ===")
+    store.ensure_store()
+    purged = purge_generated_rows()
+    if any(purged.values()):
+        print(f"[Womens_Data_Manager] removed generated rows: {purged}")
+
+    summary: dict = {"purged": purged, "leagues": {}}
+    rosters: dict[str, list[str]] = {}
+    for competition in LEAGUES:
+        result = build_league_data(competition, first_season=first_season)
+        synced = sync_current_season_results(competition, result["current_rows"])
+        marked = mark_playoff_rows(result["current_rows"])
+        if marked:
+            print(f"[Womens_Data_Manager] {competition}: marked {marked} stored playoff rows")
+        regular = [r for r in result["current_rows"] if r.get("Stage") == "regular"]
+        rosters[competition] = sorted({r["Home"] for r in regular} | {r["Away"] for r in regular})
+        summary["leagues"][competition] = {
+            "seasons": result["seasons"], "current": result["current"],
+            "past_games_synced": synced, "teams": len(rosters[competition]),
+        }
+        print(f"[Womens_Data_Manager] {competition}: synced {synced} results; {len(rosters[competition])} teams")
+    update_roster_seeds(rosters)
     print("=== Womens Data Manager complete ===")
+    return summary
 
 
 if __name__ == "__main__":

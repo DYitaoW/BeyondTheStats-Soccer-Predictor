@@ -102,6 +102,24 @@ _ALL_GAMES_CACHE_TIME: float = 0
 _ALL_GAMES_CACHE_TTL: float = 300  # seconds
 
 
+
+def _score_int(row: dict, primary: str, fallback: str) -> int:
+    """Goals from ``row[primary]``, else ``row[fallback]``.
+
+    Raises TypeError/ValueError when neither is a number. A score of 0 is a
+    real value: the old ``row.get(primary) or row.get(fallback)`` turned 0 into
+    the (usually missing) fallback and silently dropped every past game in
+    which a side failed to score from league tables.
+    """
+    for key in (primary, fallback):
+        value = row.get(key)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        if isinstance(value, float) and value != value:  # NaN
+            continue
+        return int(float(value))
+    raise ValueError(f"no score in {primary}/{fallback}")
+
 def _batch_load_all_games() -> dict[str, list[dict]]:
     """Load all completed games from every source in a single pass.
 
@@ -165,8 +183,8 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
             if not comp:
                 continue
             try:
-                hs = int(float(g.get("actual_home_goals") or g.get("home_score")))
-                aws = int(float(g.get("actual_away_goals") or g.get("away_score")))
+                hs = _score_int(g, "actual_home_goals", "home_score")
+                aws = _score_int(g, "actual_away_goals", "away_score")
             except (TypeError, ValueError):
                 continue
             _append_game(by_comp[comp], seen_by_comp[comp], {
@@ -1130,8 +1148,8 @@ def _past_games(comp_name: str) -> list[dict]:
         if db_rows:
             for g in db_rows:
                 try:
-                    hs = int(float(g.get("actual_home_goals") or g.get("home_score")))
-                    aws = int(float(g.get("actual_away_goals") or g.get("away_score")))
+                    hs = _score_int(g, "actual_home_goals", "home_score")
+                    aws = _score_int(g, "actual_away_goals", "away_score")
                 except (TypeError, ValueError):
                     continue
                 rows.append({
@@ -1165,8 +1183,8 @@ def _past_games(comp_name: str) -> list[dict]:
         if str(g.get("competition", "")).strip() != comp_name:
             continue
         try:
-            hs = int(float(g.get("actual_home_goals") or g.get("home_score")))
-            aws = int(float(g.get("actual_away_goals") or g.get("away_score")))
+            hs = _score_int(g, "actual_home_goals", "home_score")
+            aws = _score_int(g, "actual_away_goals", "away_score")
         except (TypeError, ValueError):
             continue
         rows.append({
@@ -2422,7 +2440,8 @@ LEAGUE_QUALIFICATION_ZONES: dict[str, list[dict]] = {
     "England/Women's Super League": [
         {"name": "Champions League (Group Stage)", "short_name": "UWCL", "positions": [1], "color": "#1976D2", "type": "champions_league"},
         {"name": "Champions League (Qualifiers)", "short_name": "UWCL Q", "positions": [2, 3], "color": "#42A5F5", "type": "champions_league_qual"},
-        {"name": "Relegation", "short_name": "Rel", "positions": [12], "color": "#D32F2F", "type": "relegation"},
+        # 14 clubs from 2026-27 (was 12): bottom club relegated.
+        {"name": "Relegation", "short_name": "Rel", "positions": [14], "color": "#D32F2F", "type": "relegation"},
     ],
     "Mexico/Liga MX": [
         {"name": "Liguilla (Quarterfinals)", "short_name": "Liguilla", "positions": [1, 2, 3, 4, 5, 6], "color": "#1976D2", "type": "playoffs"},
