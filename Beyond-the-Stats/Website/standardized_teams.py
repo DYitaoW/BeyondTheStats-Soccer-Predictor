@@ -59,6 +59,31 @@ def generate_team_slug(name: str) -> str:
     return clean or "unknown-team"
 
 
+# ── Women's competitions ─────────────────────────────────────────
+# Women's sides often share a bare club name with the men's team ("Arsenal",
+# "Aston Villa", "Birmingham" in the WSL). Inside a women's competition a team
+# must never resolve to the men's club identity (wrong logo/id, and team
+# notification follows would cross between the men's and women's teams).
+_WOMENS_COMPETITION_RE = re.compile(
+    r"women|\bwsl\b|nwsl|\bw\.\d|feminin|femenil|frauen|\bliga f\b|ladies|uwcl",
+    re.IGNORECASE,
+)
+_WOMENS_TEAM_NAME_RE = re.compile(
+    r"\b(women|womens|women's|ladies|wfc|w\.f\.c\.?|femenil|feminino|feminine|f[eé]minines?|frauen|lionesses)\b",
+    re.IGNORECASE,
+)
+
+
+def is_womens_competition(competition: str) -> bool:
+    """True for women's competitions (WSL, NWSL, ESPN ``*.w.1`` slugs, ...)."""
+    return bool(competition) and bool(_WOMENS_COMPETITION_RE.search(str(competition)))
+
+
+def has_womens_team_marker(name: str) -> bool:
+    """True when a team name itself says it is a women's side ("Arsenal Women", "Chelsea FC Women")."""
+    return bool(name) and bool(_WOMENS_TEAM_NAME_RE.search(str(name)))
+
+
 # Generic club descriptor words to strip when creating short names
 _CLUB_DESCRIPTOR_PATTERNS = [
     r"\bF\.?C\.?\b",
@@ -201,6 +226,10 @@ class StandardizedTeamManager:
         self._by_abbr: dict[str, list[dict]] = {}
         self._teams: list[dict] = []
         self._loaded_path: str = ""
+        # Women's-side resolutions live apart from ``_by_name`` so a women's
+        # fallback can never be returned for the men's club (and vice versa).
+        self._womens_by_name: dict[str, dict] = {}
+        self._mens_name_keys: Optional[set[str]] = None
         self._load_mappings()
 
     @classmethod
@@ -300,6 +329,10 @@ class StandardizedTeamManager:
         if not text:
             return generate_fallback_team_info("Unknown", competition)
 
+        # 0. Women's sides: resolved in their own namespace (never a men's club).
+        if is_womens_competition(competition) or has_womens_team_marker(text):
+            return self._resolve_womens_team_info(text, competition)
+
         # 1. Exact lookup by ID
         slug_key = generate_team_slug(text)
         if slug_key in self._by_id:
@@ -350,6 +383,101 @@ class StandardizedTeamManager:
         self._by_name[norm_key] = fallback
         return dict(fallback)
 
+    def _is_mens_club_name(self, name: str) -> bool:
+        """True when ``name`` is a known men's club (standardized mapping or a men's roster)."""
+        key = normalize_lookup_key(name)
+        if not key:
+            return False
+        if self._mens_name_keys is None:
+            keys: set[str] = set()
+            for entry in self._teams:
+                if is_womens_competition(entry.get("league", "")):
+                    continue
+                for n in [entry.get("full_name"), entry.get("short_name"), entry.get("id"), *(entry.get("aliases") or [])]:
+                    k = normalize_lookup_key(n or "")
+                    if k:
+                        keys.add(k)
+            try:
+                import config as _config
+                for path in (_config.LEAGUE_TEAMS_FILE, _config.CURRENT_SEASON_TEAMS_FILE):
+                    try:
+                        with open(path, "r", encoding="utf-8") as fh:
+                            roster = json.load(fh)
+                    except Exception:
+                        continue
+                    for comp, teams in (roster.items() if isinstance(roster, dict) else []):
+                        if is_womens_competition(comp) or not isinstance(teams, list):
+                            continue
+                        keys.update(normalize_lookup_key(str(t)) for t in teams if t)
+            except Exception:
+                pass
+            self._mens_name_keys = keys
+        return key in self._mens_name_keys
+
+    @staticmethod
+    def _womens_canonical_name(text: str, competition: str = "") -> tuple[str, str]:
+        """(canonical women's team name, its women's competition) from the alias tables.
+
+        ESPN slugs ("usa.nwsl", "eng.w.1") are mapped back to the competition
+        name first. Without a women's competition (e.g. an app subscribing with
+        just "Chelsea FC Women"), every women's alias table is searched.
+        """
+        comp = str(competition or "").strip()
+        try:
+            import config as _config
+            if comp and "/" not in comp:
+                for name, slug in getattr(_config, "LIVE_SCORE_COMPETITIONS", {}).items():
+                    if str(slug).lower() == comp.lower():
+                        comp = name
+                        break
+        except Exception:
+            pass
+        canon = text
+        league = comp if is_womens_competition(comp) else ""
+        try:
+            from competition_rules import _load_display_mapping, canonical_team_name
+            if is_womens_competition(comp):
+                canon = canonical_team_name(text, comp) or text
+            else:
+                wanted = normalize_lookup_key(text)
+                for comp_name, aliases in (_load_display_mapping() or {}).items():
+                    if not is_womens_competition(comp_name) or not isinstance(aliases, dict):
+                        continue
+                    hit = next((v for k, v in aliases.items() if normalize_lookup_key(k) == wanted), None)
+                    if hit:
+                        canon, league = hit, comp_name
+                        break
+        except Exception:
+            canon = text
+        return " ".join(str(canon).split()), league
+
+    def _resolve_womens_team_info(self, text: str, competition: str = "") -> dict:
+        """Resolve a team inside a women's competition (or a name marked as a women's side).
+
+        1. Canonicalize within the women's competition ("Arsenal" -> "Arsenal
+           Women", "Gotham FC" -> "NJ/NY Gotham FC").
+        2. A bare name that is still a men's club gets the " Women" suffix, so
+           e.g. an unmapped "Birmingham" never becomes Birmingham City (men).
+        3. Only a women's entry of the standardized mapping may match;
+           otherwise the deterministic fallback for the canonical name is used.
+           That is the same id /api/teams/catalog exposes for the team.
+        """
+        canon, league = self._womens_canonical_name(text, competition)
+        if not has_womens_team_marker(canon) and self._is_mens_club_name(canon):
+            canon = f"{canon} Women"
+        key = normalize_lookup_key(canon)
+        cached = self._womens_by_name.get(key)
+        if cached is not None:
+            return dict(cached)
+        entry = self._by_id.get(generate_team_slug(canon)) or self._by_name.get(key)
+        if entry is not None and entry.get("id") in {t.get("id") for t in self._teams} \
+                and is_womens_competition(entry.get("league", "")):
+            info = dict(entry)
+        else:
+            info = generate_fallback_team_info(canon, league or "Women")
+        self._womens_by_name[key] = info
+        return dict(info)
+
     def decorate_game_team_names(self, game: dict, competition: str = "") -> dict:
         """
         Add standardized 3-tier names, id, and logo to a game payload
@@ -391,13 +519,24 @@ class StandardizedTeamManager:
 
         return game
 
-    def decorate_standings_entry(self, entry: dict, competition: str = "") -> dict:
+    def decorate_standings_entry(self, entry: dict, competition: str = "", group_name: str = "") -> dict:
         """
         Add standardized 3-tier names, id, and logo to a league table row
         without mutating existing score/ranking keys.
+        Also attaches qualification badge metadata based on position and competition.
         """
         if not isinstance(entry, dict):
             return entry
+
+        if "qualification" not in entry:
+            pos = entry.get("position") or entry.get("rank")
+            if pos is not None:
+                try:
+                    from competition_rules import get_qualification_for_position
+                    entry["qualification"] = get_qualification_for_position(competition, pos, group_name)
+                except Exception:
+                    pass
+
         if entry.get("team_info"):
             return entry
 
@@ -443,9 +582,10 @@ class StandardizedTeamManager:
                 comp = table_data.get("competition") or competition
                 for group in table_data["groups"]:
                     if isinstance(group, dict) and isinstance(group.get("entries"), list):
+                        gname = group.get("name", "")
                         for entry in group["entries"]:
                             if isinstance(entry, dict):
-                                self.decorate_standings_entry(entry, comp)
+                                self.decorate_standings_entry(entry, comp, group_name=gname)
             # Dict with "tables"
             elif "tables" in table_data and isinstance(table_data["tables"], dict):
                 for comp, tbl in table_data["tables"].items():
@@ -475,8 +615,8 @@ def resolve_team_info(team_name: Any, competition: str = "") -> dict:
 def decorate_game_team_names(game: dict, competition: str = "") -> dict:
     return _MANAGER.decorate_game_team_names(game, competition)
 
-def decorate_standings_entry(entry: dict, competition: str = "") -> dict:
-    return _MANAGER.decorate_standings_entry(entry, competition)
+def decorate_standings_entry(entry: dict, competition: str = "", group_name: str = "") -> dict:
+    return _MANAGER.decorate_standings_entry(entry, competition, group_name=group_name)
 
 def decorate_standings_table(table_data: Any, competition: str = "") -> Any:
     return _MANAGER.decorate_standings_table(table_data, competition)

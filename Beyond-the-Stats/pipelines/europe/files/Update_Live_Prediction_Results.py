@@ -97,6 +97,9 @@ ESPN_COMPETITION_KEYS = {
     "International/World Cup": "fifa.world",
     "International/Friendly": "fifa.friendly",
     "International/European Championship": "uefa.euro",
+    "International/Nations League": "uefa.nations",
+    "North America/Concacaf Nations League": "concacaf.nations.league",
+    "North America/CONCACAF Nations League": "concacaf.nations.league",
 }
 DEFAULT_ESPN_FETCH_WORKERS = 8
 MLS_COMPETITION = "United States/MLS"

@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "storage_key": "england/championship:southampton",
+    "competition": "England/Championship",
+    "team": "Southampton",
+    "deduction_points": 4,
+    "baseline_points": 0,
+    "override_pts": null,
+    "baseline_p": 0,
+    "baseline_w": 0,
+    "baseline_d": 0,
+    "baseline_l": 0,
+    "baseline_gf": 0,
+    "baseline_ga": 0,
+    "deduction_reason": "Points deduction (2026-27 season)",
+    "notes": "Entered manually to match official standings; replace via admin site when the official record is created.",
+    "updated_at": "2026-11-16T00:02:04Z",
+    "created_at": "2026-11-16T00:02:04Z"
+  }
+]

@@ -66,6 +66,7 @@ EXTRA_FILES_DIR = _paths.EXTRA_FILES_DIR
 PREDICTIONS_DIR = _paths.OUTPUT_PRED_EUROPE
 MLS_PREDICTIONS_DIR = _paths.OUTPUT_PRED_MLS
 EXTRA_PREDICTIONS_DIR = _paths.OUTPUT_PRED_EXTRA
+WOMENS_PREDICTIONS_DIR = _paths.OUTPUT_PRED_WOMENS
 CUP_PREDICTIONS_DIR = _paths.OUTPUT_PRED_CUPS
 NATIONAL_PREDICTIONS_DIR = _paths.OUTPUT_PRED_NATIONAL
 FRIENDLIES_PREDICTIONS_DIR = _paths.OUTPUT_PRED_FRIENDLIES
@@ -1491,12 +1492,15 @@ def publish_to_output(output_dir=None):
     cup_tables = CUP_PREDICTIONS_DIR / "projected_cup_tables.csv"
     mls_tables = MLS_PREDICTIONS_DIR / "projected_league_tables.csv"
     extra_tables = EXTRA_PREDICTIONS_DIR / "projected_league_tables.csv"
+    womens_tables = WOMENS_PREDICTIONS_DIR / "projected_league_tables.csv"
 
     for comp, path in _publish_league_tables(output_dir, global_tables, "europe").items():
         written["europe"][comp] = path
     for comp, path in _publish_league_tables(output_dir, cup_tables, "europe").items():
         written["europe"][comp] = path
-    for src in (global_tables, mls_tables, extra_tables):
+    for comp, path in _publish_league_tables(output_dir, womens_tables, "europe").items():
+        written["europe"][comp] = path
+    for src in (global_tables, mls_tables, extra_tables, womens_tables):
         for comp, path in _publish_league_tables(output_dir, src, "other").items():
             written["other"][comp] = path
 
@@ -1511,6 +1515,7 @@ def publish_to_output(output_dir=None):
         MLS_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
         EXTRA_PREDICTIONS_DIR / "upcoming_matchweek_predictions.csv",
         EXTRA_PREDICTIONS_DIR / "projected_future_matches.csv",
+        WOMENS_PREDICTIONS_DIR / "upcoming_womens_predictions.csv",
     ]
     for region in ("europe", "other"):
         path = _publish_upcoming_csv(output_dir, upcoming_sources, region)

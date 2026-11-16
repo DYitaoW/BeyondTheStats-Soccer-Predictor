@@ -11,12 +11,14 @@ import json
 import os
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import config
 from competition_rules import (
     build_structured_standings_groups,
     competition_format_spec,
+    get_league_qualification_zones,
+    normalize_team_key,
     resolve_competition_query,
     standings_layout_for,
     STANDINGS_LAYOUT_KNOCKOUT,
@@ -51,6 +53,7 @@ from standings import (
     _real_tables,
     _real_tables_lock,
     _UEFA_COMPETITIONS,
+    compute_league_form_table,
 )
 
 
@@ -275,6 +278,23 @@ def _write_league_data_cache(comp_name, payload):
             json.dump(payload, f, ensure_ascii=False, separators=(",", ":"), default=str)
         if isinstance(payload, dict):
             _mem_set_league_data(comp_name, payload)
+    except Exception:
+        pass
+
+    # Automatically snapshot into SQLite for weekly/refresh comparisons
+    try:
+        if isinstance(payload, dict) and payload.get("ok"):
+            from shared.sqlite_store import save_league_projection_snapshot
+            season = str((payload.get("format") or {}).get("season") or "2026-27")
+            winners = payload.get("winners_odds") or payload.get("predicted", {}).get("winners_odds") or []
+            ptable = payload.get("predicted_table") or payload.get("predicted", {}).get("table") or []
+            if winners or ptable:
+                save_league_projection_snapshot(
+                    competition=comp_name,
+                    season=season,
+                    winner_odds=winners,
+                    table_rows=ptable,
+                )
     except Exception:
         pass
 
@@ -1501,6 +1521,23 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
 
     payload = _enrich_mls_payload(comp, payload)
 
+    # Attach League Qualification & Relegation Zones
+    zones = get_league_qualification_zones(comp)
+    payload["qualification_zones"] = zones
+    predicted["qualification_zones"] = zones
+    if payload.get("real") and isinstance(payload["real"], dict):
+        payload["real"]["qualification_zones"] = zones
+
+    # Attach League Form Table (overall, home, away splits)
+    try:
+        form_table = compute_league_form_table(comp, window=5)
+        payload["form_table"] = form_table
+    except Exception:
+        payload["form_table"] = {"competition": comp, "window": 5, "overall": [], "home": [], "away": []}
+
+    # Attach weekly comparison and delta fields
+    payload = _enrich_league_data_comparison(comp, payload)
+
     if payload.get("predicted_table"):
         decorate_standings_table(payload["predicted_table"], comp)
     if payload.get("real_table"):
@@ -1516,6 +1553,120 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
 
     _write_league_data_cache(comp, payload)
 
+    return payload
+
+
+def _enrich_league_data_comparison(comp: str, payload: dict) -> dict:
+    """Attach weekly/refresh comparison (odds deltas, position changes, biggest movers)."""
+    try:
+        from shared.sqlite_store import load_previous_projection_snapshot
+        prev = load_previous_projection_snapshot(comp)
+    except Exception:
+        prev = None
+
+    comparison = {
+        "has_previous": False,
+        "previous_snapshot_date": None,
+        "days_ago": None,
+        "biggest_gainers": [],
+        "biggest_fallers": [],
+        "odds_comparison": [],
+    }
+    if not prev:
+        payload["comparison"] = comparison
+        if "predicted" in payload and isinstance(payload["predicted"], dict):
+            payload["predicted"]["comparison"] = comparison
+        return payload
+
+    prev_date = prev.get("snapshot_date")
+    days_ago = None
+    if prev_date:
+        try:
+            d_prev = datetime.fromisoformat(str(prev_date)[:10]).date()
+            days_ago = (date.today() - d_prev).days
+        except Exception:
+            pass
+
+    prev_odds_map = {}
+    for o in (prev.get("winner_odds") or []):
+        t = str(o.get("team") or "").strip()
+        if t:
+            prev_odds_map[normalize_team_key(t)] = o
+
+    prev_table_map = {}
+    for r in (prev.get("table") or []):
+        t = str(r.get("team") or "").strip()
+        if t:
+            prev_table_map[normalize_team_key(t)] = r
+
+    winners_odds = payload.get("winners_odds") or payload.get("predicted", {}).get("winners_odds") or []
+    predicted_table = payload.get("predicted_table") or payload.get("predicted", {}).get("table") or []
+
+    cur_pos_map = {}
+    for row in predicted_table:
+        t = str(row.get("team") or "").strip()
+        if t:
+            cur_pos_map[normalize_team_key(t)] = row.get("position") or row.get("rank")
+
+    movers = []
+    odds_items = []
+    for item in winners_odds:
+        t = str(item.get("team") or "").strip()
+        if not t:
+            continue
+        key = normalize_team_key(t)
+        prev_o = prev_odds_map.get(key)
+        cur_pct = float(item.get("win_league_pct") if item.get("win_league_pct") is not None else (item.get("probability") or 0.0))
+        prev_pct = float(prev_o.get("win_league_pct") if (prev_o and prev_o.get("win_league_pct") is not None) else ((prev_o.get("probability") if prev_o else 0.0) or 0.0)) if prev_o else None
+
+        pct_change = round(cur_pct - prev_pct, 2) if prev_pct is not None else 0.0
+        item["win_pct_change"] = pct_change
+        item["prev_win_pct"] = prev_pct
+
+        prev_row = prev_table_map.get(key)
+        cur_pos = cur_pos_map.get(key)
+        prev_pos = prev_row.get("position") or prev_row.get("rank") if prev_row else None
+        pos_change = (prev_pos - cur_pos) if (prev_pos is not None and cur_pos is not None) else 0
+
+        comp_entry = {
+            "team": t,
+            "current_win_pct": cur_pct,
+            "prev_win_pct": prev_pct,
+            "win_pct_change": pct_change,
+            "current_position": cur_pos,
+            "prev_position": prev_pos,
+            "pos_change": pos_change,
+        }
+        odds_items.append(comp_entry)
+        movers.append(comp_entry)
+
+    for row in predicted_table:
+        t = str(row.get("team") or "").strip()
+        if not t:
+            continue
+        key = normalize_team_key(t)
+        prev_row = prev_table_map.get(key)
+        cur_pos = row.get("position") or row.get("rank")
+        prev_pos = prev_row.get("position") or prev_row.get("rank") if prev_row else None
+        pos_change = (prev_pos - cur_pos) if (prev_pos is not None and cur_pos is not None) else 0
+        row["pos_change"] = pos_change
+        row["prev_position"] = prev_pos
+
+    movers.sort(key=lambda m: (m["win_pct_change"], m["pos_change"]), reverse=True)
+    gainers = [m for m in movers if m["win_pct_change"] > 0 or m["pos_change"] > 0][:5]
+    fallers = sorted([m for m in movers if m["win_pct_change"] < 0 or m["pos_change"] < 0], key=lambda m: (m["win_pct_change"], m["pos_change"]))[:5]
+
+    comparison = {
+        "has_previous": True,
+        "previous_snapshot_date": prev_date,
+        "days_ago": days_ago,
+        "biggest_gainers": gainers,
+        "biggest_fallers": fallers,
+        "odds_comparison": odds_items,
+    }
+    payload["comparison"] = comparison
+    if "predicted" in payload and isinstance(payload["predicted"], dict):
+        payload["predicted"]["comparison"] = comparison
     return payload
 
 

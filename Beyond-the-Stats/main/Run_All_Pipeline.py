@@ -61,6 +61,7 @@ _paths.ensure_output_dirs()
 FILES_DIR = _paths.EUROPE_FILES_DIR
 MLS_FILES_DIR = _paths.MLS_FILES_DIR
 EXTRA_FILES_DIR = _paths.EXTRA_FILES_DIR
+WOMENS_FILES_DIR = _paths.WOMENS_FILES_DIR
 LOCAL_KEYS_FILE = FILES_DIR / "local_api_keys.json"
 
 # Sub-pipelines ALWAYS run sequentially (global -> MLS -> extra, cups last) so
@@ -116,6 +117,11 @@ def parse_args():
         "--skip-extra",
         action="store_true",
         help="Skip extra-leagues pipeline steps.",
+    )
+    parser.add_argument(
+        "--skip-womens",
+        action="store_true",
+        help="Skip womens soccer pipeline steps.",
     )
     parser.add_argument(
         "--skip-global",
@@ -257,6 +263,7 @@ PROJECTED_TABLE_TIMEOUT_S = {
     "mls": 2700,
     # Extra PATH B can still be heavy; prefer finishing over parallel kill (-9).
     "extra": 3600,
+    "womens": 900,
 }
 # Upcoming matchweek steps (ESPN + football-data.org). Without a cap, Extra's
 # day-walk can run until the backend's 6h wall clock kills the whole pipeline.
@@ -659,6 +666,14 @@ def _ensure_projected_tables(args):
                 str(_paths.EXTRA_PROJECTED_TABLE_FILE),
             )
         )
+    if not getattr(args, "skip_womens", False):
+        targets.append(
+            (
+                "womens",
+                WOMENS_FILES_DIR,
+                str(_paths.WOMENS_PROJECTED_TABLE_FILE),
+            )
+        )
     comp_workers = _resolve_competition_workers(args)
     results = {}
     diagnostics = {}
@@ -990,6 +1005,66 @@ def _run_extra_subpipeline(args, api_token):
         )
     else:
         print("[skip] No processed data changes — skipping extra league table projection")
+    return sub
+
+
+def _run_womens_subpipeline(args, api_token):
+    """Run the womens soccer sub-pipeline (NWSL + WSL)."""
+    py = sys.executable
+    sub = {}
+    if _tables_only():
+        sub["womens_projected_league_tables"] = run_step(
+            "[womens] Projected league tables",
+            [py, str(WOMENS_FILES_DIR / "Project_League_Table.py")],
+            continue_on_error=args.continue_on_error,
+            timeout=PROJECTED_TABLE_TIMEOUT_S.get("womens", 900),
+        )
+        return sub
+
+    # Real fixtures + results from ESPN. The womens raw CSVs used to be
+    # generated once (fictional fixtures/scores) and never refreshed.
+    sub["womens_download"] = run_step(
+        "[womens] Download real NWSL/WSL fixtures and results (ESPN)",
+        [py, str(WOMENS_FILES_DIR / "Womens_Data_Manager.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=600,
+    )
+    sub["womens_download_process"] = run_step(
+        "[womens] Process raw match data",
+        [py, str(WOMENS_FILES_DIR / "Process_Data.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=600,
+    )
+    sub["womens_sort_data"] = run_step(
+        "[womens] Sort data and build team stats",
+        [py, str(WOMENS_FILES_DIR / "Sort_Data.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=600,
+    )
+    sub["womens_build_historical_tables"] = run_step(
+        "[womens] Build historical season tables",
+        [py, str(WOMENS_FILES_DIR / "Build_Historical_Tables.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=600,
+    )
+    sub["womens_build_model_cache"] = run_step(
+        "[womens] Build model cache",
+        [py, str(WOMENS_FILES_DIR / "Predict_Match.py"), "--build-cache-only"],
+        continue_on_error=args.continue_on_error,
+        timeout=1800,
+    )
+    sub["womens_upcoming_matchweek"] = run_step(
+        "[womens] Upcoming matchweek predictions",
+        [py, str(WOMENS_FILES_DIR / "Predict_Upcoming_Matchweek.py"), "--window-days", str(args.window_days)],
+        continue_on_error=args.continue_on_error,
+        timeout=UPCOMING_MATCHWEEK_TIMEOUT_S,
+    )
+    sub["womens_projected_league_tables"] = run_step(
+        "[womens] Projected league tables",
+        [py, str(WOMENS_FILES_DIR / "Project_League_Table.py")],
+        continue_on_error=args.continue_on_error,
+        timeout=PROJECTED_TABLE_TIMEOUT_S.get("womens", 900),
+    )
     return sub
 
 
@@ -1338,6 +1413,8 @@ def run_full_pipeline(args, api_token, results=None):
         sub_tasks.append(("mls", _run_mls_subpipeline))
     if not args.skip_extra:
         sub_tasks.append(("extra", _run_extra_subpipeline))
+    if not getattr(args, "skip_womens", False):
+        sub_tasks.append(("womens", _run_womens_subpipeline))
 
     pipeline_start = time.monotonic()
 

@@ -149,7 +149,7 @@ except ImportError:
         def decorate_game_team_names(game, competition=""):
             return game
 
-        def decorate_standings_entry(entry, competition=""):
+        def decorate_standings_entry(entry, competition="", group_name=""):
             return entry
 
         def decorate_standings_table(table_data, competition=""):

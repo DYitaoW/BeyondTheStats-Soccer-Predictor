@@ -711,7 +711,17 @@ def _la_half_start_iso(game, kickoff_iso: str) -> str:
     return now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _la_probabilities(game, comp_name, live_prediction):
+def _la_probabilities(game, comp_name, live_prediction=None):
+    if not live_prediction:
+        live_prediction = game.get("live_prediction")
+    if not live_prediction and str(game.get("status", "")).strip().lower() == "in":
+        try:
+            prematch = _la_prematch_record(game, comp_name)
+            live_prediction = _compute_live_prediction(game, prematch)
+            if live_prediction:
+                game["live_prediction"] = live_prediction
+        except Exception:
+            pass
     for src in (live_prediction, _la_prematch_record(game, comp_name)):
         if not src:
             continue
@@ -1208,6 +1218,13 @@ def _compute_poll_interval(results, todays_comps):
     - wakes up at nearest_future − 1h when games are 1-2h away (drops to
       15-min pre-match polling mode at the 1h mark)
     - 1800 seconds otherwise (no games or all finished)
+
+    The result is the minimum over ALL of today's kickoffs, and a pre-match
+    sleep never runs past a kickoff (it ends ~2 min before it). The old version
+    returned on the first kickoff it looked at, so a game 50 min away in one
+    competition put the poller to sleep for 15 min straight through another
+    competition's kickoff: "start" alerts arrived up to 15 min late and goals
+    scored before the first "in" observation never alerted.
     """
     try:
         # Check live results for in-progress games
@@ -1217,36 +1234,49 @@ def _compute_poll_interval(results, todays_comps):
                     return 60
 
         now_et = datetime.now(ZoneInfo("America/New_York"))
+        interval = 1800
         nearest_future = None
 
-        for _comp_name, kickoffs in (todays_comps or {}).items():
+        # Kickoffs from the pipeline schedule plus the real ESPN kickoff of every
+        # scheduled game on the scoreboards just polled. Pipeline fixtures can be
+        # date-only or wrong (the women's leagues' are), so ESPN's kickoff_utc
+        # is what keeps "start"/goal alerts on time for every league.
+        all_kickoffs: dict[str, list] = {k: list(v or []) for k, v in (todays_comps or {}).items()}
+        for comp_name, comp_data in (results or {}).items():
+            for g in (comp_data or {}).get("games", []) or []:
+                if str(g.get("status", "")).strip().lower() != "pre":
+                    continue
+                ko_ts = _la_kickoff_ts(g)
+                if ko_ts is not None:
+                    all_kickoffs.setdefault(comp_name, []).append(
+                        datetime.fromtimestamp(ko_ts, ZoneInfo("America/New_York"))
+                    )
+
+        for _comp_name, kickoffs in all_kickoffs.items():
             for kt in kickoffs or []:
                 try:
-                    if isinstance(kt, datetime):
-                        diff = (kt - now_et).total_seconds()
-                        # Game started within last 90 min -> poll at 60s
-                        if -5400 <= diff <= 0:
-                            return 60
-                        # Within 3 minutes of kickoff -> poll every 60s so we catch
-                        # the pre→in transition within seconds.
-                        if 0 < diff <= 180:
-                            return 60
-                        # Future kickoff within 60 min -> poll every 15 min
-                        if 0 < diff <= 3600:
-                            return 900
-                        # Future kickoff — track the nearest one
-                        if diff > 0 and (nearest_future is None or diff < nearest_future):
-                            nearest_future = diff
+                    if not isinstance(kt, datetime):
+                        continue
+                    diff = (kt - now_et).total_seconds()
+                    # Game started within last 90 min, or kicks off within 3
+                    # minutes -> poll at 60s (catches pre→in within seconds).
+                    if -5400 <= diff <= 180:
+                        return 60
+                    if diff <= 0:
+                        continue
+                    if diff <= 3600:
+                        # Pre-match: 15-min polling, but wake ~2 min before kickoff.
+                        interval = min(interval, 900, max(60, int(diff - 120)))
+                    elif nearest_future is None or diff < nearest_future:
+                        nearest_future = diff
                 except Exception:
                     continue
 
         # Wake up at nearest future − 1h so pre-match 15-min polling starts on time.
-        # If the nearest kickoff is within 3 min, we'd already have returned 60 above.
         if nearest_future is not None and nearest_future < 7200:
-            wake_at = nearest_future - 3600
-            return max(10, int(wake_at))
+            interval = min(interval, max(10, int(nearest_future - 3600)))
 
-        return 1800
+        return interval
     except Exception:
         # Never let interval math kill the poller thread.
         return 60
@@ -1637,6 +1667,31 @@ def _game_red_cards(game) -> list[dict]:
     return cards
 
 
+def _update_in_play_predictions_for_live_games() -> None:
+    """Compute live in-play predictions and cumulative momentum for active games in _live_scores.
+
+    Guarantees in-play probabilities (prob_home, prob_draw, prob_away) are up to
+    date with current scores, elapsed minutes, shots/corners, and red cards BEFORE
+    any Live Activity or push notification is dispatched.
+    """
+    try:
+        prematch_index = _build_live_prematch_index()
+        for comp_name in list(_live_scores.keys()):
+            for g in _live_scores[comp_name].get("games", []):
+                if g.get("status") == "in" and _uefa_live_scoring_allowed_for_comp(comp_name):
+                    prematch = _match_prematch_record(
+                        g.get("home_team", ""), g.get("away_team", ""),
+                        comp_name, prematch_index,
+                    )
+                    lp = _compute_live_prediction(g, prematch)
+                    if lp is not None:
+                        g["live_prediction"] = lp
+                if g.get("status") == "in" and _uefa_live_scoring_allowed_for_comp(comp_name):
+                    _update_cumulative_momentum(g)
+    except Exception:
+        pass
+
+
 def _dispatch_match_event_notifications() -> int:
     """Inspect current match states, detect kickoff, goals, halftime, fulltime, and red cards,
     and dispatch deduplicated push alerts and Live Activity updates.
@@ -1650,6 +1705,7 @@ def _dispatch_match_event_notifications() -> int:
     """
     total_dispatched = 0
     try:
+        _update_in_play_predictions_for_live_games()
         from notifications import (
             clear_match_subscriptions,
             for_game_or_team_subscribers,
@@ -1749,6 +1805,9 @@ def _dispatch_match_event_notifications() -> int:
                         Devices that own an active Live Activity for this match are
                         skipped — the Live Activity alert already notifies them.
                         """
+                        p_home = state_base.get("prob_home")
+                        p_draw = state_base.get("prob_draw")
+                        p_away = state_base.get("prob_away")
                         try:
                             record_notification_event(
                                 title=title,
@@ -1761,6 +1820,9 @@ def _dispatch_match_event_notifications() -> int:
                                 away_team=at,
                                 home_score=hs,
                                 away_score=as_,
+                                prob_home=p_home,
+                                prob_draw=p_draw,
+                                prob_away=p_away,
                             )
                         except Exception:
                             pass
@@ -1780,6 +1842,9 @@ def _dispatch_match_event_notifications() -> int:
                                 "competition": comp_name,
                                 "event": event_type,
                                 "collapse_id": collapse_id,
+                                "prob_home": p_home,
+                                "prob_draw": p_draw,
+                                "prob_away": p_away,
                             })
                         from notifications import _notify_apns_queue
                         _notify_apns_queue()
@@ -2647,29 +2712,15 @@ def _live_score_poller_loop():
                 import traceback
                 traceback.print_exc()
 
-            # ── Event push notifications (goals, red cards, halftime, full time) ──
+            # ── Compute in-play predictions & dispatch event notifications ──
             try:
-                _dispatch_match_event_notifications()
+                _update_in_play_predictions_for_live_games()
             except Exception:
                 import traceback
                 traceback.print_exc()
 
-            # Compute live in-play predictions for active games.
             try:
-                prematch_index = _build_live_prematch_index()
-                for comp_name in list(_live_scores.keys()):
-                    for g in _live_scores[comp_name].get("games", []):
-                        if g.get("status") == "in" and _uefa_live_scoring_allowed_for_comp(comp_name):
-                            prematch = _match_prematch_record(
-                                g.get("home_team", ""), g.get("away_team", ""),
-                                comp_name, prematch_index,
-                            )
-                            lp = _compute_live_prediction(g, prematch)
-                            if lp is not None:
-                                g["live_prediction"] = lp
-                        # Update cumulative momentum for in-progress games
-                        if g.get("status") == "in" and _uefa_live_scoring_allowed_for_comp(comp_name):
-                            _update_cumulative_momentum(g)
+                _dispatch_match_event_notifications()
             except Exception:
                 import traceback
                 traceback.print_exc()
@@ -2779,8 +2830,15 @@ def _dispatch_live_activity_starts(now_ts: float | None = None) -> int:
             title = f"Kickoff in {mins} min"
         alert = {"title": title, "body": f"{home} vs {away}"}
         stale = _la_stale_date(g)
+        # One start per push-to-start token: several device tokens of one phone
+        # (rotated tokens) must not open duplicate activities for the match.
+        started_pts: set[str] = set()
         for device in targets:
             if device in already_active:
+                mark_push_started(device, mid, competition=comp_name, sync_key=sync_k)
+                continue
+            pts_tok = push_to_start_token_for_device(device)
+            if pts_tok and pts_tok in started_pts:
                 mark_push_started(device, mid, competition=comp_name, sync_key=sync_k)
                 continue
             settings = get_device_la_settings(device)
@@ -2803,6 +2861,8 @@ def _dispatch_live_activity_starts(now_ts: float | None = None) -> int:
                     # The device won't register a per-activity token, so record
                     # its activity here (duplicate-banner suppression).
                     register_channel_activity(device, mid, sync_key=sync_k, competition=comp_name)
+                if pts_tok:
+                    started_pts.add(pts_tok)
                 queued += 1
     return queued
 

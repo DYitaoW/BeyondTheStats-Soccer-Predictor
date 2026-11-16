@@ -106,12 +106,15 @@ def load_prediction_store(path):
 
 
 def competition_configs(world_cup_only=False, friendlies_only=False):
-    if friendlies_only:
-        return {
-            "International/Friendly": national.UPCOMING_ESPN_COMPETITIONS["International/Friendly"]
-        }
     if world_cup_only:
         return {"International/World Cup": national.UPCOMING_ESPN_COMPETITIONS["International/World Cup"]}
+    if friendlies_only:
+        # Non-World-Cup international window fixtures: friendlies, nations leagues, euros, qualifiers, etc.
+        return {
+            name: cfg
+            for name, cfg in national.UPCOMING_ESPN_COMPETITIONS.items()
+            if name != "International/World Cup"
+        }
     return dict(national.UPCOMING_ESPN_COMPETITIONS)
 
 
@@ -615,7 +618,7 @@ def main():
     combined = merge_prediction_frames(existing.astype("object"), new_df)
     if args.friendlies_only:
         # Refresh keys for fixtures in this window; keep other upcoming rows.
-        friendly_keys = set()
+        refreshed_keys = set()
         snapshot = bundle["snapshot"]
         for _, row in fixtures.iterrows():
             raw_features, home_team, away_team = national.build_prediction_feature_frame(
@@ -628,7 +631,7 @@ def main():
             )
             del raw_features
             if home_team and away_team and home_team != away_team:
-                friendly_keys.add(
+                refreshed_keys.add(
                     national.make_prediction_key(
                         row.get("match_date"),
                         row.get("competition", ""),
@@ -636,9 +639,10 @@ def main():
                         away_team,
                     )
                 )
-        # Drop only International/Friendly rows that are outside the current window.
-        is_friendly = combined["competition"].astype(str).str.contains("Friendly", case=False, na=False)
-        keep = (~is_friendly) | combined["prediction_key"].astype(str).isin(friendly_keys)
+        # Drop only rows for the fetched competitions that are outside the current window.
+        fetched_comps = set(competition_configs(friendlies_only=True).keys())
+        is_fetched_comp = combined["competition"].astype(str).isin(fetched_comps)
+        keep = (~is_fetched_comp) | combined["prediction_key"].astype(str).isin(refreshed_keys)
         combined = combined[keep].copy()
     else:
         combined = keep_only_current_fixtures(combined, fixtures, bundle)

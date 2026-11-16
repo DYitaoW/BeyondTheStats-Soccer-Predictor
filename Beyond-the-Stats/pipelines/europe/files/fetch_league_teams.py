@@ -92,6 +92,8 @@ LEAGUES = {
     "International/Nations League": "uefa.nations",
     "South America/Copa America": "conmebol.america",
     "North America/Gold Cup": "concacaf.gold",
+    "North America/Concacaf Nations League": "concacaf.nations.league",
+    "North America/CONCACAF Nations League": "concacaf.nations.league",
     "Africa/Africa Cup of Nations": "caf.nations",
     "Asia/Asian Cup": "afc.cup",
 }

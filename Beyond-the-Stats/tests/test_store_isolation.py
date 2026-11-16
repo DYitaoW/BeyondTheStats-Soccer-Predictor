@@ -54,6 +54,33 @@ class StoreIsolationTests(unittest.TestCase):
             self.assertNotEqual(db, Path(paths.SQLITE_STORE_FILE).resolve())
 
 
+class NoGlobalOptOutTests(unittest.TestCase):
+    """No test module may disable store isolation for the whole run.
+
+    ``tests/test_womens_leagues.py`` once set BTS_ALLOW_REAL_STORE_IN_TESTS=1
+    at import time; discovery imports every module first, so every later
+    suite wrote fake devices, feed events and fixtures into production.
+    """
+
+    def test_opt_out_not_active_during_discovery_run(self):
+        self.assertNotEqual(os.environ.get("BTS_ALLOW_REAL_STORE_IN_TESTS", "").strip(), "1")
+        self.assertFalse(os.environ.get("BTS_SQLITE_STORE_PATH", "").strip())
+
+    def test_no_module_level_store_env_assignments(self):
+        import ast
+
+        offenders = []
+        for path in sorted((ROOT / "tests").glob("test_*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in tree.body:  # module level only
+                for sub in ast.walk(node) if not isinstance(node, (ast.FunctionDef, ast.ClassDef)) else ():
+                    if isinstance(sub, ast.Constant) and sub.value in (
+                        "BTS_ALLOW_REAL_STORE_IN_TESTS", "BTS_SQLITE_STORE_PATH",
+                    ):
+                        offenders.append(f"{path.name}:{sub.lineno}")
+        self.assertEqual(offenders, [], "module-level store env changes leak into every suite")
+
+
 class PredictionKeyNaNTests(unittest.TestCase):
     """CSV rows without a prediction_key arrive as NaN; they must not all
     collapse into a single ``prediction:nan`` row."""

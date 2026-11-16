@@ -611,7 +611,14 @@ def build_app_teams_catalog_payload(competition_filter: str | None = None) -> di
     raw_candidates = []
     for key in sorted(canonical_by_key.keys(), key=lambda k: canonical_by_key[k].lower()):
         t_name = canonical_by_key[key]
-        t_info = resolve_team_info(t_name)
+        # Women's sides resolve inside their competition so their team_id is the
+        # same one live games / notification targeting resolve to.
+        try:
+            from standardized_teams import is_womens_competition
+            womens_comp = next((c for c in sorted(team_to_comps[key]) if is_womens_competition(c)), "")
+        except Exception:
+            womens_comp = ""
+        t_info = resolve_team_info(t_name, womens_comp) if womens_comp else resolve_team_info(t_name)
         raw_candidates.append({
             "team": t_name,
             "competitions": sorted(team_to_comps[key], key=str.lower),

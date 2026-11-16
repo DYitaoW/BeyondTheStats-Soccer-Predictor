@@ -410,10 +410,11 @@ def _last5_for(form_index: dict, *names) -> list:
 
 
 def clear_team_form_caches() -> None:
-    """Drop last-5 and recent-match caches (called when a match finishes)."""
+    """Drop last-5, recent-match, and upcoming rows caches (called when a match finishes)."""
     _LAST_5_FORM_CACHE.clear()
     _LAST_5_FORM_CACHE_TIMES.clear()
     _RECENT_MATCHES_CACHE.clear()
+    clear_upcoming_rows_cache()
 
 
 def _build_strength_index(mode):
@@ -1297,6 +1298,15 @@ def _annotate_upcoming_rows_with_live(rows: list[dict]) -> list[dict]:
     return rows
 
 
+_UPCOMING_ROWS_CACHE: dict[tuple, tuple[list[dict], dict, dict]] = {}
+_UPCOMING_ROWS_CACHE_LOCK = threading.Lock()
+
+
+def clear_upcoming_rows_cache() -> None:
+    with _UPCOMING_ROWS_CACHE_LOCK:
+        _UPCOMING_ROWS_CACHE.clear()
+
+
 def _load_upcoming_rows(
     csv_path,
     mode=None,
@@ -1324,6 +1334,37 @@ def _load_upcoming_rows(
         empty = pd.DataFrame()
         target_mode = mode or "global"
         return [], _compute_accuracy_stats(empty), _compute_league_accuracy_stats(empty)
+
+    try:
+        file_mtime = os.path.getmtime(csv_path)
+    except Exception:
+        file_mtime = 0.0
+
+    today_et_str = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    cache_key = (
+        os.path.normpath(csv_path),
+        file_mtime,
+        str(mode),
+        str(date_range),
+        str(window_days),
+        bool(fixtures_only),
+        tuple(sorted(competition_filter)) if isinstance(competition_filter, (list, tuple, set)) else str(competition_filter or ""),
+        str(from_date or ""),
+        str(to_date or ""),
+        today_et_str,
+    )
+    with _UPCOMING_ROWS_CACHE_LOCK:
+        if cache_key in _UPCOMING_ROWS_CACHE:
+            cached_rows, cached_acc, cached_league_acc = _UPCOMING_ROWS_CACHE[cache_key]
+            copied_rows = [dict(r) for r in cached_rows]
+            if not fixtures_only:
+                copied_rows = _annotate_upcoming_rows_with_live(copied_rows)
+                copied_rows = [_sanitize_for_json(row) for row in copied_rows]
+            return (
+                copied_rows,
+                dict(cached_acc) if isinstance(cached_acc, dict) else cached_acc,
+                list(cached_league_acc) if isinstance(cached_league_acc, list) else cached_league_acc,
+            )
     try:
         if config.LOW_MEMORY_STATIC:
             allowed = {
@@ -1505,7 +1546,11 @@ def _load_upcoming_rows(
                 "prob_away": _to_float(row.get("prob_away")),
             })
         empty = pd.DataFrame()
-        return rows, _compute_accuracy_stats(empty), _compute_league_accuracy_stats(empty)
+        acc_s = _compute_accuracy_stats(empty)
+        lg_s = _compute_league_accuracy_stats(empty)
+        with _UPCOMING_ROWS_CACHE_LOCK:
+            _UPCOMING_ROWS_CACHE[cache_key] = (rows, acc_s, lg_s)
+        return [dict(r) for r in rows], acc_s, lg_s
 
     # Pre-build form & strength indices (only for modes that have processed data)
     form_index = _build_last5_form_index(target_mode) if target_mode in ("global", "mls", "extra") else {}
@@ -1700,12 +1745,17 @@ def _load_upcoming_rows(
         )
     from accuracy_tracker import _build_persistent_accuracy_stats
     persistent_stats, persistent_league_stats = _build_persistent_accuracy_stats(target_mode, rows)
-    rows = _annotate_upcoming_rows_with_live(rows)
-    rows = [_sanitize_for_json(row) for row in rows]
+    sanitized_stats = _sanitize_for_json(persistent_stats)
+    sanitized_league_stats = _sanitize_for_json(persistent_league_stats)
+    with _UPCOMING_ROWS_CACHE_LOCK:
+        _UPCOMING_ROWS_CACHE[cache_key] = (rows, sanitized_stats, sanitized_league_stats)
+    rows_copy = [dict(r) for r in rows]
+    rows_copy = _annotate_upcoming_rows_with_live(rows_copy)
+    rows_copy = [_sanitize_for_json(row) for row in rows_copy]
     return (
-        rows,
-        _sanitize_for_json(persistent_stats),
-        _sanitize_for_json(persistent_league_stats),
+        rows_copy,
+        sanitized_stats,
+        sanitized_league_stats,
     )
 
 
@@ -1931,6 +1981,7 @@ PROJECTED_TABLE_SOURCES = (
     config.GLOBAL_PROJECTED_TABLE_FILE,
     config.MLS_PROJECTED_TABLE_FILE,
     config.EXTRA_PROJECTED_TABLE_FILE,
+    config.WOMENS_PROJECTED_TABLE_FILE,
     config.CUP_PROJECTED_TABLE_FILE,
 )
 
@@ -2753,6 +2804,11 @@ def _live_game_to_past_row(game: dict, competition: str | None = None) -> dict |
         "match_datetime_utc": str(game.get("kickoff_utc", "") or game.get("match_datetime_utc", "")).strip(),
         "source": "live_score_history",
     }
+    # Carry the stage (ESPN season slug) so league tables can exclude playoffs.
+    for key in ("stage", "round", "season_slug"):
+        value = str(game.get(key, "") or "").strip()
+        if value:
+            row[key] = value
     _enrich_json_past_row(row)
     return row
 
@@ -3013,6 +3069,7 @@ def sync_api_shaped_predictions_to_sqlite() -> dict:
         ("cups", config.CUP_UPCOMING_FILE),
         ("national", config.NATIONAL_UPCOMING_FILE),
         ("friendlies", config.FRIENDLIES_UPCOMING_FILE),
+        ("womens", config.WOMENS_UPCOMING_FILE),
     )
     totals = {"ok": True, "upserted": 0, "by_source": {}, "past_upserted": 0}
     store.ensure_store()

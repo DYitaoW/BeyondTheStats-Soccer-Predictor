@@ -50,6 +50,7 @@ EXTRA_UPCOMING_FILE = str(_paths.EXTRA_UPCOMING_FILE)
 EXTRA_PROJECTED_MATCHES_FILE = str(_paths.EXTRA_PROJECTED_MATCHES_FILE)
 NATIONAL_UPCOMING_FILE = str(_paths.NATIONAL_UPCOMING_FILE)
 FRIENDLIES_UPCOMING_FILE = str(_paths.FRIENDLIES_UPCOMING_FILE)
+WOMENS_UPCOMING_FILE = str(_paths.WOMENS_UPCOMING_FILE)
 GLOBAL_PROJECTED_TABLE_FILE = str(_paths.GLOBAL_PROJECTED_TABLE_FILE)
 CUP_PROJECTED_TABLE_FILE = str(_paths.CUP_PROJECTED_TABLE_FILE)
 CUP_REAL_TABLE_FILE = str(_paths.CUP_REAL_TABLE_FILE)
@@ -62,6 +63,7 @@ PAST_GAMES_DB_FILE = str(_paths.PAST_GAMES_DB_FILE)
 LIVE_SCORE_HISTORY_DB_FILE = str(_paths.LIVE_SCORE_HISTORY_DB_FILE)
 MLS_PROJECTED_TABLE_FILE = str(_paths.MLS_PROJECTED_TABLE_FILE)
 EXTRA_PROJECTED_TABLE_FILE = str(_paths.EXTRA_PROJECTED_TABLE_FILE)
+WOMENS_PROJECTED_TABLE_FILE = str(_paths.WOMENS_PROJECTED_TABLE_FILE)
 MLS_PROJECTED_BRACKET_FILE = str(_paths.MLS_PROJECTED_BRACKET_FILE)
 
 # ── Pipeline & Data Files ─────────────────────────────────────────
@@ -110,6 +112,7 @@ UPCOMING_CSV_FILES = {
     "cups": CUP_UPCOMING_FILE,
     "national": NATIONAL_UPCOMING_FILE,
     "friendlies": FRIENDLIES_UPCOMING_FILE,
+    "womens": WOMENS_UPCOMING_FILE,
 }
 
 # ── Cache Configuration ───────────────────────────────────────────
@@ -179,7 +182,7 @@ LEAGUE_API_EXCLUDED_COMPETITIONS = {
 # national-team pipeline and must not leak into league-facing APIs even when a
 # stale projected-tables CSV still contains rows for them.
 NATIONAL_TEAM_COMPETITION_PREFIXES = frozenset({
-    "FIFA", "UEFA", "CONMEBOL", "CONCACAF", "CAF", "AFC", "OFC",
+    "FIFA", "UEFA", "CONMEBOL", "CONCACAF", "CAF", "AFC", "OFC", "INTERNATIONAL",
 })
 
 
@@ -188,7 +191,15 @@ def is_national_team_competition(competition) -> bool:
     name = str(competition or "").strip()
     if not name:
         return False
-    if "World Cup Qualifying" in name or "Nations League" in name:
+    if (
+        "World Cup" in name
+        or "Nations League" in name
+        or "European Championship" in name
+        or "Copa America" in name
+        or "Gold Cup" in name
+        or "Africa Cup of Nations" in name
+        or "Asian Cup" in name
+    ):
         return True
     head = name.split("/", 1)[0].strip().upper()
     return head in NATIONAL_TEAM_COMPETITION_PREFIXES
@@ -231,6 +242,18 @@ LIVE_SCORE_COMPETITIONS = {
     # National team & World Cup
     "International/World Cup": "fifa.world",
     "International/Friendly": "fifa.friendly",
+    "International/European Championship": "uefa.euro",
+    "Europe/European Championship": "uefa.euro",
+    "Europe/Euros": "uefa.euro",
+    "Europe/Euro": "uefa.euro",
+    "International/Nations League": "uefa.nations",
+    "North America/Concacaf Nations League": "concacaf.nations.league",
+    "North America/CONCACAF Nations League": "concacaf.nations.league",
+    "International/Concacaf Nations League": "concacaf.nations.league",
+    "International/CONCACAF Nations League": "concacaf.nations.league",
+    "South America/Copa America": "conmebol.america",
+    "North America/Gold Cup": "concacaf.gold",
+    "Africa/Africa Cup of Nations": "caf.nations",
     # Mexico/Liga MX, Belgium/First Division A, Scotland/Premiership, Turkey/Super Lig
     # are result-only (post-match fetch, no in-play polling).
     "Mexico/Liga MX": "mex.1",
@@ -256,6 +279,11 @@ LIVE_SCORE_COMPETITIONS = {
     "Slovakia/Super Liga": "svk.1",
     "Slovenia/PrvaLiga": "svn.1",
     "Bulgaria/First League": "bul.1",
+    # Women's soccer leagues
+    "United States/NWSL": "usa.nwsl",
+    "North America/NWSL": "usa.nwsl",
+    "England/Women's Super League": "eng.w.1",
+    "England/WSL": "eng.w.1",
 }
 
 
@@ -276,6 +304,8 @@ CORE_LIVE_POLL_COMPETITIONS = (
     "England/FA Cup",
     "England/League Cup",
     "North America/Leagues Cup",
+    "United States/NWSL",
+    "England/Women's Super League",
 )
 
 
@@ -360,6 +390,12 @@ def competition_live_aliases(competition: str) -> set[str]:
         "Europe/Champions League": "Europe/Champions League",
         "Europe/Europa League": "Europe/Europa League",
         "Europe/Conference League": "Europe/Conference League",
+        "North America/NWSL": "United States/NWSL",
+        "NWSL": "United States/NWSL",
+        "USA/NWSL": "United States/NWSL",
+        "England/WSL": "England/Women's Super League",
+        "WSL": "England/Women's Super League",
+        "Women's Super League": "England/Women's Super League",
     }
     canonical = _ALIASES.get(comp, comp)
     if canonical:
@@ -390,6 +426,10 @@ MLS_DATASET_COMPETITIONS = (
     "United States/MLS - Western Conference",
     LIGA_MX_COMPETITION,
 )
+WOMENS_DATASET_COMPETITIONS = (
+    "United States/NWSL",
+    "England/Women's Super League",
+)
 
 
 def app_dataset_competitions() -> tuple[str, ...]:
@@ -399,6 +439,7 @@ def app_dataset_competitions() -> tuple[str, ...]:
     for comp in (
         *GLOBAL_DATASET_COMPETITIONS,
         *EXTRA_DATASET_COMPETITIONS,
+        *WOMENS_DATASET_COMPETITIONS,
         MLS_COMPETITION,
         LIGA_MX_COMPETITION,
     ):
@@ -644,6 +685,9 @@ TOURNAMENT_KEY_MAP = {
     "conference-league": "Europe/Conference League",
     "euros": "International/European Championship",
     "copa-america": "South America/Copa America",
+    "nations-league": "International/Nations League",
+    "uefa-nations-league": "International/Nations League",
+    "concacaf-nations-league": "North America/Concacaf Nations League",
     "fa-cup": "England/FA Cup",
     "efl-cup": "England/League Cup",
     "league-cup": "England/League Cup",

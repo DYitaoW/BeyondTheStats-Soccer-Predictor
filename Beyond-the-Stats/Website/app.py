@@ -70,8 +70,11 @@ class SecurityAndCacheHeadersMiddleware(BaseHTTPMiddleware):
                 # Per-device / mutable state must never be cached by URLSession,
                 # Cloudflare, or other intermediaries (stale subscription prefs,
                 # leaked tokens). Mutations are never cacheable either.
+                # Admin / debug responses are authorized by a header, so a CDN
+                # that cached one could serve it to unauthenticated callers.
                 if request.method not in ("GET", "HEAD") or any(path.startswith(p) for p in (
                     "/api/notifications", "/api/live-activities", "/live-activities", "/api/test/",
+                    "/api/admin/", "/api/debug/",
                 )):
                     response.headers["Cache-Control"] = "no-store"
                 elif any(path.startswith(p) for p in (

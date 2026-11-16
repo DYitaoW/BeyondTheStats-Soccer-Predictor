@@ -564,6 +564,14 @@ def _parse_espn_live_event(event):
         if round_name:
             result["round"] = round_name
             result["round_order"] = bracket_slot
+        # ESPN season slug: "regular-season", "playoffs---semifinals", ... (NWSL,
+        # MLS) or "2026-27-english-womens-super-league". Playoff games must not
+        # count toward league tables.
+        season_slug = str((event.get("season") or {}).get("slug") or "").strip()
+        if season_slug:
+            result["season_slug"] = season_slug
+            if "playoff" in season_slug.lower():
+                result["stage"] = "playoffs"
         if winner_team:
             result["winner"] = winner_team
         if "pen" in str(detail).lower():
