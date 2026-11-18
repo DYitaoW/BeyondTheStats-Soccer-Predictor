@@ -3,15 +3,20 @@
 These files are still in the tree but are **not** invoked by `main/Run_All_Pipeline.py`,
 `main/Daily_Pipeline.py`, or the Website backend. Kept for manual/CLI use unless noted.
 
-## Likely unused (safe candidates to delete later)
+## Removed (2026-11-18)
 
-| File | Notes |
-|------|--------|
-| `pipelines/mls/files/Predict_MLS_Cup_Games.py` | Orphaned; nothing imports or runs it. MLS Cup odds come from `Project_League_Table.py`. |
-| `pipelines/*/files/Print_Upcoming_Predictions.py` | Manual pretty-printer for upcoming CSVs. |
-| `pipelines/*/files/Test_train.py` | Ad-hoc training experiments; not part of daily pipeline. |
-| `pipelines/europe/files/Run_World_Cup_Pipeline.py` | Standalone WC helper; daily path uses `Process_National_Team_Data` / `Project_World_Cup` directly when WC is active. |
-| `scripts/website_diagnostic.py` | One-off diagnostic printer. |
+Deleted after confirming nothing imports, runs or documents them as live:
+`shared/prediction_engine.py`, `Website/services/`, `Website/markets/`, seven empty
+`Website/*.py` stubs (`fixtures_loader`, `form_indexer`, `market_odds`, `past_games_archive`,
+`pipeline_runner`, `predictions_loader`, `projected_tables`), `Website/features/calibration.py`
+(calibration lives in `shared/probability_calibration.py`), `pipelines/mls/files/Predict_MLS_Cup_Games.py`,
+both `Print_Upcoming_Predictions.py`, both `Test_train.py`, `pipelines/europe/files/Run_World_Cup_Pipeline.py`,
+`Website/gunicorn_config.py` + `render.yaml` (old Render deploy), `scripts/website_diagnostic.py`,
+`scripts/migrate_data_storage.py` (would move the live `pipelines/*/Data` trees), `SESSION_NOTES.md`.
+Git history keeps them.
+
+The four `pipelines/<region>/files/Predict_Match.py` copies were merged into
+`pipelines/predict_match_core.py`; the regional files are now thin profiles.
 
 ## Manual utilities (used on demand)
 

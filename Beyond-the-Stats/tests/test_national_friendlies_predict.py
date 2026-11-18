@@ -114,6 +114,7 @@ class NationalFriendliesPredictTests(unittest.TestCase):
             with mock.patch.object(nat, 'RAW_MATCHES_FILE', str(raw_path)), \
                  mock.patch.object(nat, 'ranked_national_teams', return_value=['Brazil', 'Spain']), \
                  mock.patch.object(nat, 'fetch_completed_national_matches', return_value=[incoming_dup, incoming_new]), \
+                 mock.patch.object(nat, 'fetch_tiered_nations_league_seasons', return_value=[]), \
                  mock.patch.object(sqlite_store, '_past_games_json', return_value=Path(tmp) / 'empty.json'), \
                  mock.patch.object(sqlite_store, '_past_games_journal', return_value=Path(tmp) / 'empty.jsonl'), \
                  mock.patch.object(sqlite_store, '_live_history_json', return_value=Path(tmp) / 'empty_live.json'), \

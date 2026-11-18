@@ -654,6 +654,12 @@ def api_league_data(competition):
             "error": f"Competition not available in league APIs: {comp}",
         }), 404
 
+    if config.is_one_off_competition(comp):
+        # Friendlies: no tables / simulations — just the upcoming games.
+        from routes.predictions import build_one_off_competition_payload
+        compact = str(request.args.get("compact", "")).strip().lower() in {"1", "true", "yes"}
+        return jsonify(build_one_off_competition_payload(comp, compact=compact))
+
     from league_data import _load_league_data_from_cache
     cached = _load_league_data_from_cache(comp)
     if cached is not None:
@@ -720,7 +726,9 @@ def api_stats():
     })
 
 
-_LEAGUE_LEADERS_CACHE_FILE = os.path.join(config.PROJECT_DIR, "Output", "Status", "league_leaders_cache.json")
+from shared import paths as _paths  # noqa: E402
+
+_LEAGUE_LEADERS_CACHE_FILE = str(_paths.LEAGUE_LEADERS_CACHE_FILE)
 _LEAGUE_LEADERS_MEMO_CACHE: dict = {
     "data": None,
     "bytes": None,
@@ -1031,11 +1039,14 @@ def _refresh_league_leaders_cache(force: bool = False) -> dict:
             _LEAGUE_LEADERS_MEMO_CACHE["expires_at"] = now + _LEAGUE_LEADERS_MEMO_TTL
             _LEAGUE_LEADERS_MEMO_CACHE["computing"] = False
 
-        # Persist to disk
+        # Persist to disk atomically: a truncate-then-write let concurrent
+        # readers (app requests, background rebuilds) see an empty file.
         try:
             os.makedirs(os.path.dirname(_LEAGUE_LEADERS_CACHE_FILE), exist_ok=True)
-            with open(_LEAGUE_LEADERS_CACHE_FILE, "wb") as f:
+            tmp_path = f"{_LEAGUE_LEADERS_CACHE_FILE}.{os.getpid()}.{threading.get_ident()}.tmp"
+            with open(tmp_path, "wb") as f:
                 f.write(raw_bytes)
+            os.replace(tmp_path, _LEAGUE_LEADERS_CACHE_FILE)
         except Exception:
             pass
 

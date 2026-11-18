@@ -1064,6 +1064,8 @@ _MLS_LIVE_TABLE_VIEWS = (
 
 def _live_standings_refresh_targets(comp_name: str) -> list[str]:
     """Competition keys whose real tables should refresh after a live final."""
+    if config.is_one_off_competition(comp_name):
+        return []  # friendlies have no table
     base, _view = resolve_competition_query(comp_name)
     live_keys = set(config.LIVE_SCORE_COMPETITIONS.keys())
     if base not in live_keys and comp_name not in _MLS_LIVE_TABLE_VIEWS:
@@ -1085,6 +1087,21 @@ def _live_standings_refresh_targets(comp_name: str) -> list[str]:
     elif comp_name in _MLS_LIVE_TABLE_VIEWS:
         _add(comp_name)
     return targets
+
+
+def table_age_seconds(updated) -> float | None:
+    """Age of a cached table's ``updated_at`` (naive local or tz-aware ISO-8601).
+
+    Returns None when it cannot be parsed. The old inline check subtracted an
+    aware timestamp from naive ``datetime.now()``, raised, and treated the
+    table as fresh forever (a one-game WSL/NWSL table was served for hours).
+    """
+    try:
+        ts = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    now = datetime.now(timezone.utc) if ts.tzinfo is not None else datetime.now()
+    return (now - ts).total_seconds()
 
 
 def refresh_real_standings_after_live_final(comp_name: str) -> list[str]:
@@ -1141,8 +1158,11 @@ def _compute_standings_from_history(comp_name, force_recompute=False):
       - Scottish Premiership split (top 6 / bottom 6 after 33 games)
       - UEFA league-phase format (single table, then knockout)
     Applies correct tiebreakers per league (GD-first vs H2H-first).
-    Returns ``None`` if no completed games are available.
+    Returns ``None`` if no completed games are available, and always for
+    one-off competitions (friendlies: no league table).
     """
+    if config.is_one_off_competition(comp_name):
+        return None
     # Prefer a fresh in-memory / persisted table before re-scanning history files.
     if not force_recompute:
         with _real_tables_lock:
@@ -1153,11 +1173,8 @@ def _compute_standings_from_history(comp_name, force_recompute=False):
         updated = cached.get("updated_at", "")
         if not updated:
             return cached
-        try:
-            age = (datetime.now() - datetime.fromisoformat(str(updated))).total_seconds()
-        except Exception:
-            return cached
-        if age < float(getattr(config, "REAL_TABLES_CACHE_TTL", 300)):
+        age = table_age_seconds(updated)
+        if age is not None and age < float(getattr(config, "REAL_TABLES_CACHE_TTL", 300)):
             return cached
 
     base_comp, mls_view = resolve_competition_query(comp_name)
@@ -1514,6 +1531,38 @@ def _compute_standings_from_history(comp_name, force_recompute=False):
         entries = [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)]
         groups = [{"name": "League Phase", "entries": entries}]
         return _finalize(groups, source="computed")
+
+    if base_comp in getattr(config, "TIERED_NATIONS_LEAGUES", {}):
+        # Tiered Nations League: one table per ESPN group (League A, Group A
+        # ...). Only games between two teams of the same group count, so
+        # knockout ties and Gold Cup play-ins never enter a table.
+        try:
+            from nations_league import group_membership
+            membership = group_membership(base_comp)
+        except Exception:
+            membership = []
+        if membership:
+            tier_groups = []
+            for grp in membership:
+                members = {_normalize_team_name(t, base_comp) for t in grp["teams"]}
+                table = _init_table(members)
+                match_records = []
+                for g in comp_games:
+                    ht, at = str(g.get("home_team", "")), str(g.get("away_team", ""))
+                    stage = f"{g.get('stage', '')} {g.get('round', '')}".lower()
+                    if ht not in members or at not in members:
+                        continue
+                    if any(word in stage for word in ("quarter", "semi", "final", "play", "prelim")):
+                        continue
+                    hs, as_ = int(g.get("home_score", 0)), int(g.get("away_score", 0))
+                    _apply_result(table, ht, at, hs, as_)
+                    match_records.append((ht, at, hs, as_))
+                ranked = _rank_table(table, match_records if uses_h2h_tiebreaker(comp_name) else None)
+                tier_groups.append({
+                    "name": grp["name"], "tier": grp["tier"], "group": grp["group"],
+                    "entries": [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)],
+                })
+            return _finalize(tier_groups, source="computed")
 
     if has_groups:
         groups_data = {}
@@ -2022,6 +2071,8 @@ def compute_league_form_table(comp_name: str, window: int = 5) -> dict:
         competition, window, overall, home, away
     Where each split contains ranked rows with P, W, D, L, GF, GA, GD, Pts, ppg, form, form_details.
     """
+    if config.is_one_off_competition(comp_name):
+        return {"competition": comp_name, "window": window, "overall": [], "home": [], "away": []}
     from competition_rules import (
         collect_competition_games,
         canonical_team_name,

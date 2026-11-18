@@ -1,6 +1,7 @@
 """
 Features package initialization.
-Exports congestion, exponential recency, and probability calibration modules.
+Exports congestion and exponential recency modules (match probability
+calibration lives in ``shared/probability_calibration.py``).
 """
 from __future__ import annotations
 
@@ -12,18 +13,10 @@ from .recency import (
     calculate_recency_weight,
     compute_weighted_team_form,
 )
-from .calibration import (
-    create_calibrated_classifier,
-    calibrate_probabilities_simplex,
-    fit_calibrated_model,
-)
 
 __all__ = [
     "build_team_schedule_index",
     "calculate_team_rest_and_congestion",
     "calculate_recency_weight",
     "compute_weighted_team_form",
-    "create_calibrated_classifier",
-    "calibrate_probabilities_simplex",
-    "fit_calibrated_model",
 ]

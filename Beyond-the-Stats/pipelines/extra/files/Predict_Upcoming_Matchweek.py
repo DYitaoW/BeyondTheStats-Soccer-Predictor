@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 
 import joblib
 import pandas as pd
+from shared import probability_calibration as _prob_calibration  # noqa: E402
 
 import Predict_Match as pm
 
@@ -56,6 +57,11 @@ EXTRA_ESPN_COMPETITIONS = {
     "Belgium/First Division A": "bel.1",
     "Scotland/Premiership": "sco.1",
     "Turkey/Super Lig": "tur.1",
+    "Austria/Bundesliga": "aut.1",
+    "Greece/Super League": "gre.1",
+    "Norway/Eliteserien": "nor.1",
+    "Sweden/Allsvenskan": "swe.1",
+    # Poland / Romania: no usable ESPN scoreboard (pol.1 errors, rou.1 empty).
 }
 
 # All competitions handled by the extra-leagues pipeline.
@@ -790,6 +796,78 @@ def _mapping_context(ctx):
     }
 
 
+_EUROPE_PREDICTOR = None
+
+
+def _load_europe_predictor():
+    """Import the europe ``Predict_Upcoming_Matchweek`` bound to the europe model.
+
+    ``import Predict_Upcoming_Matchweek as global_upcoming`` above shares
+    ``sys.modules["Predict_Match"]`` with this script, so its ``pm`` is the
+    *Extra* model module. Load europe's ``Predict_Match`` and predictor under
+    private names so predictions use the model trained on European leagues.
+    """
+    global _EUROPE_PREDICTOR
+    if _EUROPE_PREDICTOR is not None:
+        return _EUROPE_PREDICTOR
+    import importlib.util
+
+    europe_dir = str(_bts_paths.EUROPE_FILES_DIR)
+    saved = sys.modules.pop("Predict_Match", None)
+    try:
+        spec = importlib.util.spec_from_file_location("Predict_Match", os.path.join(europe_dir, "Predict_Match.py"))
+        europe_pm = importlib.util.module_from_spec(spec)
+        sys.modules["Predict_Match"] = europe_pm
+        spec.loader.exec_module(europe_pm)
+        spec = importlib.util.spec_from_file_location(
+            "europe_Predict_Upcoming_Matchweek", os.path.join(europe_dir, "Predict_Upcoming_Matchweek.py"))
+        europe_upcoming = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(europe_upcoming)
+    finally:
+        if saved is not None:
+            sys.modules["Predict_Match"] = saved
+        else:
+            sys.modules.pop("Predict_Match", None)
+    assert os.path.dirname(os.path.abspath(europe_upcoming.pm.__file__)) == os.path.abspath(europe_dir)
+    _EUROPE_PREDICTOR = europe_upcoming
+    return europe_upcoming
+
+
+def _predict_with_europe_model(fixtures):
+    """Predict European-league fixtures with the europe (global) model.
+
+    Uses the europe predictor's own name mapping and ``predict_fixture`` so
+    rows match ``RESULT_COLUMNS`` exactly; unresolved teams fall back to the
+    europe schedule-only row.
+    """
+    if fixtures is None or fixtures.empty:
+        return []
+    europe = _load_europe_predictor()
+    gctx = europe.build_prediction_context()
+    mapping = europe.load_shared_mapping()
+    mapping, _ = europe.ensure_canonical_self_mappings(mapping, gctx)
+    mapping, _new, _drift = europe.update_team_mapping_from_fixtures(fixtures, gctx, mapping)
+    europe.save_team_mapping(europe.TEAM_MAPPING_FILE, mapping)
+    fixtures = europe.apply_team_mapping_to_fixtures(fixtures, mapping, gctx)
+    rows, predicted, schedule_only = [], 0, 0
+    for _, row in fixtures.iterrows():
+        try:
+            pred = europe.predict_fixture(row, gctx)
+        except Exception as exc:
+            print(f"  [extra->europe] predict failed {row.get('home_team')} v {row.get('away_team')}: {exc}")
+            pred = None
+        if pred is None:
+            pred = europe.build_schedule_only_row(row, gctx)
+            schedule_only += 1 if pred else 0
+        else:
+            predicted += 1
+        if pred:
+            rows.append({col: pred.get(col, "") for col in RESULT_COLUMNS})
+    print(f"  [extra->europe] {predicted} European fixture(s) predicted with the europe model, "
+          f"{schedule_only} schedule-only")
+    return rows
+
+
 def main():
     _t0 = time.monotonic()
     args = parse_args()
@@ -880,6 +958,15 @@ def main():
         return
 
     fixtures = pd.concat(fixture_frames, ignore_index=True)
+    # European competitions (Eredivisie, Belgium, Turkey, Scotland, Austria,
+    # Greece, Norway, Sweden, Poland, Romania) have no data in the Extra model
+    # (trained on Argentina / Brazil / Japan only), so every one of their
+    # fixtures was "schedule only" (846 upcoming games without a prediction).
+    # They are predicted with the europe model, which is trained on them.
+    own_competitions = set(latest_raw_file_per_competition(RAW_DATA_DIR) or {})
+    is_european = ~fixtures["competition"].astype(str).isin(own_competitions)
+    european_rows = _predict_with_europe_model(fixtures[is_european].copy()) if is_european.any() else []
+    fixtures = fixtures[~is_european].copy()
     team_mapping = global_upcoming.load_shared_mapping()
     team_mapping, _canonical_added = global_upcoming.ensure_canonical_self_mappings(team_mapping, mapping_ctx)
     team_mapping, _new_entries, _drift = global_upcoming.update_team_mapping_from_fixtures(
@@ -980,10 +1067,12 @@ def main():
             }
         )
 
+    rows.extend(european_rows)
     out = pd.DataFrame(rows, columns=RESULT_COLUMNS).astype("object")
     if not out.empty:
         out = out.sort_values(["match_date", "competition", "home_team", "away_team"])
 
+    out = _prob_calibration.calibrate_prediction_frame(out)
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
     out.to_csv(PREDICTIONS_FILE, index=False)
     print(f"Saved upcoming extra-league predictions: {PREDICTIONS_FILE}")

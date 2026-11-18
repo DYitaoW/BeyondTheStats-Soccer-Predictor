@@ -65,6 +65,7 @@ MLS_PROJECTED_TABLE_FILE = str(_paths.MLS_PROJECTED_TABLE_FILE)
 EXTRA_PROJECTED_TABLE_FILE = str(_paths.EXTRA_PROJECTED_TABLE_FILE)
 WOMENS_PROJECTED_TABLE_FILE = str(_paths.WOMENS_PROJECTED_TABLE_FILE)
 MLS_PROJECTED_BRACKET_FILE = str(_paths.MLS_PROJECTED_BRACKET_FILE)
+NWSL_PROJECTED_BRACKET_FILE = str(_paths.WOMENS_NWSL_BRACKET_FILE)
 
 # ── Pipeline & Data Files ─────────────────────────────────────────
 
@@ -153,6 +154,53 @@ CLUB_FRIENDLIES_ESPN_ID = "club.friendly"
 UPCOMING_ONLY_COMPETITIONS = {
     "International/Friendly",
 }
+
+# Tiered Nations Leagues: group stage split into tiers (League A/B/C...) plus
+# two-legged knockout ties. Groups come from the ESPN standings feed
+# (nations_league.py); value = ESPN league slug.
+TIERED_NATIONS_LEAGUES = {
+    "North America/Concacaf Nations League": "concacaf.nations.league",
+    "International/Nations League": "uefa.nations",
+}
+
+# One-off competitions (friendlies): every game stands alone, so there are no
+# tables, simulated seasons, projections, form tables or snapshots. Their
+# /api/league-data payload is just the upcoming games (``upcoming_only``).
+# Games still appear in the normal upcoming / live feeds.
+ONE_OFF_COMPETITIONS = frozenset({
+    CLUB_FRIENDLIES_COMPETITION,
+    "International/Friendly",
+})
+# /api/upcoming/<mode> feed that carries each one-off competition's games.
+ONE_OFF_UPCOMING_MODE = {
+    CLUB_FRIENDLIES_COMPETITION: "friendlies",
+    "International/Friendly": "friendlies",
+}
+
+
+def one_off_competition_name(competition: str) -> str:
+    """Canonical one-off competition for ``competition`` (any alias), or ""."""
+    comp = str(competition or "").strip()
+    if not comp:
+        return ""
+    if comp in ONE_OFF_COMPETITIONS:
+        return comp
+    try:
+        for alias in competition_live_aliases(comp):
+            if alias in ONE_OFF_COMPETITIONS:
+                return alias
+    except NameError:  # aliases helper defined later in this module
+        pass
+    lowered = comp.lower()
+    for name in ONE_OFF_COMPETITIONS:
+        if name.lower() == lowered:
+            return name
+    return ""
+
+
+def is_one_off_competition(competition: str) -> bool:
+    """True for friendlies and other one-off competitions (no league tables)."""
+    return bool(one_off_competition_name(competition))
 
 # Domestic leagues used only for UEFA/cup roster fallback (or upcoming API with no
 # domestic model history). Kept in fetch_league_teams / UEFA_Data_Manager but

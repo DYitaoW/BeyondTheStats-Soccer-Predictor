@@ -36,6 +36,7 @@ import Predict_Match as pm
 import team_mapping_groups as tmg  # noqa: E402
 import season_calendar
 import projection_schedule as proj_sched
+import monte_carlo  # shared vectorized season simulation
 
 
 class AveragedProbaClassifier:
@@ -64,13 +65,23 @@ OUT_DIR = PREDICTIONS_DIR
 OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
 OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
 RNG = random.Random()
-SIMULATION_RUNS = 250
+
+
+def _fixture_result_draw(home, away, labels, weights):
+    """Representative result for one fixture's scoreline (goal difference).
+
+    Seeded by the fixture and the day: the projection is reproducible and does
+    not depend on process / iteration order (the unseeded ``RNG.choices`` moved
+    title odds by up to 5 points between identical runs through tiebreaks).
+    """
+    rng = random.Random(monte_carlo.stable_seed(home, away, date.today().isoformat()))
+    return rng.choices(labels, weights=weights, k=1)[0]
+SIMULATION_RUNS = 20000  # vectorized engine (shared/monte_carlo.py)
 # Preseason PATH B synthesizes a full home/away slate; fewer sims keep Extra
 # projections inside the pipeline timeout while still producing stable odds.
-PATH_B_SIMULATION_RUNS = 80
-COMPETITION_SIM_RUNS = {
-    "Japan/J1 League": 150,
-}
+PATH_B_SIMULATION_RUNS = 5000
+# Per-competition overrides (the vectorized engine runs 20,000 everywhere).
+COMPETITION_SIM_RUNS: dict = {}
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 SHARED_MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
@@ -770,38 +781,27 @@ def coerce_scoreline(pred_result, base_hg, base_ag):
 
 
 def run_monte_carlo(teams, base_table, future_predictions, runs, competition=None, all_matches=None):
-    stat_sums = {team: defaultdict(float) for team in teams}
-    position_counts = {team: defaultdict(int) for team in teams}
+    """Monte Carlo season finishes (vectorized: ``shared.monte_carlo``).
 
-    real_matches = list(all_matches) if all_matches else []
-    played_values = [float(base_table.get(team, {}).get("P", 0.0) or 0.0) for team in teams]
+    Early-season jitter fades out by ``EARLY_SEASON_GAMES_THRESHOLD`` real
+    games; head-to-head leagues rank level-on-points clubs by their
+    mini-table (real + simulated matches). Seeded per competition and day.
+    """
+    played_values = [float((base_table.get(team) or {}).get("P", 0.0) or 0.0) for team in teams]
     least_played = min(played_values) if played_values else 0.0
     progress = min(1.0, least_played / float(pm.EARLY_SEASON_GAMES_THRESHOLD))
     jitter_scale = 0.05 * (1.0 - progress)
-
     is_h2h = competition in H2H_LEAGUES
-    for _ in range(max(1, int(runs))):
-        sim_table = clone_table(base_table)
-        # Reset each iteration — appending forever made H2H ranking O(runs^2).
-        sim_matches = list(real_matches) if is_h2h else None
-        for fixture in future_predictions:
-            probs = fixture["probs"]
-            if jitter_scale > 0.0:
-                probs = _jitter_probs(probs, jitter_scale)
-            result = sample_outcome(probs)
-            hg, ag = coerce_scoreline(result, fixture["pred_home_goals"], fixture["pred_away_goals"])
-            apply_result(sim_table, fixture["home_team"], fixture["away_team"], hg, ag, is_real=False)
-            if is_h2h:
-                sim_matches.append((fixture["home_team"], fixture["away_team"], hg, ag))
-
-        ranked = rank_table(sim_table, competition=competition, all_matches=sim_matches if is_h2h else None)
-        for pos, (team, stats) in enumerate(ranked, start=1):
-            position_counts[team][pos] += 1
-            for key, value in stats.items():
-                stat_sums[team][key] += float(value)
-
-    return stat_sums, position_counts
-
+    return monte_carlo.simulate_season(
+        teams,
+        base_table,
+        future_predictions,
+        runs,
+        h2h=is_h2h,
+        real_matches=list(all_matches or []) if is_h2h else None,
+        jitter_scale=jitter_scale,
+        seed=monte_carlo.stable_seed(competition, date.today().isoformat(), runs),
+    )
 
 def predict_match(ctx, home_team, away_team, competition_hint):
     prediction_season = pm.choose_season_for_teams(home_team, away_team, ctx["season_teams"], ctx["latest_season"])
@@ -848,7 +848,7 @@ def predict_match(ctx, home_team, away_team, competition_hint):
     if total <= 0:
         pred_res = max(probs, key=probs.get)
     else:
-        pred_res = RNG.choices(labels, weights=weights, k=1)[0]
+        pred_res = _fixture_result_draw(home_team, away_team, labels, weights)
     phg = max(0.0, float(ctx["home_goal_reg"].predict(X)[0]))
     pag = max(0.0, float(ctx["away_goal_reg"].predict(X)[0]))
     hg = int(round(phg))
@@ -1319,14 +1319,19 @@ def main():
     ctx = load_context()
     # Merge Extra Raw_Data with shared Europe Raw_Data (European Extra leagues
     # moved to the global downloader still need to be projected here).
-    latest = {}
-    for raw_root in (RAW_DIR, GLOBAL_RAW_DIR):
-        discovered = latest_raw_file_per_competition(raw_root) or {}
-        for comp, path in discovered.items():
-            # Keep anything under Extra Raw_Data; from shared only Extra competitions.
-            if raw_root == RAW_DIR or comp in EXTRA_COMPETITIONS:
-                latest[comp] = path
-    latest = _merge_roster_only_competitions(latest, ctx["available_teams"])
+    # Only leagues whose data lives under Extra Raw_Data (Argentina, Brazil,
+    # Japan). Leagues in the shared Data/Raw_Data (Eredivisie, Scotland,
+    # Turkey, Belgium, Portugal, Austria, ...) are projected by the europe
+    # pipeline, whose model knows their football-data team names. Projecting
+    # them here as well failed name resolution against ESPN and wrote zeroed
+    # placeholders over the europe tables (Turkey/Portugal/Belgium showed no
+    # title odds).
+    own = dict(latest_raw_file_per_competition(RAW_DIR) or {})
+    europe_projected = set(latest_raw_file_per_competition(GLOBAL_RAW_DIR) or {}) - set(own)
+    latest = _merge_roster_only_competitions(own, ctx["available_teams"])
+    for comp in sorted(set(latest) & europe_projected):
+        _progress(f"  [skip] projected by the europe pipeline: {comp}")
+        latest.pop(comp, None)
     # Never project cups or national-team competitions (incl. World Cup
     # qualifying) as league tables — filters both CSV-discovered and
     # roster-only competitions before any projection/placeholder rows are built.

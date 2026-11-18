@@ -16,6 +16,8 @@ Time (HH:MM ET), KickoffUTC (ISO-8601), MatchId (ESPN event id), Stage
 (``regular`` / ``playoffs``), Status (ESPN status name), Home, Away (canonical
 team names), HG, AG, Res (blank until played), HS, HST, AS, AST, HC, AC, HF,
 AF, HPoss, APoss, AvgH, AvgD, AvgA (no bookmaker odds on ESPN: blank).
+``Winner`` (H/A) is the side that won or advanced (penalties included);
+``HPens``/``APens`` are shootout scores when there was one.
 """
 from __future__ import annotations
 
@@ -79,8 +81,8 @@ LEAGUES = {
 
 RAW_COLUMNS = [
     "Country", "League", "Season", "Date", "Time", "KickoffUTC", "MatchId", "Stage", "Status",
-    "Home", "Away", "HG", "AG", "Res", "HS", "HST", "AS", "AST", "HC", "AC", "HF", "AF",
-    "HPoss", "APoss", "AvgH", "AvgD", "AvgA",
+    "Home", "Away", "HG", "AG", "Res", "Winner", "HPens", "APens", "HS", "HST", "AS", "AST",
+    "HC", "AC", "HF", "AF", "HPoss", "APoss", "AvgH", "AvgD", "AvgA",
 ]
 
 
@@ -195,8 +197,15 @@ def event_to_raw_row(ev: dict, competition: str, season: int) -> dict | None:
             hg, ag = int(home.get("score")), int(away.get("score"))
         except (TypeError, ValueError):
             return None
+        # Knockout games decided after a draw (extra time / penalties): ESPN
+        # flags the advancing side with competitor["winner"].
+        winner = "H" if home.get("winner") is True else ("A" if away.get("winner") is True else "")
+        if not winner and hg != ag:
+            winner = "H" if hg > ag else "A"
         row.update({
             "HG": hg, "AG": ag, "Res": "H" if hg > ag else ("A" if ag > hg else "D"),
+            "Winner": winner,
+            "HPens": home.get("shootoutScore", ""), "APens": away.get("shootoutScore", ""),
             "HS": _stat(home, "totalShots"), "HST": _stat(home, "shotsOnTarget"),
             "AS": _stat(away, "totalShots"), "AST": _stat(away, "shotsOnTarget"),
             "HC": _stat(home, "wonCorners"), "AC": _stat(away, "wonCorners"),

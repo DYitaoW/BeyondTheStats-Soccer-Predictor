@@ -35,7 +35,7 @@ Beyond-the-Stats/
 | Full pipeline | `python main/Run_All_Pipeline.py` (root shim: `python Run_All_Pipeline.py`) |
 | Daily loop / feed | `python main/Daily_Pipeline.py --once` |
 | Persistent backend | `python main/run_backend.py` (root shim: `python run_backend.py`) |
-| Website only | `gunicorn --chdir Website -c gunicorn_config.py app:app` |
+| Website only | `python Website/app.py --port 8000` (uvicorn; gunicorn on Linux is configured inside `main/Backend/server.py`) |
 
 ## Output layout
 

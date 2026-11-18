@@ -17,7 +17,7 @@ import json
 import os
 import sqlite3
 import threading
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -39,6 +39,7 @@ _LA_DEVICE_SETTINGS_TABLE = "live_activity_device_settings"
 _NOTIF_HIST_TABLE = "notification_history"
 _POINTS_ADJ_TABLE = "team_points_adjustments"
 _LEAGUE_PROJ_HIST_TABLE = "league_projection_history"
+_ACCURACY_HIST_TABLE = "prediction_accuracy_history"
 _META_TABLE = "store_meta"
 
 
@@ -577,6 +578,34 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         f"""
         CREATE INDEX IF NOT EXISTS idx_proj_hist_comp_mw
         ON {_LEAGUE_PROJ_HIST_TABLE}(competition, season, matchweek)
+        """
+    )
+    # Daily prediction-accuracy snapshots (Website/accuracy_metrics.py):
+    # one row per (snapshot_date, competition, window); competition "ALL" =
+    # every settled prediction in the window.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {_ACCURACY_HIST_TABLE} (
+            snapshot_date TEXT NOT NULL,
+            competition TEXT NOT NULL,
+            window TEXT NOT NULL,
+            n INTEGER NOT NULL,
+            hit_rate REAL,
+            brier REAL,
+            log_loss REAL,
+            rps REAL,
+            draw_pred REAL,
+            draw_actual REAL,
+            metrics_json TEXT NOT NULL DEFAULT '{{}}',
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (snapshot_date, competition, window)
+        )
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS idx_acc_hist_comp_date
+        ON {_ACCURACY_HIST_TABLE}(competition, window, snapshot_date DESC)
         """
     )
 
@@ -1415,7 +1444,7 @@ def load_team_recent_matches(
 
 
 def count_rows(table: str, db_path: Optional[Path] = None) -> int:
-    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE, _NOTIF_SUBS_TABLE, _NOTIF_HIST_TABLE, _POINTS_ADJ_TABLE, _LEAGUE_PROJ_HIST_TABLE}:
+    if table not in {_PAST_TABLE, _LIVE_TABLE, _UPCOMING_TABLE, _SQUAD_VALUES_TABLE, _NOTIF_SUBS_TABLE, _NOTIF_HIST_TABLE, _POINTS_ADJ_TABLE, _LEAGUE_PROJ_HIST_TABLE, _ACCURACY_HIST_TABLE}:
         raise ValueError(f"unknown table: {table}")
     ensure_store(db_path)
     conn = _open_ready(db_path)
@@ -3093,6 +3122,93 @@ def load_all_points_adjustments(
         conn.close()
 
 
+def load_untouched_upcoming_rows(source: str, synced_since: str, from_date: str,
+                                 db_path: Optional[Path] = None) -> list[dict]:
+    """``source`` rows dated ``from_date``+ not rewritten since ``synced_since``.
+
+    Returns ``{storage_key, match_date_iso, competition, home_team, away_team,
+    schedule_only}`` for the caller to decide which are superseded.
+    """
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT storage_key, match_date_iso, competition, home_team, away_team,
+                   json_extract(payload_json, '$.schedule_only') AS schedule_only,
+                   json_extract(payload_json, '$.has_prediction') AS has_prediction
+            FROM {_UPCOMING_TABLE}
+            WHERE source = ? AND match_date_iso >= ? AND updated_at < ?
+            """,
+            (str(source), str(from_date)[:10], str(synced_since)),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_upcoming_rows(storage_keys: Iterable[str], db_path: Optional[Path] = None) -> int:
+    """Delete ``upcoming_games`` rows by storage key."""
+    keys = [str(k) for k in (storage_keys or []) if k]
+    if not keys:
+        return 0
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            deleted = 0
+            for k in keys:
+                deleted += int(conn.execute(f"DELETE FROM {_UPCOMING_TABLE} WHERE storage_key = ?", (k,)).rowcount or 0)
+            _durable_commit(conn)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+    return deleted
+
+
+UPCOMING_RETENTION_DAYS = 35
+
+
+def prune_stale_upcoming_games(
+    before_date: Optional[str] = None,
+    *,
+    retention_days: int = UPCOMING_RETENTION_DAYS,
+    db_path: Optional[Path] = None,
+) -> int:
+    """Delete ``upcoming_games`` rows dated before ``before_date``.
+
+    Default cutoff: today (UTC) minus ``retention_days`` (35, so the 30-day
+    look-back of ``/api/upcoming/<mode>?window=4week`` keeps its rows).
+    Finished games live in ``past_games``; nothing else pruned these, so
+    the table kept every fixture ever predicted (1,336 played games were
+    still ``status = upcoming``). Returns the number of deleted rows.
+    """
+    cutoff = str(before_date or "").strip()[:10]
+    if not cutoff:
+        cutoff = (datetime.now(timezone.utc).date() - timedelta(days=int(retention_days))).isoformat()
+    ensure_store(db_path)
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                f"DELETE FROM {_UPCOMING_TABLE} WHERE match_date_iso IS NOT NULL "
+                f"AND match_date_iso != '' AND match_date_iso < ?",
+                (cutoff,),
+            )
+            deleted = int(cur.rowcount or 0)
+            _durable_commit(conn)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+    return deleted
+
+
 def delete_points_adjustment(
     competition: str,
     team: str,
@@ -3493,3 +3609,69 @@ def load_projection_history_series(
     finally:
         conn.close()
 
+
+
+def save_accuracy_snapshot(snapshot_date: str, rows: list[dict], db_path: Optional[Path] = None) -> int:
+    """Upsert accuracy rows (``competition``, ``window``, ``n``, metrics) for one date."""
+    if not rows:
+        return 0
+    ensure_store(db_path)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with _WRITE_LOCK:
+        conn = _open_ready(db_path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for r in rows:
+                conn.execute(
+                    f"""
+                    INSERT INTO {_ACCURACY_HIST_TABLE}
+                        (snapshot_date, competition, window, n, hit_rate, brier, log_loss, rps,
+                         draw_pred, draw_actual, metrics_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(snapshot_date, competition, window) DO UPDATE SET
+                        n = excluded.n, hit_rate = excluded.hit_rate, brier = excluded.brier,
+                        log_loss = excluded.log_loss, rps = excluded.rps,
+                        draw_pred = excluded.draw_pred, draw_actual = excluded.draw_actual,
+                        metrics_json = excluded.metrics_json, created_at = excluded.created_at
+                    """,
+                    (
+                        str(snapshot_date)[:10], str(r.get("competition") or "ALL"), str(r.get("window") or ""),
+                        int(r.get("n") or 0), r.get("hit_rate"), r.get("brier"), r.get("log_loss"), r.get("rps"),
+                        r.get("draw_pred"), r.get("draw_actual"),
+                        json.dumps({k: v for k, v in r.items() if k not in {"competition", "window"}}, default=str),
+                        now,
+                    ),
+                )
+            _durable_commit(conn)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+    return len(rows)
+
+
+def load_accuracy_history(
+    competition: str = "ALL",
+    window: str = "30d",
+    *,
+    limit: int = 120,
+    db_path: Optional[Path] = None,
+) -> list[dict]:
+    """Accuracy snapshots for one competition / window, oldest first."""
+    ensure_store(db_path)
+    conn = _open_ready(db_path)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT snapshot_date, competition, window, n, hit_rate, brier, log_loss, rps, draw_pred, draw_actual
+            FROM {_ACCURACY_HIST_TABLE}
+            WHERE competition = ? AND window = ?
+            ORDER BY snapshot_date DESC
+            LIMIT ?
+            """,
+            (str(competition or "ALL"), str(window or "30d"), int(limit)),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in reversed(rows)]

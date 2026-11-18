@@ -19,6 +19,7 @@ from rate_limit import check_rate_limit, client_identifier
 from live_poller import start_live_score_poller
 from notifications import start_apns_worker
 from team_overview import start_team_overview_precache_worker
+from cache_warmer import start_cache_warmer
 from routes.helpers import log_key_error
 from routes.compat import RequestContextMiddleware, jsonify, SafeJSONResponse
 from routes import register_all_routers
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI):
     start_live_score_poller()
     start_apns_worker()
     start_team_overview_precache_worker()
+    start_cache_warmer(app)
     yield
 app = FastAPI(
     title="Beyond the Stats",

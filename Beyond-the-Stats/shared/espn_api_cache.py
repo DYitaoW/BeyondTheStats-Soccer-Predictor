@@ -26,6 +26,22 @@ DEFAULT_TIMEOUT_SECONDS = 30
 TTL_PAST_SECONDS = 2 * 3600    # 2h for today and earlier
 TTL_FUTURE_SECONDS = 24 * 3600  # 24h for future dates
 
+# Month scoreboards (``dates=YYYYMM&limit=1000``): ESPN accepts month queries
+# for every league / cup / friendlies feed even where it rejects date ranges,
+# and returns exactly the events a day-by-day walk finds. One cached request
+# per month replaced day walks of 180-366 requests per competition (cups
+# ~1,700 requests, friendlies 732 per run). The cached month payloads are the
+# store of found games; how often a month is re-fetched depends on distance:
+MONTH_TTL_CURRENT_SECONDS = 3 * 3600      # month containing today
+MONTH_TTL_NEAR_SECONDS = 12 * 3600        # next month starting within NEAR_DAYS
+MONTH_TTL_FAR_SECONDS = 3 * 24 * 3600     # later months (cups: weeks between rounds)
+MONTH_TTL_PAST_SECONDS = 24 * 3600        # fully past months (late result corrections)
+MONTH_NEAR_DAYS = 21
+# Friendlies cluster in international breaks / pre-season and are announced
+# weeks ahead: far months are re-checked weekly.
+SPARSE_FEED_ESPN_IDS = frozenset({"fifa.friendly", "club.friendly"})
+MONTH_TTL_SPARSE_FAR_SECONDS = 7 * 24 * 3600
+
 try:
     import certifi
     _SSL_CONTEXT: ssl.SSLContext | None = ssl.create_default_context(cafile=certifi.where())
@@ -167,6 +183,81 @@ def fetch_scoreboard(
     return data
 
 
+def month_ttl_seconds(espn_id: str, month_start: date, today: date | None = None) -> int:
+    """Cache lifetime for one league-month (see ``MONTH_TTL_*``)."""
+    today = today or date.today()
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    if next_month <= today - timedelta(days=3):
+        return MONTH_TTL_PAST_SECONDS
+    if next_month <= today:
+        # Just-finished month: late games / results still settling.
+        return MONTH_TTL_CURRENT_SECONDS
+    if month_start <= today < next_month:
+        return MONTH_TTL_CURRENT_SECONDS
+    if (month_start - today).days <= MONTH_NEAR_DAYS:
+        return MONTH_TTL_NEAR_SECONDS
+    if str(espn_id or "").strip().lower() in SPARSE_FEED_ESPN_IDS:
+        return MONTH_TTL_SPARSE_FAR_SECONDS
+    return MONTH_TTL_FAR_SECONDS
+
+
+def fetch_scoreboard_month(
+    espn_id: str,
+    month_start,
+    *,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    max_age_seconds: int | None = None,
+):
+    """ESPN scoreboard for one calendar month (``dates=YYYYMM&limit=1000``), disk-cached."""
+    month_d = _to_date(month_start)
+    if month_d is None:
+        raise ValueError(f"bad month: {month_start!r}")
+    month_d = month_d.replace(day=1)
+    code = month_d.strftime("%Y%m")
+    path = cache_path(espn_id, f"m{code}")
+    cached = _read_cache(path)
+    ttl = month_ttl_seconds(espn_id, month_d) if max_age_seconds is None else max(0, int(max_age_seconds))
+    if cached is not None and time.time() - float(cached.get("ts", 0)) < ttl:
+        return cached["data"]
+    url = (
+        "https://site.api.espn.com/apis/site/v2/sports/soccer/"
+        f"{espn_id}/scoreboard?dates={code}&limit=1000"
+    )
+    request = urllib.request.Request(url)
+    with _urlopen(request, timeout=timeout) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    _write_cache(path, data)
+    return data
+
+
+def _months_between(start_d: date, end_d: date) -> list[date]:
+    out = []
+    cursor = start_d.replace(day=1)
+    while cursor <= end_d:
+        out.append(cursor)
+        cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return out
+
+
+def _event_in_window(event: dict, start_d: date, end_d: date) -> bool:
+    """Event kickoff (UTC or US-Eastern calendar date) inside ``[start, end]``."""
+    raw = str(event.get("date") or "").strip()
+    if not raw:
+        return True
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    days = {dt.date()}
+    try:
+        from zoneinfo import ZoneInfo
+
+        days.add(dt.astimezone(ZoneInfo("America/New_York")).date())
+    except Exception:
+        pass
+    return any(start_d <= d <= end_d for d in days)
+
+
 def fetch_scoreboard_default(
     espn_id: str,
     *,
@@ -199,9 +290,10 @@ def fetch_scoreboard_range(
 ) -> list[dict]:
     """Collect ESPN events across ``[start, end]``.
 
-    Tries a single multi-day scoreboard query first (works for many domestic
-    leagues). On HTTP 400 / empty (UEFA rejects ranges), falls back to a
-    smart day walk — Tue/Wed only for UEFA — and merges the default scoreboard.
+    Uses cached month scoreboards (``fetch_scoreboard_month``; events outside
+    the window are dropped). Only if a month query fails: a single multi-day
+    range query, then the default scoreboard plus a smart day walk (Tue/Wed
+    only for UEFA).
     """
     start_d = _to_date(start)
     end_d = _to_date(end)
@@ -211,12 +303,14 @@ def fetch_scoreboard_range(
     events: list[dict] = []
     seen_ids: set[str] = set()
 
-    def _absorb(payload) -> int:
+    def _absorb(payload, window: bool = False) -> int:
         added = 0
         if not isinstance(payload, dict):
             return 0
         for event in payload.get("events") or []:
             if not isinstance(event, dict):
+                continue
+            if window and not _event_in_window(event, start_d, end_d):
                 continue
             eid = str(event.get("id") or event.get("uid") or "")
             if eid and eid in seen_ids:
@@ -226,6 +320,23 @@ def fetch_scoreboard_range(
             events.append(event)
             added += 1
         return added
+
+    # 0) Cached month scoreboards (one request per month, tiered TTL).
+    months = _months_between(start_d, end_d)
+    try:
+        for month_d in months:
+            _absorb(fetch_scoreboard_month(espn_id, month_d, timeout=timeout), window=True)
+        if progress_label:
+            print(
+                f"  [espn] {progress_label}: {len(months)} month(s) {start_d}->{end_d} -> {len(events)} events",
+                flush=True,
+            )
+        return events
+    except Exception as exc:
+        if progress_label:
+            print(f"  [espn] {progress_label}: month query failed ({exc}); falling back to day walk", flush=True)
+        events.clear()
+        seen_ids.clear()
 
     # 1) Prefer a single range pull when ESPN allows it.
     date_param = f"{start_d.strftime('%Y%m%d')}-{end_d.strftime('%Y%m%d')}"

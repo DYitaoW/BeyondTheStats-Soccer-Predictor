@@ -36,6 +36,7 @@ if str(_FILES_DIR) not in sys.path:
     sys.path.insert(0, str(_FILES_DIR))
 
 from shared import paths as _bts_paths  # noqa: E402
+from shared import probability_calibration as _prob_calibration  # noqa: E402
 
 import UEFA_Cup_Knockout as uefa_ko  # noqa: E402
 import Track_Cup_Results as track  # noqa: E402
@@ -162,7 +163,14 @@ def _strength_prior_for_row(home: str, away: str, prior_ctx) -> dict | None:
     )
 
 
-def _apply_probs_to_row(rec: dict, ph: float, pd_: float, pa: float, *, reason: str, hg=None, ag=None):
+def _apply_probs_to_row(rec: dict, ph: float, pd_: float, pa: float, *, reason: str, hg=None, ag=None,
+                        quality: str = "prediction"):
+    """Write probabilities onto a pending UEFA row and mark it predicted.
+
+    Pending rows start from ``Track_Cup_Results`` templates with
+    ``schedule_only = 1``; that flag was never cleared, so every UEFA fixture
+    (198 games) showed "No model prediction" despite having probabilities.
+    """
     total = ph + pd_ + pa
     if total <= 0:
         ph, pd_, pa = 0.46, 0.26, 0.28
@@ -182,6 +190,9 @@ def _apply_probs_to_row(rec: dict, ph: float, pd_: float, pa: float, *, reason: 
     else:
         rec["predicted_result"] = "D"
     rec["probability_reasoning"] = reason
+    rec["schedule_only"] = "0"
+    rec["prediction_quality"] = quality
+    rec["has_prediction"] = True
     return rec
 
 
@@ -282,12 +293,13 @@ def _try_model_predict_pending(pending: pd.DataFrame) -> pd.DataFrame:
                 ),
                 hg=prior.get("pred_home_goals", 1.4),
                 ag=prior.get("pred_away_goals", 1.1),
+                quality="strength_prior",
             )
             prior_ok += 1
             used = True
 
         if not used:
-            _apply_probs_to_row(rec, 0.46, 0.26, 0.28, reason="UEFA home prior fallback")
+            _apply_probs_to_row(rec, 0.46, 0.26, 0.28, reason="UEFA home prior fallback", quality="fallback")
             fallback += 1
         rows.append(rec)
 
@@ -719,6 +731,7 @@ def refresh_uefa_cup_projections() -> dict:
     other_upcoming = _non_uefa(existing_upcoming)
     upcoming = pd.concat([other_upcoming, pending_df], ignore_index=True) if not pending_df.empty else other_upcoming
     upcoming = track._ensure_columns(upcoming, track.CUP_HISTORY_COLUMNS)
+    upcoming = _prob_calibration.calibrate_prediction_frame(upcoming)
 
     # Persist history files
     other_completed = _non_uefa(existing_completed)

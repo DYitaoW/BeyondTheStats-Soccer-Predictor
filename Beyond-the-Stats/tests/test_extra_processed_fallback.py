@@ -100,13 +100,15 @@ class ExtraProcessedFallbackTests(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             self.assertEqual([f.replace("\\", "/") for f in season_files], ["Japan/J1 League/jpnstat2026.csv"])
 
-    def test_project_merges_global_raw_for_extra_competitions(self):
+    def test_project_skips_leagues_projected_by_europe(self):
+        """European leagues in the shared Raw_Data are projected by the europe
+        pipeline; Extra re-projecting them wrote zeroed placeholders over the
+        europe tables (Turkey / Portugal / Belgium showed no title odds)."""
         plt = _load_project_league_table()
-        self.assertIn("Netherlands/Eredivisie", plt.EXTRA_COMPETITIONS)
         self.assertTrue(hasattr(plt, "GLOBAL_RAW_DIR"))
         source = (EXTRA_FILES / "Project_League_Table.py").read_text(encoding="utf-8")
-        self.assertIn("GLOBAL_RAW_DIR", source)
-        self.assertIn("for raw_root in (RAW_DIR, GLOBAL_RAW_DIR)", source)
+        self.assertIn("europe_projected = set(latest_raw_file_per_competition(GLOBAL_RAW_DIR)", source)
+        self.assertNotIn("for raw_root in (RAW_DIR, GLOBAL_RAW_DIR)", source)
 
     def test_empty_extra_still_loads_via_copied_shared_tree(self):
         """Integration: hide Extra Processed_Data; shared copy must satisfy load_training_matches."""

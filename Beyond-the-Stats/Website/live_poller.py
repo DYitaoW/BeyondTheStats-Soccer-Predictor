@@ -2221,7 +2221,59 @@ def _merge_competition_result_dicts(*result_dicts):
     return merged
 
 
-def _poll_espn_for_dates(poll_dates, *, include_deferred: bool):
+# ── Per-competition poll scheduling ─────────────────────────────────
+# A competition is fetched every cycle only while it is "hot": a game in
+# progress, or a kickoff from 10 min before to 2.5 h after (pre -> in, extra
+# time, penalties). Every other competition gets a basic poll every
+# IDLE_COMP_POLL_SECONDS (30 min) to pick up schedule changes. Previously all
+# ~20 core competitions were fetched every 60 s whenever any game anywhere was
+# live (21 ESPN requests a minute on a night with only internationals).
+IDLE_COMP_POLL_SECONDS = int(os.getenv("BTS_IDLE_COMP_POLL_SECONDS", "1800"))
+HOT_BEFORE_KICKOFF_S = 600
+HOT_AFTER_KICKOFF_S = 9000
+_comp_last_polled: dict[str, float] = {}
+_comp_poll_day: str | None = None
+_last_todays_comps: dict = {}
+
+
+def _competition_is_hot(comp: str, now_ts: float, todays_comps: dict | None = None) -> bool:
+    """True while ``comp`` has a live game or a kickoff inside the hot window."""
+    with _live_scores_lock:
+        games = list((_live_scores.get(comp) or {}).get("games") or [])
+    for g in games:
+        status = str(g.get("status") or "").strip().lower()
+        if status == "in":
+            return True
+        if status == "pre":
+            ko = _la_kickoff_ts(g)
+            if ko is not None and -HOT_AFTER_KICKOFF_S <= ko - now_ts <= HOT_BEFORE_KICKOFF_S:
+                return True
+    for kt in (todays_comps or {}).get(comp) or []:
+        if isinstance(kt, datetime):
+            diff = kt.timestamp() - now_ts
+            if -HOT_AFTER_KICKOFF_S <= diff <= HOT_BEFORE_KICKOFF_S:
+                return True
+    return False
+
+
+def _competition_is_due(comp: str, now_ts: float, todays_comps: dict | None = None) -> bool:
+    """Poll ``comp`` this cycle? Hot competitions always; others every 30 min."""
+    last = _comp_last_polled.get(comp)
+    if last is None or now_ts - last >= IDLE_COMP_POLL_SECONDS:
+        return True
+    return _competition_is_hot(comp, now_ts, todays_comps)
+
+
+def _filter_due(available: dict, now_ts: float, todays_comps: dict | None) -> dict:
+    return {c: e for c, e in (available or {}).items() if _competition_is_due(c, now_ts, todays_comps)}
+
+
+def _mark_polled(comps, now_ts: float) -> None:
+    for c in comps or ():
+        _comp_last_polled[c] = now_ts
+
+
+def _poll_espn_for_dates(poll_dates, *, include_deferred: bool, only_due: bool = False):
     """Fetch live (+ optional deferred) ESPN results across one or more dates.
 
     Order matters:
@@ -2232,15 +2284,28 @@ def _poll_espn_for_dates(poll_dates, *, include_deferred: bool):
     score collection, and the "games for today?" check runs on top of
     already-collected data.
     """
+    global _comp_poll_day, _last_todays_comps
     all_live = {}
     all_deferred = {}
     todays_comps_merged = {}
+    now_ts = time.time()
+    day_key = ",".join(d.isoformat() for d in poll_dates)
+    if day_key != _comp_poll_day:
+        # New poll day (or overnight window change): fetch everything once.
+        _comp_poll_day = day_key
+        _comp_last_polled.clear()
+    polled: set[str] = set()
     for poll_date in poll_dates:
         date_str = poll_date.strftime("%Y%m%d")
 
         # ── 1. Collect CORE competitions first ─────────────────────
         core_available = _build_available_competitions({})
+        if only_due:
+            core_available = _filter_due(core_available, now_ts, _last_todays_comps)
         live_comps, deferred_comps = _split_live_and_deferred(core_available)
+        polled.update(live_comps)
+        if include_deferred:
+            polled.update(deferred_comps)
         all_live = _merge_competition_result_dicts(
             all_live, _fetch_live_poll_results(live_comps, date_str)
         )
@@ -2267,8 +2332,13 @@ def _poll_espn_for_dates(poll_dates, *, include_deferred: bool):
             eid = config.LIVE_SCORE_COMPETITIONS.get(comp)
             if eid:
                 extra_available[comp] = eid
+        if only_due:
+            extra_available = _filter_due(extra_available, now_ts, todays_comps_merged)
         if extra_available:
             extra_live, extra_deferred = _split_live_and_deferred(extra_available)
+            polled.update(extra_live)
+            if include_deferred:
+                polled.update(extra_deferred)
             all_live = _merge_competition_result_dicts(
                 all_live, _fetch_live_poll_results(extra_live, date_str)
             )
@@ -2277,6 +2347,9 @@ def _poll_espn_for_dates(poll_dates, *, include_deferred: bool):
                     all_deferred, _fetch_deferred_poll_results(extra_deferred, date_str)
                 )
 
+    _mark_polled(polled, now_ts)
+    if todays_comps_merged:
+        _last_todays_comps = dict(todays_comps_merged)
     return (
         _merge_competition_result_dicts(all_live, all_deferred),
         todays_comps_merged,
@@ -2493,6 +2566,10 @@ def _live_score_poller_loop():
       900s (15min) when a game kicks off within 60 minutes (pre-match),
       wakes at nearest_future - 1h when games are 1-2h away,
       1800s (30min) otherwise.
+    Each cycle fetches only "due" competitions (``_competition_is_due``): hot
+    ones (live game / kickoff from -10 min to +2.5 h) every cycle, the rest
+    every ``IDLE_COMP_POLL_SECONDS`` (30 min). The first cycle of a poll day
+    and on-demand refreshes fetch everything.
     Summaries (lineups, h2h, key events) fetched every cycle for ALL games.
     """
     # Init defaults so a crash in one cycle doesn't leave them undefined.
@@ -2533,7 +2610,7 @@ def _live_score_poller_loop():
             # Collect ESPN games first; CSV/discovery "games today?" runs inside
             # _poll_espn_for_dates only after the CORE fetch completes.
             results, todays_comps = _poll_espn_for_dates(
-                poll_dates, include_deferred=include_deferred
+                poll_dates, include_deferred=include_deferred, only_due=True
             )
 
             _merge_poll_results_into_live_scores(
@@ -2740,9 +2817,14 @@ def _live_score_poller_loop():
         # ``live_comps`` killed the daemon after the first successful collect, which
         # froze scores at status=pre while poller.started stayed true.
         try:
+            # Whole in-memory scoreboard, not just this cycle's (filtered)
+            # fetch: competitions skipped this cycle still have kickoffs.
+            with _live_scores_lock:
+                board = {k: {"games": list(v.get("games") or [])} for k, v in _live_scores.items()}
+            board.update({k: v for k, v in (results or {}).items() if k not in board})
             live_results = {
                 k: v
-                for k, v in (results or {}).items()
+                for k, v in board.items()
                 if k not in config.RESULT_ONLY_COMPETITIONS
                 and k not in config.REDUCED_POLLING_COMPETITIONS
             }

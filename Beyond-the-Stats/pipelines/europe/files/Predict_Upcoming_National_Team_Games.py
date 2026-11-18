@@ -14,7 +14,6 @@ PREDICTIONS_DIR = str(_bts_paths.OUTPUT_PRED_NATIONAL)
 PROJECT_DIR = str(_bts_paths.SP_DIR)
 import argparse
 import os
-import random
 import sys
 import time
 import urllib.error
@@ -24,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
 import pandas as pd
+from shared import probability_calibration as _prob_calibration  # noqa: E402
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_DIR = os.path.dirname(_THIS_DIR)
@@ -423,16 +423,16 @@ def predict_fixture(row, bundle):
     probabilities = probabilities_from_model(feature_frame, bundle)
     probabilities = adjust_for_knockout(probabilities, stage)
     prediction_key = national.make_prediction_key(match_date, competition, home_team, away_team)
-    jitter_delta = 0.018 if "world cup" in competition.lower() else 0.026
-    probabilities = national.probability_jitter(probabilities, prediction_key, jitter_delta)
+    # No per-fixture jitter (it shifted home/away by up to 2.6 points at
+    # random); floor every outcome at 2%.
+    probabilities = _prob_calibration.finalize_probabilities(probabilities)
 
     pred_home_goals = max(0.0, float(bundle["home_goal_reg"].predict(feature_frame)[0]))
     pred_away_goals = max(0.0, float(bundle["away_goal_reg"].predict(feature_frame)[0]))
-    # Use probabilistic sampling instead of always taking the max
-    # This adds variation in group stage outcomes
-    results = list(probabilities.keys())
-    probs_list = [probabilities[r] for r in results]
-    predicted_result = random.choices(results, weights=probs_list, k=1)[0]
+    # The pick is the most likely outcome. It used to be a random draw
+    # weighted by the probabilities, which made the published pick wrong more
+    # often than the model itself.
+    predicted_result = max(probabilities, key=probabilities.get)
 
     p_home = probabilities["H"] * 100
     p_draw = probabilities["D"] * 100
@@ -444,8 +444,10 @@ def predict_fixture(row, bundle):
     knockout_str = "Knockout" if "knockout" in stage else stage.replace("_", " ").title()
 
     parsed_dt = pd.to_datetime(row.get("match_datetime_utc"), utc=True, errors="coerce")
+    # US-Eastern calendar date (the app's convention). The UTC date put every
+    # evening game in the Americas a day late and split it from the live row.
     match_date_text = (
-        parsed_dt.strftime("%Y-%m-%d")
+        national.match_date_et(parsed_dt)
         if not pd.isna(parsed_dt)
         else str(match_date)[:10]
     )
@@ -472,7 +474,7 @@ def predict_fixture(row, bundle):
             f"Predicted: {result_label} ({p_home:.0f}%/{p_draw:.0f}%/{p_away:.0f}%) | "
             f"xG: {pred_home_goals:.1f}-{pred_away_goals:.1f} | "
             f"{venue_str} | {knockout_str} | "
-            f"Confidence: {conf} | Jitter: {jitter_delta:.3f}"
+            f"Confidence: {conf}"
         ),
         "pred_home_goals": round(pred_home_goals, 3),
         "pred_away_goals": round(pred_away_goals, 3),
@@ -545,6 +547,7 @@ def _write_national_predictions(frame: pd.DataFrame) -> None:
     if out.empty:
         out = pd.DataFrame(columns=RESULT_COLUMNS)
     else:
+        out = _prob_calibration.calibrate_prediction_frame(out)
         out = out[RESULT_COLUMNS].sort_values(
             ["match_date", "competition", "home_team", "away_team"],
             na_position="last",

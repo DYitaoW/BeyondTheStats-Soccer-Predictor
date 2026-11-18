@@ -177,6 +177,8 @@ def _build_lock_for(comp_name: str) -> threading.Lock:
 
 
 def _load_league_data_from_cache(comp_name):
+    if config.is_one_off_competition(comp_name):
+        return None  # one-off competitions are never cached (always current upcoming list)
     mem = _mem_get_league_data(comp_name)
     if mem is not None:
         if _league_data_cache_is_stale_zeroed(comp_name, mem):
@@ -270,6 +272,8 @@ def _mls_league_data_cache_missing_cup(comp_name: str, payload: dict) -> bool:
 
 
 def _write_league_data_cache(comp_name, payload):
+    if config.is_one_off_competition(comp_name):
+        return  # no tables / projection snapshots for friendlies
     path = _league_data_cache_path(comp_name)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -503,10 +507,11 @@ def _standings_entry_fresh(entry: dict | None) -> bool:
     updated = entry.get("updated_at", "")
     if not updated:
         return True  # Persisted tables without timestamp are still usable.
-    try:
-        age = (datetime.now() - datetime.fromisoformat(str(updated))).total_seconds()
-    except Exception:
-        return True
+    from standings import table_age_seconds
+
+    age = table_age_seconds(updated)
+    if age is None:
+        return False  # unparseable timestamp: recompute rather than trust it
     return age < float(getattr(config, "REAL_TABLES_CACHE_TTL", 300))
 
 
@@ -1044,6 +1049,236 @@ def _mls_bracket_to_cup_knockout(projected: dict) -> dict:
     }
 
 
+NWSL_COMPETITION = "United States/NWSL"
+_NWSL_STAGE_LABELS = {"quarterfinals": "Quarterfinal", "semifinals": "Semifinal", "final": "NWSL Championship"}
+
+
+def _load_nwsl_projected_bracket() -> dict | None:
+    """Pipeline NWSL playoff projection (pipelines/womens Project_League_Table)."""
+    data = _load_json_payload(getattr(config, "NWSL_PROJECTED_BRACKET_FILE", ""))
+    return data if isinstance(data, dict) and data.get("seeds") else None
+
+
+def _nwsl_bracket_to_cup_knockout(projected: dict) -> dict:
+    """NWSL playoff JSON -> cup-style knockout / odds / real maps (same shape as MLS)."""
+    knockout: dict = {}
+    real_knockout: dict = {}
+    for stage in ("quarterfinals", "semifinals", "final"):
+        games = projected.get(stage)
+        games = [games] if isinstance(games, dict) else (games or [])
+        rows, real_rows = [], []
+        for g in games:
+            if not isinstance(g, dict):
+                continue
+            p_home = g.get("prob_home_advances")
+            entry = _mls_match_entry(
+                g.get("home_team"), g.get("away_team"), g.get("winner"),
+                label=f"{_NWSL_STAGE_LABELS[stage]} {g.get('label', '')}".strip() if stage != "final"
+                else _NWSL_STAGE_LABELS[stage],
+                stage=stage,
+                extras={
+                    "home_seed": g.get("home_seed"), "away_seed": g.get("away_seed"),
+                    "played": bool(g.get("played")), "score": g.get("score"),
+                    "match_id": g.get("match_id"), "date": g.get("date"), "time": g.get("time"),
+                    "kickoff_utc": g.get("kickoff_utc"),
+                },
+            )
+            if g.get("played"):
+                entry["status"] = "FT"
+                entry["prob_home"] = 100.0 if g.get("winner") == g.get("home_team") else 0.0
+                entry["prob_away"] = 100.0 - entry["prob_home"]
+            elif p_home is not None:
+                entry["status"] = "Scheduled" if g.get("scheduled") else "Projected"
+                entry["prob_home"] = p_home
+                entry["prob_away"] = round(100.0 - float(p_home), 1)
+            rows.append(entry)
+            real = dict(entry)
+            if not g.get("played"):
+                real.update({"winner": None, "predicted_result": "NONE",
+                             "status": "Scheduled" if g.get("scheduled") else "pre"})
+            real["from_live"] = bool(g.get("played"))
+            real_rows.append(real)
+        if rows:
+            knockout[stage] = rows
+            real_knockout[stage] = real_rows
+    return {
+        "format_style": "knockout",
+        "no_draws": True,
+        "knockout": knockout,
+        "odds_knockout": {k: [dict(x, odds_weighted=True) for x in v] for k, v in knockout.items()},
+        "real_knockout": real_knockout,
+        "position_stages": ["Winner", "Final", "SF", "QF", "Playoff"],
+        "stages": list(knockout.keys()),
+    }
+
+
+def _enrich_nwsl_payload(comp: str, payload: dict) -> dict:
+    """Attach the NWSL playoff bracket (seeded from the regular season) and
+    Championship odds beside the NWSL Shield table odds."""
+    base_comp, _view = resolve_competition_query(comp)
+    if base_comp != NWSL_COMPETITION:
+        return payload
+    projected = _load_nwsl_projected_bracket()
+    if not projected:
+        return payload
+    cup_ko = _nwsl_bracket_to_cup_knockout(projected)
+    bracket_section = payload.get("bracket") if isinstance(payload.get("bracket"), dict) else {}
+    bracket_section.update({
+        "projected": projected,
+        "knockout": cup_ko.get("knockout"),
+        "odds_knockout": cup_ko.get("odds_knockout"),
+        "real_knockout": cup_ko.get("real_knockout"),
+        "knockout_rounds": [
+            {"name": _NWSL_STAGE_LABELS[s], "stage": s, "order": i + 1,
+             "matches_count": len(cup_ko["knockout"].get(s, []))}
+            for i, s in enumerate(cup_ko.get("stages") or [])
+        ],
+    })
+    payload["bracket"] = bracket_section
+    predicted = payload.setdefault("predicted", {})
+    for key in ("knockout", "odds_knockout", "real_knockout"):
+        payload[key] = cup_ko.get(key)
+        predicted[key] = cup_ko.get(key)
+    payload["round_reach_probabilities"] = projected.get("round_reach_probabilities") or {}
+    payload["elimination_round_odds"] = projected.get("elimination_round_probabilities") or {}
+    predicted["round_reach_probabilities"] = payload["round_reach_probabilities"]
+    predicted["elimination_round_odds"] = payload["elimination_round_odds"]
+
+    champ_probs = projected.get("championship_winner_probabilities") or {}
+    championship = {
+        "winner_probabilities": champ_probs,
+        "winners_odds": [{"team": t, "win_pct": p} for t, p in champ_probs.items()],
+        "champion": projected.get("champion"),
+        "status": projected.get("status"),
+        "simulations_run": projected.get("simulations_run"),
+    }
+    shield = {
+        "winners_odds": payload.get("winners_odds"),
+        "winner_probabilities": (payload.get("predicted") or {}).get("winner", {}).get("probabilities"),
+    }
+    payload["nwsl_winners_odds"] = {"nwsl_shield": shield, "nwsl_championship": championship}
+    predicted["nwsl_winner_views"] = payload["nwsl_winners_odds"]
+    payload["nwsl_playoffs"] = {
+        "status": projected.get("status"),
+        "champion": projected.get("champion"),
+        "seeds": projected.get("seeds"),
+        "regular_season_complete": projected.get("regular_season_complete"),
+        "generated_at_utc": projected.get("generated_at_utc"),
+    }
+    payload.setdefault("format", {}).setdefault("extensions", {})["nwsl_winner_views"] = list(payload["nwsl_winners_odds"])
+    return payload
+
+
+def _enrich_tiered_nations_league_payload(comp: str, payload: dict) -> dict:
+    """CONCACAF / UEFA Nations League: tiers, two-legged knockout ties, fixtures.
+
+    Real/predicted groups are already per ESPN group (``standings``); this adds
+    ``tiers`` (League A/B/C -> groups), ``knockout_ties`` (quarterfinals,
+    Gold Cup play-ins, ... with legs and aggregate), cup-style ``knockout``
+    rows, and ``fixtures`` (upcoming games with stage / tier / group and the
+    model prediction when one exists).
+    """
+    base_comp, _view = resolve_competition_query(comp)
+    if base_comp not in getattr(config, "TIERED_NATIONS_LEAGUES", {}):
+        return payload
+    try:
+        import nations_league as nl
+    except Exception:
+        return payload
+
+    tiers: dict[str, list[str]] = {}
+    for grp in nl.group_membership(base_comp):
+        tiers.setdefault(grp["tier"] or "Group Stage", []).append(grp["name"])
+    payload["tiers"] = [{"tier": t, "groups": names} for t, names in tiers.items()]
+
+    ties = nl.knockout_ties(base_comp)
+    payload["knockout_ties"] = ties
+    knockout = {}
+    for stage, rows in ties.items():
+        knockout[stage] = []
+        for tie in rows:
+            agg = tie.get("aggregate") or {}
+            entry = _mls_match_entry(
+                tie["home_team"], tie["away_team"], tie.get("winner"),
+                label=tie["stage_label"], stage=stage,
+                extras={
+                    "two_legged": tie["legs_total"] > 1,
+                    "aggregate_home": agg.get(tie["home_team"]),
+                    "aggregate_away": agg.get(tie["away_team"]),
+                    "legs": tie["legs"], "legs_played": tie["legs_played"],
+                    "note": tie.get("note"), "tie_status": tie["status"],
+                },
+            )
+            entry["status"] = {"complete": "FT", "in_progress": "In progress"}.get(tie["status"], "Scheduled")
+            knockout[stage].append(entry)
+    if knockout:
+        bracket_section = payload.get("bracket") if isinstance(payload.get("bracket"), dict) else {}
+        bracket_section["knockout"] = knockout
+        bracket_section["real_knockout"] = knockout
+        bracket_section["knockout_rounds"] = [
+            {"name": rows[0]["label"], "stage": stage, "order": i + 1, "matches_count": len(rows)}
+            for i, (stage, rows) in enumerate(knockout.items())
+        ]
+        payload["bracket"] = bracket_section
+        payload["knockout"] = knockout
+        payload["real_knockout"] = knockout
+
+    fixtures = nl.upcoming_fixtures(base_comp)
+    preds: dict = {}
+    from competition_rules import canonical_team_name
+
+    def _fixture_key(date, home, away):
+        return (str(date)[:10], canonical_team_name(home, base_comp), canonical_team_name(away, base_comp))
+
+    try:
+        from shared import sqlite_store
+        for row in sqlite_store.load_upcoming_games(competition_substr=base_comp) or []:
+            if row.get("prob_home") in (None, ""):
+                continue
+            mid = str(row.get("match_id") or "").strip()
+            if mid:
+                preds.setdefault(mid, row)
+            # Many stored prediction rows have no ESPN id: match on date + teams.
+            preds.setdefault(_fixture_key(row.get("match_date_iso") or row.get("match_date"),
+                                          row.get("home_team"), row.get("away_team")), row)
+    except Exception:
+        preds = {}
+    for fx in fixtures:
+        pred = preds.get(fx["match_id"]) or preds.get(_fixture_key(fx["match_date"], fx["home_team"], fx["away_team"]))
+        if pred:
+            for key in ("prob_home", "prob_draw", "prob_away", "pred_home_goals", "pred_away_goals",
+                        "winner_label", "has_prediction", "sync_key"):
+                if pred.get(key) not in (None, ""):
+                    fx[key] = pred.get(key)
+            # Stored sources mix 0-1 and 0-100 scales: expose percentages.
+            probs = [fx.get(k) for k in ("prob_home", "prob_draw", "prob_away")]
+            try:
+                nums = [float(x) for x in probs]
+                if sum(nums) <= 1.5:
+                    for k, v in zip(("prob_home", "prob_draw", "prob_away"), nums):
+                        fx[k] = round(v * 100.0, 1)
+            except (TypeError, ValueError):
+                pass
+    payload["fixtures"] = fixtures
+    return payload
+
+
+def _empty_mls_cup_odds() -> dict:
+    """Placeholder ``mls_cup`` winner-odds view (no bracket simulated yet).
+
+    Restored: the definition was dropped in a refactor while two callers
+    remained, so MLS league-data raised NameError whenever the MLS Cup
+    bracket file had no odds (e.g. before the playoffs are projected).
+    """
+    return {
+        "competition": config.MLS_CUP_COMPETITION,
+        "winner_probabilities": {},
+        "winners_odds": [],
+        "champion": None,
+        "simulations_run": None,
+    }
+
+
 def _enrich_mls_payload(comp: str, payload: dict) -> dict:
     """Attach MLS Cup playoff bracket + Shield/East/West/Cup winner odds."""
     if not str(comp or "").startswith("United States/MLS"):
@@ -1335,6 +1570,8 @@ def _load_usable_projected_table(comp_name: str) -> list[dict]:
 def build_league_data_payload(comp_name: str) -> dict:
     """Build the canonical league-data API payload for one competition."""
     comp = str(comp_name or "").strip()
+    if config.is_one_off_competition(comp):
+        return _one_off_payload(comp)
 
     cached = _load_league_data_from_cache(comp)
     if cached is not None:
@@ -1391,7 +1628,16 @@ def build_league_data_payload(comp_name: str) -> dict:
             }
 
 
+def _one_off_payload(comp: str) -> dict:
+    """Friendlies: upcoming games only (no tables, simulations or snapshots)."""
+    from routes.predictions import build_one_off_competition_payload
+
+    return build_one_off_competition_payload(comp)
+
+
 def _build_league_data_payload_uncached(comp: str) -> dict:
+    if config.is_one_off_competition(comp):
+        return _one_off_payload(comp)
     fmt = competition_format_spec(comp)
     layout = standings_layout_for(comp)
     # Pure knockout cups have no league/group table — keep bracket + finish odds only.
@@ -1520,6 +1766,8 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
     payload["predicted"] = predicted
 
     payload = _enrich_mls_payload(comp, payload)
+    payload = _enrich_nwsl_payload(comp, payload)
+    payload = _enrich_tiered_nations_league_payload(comp, payload)
 
     # Attach League Qualification & Relegation Zones
     zones = get_league_qualification_zones(comp)

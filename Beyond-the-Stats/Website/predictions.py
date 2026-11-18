@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import joblib
+import numpy as np
 import pandas as pd
 
 import config
@@ -25,7 +26,6 @@ except ImportError:
     import competition_ids
 from competition_rules import canonical_team_name, make_match_sync_key
 from math_utils import (
-    _compute_asian_handicap,
     _compute_clean_sheet,
     _compute_correct_score_dist,
     _compute_double_chance,
@@ -801,10 +801,11 @@ def _utc_to_et(utc_str):
     try:
         if not utc_str:
             return ""
-        dt = pd.to_datetime(str(utc_str), utc=True)
-        if pd.isna(dt):
+        from shared.fast_dates import parse_utc
+        dt = parse_utc(str(utc_str))
+        if dt is None:
             return ""
-        return dt.tz_convert(ZoneInfo("America/New_York")).strftime("%Y-%m-%dT%H:%M:%S%z")
+        return dt.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%dT%H:%M:%S%z")
     except Exception:
         return ""
 
@@ -877,12 +878,6 @@ def _predict(home_raw, away_raw, mode="global"):
                 _to_float(record.get("prob_home", 0.0)),
                 _to_float(record.get("prob_draw", 0.0)),
                 _to_float(record.get("prob_away", 0.0)),
-            ),
-            "asian_handicap": _compute_asian_handicap(
-                record.get("pred_home_goals"), record.get("pred_away_goals"),
-                prob_home=_to_float(record.get("prob_home", 0.0)),
-                prob_draw=_to_float(record.get("prob_draw", 0.0)),
-                prob_away=_to_float(record.get("prob_away", 0.0)),
             ),
         }
 
@@ -1033,12 +1028,6 @@ def _predict(home_raw, away_raw, mode="global"):
         "correct_score_dist": _compute_correct_score_dist(home_goals, away_goals),
         "double_chance": _compute_double_chance(
             probabilities.get("H", 0), probabilities.get("D", 0), probabilities.get("A", 0),
-        ),
-        "asian_handicap": _compute_asian_handicap(
-            home_goals, away_goals,
-            prob_home=probabilities.get("H", 0),
-            prob_draw=probabilities.get("D", 0),
-            prob_away=probabilities.get("A", 0),
         ),
     }
 
@@ -1685,12 +1674,6 @@ def _load_upcoming_rows(
                     ph_raw / 100.0 if ph_raw else 0,
                     pdv_raw / 100.0 if pdv_raw else 0,
                     pa_raw / 100.0 if pa_raw else 0,
-                ),
-                "asian_handicap": _compute_asian_handicap(
-                    row.get("pred_home_goals"), row.get("pred_away_goals"),
-                    prob_home=ph_raw / 100.0 if ph_raw else None,
-                    prob_draw=pdv_raw / 100.0 if pdv_raw else None,
-                    prob_away=pa_raw / 100.0 if pa_raw else None,
                 ),
                 # Last-5 form with opponent details
                 "last_5_home": _last5_for(form_index, home, c_home),
@@ -2648,11 +2631,16 @@ def _enrich_json_past_row(r):
         r["is_correct"] = ""
 
     try:
-        ph = float(r.get("prob_home", 0) or 0) * 100
-        pdv = float(r.get("prob_draw", 0) or 0) * 100
-        pa = float(r.get("prob_away", 0) or 0) * 100
+        ph = float(r.get("prob_home", 0) or 0)
+        pdv = float(r.get("prob_draw", 0) or 0)
+        pa = float(r.get("prob_away", 0) or 0)
     except Exception:
         ph = pdv = pa = 0.0
+    # Stored probabilities are usually percentages (13.5) but older rows hold
+    # decimals (0.135): scale only decimal triples. Multiplying percentages
+    # produced "1353.0" for a 13.53% probability.
+    if 0.0 < ph + pdv + pa <= 1.0001:
+        ph, pdv, pa = ph * 100, pdv * 100, pa * 100
     r["prob_home_text"] = _format_percent_value(ph)
     r["prob_draw_text"] = _format_percent_value(pdv)
     r["prob_away_text"] = _format_percent_value(pa)
@@ -2660,8 +2648,15 @@ def _enrich_json_past_row(r):
     md = str(r.get("match_date", "")).strip()
     if md:
         try:
-            dt = pd.to_datetime(md, errors="coerce")
-            if pd.notna(dt):
+            dt = None
+            if len(md) >= 10 and md[4] == "-" and md[7] == "-":
+                try:
+                    dt = datetime.strptime(md[:10], "%Y-%m-%d")
+                except ValueError:
+                    dt = None
+            if dt is None:
+                dt = pd.to_datetime(md, errors="coerce")
+            if dt is not None and pd.notna(dt):
                 r["weekday"] = dt.strftime("%A")
                 r["date_label"] = dt.strftime("%B %d, %Y")
         except Exception:
@@ -2754,9 +2749,25 @@ def _past_row_date_iso(row: dict) -> str:
     return ""
 
 
+from shared.espn_status import NOT_PLAYED_STATUS_WORDS as _NOT_PLAYED_STATUS_WORDS  # noqa: E402
+
+
 def _live_game_to_past_row(game: dict, competition: str | None = None) -> dict | None:
-    """Convert a completed live-score game into a past-games API row."""
+    """Convert a completed live-score game into a past-games API row.
+
+    Only real finals qualify. ESPN reports postponed / cancelled / abandoned /
+    suspended games with state ``post`` and a 0-0 placeholder score; those
+    used to be archived as 0-0 results (an extra game + point for both sides,
+    then the real result appeared again on the rescheduled date).
+    """
     from accuracy_tracker import _compute_actual_result
+
+    status_type = str(game.get("status_type") or "").strip().upper()
+    if any(word in status_type for word in _NOT_PLAYED_STATUS_WORDS):
+        return None
+    status = str(game.get("status") or "").strip().lower()
+    if status and status not in ("post", "final", "ft", "full_time", "finished", "completed"):
+        return None
 
     try:
         hs = int(float(game.get("home_score")))
@@ -3007,7 +3018,6 @@ def _merge_prediction_onto_past_row(row: dict, lookup: dict[str, dict]) -> dict:
             "reasoning",
             "correct_score_dist",
             "double_chance",
-            "asian_handicap",
             "total_goals_dist",
             "first_to_score",
             "clean_sheet",
@@ -3051,6 +3061,50 @@ def _past_row_looks_api_complete(row: dict) -> bool:
     return False
 
 
+_CSV_ONLY_UPCOMING_SOURCES = frozenset({"global", "mls", "extra", "national", "friendlies"})
+
+
+def _prune_superseded_upcoming_rows(store, source: str, synced_since: str, synced_rows: list[dict]) -> int:
+    """Delete stored rows of ``source`` that this sync replaced under another key.
+
+    A stored future row (tomorrow ET onward) that this sync did not rewrite is
+    removed only when the sync wrote the same fixture (date, competition,
+    canonical club pair) under a different key, or when it is schedule-only
+    and a synced row on that date / competition shares one of its clubs (an
+    old name for the other side, e.g. "Racing Club" for Racing Genk, which
+    showed every Genk game twice, once without a prediction). The CSVs are
+    windowed, so rows with no synced counterpart are kept.
+    """
+    tomorrow = (datetime.now(ZoneInfo("America/New_York")).date() + timedelta(days=1)).isoformat()
+    stale = store.load_untouched_upcoming_rows(source, synced_since, tomorrow)
+    if not stale:
+        return 0
+
+    def _canon(team, comp):
+        return (canonical_team_name(str(team or ""), comp) or str(team or "")).strip().lower()
+
+    pairs = set()
+    sides: dict = {}
+    for r in synced_rows:
+        d = str(r.get("match_date_iso") or "")[:10]
+        comp = str(r.get("competition") or "")
+        h, a = _canon(r.get("home_team"), comp), _canon(r.get("away_team"), comp)
+        pairs.add((d, comp, frozenset({h, a})))
+        sides.setdefault((d, comp), set()).update({h, a})
+    doomed = []
+    for r in stale:
+        d, comp = str(r.get("match_date_iso") or "")[:10], str(r.get("competition") or "")
+        h, a = _canon(r.get("home_team"), comp), _canon(r.get("away_team"), comp)
+        if (d, comp, frozenset({h, a})) in pairs:
+            doomed.append(r["storage_key"])
+            continue
+        schedule_only = str(r.get("schedule_only") or "").strip().lower() in {"1", "true"} or \
+            str(r.get("has_prediction") or "").strip().lower() in {"0", "false"}
+        if schedule_only and ({h, a} & sides.get((d, comp), set())):
+            doomed.append(r["storage_key"])
+    return store.delete_upcoming_rows(doomed)
+
+
 def sync_api_shaped_predictions_to_sqlite() -> dict:
     """Upsert full upcoming-API-shaped rows into SQLite from prediction CSVs.
 
@@ -3092,7 +3146,17 @@ def sync_api_shaped_predictions_to_sqlite() -> dict:
             stored["source"] = source
             _enrich_json_past_row(stored)
             api_rows.append(stored)
+        synced_since = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         result = store.upsert_upcoming_games(api_rows, source=source)
+        # The CSV is the only writer for these sources: drop their future rows
+        # this sync did not rewrite (renamed / removed fixtures). Cups also
+        # gets rows from Project_UEFA_Cups, women's replaces its own set.
+        if api_rows and result.get("upserted", 0) > 0 and source in _CSV_ONLY_UPCOMING_SOURCES:
+            try:
+                totals.setdefault("pruned_superseded", {})[source] = _prune_superseded_upcoming_rows(
+                    store, source, synced_since, api_rows)
+            except Exception as exc:
+                totals.setdefault("pruned_superseded_errors", {})[source] = str(exc)
         settled = [r for r in api_rows if str(r.get("actual_result", "")).strip().upper() in {"H", "D", "A"}]
         past_result = store.upsert_past_games(settled) if settled else {"upserted": 0}
         totals["upserted"] += result.get("upserted", 0)
@@ -3103,6 +3167,16 @@ def sync_api_shaped_predictions_to_sqlite() -> dict:
             "settled": len(settled),
             "past_upserted": past_result.get("upserted", 0),
         }
+    try:
+        totals["pruned_stale_upcoming"] = store.prune_stale_upcoming_games()
+    except Exception as exc:
+        totals["pruned_stale_upcoming_error"] = str(exc)
+    try:
+        import accuracy_metrics
+
+        totals["accuracy_snapshot_rows"] = accuracy_metrics.record_daily_snapshot()
+    except Exception as exc:
+        totals["accuracy_snapshot_error"] = str(exc)
     return totals
 
 
@@ -3121,40 +3195,45 @@ def _past_game_storage_key(row: dict) -> str:
     )
 
 
-def _sanitize_for_json(value):
-    """Recursively coerce API payloads into strict JSON-safe Python values."""
-    import math
+_JSON_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
+
+def _sanitize_for_json(value):
+    """Recursively coerce API payloads into strict JSON-safe Python values.
+
+    NaN / inf -> None, numpy scalars -> Python numbers, datetimes -> ISO
+    strings, control characters (except tab / newline / CR) stripped from
+    strings. Strings are checked with one regex search instead of being
+    rebuilt character by character (this ran ~4M times per cold
+    ``/api/past-games``).
+    """
     if value is None:
         return None
+    if isinstance(value, str):
+        if _JSON_CONTROL_CHARS.search(value) is None:
+            return value
+        return _JSON_CONTROL_CHARS.sub("", value)
     if isinstance(value, dict):
         return {str(key): _sanitize_for_json(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_sanitize_for_json(item) for item in value]
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int) and not isinstance(value, bool):
+    if isinstance(value, (bool, int)):
         return value
     if isinstance(value, float):
-        if math.isnan(value) or math.isinf(value):
+        if value != value or value in (float("inf"), float("-inf")):
             return None
         return value
-    try:
-        import numpy as np
-
-        if isinstance(value, np.floating):
-            number = float(value)
-            if math.isnan(number) or math.isinf(number):
-                return None
-            return number
-        if isinstance(value, np.integer):
-            return int(value)
-    except Exception:
-        pass
+    if isinstance(value, np.floating):
+        number = float(value)
+        if number != number or number in (float("inf"), float("-inf")):
+            return None
+        return number
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
     if isinstance(value, (datetime, pd.Timestamp)):
         return value.isoformat()
-    if isinstance(value, str):
-        return "".join(ch for ch in value if ord(ch) >= 32 or ch in "\t\n\r")
     return value
 
 

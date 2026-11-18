@@ -232,6 +232,8 @@ def is_league_api_competition(comp_name: Any) -> bool:
         return False
     if comp in config.UPCOMING_ONLY_COMPETITIONS:
         return False
+    if config.is_one_off_competition(comp):
+        return False  # friendlies: no league table
     if comp in config.LEAGUE_API_EXCLUDED_COMPETITIONS:
         return False
     if config.is_national_team_competition(comp):
@@ -244,7 +246,8 @@ def filter_league_tables_payload(data: dict) -> dict:
     excluded = config.LEAGUE_API_EXCLUDED_COMPETITIONS | config.UPCOMING_ONLY_COMPETITIONS
 
     def _keep(name):
-        return name not in excluded and not config.is_national_team_competition(name)
+        return (name not in excluded and not config.is_national_team_competition(name)
+                and not config.is_one_off_competition(name))
 
     leagues = [c for c in (data.get("leagues") or []) if _keep(c)]
     tables = {

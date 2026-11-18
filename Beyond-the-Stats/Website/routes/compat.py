@@ -15,6 +15,7 @@ import os
 import re
 import time
 from contextvars import ContextVar
+from datetime import datetime
 from typing import Any, Callable, Optional
 
 from fastapi import APIRouter as _FastAPIRouter
@@ -331,7 +332,38 @@ def get_templates():
         from fastapi.templating import Jinja2Templates
         website_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         _templates = Jinja2Templates(directory=os.path.join(website_dir, "templates"))
+        _templates.env.globals["url_for"] = _flask_style_url_for
     return _templates
+
+
+# Flask endpoint name -> URL prefix for ``url_for(<endpoint>, filename=...)``.
+_FILENAME_ENDPOINTS = {"static": "/static/", "serve_graphic": "/graphics/"}
+
+
+def _flask_style_url_for(endpoint: str, **values: Any) -> str:
+    """Flask-compatible ``url_for`` for the Jinja templates.
+
+    The templates were written for Flask (``url_for('static', filename=...,
+    v=...)``); Starlette's ``request.url_for`` takes path params only and
+    raises ``NoMatchFound`` for ``filename`` / cache-busting query args.
+    Extra keyword values become the query string, as in Flask.
+    """
+    from urllib.parse import quote, urlencode
+
+    values = {k: v for k, v in values.items() if v is not None}
+    prefix = _FILENAME_ENDPOINTS.get(endpoint)
+    if prefix is not None:
+        filename = str(values.pop("filename", "") or values.pop("path", "") or "")
+        url = prefix + quote(filename.lstrip("/"))
+    else:
+        req = _request_ctx.get()
+        if req is None:
+            raise RuntimeError(f"url_for({endpoint!r}) needs a request context")
+        url = str(req.app.url_path_for(endpoint, **{k: str(v) for k, v in values.items()}))
+        values = {}
+    if values:
+        url += "?" + urlencode(values)
+    return url
 
 
 def render_template(template_name: str, **context) -> HTMLResponse:
@@ -340,7 +372,10 @@ def render_template(template_name: str, **context) -> HTMLResponse:
     templates = get_templates()
     if req is not None:
         context["request"] = req
-        return templates.TemplateResponse(template_name, context)
+        # Starlette >= 1.0: ``TemplateResponse(request, name, context)``; the
+        # old ``(name, context)`` order passed the context dict as the template
+        # name ("unhashable type: 'dict'" -> every HTML page returned 500).
+        return templates.TemplateResponse(req, template_name, context)
     # Fallback to direct Jinja2 rendering if outside request
     template = templates.env.get_template(template_name)
     content = template.render(**context)
