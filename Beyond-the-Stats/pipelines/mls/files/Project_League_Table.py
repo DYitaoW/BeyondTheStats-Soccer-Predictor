@@ -32,6 +32,7 @@ import Predict_Match as pm
 
 import team_mapping_groups as tmg  # noqa: E402
 import projection_schedule as proj_sched  # noqa: E402
+import monte_carlo  # noqa: E402
 
 
 class AveragedProbaClassifier:
@@ -63,10 +64,23 @@ LIGA_MX_COMPETITION = "Mexico/Liga MX"
 MLS_COMPETITION = "United States/MLS"
 LIGA_MX_ESPN_ID = "mex.1"
 RNG = random.Random()
+
+
+def _fixture_result_draw(home, away, labels, weights):
+    """Representative result for one fixture's scoreline (goal difference).
+
+    Seeded by the fixture and the day: the projection is reproducible and does
+    not depend on process / iteration order (the unseeded ``RNG.choices`` moved
+    title odds by up to 5 points between identical runs through tiebreaks).
+    """
+    rng = random.Random(monte_carlo.stable_seed(home, away, datetime.now().date().isoformat()))
+    return rng.choices(labels, weights=weights, k=1)[0]
 # Regular-season Monte Carlo iterations. Cup win % uses the same run count but
 # samples from a precomputed matchup-prob cache (not a fresh model call per
 # playoff game), so raising this no longer multiplies sklearn cost by ~30x.
-SIMULATION_RUNS = 500
+SIMULATION_RUNS = 500  # MLS: regular season + per-run Python playoff bracket
+# Single-table leagues (Liga MX) use the vectorized engine.
+STANDARD_SIMULATION_RUNS = 20000
 MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
 
 
@@ -936,7 +950,7 @@ def predict_match(ctx, home_team, away_team, competition_hint):
     if total <= 0:
         pred_res = max(probs, key=probs.get)
     else:
-        pred_res = RNG.choices(labels, weights=weights, k=1)[0]
+        pred_res = _fixture_result_draw(home_team, away_team, labels, weights)
     phg = max(0.0, float(ctx["home_goal_reg"].predict(X)[0]))
     pag = max(0.0, float(ctx["away_goal_reg"].predict(X)[0]))
     hg = int(round(phg))
@@ -1227,33 +1241,17 @@ def load_future_fixtures_from_espn(competition, espn_id=LIGA_MX_ESPN_ID, year=No
     return pd.DataFrame(rows)
 
 
-def run_monte_carlo_standard(teams, base_table, future_predictions, runs):
-    stat_sums = defaultdict(lambda: defaultdict(float))
-    position_counts = defaultdict(lambda: defaultdict(int))
-
-    played_values = [float(base_table.get(team, {}).get("P", 0.0) or 0.0) for team in teams]
+def run_monte_carlo_standard(teams, base_table, future_predictions, runs, competition="Mexico/Liga MX"):
+    """Monte Carlo for single-table leagues (Liga MX), vectorized via ``shared.monte_carlo``."""
+    played_values = [float((base_table.get(team) or {}).get("P", 0.0) or 0.0) for team in teams]
     least_played = min(played_values) if played_values else 0.0
     progress = min(1.0, least_played / float(pm.EARLY_SEASON_GAMES_THRESHOLD))
     jitter_scale = 0.05 * (1.0 - progress)
-
-    for _ in range(max(1, int(runs))):
-        sim_table = clone_table(base_table)
-        for fixture in future_predictions:
-            probs = fixture["probs"]
-            if jitter_scale > 0.0:
-                probs = _jitter_probs(probs, jitter_scale)
-            result = sample_outcome(probs)
-            hg, ag = coerce_scoreline(result, fixture["pred_home_goals"], fixture["pred_away_goals"])
-            apply_result(sim_table, fixture["home_team"], fixture["away_team"], hg, ag, is_real=False)
-
-        ranked = rank_table(sim_table)
-        for pos, (team, stats) in enumerate(ranked, start=1):
-            position_counts[team][pos] += 1
-            for key, value in stats.items():
-                stat_sums[team][key] += float(value)
-
-    return stat_sums, position_counts
-
+    return monte_carlo.simulate_season(
+        teams, base_table, future_predictions, runs,
+        jitter_scale=jitter_scale,
+        seed=monte_carlo.stable_seed(competition, datetime.now().date().isoformat(), runs),
+    )
 
 def _fetch_liga_mx_teams():
     """Fetch current Liga MX team list from ESPN /teams endpoint."""
@@ -1526,7 +1524,7 @@ def project_liga_mx_competition(ctx, competition, raw_file):
         return [], [], None
 
     stat_sums, position_counts = run_monte_carlo_standard(
-        teams, table, future_predictions, SIMULATION_RUNS
+        teams, table, future_predictions, STANDARD_SIMULATION_RUNS, competition=competition,
     )
     out_rows = []
     n_teams = len(teams)
@@ -1541,13 +1539,13 @@ def project_liga_mx_competition(ctx, competition, raw_file):
         most_likely_pos, most_likely_count = max(
             team_positions.items(), key=lambda kv: kv[1], default=(pos, 0)
         )
-        win_league_pct = (team_positions.get(1, 0) / SIMULATION_RUNS) * 100.0
-        top4_pct = (sum(v for k, v in team_positions.items() if k <= top_n) / SIMULATION_RUNS) * 100.0
+        win_league_pct = (team_positions.get(1, 0) / STANDARD_SIMULATION_RUNS) * 100.0
+        top4_pct = (sum(v for k, v in team_positions.items() if k <= top_n) / STANDARD_SIMULATION_RUNS) * 100.0
         bottom3_pct = (
-            sum(v for k, v in team_positions.items() if k >= bottom_cutoff) / SIMULATION_RUNS
+            sum(v for k, v in team_positions.items() if k >= bottom_cutoff) / STANDARD_SIMULATION_RUNS
         ) * 100.0
         position_odds = {
-            str(rank): round((team_positions.get(rank, 0) / SIMULATION_RUNS) * 100.0, 2)
+            str(rank): round((team_positions.get(rank, 0) / STANDARD_SIMULATION_RUNS) * 100.0, 2)
             for rank in range(1, n_teams + 1)
         }
         out_rows.append(
@@ -1555,23 +1553,23 @@ def project_liga_mx_competition(ctx, competition, raw_file):
                 "competition": competition,
                 "position": pos,
                 "team": team,
-                "P": int(round(sums.get("P", 0.0) / SIMULATION_RUNS)),
-                "W": int(round(sums.get("W", 0.0) / SIMULATION_RUNS)),
-                "D": int(round(sums.get("D", 0.0) / SIMULATION_RUNS)),
-                "L": int(round(sums.get("L", 0.0) / SIMULATION_RUNS)),
-                "GF": int(round(sums.get("GF", 0.0) / SIMULATION_RUNS)),
-                "GA": int(round(sums.get("GA", 0.0) / SIMULATION_RUNS)),
-                "GD": int(round(sums.get("GD", 0.0) / SIMULATION_RUNS)),
-                "Pts": int(round(sums.get("Pts", 0.0) / SIMULATION_RUNS)),
-                "PlayedReal": int(round(sums.get("PlayedReal", 0.0) / SIMULATION_RUNS)),
-                "PlayedPred": int(round(sums.get("PlayedPred", 0.0) / SIMULATION_RUNS)),
+                "P": int(round(sums.get("P", 0.0) / STANDARD_SIMULATION_RUNS)),
+                "W": int(round(sums.get("W", 0.0) / STANDARD_SIMULATION_RUNS)),
+                "D": int(round(sums.get("D", 0.0) / STANDARD_SIMULATION_RUNS)),
+                "L": int(round(sums.get("L", 0.0) / STANDARD_SIMULATION_RUNS)),
+                "GF": int(round(sums.get("GF", 0.0) / STANDARD_SIMULATION_RUNS)),
+                "GA": int(round(sums.get("GA", 0.0) / STANDARD_SIMULATION_RUNS)),
+                "GD": int(round(sums.get("GD", 0.0) / STANDARD_SIMULATION_RUNS)),
+                "Pts": int(round(sums.get("Pts", 0.0) / STANDARD_SIMULATION_RUNS)),
+                "PlayedReal": int(round(sums.get("PlayedReal", 0.0) / STANDARD_SIMULATION_RUNS)),
+                "PlayedPred": int(round(sums.get("PlayedPred", 0.0) / STANDARD_SIMULATION_RUNS)),
                 "win_league_pct": round(win_league_pct, 2),
                 "top4_pct": round(top4_pct, 2),
                 "bottom3_pct": round(bottom3_pct, 2),
                 "most_likely_position": int(most_likely_pos),
-                "most_likely_position_pct": round((most_likely_count / SIMULATION_RUNS) * 100.0, 2),
+                "most_likely_position_pct": round((most_likely_count / STANDARD_SIMULATION_RUNS) * 100.0, 2),
                 "position_odds_json": json.dumps(position_odds, separators=(",", ":"), sort_keys=True),
-                "sim_runs": int(SIMULATION_RUNS),
+                "sim_runs": int(STANDARD_SIMULATION_RUNS),
             }
         )
     return out_rows, future_rows, None

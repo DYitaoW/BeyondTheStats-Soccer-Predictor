@@ -52,6 +52,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 import team_mapping_groups as tmg  # noqa: E402
 import projection_schedule as proj_sched  # noqa: E402
+import monte_carlo  # noqa: E402
 
 FILES_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DIR = os.path.join(BASE_DIR, "Data", "Raw_Data")
@@ -59,25 +60,23 @@ OUT_DIR = PREDICTIONS_DIR
 OUT_TABLE = os.path.join(OUT_DIR, "projected_league_tables.csv")
 OUT_MATCHES = os.path.join(OUT_DIR, "projected_future_matches.csv")
 RNG = random.Random()
-SIMULATION_RUNS = 250
+
+
+def _fixture_result_draw(home, away, labels, weights):
+    """Representative result for one fixture's scoreline (goal difference).
+
+    Seeded by the fixture and the day: the projection is reproducible and does
+    not depend on process / iteration order (the unseeded ``RNG.choices`` moved
+    title odds by up to 5 points between identical runs through tiebreaks).
+    """
+    rng = random.Random(monte_carlo.stable_seed(home, away, date.today().isoformat()))
+    return rng.choices(labels, weights=weights, k=1)[0]
+SIMULATION_RUNS = 20000  # vectorized engine (shared/monte_carlo.py)
 # Preseason PATH B synthesizes a full home/away slate; fewer sims keep the
 # daily pipeline inside its timeout while still producing usable odds.
-PATH_B_SIMULATION_RUNS = 60
-COMPETITION_SIM_RUNS = {
-    "England/Premier League": 1000,
-    "Spain/La Liga": 1000,
-    "Italy/Serie A": 1000,
-    "Germany/Bundesliga": 1000,
-    "France/Ligue 1": 1000,
-    "England/Championship": 500,
-    "Scotland/Premiership": 150,
-    "Greece/Super League": 150,
-    "Norway/Eliteserien": 150,
-    "Sweden/Allsvenskan": 150,
-    "Austria/Bundesliga": 150,
-    "Romania/Liga I": 150,
-    "Poland/Ekstraklasa": 150,
-}
+PATH_B_SIMULATION_RUNS = 5000
+# Per-competition overrides (the vectorized engine runs 20,000 everywhere).
+COMPETITION_SIM_RUNS: dict = {}
 ESPN_SCOREBOARD_API = "https://site.api.espn.com/apis/site/v2/sports/soccer/{espn_id}/scoreboard"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
@@ -710,43 +709,30 @@ def coerce_scoreline(pred_result, base_hg, base_ag):
 
 
 def run_monte_carlo(teams, base_table, future_predictions, runs, competition=None, real_matches=None):
-    stat_sums = defaultdict(lambda: defaultdict(float))
-    position_counts = defaultdict(lambda: defaultdict(int))
-    for team in teams:
-        stat_sums[team]
-        position_counts[team]
+    """Monte Carlo season finishes (vectorized: ``shared.monte_carlo``).
 
-    # Early-season variation: when teams have played few real games, add extra
-    # per-simulation jitter to outcome probabilities so the projected table is
-    # not a near-deterministic echo of the prior/model. Scales with the least
-    # real games played, fading out by EARLY_SEASON_GAMES_THRESHOLD.
-    played_values = [float(table.get("P", 0.0) or 0.0) for team in teams for table in (base_table,)]
+    Early-season variation: while clubs have played few real games, outcome
+    probabilities get extra per-run jitter so the projection is not a
+    near-deterministic echo of the prior; it fades out by
+    ``EARLY_SEASON_GAMES_THRESHOLD`` games (least real games played).
+    Head-to-head leagues rank level-on-points clubs by their mini-table
+    (real + simulated matches). Seeded per competition and day.
+    """
+    played_values = [float((base_table.get(team) or {}).get("P", 0.0) or 0.0) for team in teams]
     least_played = min(played_values) if played_values else 0.0
     progress = min(1.0, least_played / float(pm.EARLY_SEASON_GAMES_THRESHOLD))
     jitter_scale = 0.05 * (1.0 - progress)
-
     is_h2h = competition in H2H_LEAGUES
-    for _ in range(max(1, int(runs))):
-        sim_table = clone_table(base_table)
-        sim_matches = list(real_matches) if (is_h2h and real_matches) else ([] if is_h2h else None)
-        for fixture in future_predictions:
-            probs = fixture["probs"]
-            if jitter_scale > 0.0:
-                probs = _jitter_probs(probs, jitter_scale)
-            result = sample_outcome(probs)
-            hg, ag = coerce_scoreline(result, fixture["pred_home_goals"], fixture["pred_away_goals"])
-            apply_result(sim_table, fixture["home_team"], fixture["away_team"], hg, ag, is_real=False)
-            if is_h2h:
-                sim_matches.append((fixture["home_team"], fixture["away_team"], hg, ag))
-
-        ranked = rank_table(sim_table, competition=competition, all_matches=sim_matches if is_h2h else None)
-        for pos, (team, stats) in enumerate(ranked, start=1):
-            position_counts[team][pos] += 1
-            for key, value in stats.items():
-                stat_sums[team][key] += float(value)
-
-    return stat_sums, position_counts
-
+    return monte_carlo.simulate_season(
+        teams,
+        base_table,
+        future_predictions,
+        runs,
+        h2h=is_h2h,
+        real_matches=list(real_matches or []) if is_h2h else None,
+        jitter_scale=jitter_scale,
+        seed=monte_carlo.stable_seed(competition, date.today().isoformat(), runs),
+    )
 
 def _jitter_probs(probs, scale):
     """Add a small random perturbation to outcome probabilities (kept normalized)."""
@@ -781,7 +767,7 @@ def _predict_matches_batch(ctx, fixture_pairs, competition_hint):
             labels = ["H", "D", "A"]
             weights = [max(0.0, float(cached.get(label, 0.0))) for label in labels]
             total = sum(weights)
-            pred_res = max(cached, key=cached.get) if total <= 0 else RNG.choices(labels, weights=weights, k=1)[0]
+            pred_res = max(cached, key=cached.get) if total <= 0 else _fixture_result_draw(h, a, labels, weights)
             hg, ag = (2, 1) if pred_res == "H" else ((1, 2) if pred_res == "A" else (1, 1))
             results[i] = (pred_res, hg, ag, cached)
         else:
@@ -850,7 +836,7 @@ def _predict_matches_batch(ctx, fixture_pairs, competition_hint):
         if total <= 0:
             pred_res = max(probs, key=probs.get)
         else:
-            pred_res = RNG.choices(labels, weights=weights, k=1)[0]
+            pred_res = _fixture_result_draw(fixture_pairs[i][0], fixture_pairs[i][1], labels, weights)
         hg = int(round(max(0.0, float(hg_batch[i]))))
         ag = int(round(max(0.0, float(ag_batch[i]))))
 

@@ -267,18 +267,10 @@ def normalize_team_key(name):
 
 
 def canonical_team_name(name):
-    text = str(name or "").strip()
-    aliases = {
-        "USA": "United States",
-        "US": "United States",
-        "Czech Republic": "Czechia",
-        "Türkiye": "Turkey",
-        "Korea Republic": "South Korea",
-        "Bosnia and Herzegovina": "Bosnia-Herzegovina",
-        "Côte d'Ivoire": "Ivory Coast",
-        "Cote d'Ivoire": "Ivory Coast",
-    }
-    return aliases.get(text, text)
+    # Shared with the website (live poller / tables) so both store one spelling.
+    from shared.national_team_names import canonical_national_team
+
+    return canonical_national_team(name)
 
 
 def make_prediction_key(match_date, competition, home_team, away_team):
@@ -458,14 +450,19 @@ def _competitors_by_side(competitors):
     return by_side
 
 
+from shared.espn_status import is_not_played_status, is_played_final  # noqa: E402
+
+
 def parse_espn_event(event, competition_name, require_completed=True):
     competitions = event.get("competitions") or []
     if not competitions:
         return None
     competition = competitions[0] or {}
     status_type = ((competition.get("status") or {}).get("type") or {})
-    state = str(status_type.get("state", "")).strip().lower()
-    completed = bool(status_type.get("completed")) or state == "post"
+    if is_not_played_status(status_type):
+        # Postponed / cancelled games come back as state "post" with 0-0.
+        return None
+    completed = is_played_final(status_type)
     if require_completed and not completed:
         return None
 
@@ -504,7 +501,7 @@ def parse_espn_event(event, competition_name, require_completed=True):
     return {
         "match_id": str(event.get("id", "")).strip(),
         "match_datetime_utc": event_dt.isoformat(),
-        "match_date": event_dt.strftime("%Y-%m-%d"),
+        "match_date": match_date_et(event_dt),
         "competition": competition_name,
         "stage": stage,
         "home_team": home_team,
@@ -546,7 +543,7 @@ def parse_football_data_match(match, competition_name, completed_only=True):
     return {
         "match_id": str(match.get("id", "")).strip(),
         "match_datetime_utc": parsed_dt.isoformat(),
-        "match_date": parsed_dt.strftime("%Y-%m-%d"),
+        "match_date": match_date_et(parsed_dt),
         "competition": competition_name,
         "stage": str(match.get("stage", "") or "unknown").strip().lower(),
         "home_team": home_team,
@@ -1499,6 +1496,38 @@ def build_team_context(target_teams, by_team_matches, rankings, squad_values):
     return context
 
 
+def match_date_et(value) -> str:
+    """Calendar date of a kickoff in US Eastern time (the app's match-date convention).
+
+    The UTC date put every evening game in the Americas a day late (Canada v
+    Guatemala, 01:00 UTC on Nov 17 = 20:00 ET Nov 16) and split each such game
+    into two rows (the live poller stores the ET date).
+    """
+    ts = pd.to_datetime(value, utc=True, errors="coerce")
+    if pd.isna(ts):
+        return str(value or "")[:10]
+    return ts.tz_convert("America/New_York").strftime("%Y-%m-%d")
+
+
+def normalize_match_dates(rows):
+    """Re-derive ``match_date`` from ``match_datetime_utc`` (ET) for stored rows."""
+    fixed = 0
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        kickoff = row.get("match_datetime_utc")
+        if kickoff is None or (isinstance(kickoff, float) and kickoff != kickoff) or not str(kickoff).strip():
+            continue
+        # A bare date (no time) is already a calendar date: never shift it.
+        if len(str(kickoff).strip()) <= 10:
+            continue
+        et_date = match_date_et(kickoff)
+        if et_date and str(row.get("match_date") or "")[:10] != et_date:
+            row["match_date"] = et_date
+            fixed += 1
+    return fixed
+
+
 def load_existing_recent_matches():
     if not os.path.exists(RAW_MATCHES_FILE) or os.path.getsize(RAW_MATCHES_FILE) == 0:
         return [], {}
@@ -1507,6 +1536,9 @@ def load_existing_recent_matches():
         if frame.empty:
             return [], {}
         rows = frame.to_dict("records")
+        fixed = normalize_match_dates(rows)
+        if fixed:
+            print(f"[national] corrected {fixed} stored match date(s) from UTC to US Eastern")
         return rows, by_team_from_rows(rows)
     except Exception:
         return [], {}
@@ -1548,6 +1580,10 @@ def national_match_key(row):
     )
 
 
+def _row_has_result(row) -> bool:
+    return str(row.get("FTR") or "").strip().upper() in {"H", "D", "A"}
+
+
 def merge_national_match_rows(existing_rows, incoming_rows):
     """Keep every existing row. Append incoming matches whose key is new.
 
@@ -1569,6 +1605,12 @@ def merge_national_match_rows(existing_rows, incoming_rows):
             continue
         key = national_match_key(row)
         if key in index:
+            # A stored fixture without a result may take the final score; a
+            # stored result is never rewritten.
+            existing = merged[index[key]]
+            if _row_has_result(row) and not _row_has_result(existing):
+                merged[index[key]] = row
+                added += 1
             continue
         index[key] = len(merged)
         merged.append(row)
@@ -1658,6 +1700,50 @@ def fetch_completed_national_matches(target_teams, lookback_days):
     return all_rows
 
 
+# Tiered Nations Leagues: league tables need every game of the season, not
+# just the recent-results window (the 45-day archive scan missed the whole
+# first CONCACAF matchday). ESPN only accepts month queries for full seasons.
+TIERED_NATIONS_LEAGUE_SLUGS = {
+    "North America/Concacaf Nations League": "concacaf.nations.league",
+    "International/Nations League": "uefa.nations",
+}
+
+
+def fetch_tiered_nations_league_seasons(today=None):
+    """Completed results of the current tiered Nations League seasons (all teams)."""
+    today = today or datetime.now(UTC).date()
+    # Seasons run from mid-year into the next spring.
+    start_year = today.year if today.month >= 7 else today.year - 1
+    months = []
+    y, m = start_year, 7
+    while (y, m) <= (today.year, today.month):
+        months.append(f"{y}{m:02d}")
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+    rows, seen = [], set()
+    for competition_name, slug in TIERED_NATIONS_LEAGUE_SLUGS.items():
+        for month in months:
+            url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={month}&limit=1000"
+            try:
+                payload = fetch_json(url, timeout=30)
+            except Exception as exc:
+                print(f"[national-archive] {competition_name} {month}: fetch failed ({exc})")
+                continue
+            for event in payload.get("events") or []:
+                event_id = str(event.get("id", "")).strip()
+                if event_id and event_id in seen:
+                    continue
+                parsed = parse_espn_event(event, competition_name, require_completed=True)
+                if not parsed or str(parsed.get("FTR", "")).strip() not in RESULT_LABELS:
+                    continue
+                if event_id:
+                    seen.add(event_id)
+                rows.append(parsed)
+    rows.sort(key=lambda row: row.get("match_datetime_utc") or "")
+    return rows
+
+
 def ranked_national_teams():
     target_teams = []
     try:
@@ -1706,6 +1792,12 @@ def archive_national_match_history(args):
         except Exception as exc:
             print(f"[national-archive] new-match fetch failed; existing archive kept: {exc}")
             fetched = []
+    try:
+        season_rows = fetch_tiered_nations_league_seasons()
+        print(f"[national-archive] tiered Nations League seasons: {len(season_rows)} completed match(es) fetched")
+        fetched = list(fetched) + season_rows
+    except Exception as exc:
+        print(f"[national-archive] Nations League season fetch failed; existing archive kept: {exc}")
     merged, added = merge_national_match_rows(existing_rows, fetched)
     if added or (merged and not os.path.exists(RAW_MATCHES_FILE)):
         pd.DataFrame(merged).to_csv(RAW_MATCHES_FILE, index=False)

@@ -155,6 +155,14 @@ UPCOMING_ONLY_COMPETITIONS = {
     "International/Friendly",
 }
 
+# Tiered Nations Leagues: group stage split into tiers (League A/B/C...) plus
+# two-legged knockout ties. Groups come from the ESPN standings feed
+# (nations_league.py); value = ESPN league slug.
+TIERED_NATIONS_LEAGUES = {
+    "North America/Concacaf Nations League": "concacaf.nations.league",
+    "International/Nations League": "uefa.nations",
+}
+
 # One-off competitions (friendlies): every game stands alone, so there are no
 # tables, simulated seasons, projections, form tables or snapshots. Their
 # /api/league-data payload is just the upcoming games (``upcoming_only``).

@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 import requests
 import joblib
 import pandas as pd
+from shared import probability_calibration as _prob_calibration  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(__file__))
 # PROJECT_DIR kept from shared.paths bootstrap
@@ -2272,6 +2273,7 @@ def main():
     combined, removed_completed = drop_completed_predictions(combined, results_index)
     combined = dedupe_predictions(combined)
     combined = combined[RESULT_COLUMNS].sort_values(["match_date", "competition", "home_team", "away_team"])
+    combined = _prob_calibration.calibrate_prediction_frame(combined)
 
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
     combined.to_csv(PREDICTIONS_FILE, index=False)

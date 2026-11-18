@@ -21,7 +21,13 @@ if config.REDIS_URL:
     except Exception:
         _redis_client = None
 
-_mem_cache: dict[str, tuple[float, str]] = {}
+# key -> (fresh_until, stale_until, json). Entries past ``fresh_until`` are
+# served once more while a background refresh runs (stale-while-revalidate),
+# so a popular endpoint is only ever slow on its very first request.
+_mem_cache: dict[str, tuple[float, float, str]] = {}
+STALE_GRACE_SECONDS = int(getattr(config, "CACHE_STALE_GRACE_SECONDS", 1800))
+_refreshing: set[str] = set()
+_refreshing_lock = threading.Lock()
 _mem_cache_lock = threading.Lock()
 _MAX_MEM_CACHE_ENTRIES = 500
 # cache key -> request path, so result-driven invalidation can target endpoints
@@ -61,17 +67,27 @@ def _cache_get(key: str) -> str | None:
                 return _redis_client.get(key)
             except Exception:
                 pass
-        now = time.monotonic()
-        with _mem_cache_lock:
-            item = _mem_cache.get(key)
-            if item is not None:
-                expires_at, val = item
-                if now < expires_at:
-                    return val
-                _mem_cache.pop(key, None)
+        val, fresh = _cache_get_with_state(key)
+        return val if fresh else None
     except Exception:
         pass
     return None
+
+
+def _cache_get_with_state(key: str) -> tuple[str | None, bool]:
+    """In-memory lookup: ``(json, is_fresh)``; ``(None, False)`` when absent."""
+    now = time.monotonic()
+    with _mem_cache_lock:
+        item = _mem_cache.get(key)
+        if item is None:
+            return None, False
+        fresh_until, stale_until, val = item
+        if now < fresh_until:
+            return val, True
+        if now < stale_until:
+            return val, False
+        _mem_cache.pop(key, None)
+    return None, False
 
 
 def _cache_set(key: str, value: str, ttl: int = config.CACHE_TTL_DEFAULT) -> None:
@@ -86,13 +102,17 @@ def _cache_set(key: str, value: str, ttl: int = config.CACHE_TTL_DEFAULT) -> Non
         now = time.monotonic()
         with _mem_cache_lock:
             if len(_mem_cache) >= _MAX_MEM_CACHE_ENTRIES:
-                expired = [k for k, (exp, _) in _mem_cache.items() if now >= exp]
+                expired = [k for k, (_fresh, stale, _v) in _mem_cache.items() if now >= stale]
                 for k in expired:
                     _mem_cache.pop(k, None)
                 if len(_mem_cache) >= _MAX_MEM_CACHE_ENTRIES:
                     for k in list(_mem_cache.keys())[:_MAX_MEM_CACHE_ENTRIES // 5]:
                         _mem_cache.pop(k, None)
-            _mem_cache[key] = (now + max(1, int(ttl)), value)
+            fresh_until = now + max(1, int(ttl))
+            # Stale window scales with the TTL: live-ish endpoints (30 s) are
+            # served stale for at most ~5 min, slow-changing ones up to 30 min.
+            grace = min(STALE_GRACE_SECONDS, max(60, int(ttl) * 10))
+            _mem_cache[key] = (fresh_until, fresh_until + grace, value)
     except Exception:
         pass
 
@@ -148,6 +168,61 @@ def _extract_request(args: tuple, kwargs: dict) -> Request | None:
     return None
 
 
+def _lookup(key: str) -> tuple[str | None, bool]:
+    """``(json, is_fresh)`` from Redis (always fresh) or the memory cache."""
+    if _redis_client is not None:
+        try:
+            val = _redis_client.get(key)
+            if val is not None:
+                return val, True
+        except Exception:
+            pass
+    try:
+        return _cache_get_with_state(key)
+    except Exception:
+        return None, False
+
+
+def _cached_json_response(body: str, ttl: int, fresh: bool) -> Response:
+    return Response(
+        content=body,
+        status_code=200,
+        media_type="application/json",
+        headers={
+            "X-Cache": ("redis" if _redis_client else "memory") + ("" if fresh else "-stale"),
+            "Cache-Control": f"public, max-age={ttl if fresh else min(ttl, 15)}",
+        },
+    )
+
+
+def _refresh_in_background(key: str, ttl: int, f: Callable, args: tuple, kwargs: dict, *, is_async: bool) -> None:
+    """Recompute a stale entry once, off the request path (same request context)."""
+    import contextvars
+
+    with _refreshing_lock:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+    ctx = contextvars.copy_context()
+
+    def _run():
+        try:
+            if is_async:
+                import asyncio
+                result = asyncio.run(f(*args, **kwargs))
+            else:
+                result = f(*args, **kwargs)
+            if isinstance(result, Response) and result.status_code == 200:
+                _cache_set(key, result.body.decode("utf-8", errors="replace"), ttl=ttl)
+        except Exception:
+            pass
+        finally:
+            with _refreshing_lock:
+                _refreshing.discard(key)
+
+    threading.Thread(target=lambda: ctx.run(_run), name="cache-refresh", daemon=True).start()
+
+
 def _cached_response(ttl: int | Callable[[Request], int] = config.CACHE_TTL_DEFAULT):
     """Decorator that caches a route's JSON response in Redis (or in-memory).
 
@@ -175,18 +250,12 @@ def _cached_response(ttl: int | Callable[[Request], int] = config.CACHE_TTL_DEFA
                     if req.query_params.get("refresh", "").strip() in ("1", "true"):
                         return await f(*args, **kwargs)
                     key = _cache_key(req.url.path, str(req.url.query))
-                    cached = _cache_get(key)
+                    cached, fresh = _lookup(key)
                     effective_ttl = _resolve_ttl(req)
                     if cached is not None:
-                        return Response(
-                            content=cached,
-                            status_code=200,
-                            media_type="application/json",
-                            headers={
-                                "X-Cache": "redis" if _redis_client else "memory",
-                                "Cache-Control": f"public, max-age={effective_ttl}",
-                            },
-                        )
+                        if not fresh:
+                            _refresh_in_background(key, effective_ttl, f, args, kwargs, is_async=True)
+                        return _cached_json_response(cached, effective_ttl, fresh)
                     result = await f(*args, **kwargs)
                     if isinstance(result, Response) and result.status_code == 200:
                         _cache_set(key, result.body.decode("utf-8", errors="replace"), ttl=effective_ttl)
@@ -204,18 +273,12 @@ def _cached_response(ttl: int | Callable[[Request], int] = config.CACHE_TTL_DEFA
                     if req.query_params.get("refresh", "").strip() in ("1", "true"):
                         return f(*args, **kwargs)
                     key = _cache_key(req.url.path, str(req.url.query))
-                    cached = _cache_get(key)
+                    cached, fresh = _lookup(key)
                     effective_ttl = _resolve_ttl(req)
                     if cached is not None:
-                        return Response(
-                            content=cached,
-                            status_code=200,
-                            media_type="application/json",
-                            headers={
-                                "X-Cache": "redis" if _redis_client else "memory",
-                                "Cache-Control": f"public, max-age={effective_ttl}",
-                            },
-                        )
+                        if not fresh:
+                            _refresh_in_background(key, effective_ttl, f, args, kwargs, is_async=False)
+                        return _cached_json_response(cached, effective_ttl, fresh)
                     result = f(*args, **kwargs)
                     if isinstance(result, Response) and result.status_code == 200:
                         _cache_set(key, result.body.decode("utf-8", errors="replace"), ttl=effective_ttl)

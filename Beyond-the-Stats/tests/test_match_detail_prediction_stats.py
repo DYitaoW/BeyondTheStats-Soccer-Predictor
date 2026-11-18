@@ -84,9 +84,8 @@ class TestMatchDetailPredictionStats(unittest.TestCase):
         self.assertIsInstance(game["correct_score_dist"], list)
         self.assertGreater(len(game["correct_score_dist"]), 0)
 
-        self.assertIn("asian_handicap", game)
-        self.assertIsInstance(game["asian_handicap"], dict)
-        self.assertGreater(len(game["asian_handicap"]), 0)
+        # Asian handicap was removed everywhere (unused by every client).
+        self.assertNotIn("asian_handicap", game)
 
         self.assertIn("total_goals_dist", game)
         self.assertIsInstance(game["total_goals_dist"], dict)
@@ -126,7 +125,7 @@ class TestMatchDetailPredictionStats(unittest.TestCase):
         self.assertIsInstance(game["upcoming_prediction"], dict)
         up = game["upcoming_prediction"]
         self.assertEqual(up.get("correct_score_dist"), game.get("correct_score_dist"))
-        self.assertEqual(up.get("asian_handicap"), game.get("asian_handicap"))
+        self.assertNotIn("asian_handicap", up)
 
     def test_match_detail_by_url_encoded_sync_key(self):
         """Verify URL-encoded sync_key path resolves correctly."""
@@ -187,8 +186,7 @@ class TestMatchDetailPredictionStats(unittest.TestCase):
             # Dynamically generated distributions
             self.assertIsInstance(game.get("correct_score_dist"), list)
             self.assertGreater(len(game["correct_score_dist"]), 0)
-            self.assertIsInstance(game.get("asian_handicap"), dict)
-            self.assertGreater(len(game["asian_handicap"]), 0)
+            self.assertNotIn("asian_handicap", game)
             self.assertIsInstance(game.get("total_goals_dist"), dict)
             self.assertIn("6plus", game["total_goals_dist"])
             self.assertIsInstance(game.get("first_to_score"), dict)

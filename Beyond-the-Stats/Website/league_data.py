@@ -1169,6 +1169,116 @@ def _enrich_nwsl_payload(comp: str, payload: dict) -> dict:
     return payload
 
 
+def _enrich_tiered_nations_league_payload(comp: str, payload: dict) -> dict:
+    """CONCACAF / UEFA Nations League: tiers, two-legged knockout ties, fixtures.
+
+    Real/predicted groups are already per ESPN group (``standings``); this adds
+    ``tiers`` (League A/B/C -> groups), ``knockout_ties`` (quarterfinals,
+    Gold Cup play-ins, ... with legs and aggregate), cup-style ``knockout``
+    rows, and ``fixtures`` (upcoming games with stage / tier / group and the
+    model prediction when one exists).
+    """
+    base_comp, _view = resolve_competition_query(comp)
+    if base_comp not in getattr(config, "TIERED_NATIONS_LEAGUES", {}):
+        return payload
+    try:
+        import nations_league as nl
+    except Exception:
+        return payload
+
+    tiers: dict[str, list[str]] = {}
+    for grp in nl.group_membership(base_comp):
+        tiers.setdefault(grp["tier"] or "Group Stage", []).append(grp["name"])
+    payload["tiers"] = [{"tier": t, "groups": names} for t, names in tiers.items()]
+
+    ties = nl.knockout_ties(base_comp)
+    payload["knockout_ties"] = ties
+    knockout = {}
+    for stage, rows in ties.items():
+        knockout[stage] = []
+        for tie in rows:
+            agg = tie.get("aggregate") or {}
+            entry = _mls_match_entry(
+                tie["home_team"], tie["away_team"], tie.get("winner"),
+                label=tie["stage_label"], stage=stage,
+                extras={
+                    "two_legged": tie["legs_total"] > 1,
+                    "aggregate_home": agg.get(tie["home_team"]),
+                    "aggregate_away": agg.get(tie["away_team"]),
+                    "legs": tie["legs"], "legs_played": tie["legs_played"],
+                    "note": tie.get("note"), "tie_status": tie["status"],
+                },
+            )
+            entry["status"] = {"complete": "FT", "in_progress": "In progress"}.get(tie["status"], "Scheduled")
+            knockout[stage].append(entry)
+    if knockout:
+        bracket_section = payload.get("bracket") if isinstance(payload.get("bracket"), dict) else {}
+        bracket_section["knockout"] = knockout
+        bracket_section["real_knockout"] = knockout
+        bracket_section["knockout_rounds"] = [
+            {"name": rows[0]["label"], "stage": stage, "order": i + 1, "matches_count": len(rows)}
+            for i, (stage, rows) in enumerate(knockout.items())
+        ]
+        payload["bracket"] = bracket_section
+        payload["knockout"] = knockout
+        payload["real_knockout"] = knockout
+
+    fixtures = nl.upcoming_fixtures(base_comp)
+    preds: dict = {}
+    from competition_rules import canonical_team_name
+
+    def _fixture_key(date, home, away):
+        return (str(date)[:10], canonical_team_name(home, base_comp), canonical_team_name(away, base_comp))
+
+    try:
+        from shared import sqlite_store
+        for row in sqlite_store.load_upcoming_games(competition_substr=base_comp) or []:
+            if row.get("prob_home") in (None, ""):
+                continue
+            mid = str(row.get("match_id") or "").strip()
+            if mid:
+                preds.setdefault(mid, row)
+            # Many stored prediction rows have no ESPN id: match on date + teams.
+            preds.setdefault(_fixture_key(row.get("match_date_iso") or row.get("match_date"),
+                                          row.get("home_team"), row.get("away_team")), row)
+    except Exception:
+        preds = {}
+    for fx in fixtures:
+        pred = preds.get(fx["match_id"]) or preds.get(_fixture_key(fx["match_date"], fx["home_team"], fx["away_team"]))
+        if pred:
+            for key in ("prob_home", "prob_draw", "prob_away", "pred_home_goals", "pred_away_goals",
+                        "winner_label", "has_prediction", "sync_key"):
+                if pred.get(key) not in (None, ""):
+                    fx[key] = pred.get(key)
+            # Stored sources mix 0-1 and 0-100 scales: expose percentages.
+            probs = [fx.get(k) for k in ("prob_home", "prob_draw", "prob_away")]
+            try:
+                nums = [float(x) for x in probs]
+                if sum(nums) <= 1.5:
+                    for k, v in zip(("prob_home", "prob_draw", "prob_away"), nums):
+                        fx[k] = round(v * 100.0, 1)
+            except (TypeError, ValueError):
+                pass
+    payload["fixtures"] = fixtures
+    return payload
+
+
+def _empty_mls_cup_odds() -> dict:
+    """Placeholder ``mls_cup`` winner-odds view (no bracket simulated yet).
+
+    Restored: the definition was dropped in a refactor while two callers
+    remained, so MLS league-data raised NameError whenever the MLS Cup
+    bracket file had no odds (e.g. before the playoffs are projected).
+    """
+    return {
+        "competition": config.MLS_CUP_COMPETITION,
+        "winner_probabilities": {},
+        "winners_odds": [],
+        "champion": None,
+        "simulations_run": None,
+    }
+
+
 def _enrich_mls_payload(comp: str, payload: dict) -> dict:
     """Attach MLS Cup playoff bracket + Shield/East/West/Cup winner odds."""
     if not str(comp or "").startswith("United States/MLS"):
@@ -1657,6 +1767,7 @@ def _build_league_data_payload_uncached(comp: str) -> dict:
 
     payload = _enrich_mls_payload(comp, payload)
     payload = _enrich_nwsl_payload(comp, payload)
+    payload = _enrich_tiered_nations_league_payload(comp, payload)
 
     # Attach League Qualification & Relegation Zones
     zones = get_league_qualification_zones(comp)

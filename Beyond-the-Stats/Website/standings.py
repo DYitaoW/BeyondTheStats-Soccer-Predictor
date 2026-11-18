@@ -1532,6 +1532,38 @@ def _compute_standings_from_history(comp_name, force_recompute=False):
         groups = [{"name": "League Phase", "entries": entries}]
         return _finalize(groups, source="computed")
 
+    if base_comp in getattr(config, "TIERED_NATIONS_LEAGUES", {}):
+        # Tiered Nations League: one table per ESPN group (League A, Group A
+        # ...). Only games between two teams of the same group count, so
+        # knockout ties and Gold Cup play-ins never enter a table.
+        try:
+            from nations_league import group_membership
+            membership = group_membership(base_comp)
+        except Exception:
+            membership = []
+        if membership:
+            tier_groups = []
+            for grp in membership:
+                members = {_normalize_team_name(t, base_comp) for t in grp["teams"]}
+                table = _init_table(members)
+                match_records = []
+                for g in comp_games:
+                    ht, at = str(g.get("home_team", "")), str(g.get("away_team", ""))
+                    stage = f"{g.get('stage', '')} {g.get('round', '')}".lower()
+                    if ht not in members or at not in members:
+                        continue
+                    if any(word in stage for word in ("quarter", "semi", "final", "play", "prelim")):
+                        continue
+                    hs, as_ = int(g.get("home_score", 0)), int(g.get("away_score", 0))
+                    _apply_result(table, ht, at, hs, as_)
+                    match_records.append((ht, at, hs, as_))
+                ranked = _rank_table(table, match_records if uses_h2h_tiebreaker(comp_name) else None)
+                tier_groups.append({
+                    "name": grp["name"], "tier": grp["tier"], "group": grp["group"],
+                    "entries": [{"team": team, "rank": pos, **stats} for pos, (team, stats) in enumerate(ranked, 1)],
+                })
+            return _finalize(tier_groups, source="computed")
+
     if has_groups:
         groups_data = {}
         group_games_map = {}

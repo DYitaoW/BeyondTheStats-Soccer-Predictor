@@ -39,6 +39,7 @@ from datetime import UTC, datetime
 
 import joblib
 import pandas as pd
+from shared import probability_calibration as _prob_calibration  # noqa: E402
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_DIR = os.path.dirname(_THIS_DIR)
@@ -1878,6 +1879,7 @@ def main():
     combined = dedupe_predictions(combined)
     combined, single_match_dropped = enforce_single_match_per_team_day(combined)
     combined = combined[RESULT_COLUMNS].sort_values(["match_date", "competition", "home_team", "away_team"])
+    combined = _prob_calibration.calibrate_prediction_frame(combined)
 
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
     tmp_pred_file = f"{PREDICTIONS_FILE}.tmp.{os.getpid()}"

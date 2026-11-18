@@ -204,7 +204,6 @@ class TestApiMatchDetailUnified(unittest.TestCase):
             "probability_reasoning": "Arsenal expected to dominate possession and shot volume.",
             "correct_score_dist": {"2-1": 0.14},
             "double_chance": {"1X": 0.82},
-            "asian_handicap": {"home_-0.5": 0.58},
             "odds_home": 1.80,
             "odds_draw": 3.60,
             "odds_away": 4.50,

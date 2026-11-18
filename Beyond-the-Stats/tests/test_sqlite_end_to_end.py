@@ -188,7 +188,7 @@ class SqliteEndToEndTests(unittest.TestCase):
             with mock.patch.object(nat, "ranked_national_teams", return_value=["Brazil", "Spain"]):
                 with mock.patch.object(
                     nat, "fetch_completed_national_matches", return_value=[incoming]
-                ):
+                ), mock.patch.object(nat, "fetch_tiered_nations_league_seasons", return_value=[]):
                     result = nat.archive_national_match_history(
                         mock.Mock(
                             friendlies_only=True,

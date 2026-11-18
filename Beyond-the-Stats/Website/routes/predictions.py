@@ -187,6 +187,33 @@ def _to_compact_upcoming_row(r: dict) -> dict:
     }
 
 
+# Fields moved out of the /api/upcoming/global list rows (all still served by
+# /api/match/<match_id|sync_key>): secondary markets (correct score, total
+# goals, double chance, first to score, clean sheet), last-5 form logs, goal
+# line probabilities, ratings, reasoning and the nested team-info dicts (their
+# id / logo / names are already flat on the row).
+LIST_ROW_EXTRA_FIELDS = (
+    "prob_home_text", "prob_draw_text", "prob_away_text",
+    "prediction_key", "prediction_note", "live_updates_eligible", "status",
+)
+
+
+def _to_list_upcoming_row(r: dict) -> dict:
+    """Default ``/api/upcoming/global`` row: what a fixture card needs."""
+    src = r if isinstance(r, dict) else {}
+    row = _to_compact_upcoming_row(r)
+    row.pop("home_team_info", None)
+    row.pop("away_team_info", None)
+    # The compact format fills absent keys with placeholders (``goalscorers:
+    # []``, ``live_clock: None``); list rows keep a key only when the source
+    # row has it or it carries a value, like the full rows did.
+    row = {k: v for k, v in row.items() if k in src or not (v is False or v in (None, "", [], {}))}
+    for key in LIST_ROW_EXTRA_FIELDS:
+        if key in src:
+            row[key] = _sanitize_for_json(src.get(key))
+    return row
+
+
 def _clean_float(val: Any) -> Optional[float]:
     if val is None:
         return None
@@ -243,9 +270,10 @@ def _clean_fixture_datetime_sort_key(r: dict) -> str:
         return f"{raw_val}T00:00:00Z"
 
     try:
-        dt = pd.to_datetime(raw_val, utc=True)
-        if not pd.isna(dt):
-            return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        from shared.fast_dates import utc_iso_z
+        iso = utc_iso_z(raw_val)
+        if iso:
+            return iso
     except Exception:
         pass
     return raw_val[:19]
@@ -627,7 +655,6 @@ def _format_next_game_payload(
         "pred_away_goals": _clean_float(game_dict.get("pred_away_goals")),
         "correct_score_dist": game_dict.get("correct_score_dist"),
         "double_chance": game_dict.get("double_chance"),
-        "asian_handicap": game_dict.get("asian_handicap"),
         "total_goals_dist": game_dict.get("total_goals_dist"),
         "first_to_score": game_dict.get("first_to_score"),
         "clean_sheet": game_dict.get("clean_sheet"),
@@ -1296,11 +1323,17 @@ def load_upcoming_mode_rows(mode: str, date_range: str = "upcoming", window_days
         csv_path, source_mode, date_range=date_range, window_days=window_days,
         from_date=from_date, to_date=to_date,
     )
+    db_from = from_date
+    if not db_from and date_range == "upcoming":
+        try:
+            db_from = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+        except Exception:
+            db_from = datetime.now(timezone.utc).date().isoformat()
     try:
         from shared import sqlite_store
-        db_rows = sqlite_store.load_upcoming_games(mode=source_mode, from_date=from_date, to_date=to_date)
+        db_rows = sqlite_store.load_upcoming_games(mode=source_mode, from_date=db_from, to_date=to_date)
         if not db_rows and mode == "mls":
-            db_rows = sqlite_store.load_upcoming_games(competition_substr="MLS", from_date=from_date, to_date=to_date)
+            db_rows = sqlite_store.load_upcoming_games(competition_substr="MLS", from_date=db_from, to_date=to_date)
         if db_rows:
             rows = list(rows or []) + list(db_rows)
     except Exception:
@@ -1406,6 +1439,9 @@ def api_upcoming(mode):
     is_filtered = bool(month or window or target_date or match_id)
 
     compact = str(request.args.get("compact", "")).strip().lower() in {"1", "true", "yes"}
+    # /api/upcoming/global returns slim list rows by default (22 MB -> ~3 MB);
+    # ``?full=1`` keeps the old full rows for app builds that still read them.
+    full_rows = str(request.args.get("full", "")).strip().lower() in {"1", "true", "yes"}
 
     limit = None
     offset = 0
@@ -1437,8 +1473,11 @@ def api_upcoming(mode):
                     today_et = datetime.now(timezone.utc).date()
                 lower = today_et - timedelta(days=30)
                 cutoff = today_et + timedelta(days=21)
-    
-                today = datetime.now(timezone.utc).date()
+            else:
+                try:
+                    today = datetime.now(ZoneInfo("America/New_York")).date()
+                except Exception:
+                    today = datetime.now(timezone.utc).date()
                 lower = today
                 cutoff = today + timedelta(days=window_days)
             if d < lower or d > cutoff:
@@ -1470,7 +1509,17 @@ def api_upcoming(mode):
             try:
                 from shared import sqlite_store
                 if sqlite_store.count_rows("upcoming_games") > 0:
-                    db_rows = sqlite_store.load_upcoming_games(from_date=target_from, to_date=target_to)
+                    # Upcoming feed: today (ET) onward unless a date / 4-week
+                    # window was requested. Without a lower bound every
+                    # already-played fixture still in the table was served.
+                    db_from = target_from
+                    if not db_from:
+                        try:
+                            today_et_d = datetime.now(ZoneInfo("America/New_York")).date()
+                        except Exception:
+                            today_et_d = datetime.now(timezone.utc).date()
+                        db_from = (today_et_d - timedelta(days=30)).isoformat() if four_week_mode else today_et_d.isoformat()
+                    db_rows = sqlite_store.load_upcoming_games(from_date=db_from, to_date=target_to)
                     if db_rows:
                         all_rows = list(db_rows)
                         has_sqlite_rows = True
@@ -1519,8 +1568,10 @@ def api_upcoming(mode):
         paged_rows = all_rows[offset : (offset + limit) if limit else None] if (limit or offset) else all_rows
         if compact:
             paged_rows = [_to_compact_upcoming_row(r) for r in paged_rows]
-        else:
+        elif full_rows:
             paged_rows = [decorate_game_team_names(dict(r), r.get("competition", "")) for r in paged_rows]
+        else:
+            paged_rows = [_to_list_upcoming_row(r) for r in paged_rows]
 
 
         return jsonify({
@@ -1665,6 +1716,26 @@ def api_home_upcoming():
         "groups": group_rows_by_league(out_rows),
         "rows": out_rows,
     })
+
+
+@predictions_bp.get("/api/accuracy")
+@_cached_response(ttl=config.CACHE_TTL_LONG)
+def api_accuracy():
+    """Probabilistic accuracy of settled predictions.
+
+    Query: ``window`` = ``30d`` (default) | ``90d`` | ``season``;
+    ``competition`` (substring); ``min_games`` (per-competition rows).
+    Returns overall + per-competition hit rate, Brier, log loss, RPS, skill vs
+    a uniform guess, predicted vs actual draw rate, favourite-probability
+    calibration buckets and the daily snapshot history.
+    """
+    import accuracy_metrics
+
+    window = str(request.args.get("window", "30d")).strip() or "30d"
+    competition = str(request.args.get("competition", "")).strip()
+    raw_min = str(request.args.get("min_games", "1")).strip()
+    min_games = int(raw_min) if raw_min.isdigit() else 1
+    return jsonify(accuracy_metrics.build_accuracy_payload(window, competition, min_games))
 
 
 @predictions_bp.get("/api/past-games")

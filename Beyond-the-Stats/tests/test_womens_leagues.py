@@ -194,7 +194,7 @@ class TestWomensLeaguesIntegration(unittest.TestCase):
             "pred_home_corners", "pred_away_corners",
             "pred_home_fouls", "pred_away_fouls",
             "pred_home_cards", "pred_away_cards",
-            "correct_score_dist", "asian_handicap", "total_goals_dist",
+            "correct_score_dist", "total_goals_dist",
             "first_to_score", "clean_sheet", "double_chance",
             "xpts_home", "xpts_away", "expected_points",
             "prob_both_score", "prob_over_1_5", "prob_over_2_5", "prob_over_3_5",

@@ -26,9 +26,10 @@ from collections import defaultdict
 import pandas as pd
 
 from competition_rules import canonical_team_name
+from shared import monte_carlo  # vectorized season simulation
 
 OUT_CSV = str(_bts_paths.WOMENS_PROJECTED_TABLE_FILE)
-SIM_RUNS = 1000
+SIM_RUNS = 20000
 
 def _league_configs() -> list[dict]:
     """Current-season raw CSV of each league (written by Womens_Data_Manager from ESPN)."""
@@ -135,82 +136,31 @@ def simulate_league(competition: str, teams: list[str], current_standings: dict,
     """Monte Carlo season finish. If ``final_tables`` is a list, each run's
     final regular-season table ({team: {Pts, W, GD, GF, ...}}) is appended
     (NWSL playoff seeding)."""
-    rng = random.Random(42)
-    position_counts = {t: defaultdict(int) for t in teams}
-    total_pts = {t: 0 for t in teams}
-    total_w = {t: 0 for t in teams}
-    total_d = {t: 0 for t in teams}
-    total_l = {t: 0 for t in teams}
-    total_gf = {t: 0 for t in teams}
-    total_ga = {t: 0 for t in teams}
-
     num_teams = len(teams)
-
-    for run in range(sim_runs):
-        sim_table = {
-            t: {
-                "Pts": current_standings[t]["Pts"],
-                "GF": current_standings[t]["GF"],
-                "GA": current_standings[t]["GA"],
-                "GD": current_standings[t]["GD"],
-                "W": current_standings[t]["W"],
-                "D": current_standings[t]["D"],
-                "L": current_standings[t]["L"],
-            }
-            for t in teams
-        }
-
-        for ht, at, ph, pd_prob, pa in remaining:
-            roll = rng.random()
-            if roll < ph:
-                sim_table[ht]["Pts"] += 3
-                sim_table[ht]["W"] += 1
-                sim_table[at]["L"] += 1
-                sim_table[ht]["GF"] += 2
-                sim_table[ht]["GA"] += 1
-                sim_table[ht]["GD"] += 1
-                sim_table[at]["GF"] += 1
-                sim_table[at]["GA"] += 2
-                sim_table[at]["GD"] -= 1
-            elif roll < ph + pd_prob:
-                sim_table[ht]["Pts"] += 1
-                sim_table[at]["Pts"] += 1
-                sim_table[ht]["D"] += 1
-                sim_table[at]["D"] += 1
-                sim_table[ht]["GF"] += 1
-                sim_table[ht]["GA"] += 1
-                sim_table[at]["GF"] += 1
-                sim_table[at]["GA"] += 1
-            else:
-                sim_table[at]["Pts"] += 3
-                sim_table[at]["W"] += 1
-                sim_table[ht]["L"] += 1
-                sim_table[at]["GF"] += 2
-                sim_table[at]["GA"] += 1
-                sim_table[at]["GD"] += 1
-                sim_table[ht]["GF"] += 1
-                sim_table[ht]["GA"] += 2
-                sim_table[ht]["GD"] -= 1
-
-        if final_tables is not None:
-            final_tables.append({t: dict(v) for t, v in sim_table.items()})
-
-        # Rank teams: Pts, GD, GF
-        ranked = sorted(
-            teams,
-            key=lambda t: (sim_table[t]["Pts"], sim_table[t]["GD"], sim_table[t]["GF"], rng.random()),
-            reverse=True,
-        )
-
-        for pos_idx, team in enumerate(ranked):
-            pos = pos_idx + 1
-            position_counts[team][pos] += 1
-            total_pts[team] += sim_table[team]["Pts"]
-            total_w[team] += sim_table[team]["W"]
-            total_d[team] += sim_table[team]["D"]
-            total_l[team] += sim_table[team]["L"]
-            total_gf[team] += sim_table[team]["GF"]
-            total_ga[team] += sim_table[team]["GA"]
+    base_table = {
+        t: {k: current_standings[t].get(k, 0) for k in ("P", "W", "D", "L", "GF", "GA", "GD", "Pts")}
+        for t in teams
+    }
+    # Unknown scorelines: a win is 2-1, a draw 1-1 (coerce_scoreline of 1-1).
+    fixtures = [
+        {"home_team": ht, "away_team": at, "probs": {"H": ph, "D": pd_prob, "A": pa},
+         "pred_home_goals": 1, "pred_away_goals": 1}
+        for ht, at, ph, pd_prob, pa in remaining
+    ]
+    result = monte_carlo.simulate_season(
+        teams, base_table, fixtures, sim_runs,
+        seed=monte_carlo.stable_seed(competition, "womens", sim_runs),
+        collect_tables=final_tables is not None,
+    )
+    stat_sums, position_counts = result[0], result[1]
+    if final_tables is not None:
+        final_tables.extend(result[2])
+    total_pts = {t: stat_sums[t]["Pts"] for t in teams}
+    total_w = {t: stat_sums[t]["W"] for t in teams}
+    total_d = {t: stat_sums[t]["D"] for t in teams}
+    total_l = {t: stat_sums[t]["L"] for t in teams}
+    total_gf = {t: stat_sums[t]["GF"] for t in teams}
+    total_ga = {t: stat_sums[t]["GA"] for t in teams}
 
     # Build final projected table rows
     projected_rows = []

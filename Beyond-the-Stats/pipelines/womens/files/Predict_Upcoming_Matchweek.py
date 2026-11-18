@@ -27,6 +27,7 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import joblib
 import pandas as pd
+from shared import probability_calibration as _prob_calibration  # noqa: E402
 
 import Predict_Match as pm
 from shared import sqlite_store as store
@@ -34,7 +35,6 @@ from competition_rules import canonical_team_name, make_match_sync_key
 from math_utils import (
     _compute_correct_score_dist,
     _compute_double_chance,
-    _compute_asian_handicap,
     _compute_total_goals_dist,
     _compute_first_to_score,
     _compute_clean_sheet,
@@ -175,6 +175,34 @@ def _replace_womens_upcoming_rows(rows: list[dict]) -> dict:
     return res
 
 
+def _refresh_1x2_derived_fields(df: pd.DataFrame) -> pd.DataFrame:
+    """Recompute fields derived from the 1X2 probabilities after calibration."""
+    if df is None or df.empty:
+        return df
+    for idx, r in df.iterrows():
+        ph, pdp, pa = float(r["prob_home"]), float(r["prob_draw"]), float(r["prob_away"])
+        pred_res = "H" if ph >= max(pdp, pa) else ("A" if pa >= max(ph, pdp) else "D")
+        df.at[idx, "predicted_result"] = pred_res
+        df.at[idx, "winner_label"] = (
+            f"Pred: {r['home_team']}" if pred_res == "H"
+            else (f"Pred: {r['away_team']}" if pred_res == "A" else "Pred: Draw")
+        )
+        df.at[idx, "double_chance"] = _compute_double_chance(ph, pdp, pa)
+        xh, xa = round(ph * 3.0 + pdp, 2), round(pa * 3.0 + pdp, 2)
+        df.at[idx, "xpts_home"], df.at[idx, "xpts_away"] = xh, xa
+        df.at[idx, "expected_points"] = {"home": xh, "away": xa}
+        ph_ht = round(ph * 0.75 + pdp * 0.15, 3)
+        pa_ht = round(pa * 0.75 + pdp * 0.15, 3)
+        df.at[idx, "prob_home_ht"], df.at[idx, "prob_away_ht"] = ph_ht, pa_ht
+        df.at[idx, "prob_draw_ht"] = round(max(0.05, 1.0 - (ph_ht + pa_ht)), 3)
+        df.at[idx, "odds_home"] = round(1.05 / max(0.05, ph), 2)
+        df.at[idx, "odds_draw"] = round(1.05 / max(0.05, pdp), 2)
+        df.at[idx, "odds_away"] = round(1.05 / max(0.05, pa), 2)
+        df.at[idx, "probability_reasoning"] = (
+            f"Model favors {df.at[idx, 'winner_label']} based on rolling form and attacking efficiency.")
+    return df
+
+
 def predict_upcoming(window_days: int = 365):
     print("=== Predicting Upcoming Womens Fixtures ===")
     ctx = load_context()
@@ -239,7 +267,6 @@ def predict_upcoming(window_days: int = 365):
         # Secondary markets
         cs_dist = _compute_correct_score_dist(pred_hg, pred_ag)
         dc = _compute_double_chance(ph, pd_prob, pa)
-        ah = _compute_asian_handicap(pred_hg, pred_ag, ph, pd_prob, pa)
         tg_dist = _compute_total_goals_dist(pred_hg, pred_ag)
         fts = _compute_first_to_score(pred_hg, pred_ag)
         clean = _compute_clean_sheet(pred_hg, pred_ag)
@@ -316,7 +343,6 @@ def predict_upcoming(window_days: int = 365):
             "pred_away_cards": 1.4,
             "correct_score_dist": cs_dist,
             "double_chance": dc,
-            "asian_handicap": ah,
             "total_goals_dist": tg_dist,
             "first_to_score": fts,
             "clean_sheet": clean,
@@ -351,6 +377,8 @@ def predict_upcoming(window_days: int = 365):
     # Save to CSV
     os.makedirs(os.path.dirname(PREDICTIONS_FILE), exist_ok=True)
     df_out = pd.DataFrame(rows)
+    df_out = _prob_calibration.calibrate_prediction_frame(df_out)
+    df_out = _refresh_1x2_derived_fields(df_out)
     df_out.to_csv(PREDICTIONS_FILE, index=False)
     print(f"Saved {len(rows)} predictions to {PREDICTIONS_FILE}")
 

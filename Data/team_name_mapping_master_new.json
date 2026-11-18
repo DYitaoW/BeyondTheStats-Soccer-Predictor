@@ -2,13 +2,33 @@
   "Netherlands/Eredivisie": {},
   "Scotland/Premiership": {},
   "Turkey/Super Lig": {
-    "Amed SFK": "",
-    "Çorum FK": "",
+    "Amed SFK": "Amedspor",
+    "Çorum FK": "Corum",
     "Corum": "Corum",
     "Erzurumspor": "Erzurumspor",
-    "Amedspor": "Amedspor"
+    "Amedspor": "Amedspor",
+    "Istanbul Basaksehir": "Buyuksehyr",
+    "Basaksehir": "Buyuksehyr",
+    "Erzurum BB": "Erzurumspor",
+    "Corum FK": "Corum",
+    "Buyuksehyr": "Buyuksehyr"
   },
-  "Belgium/First Division A": {},
+  "Belgium/First Division A": {
+    "Standard Liege": "Standard",
+    "Liege": "Standard",
+    "Zulte-Waregem": "Waregem",
+    "Zulte": "Waregem",
+    "OH Leuven": "Oud-Heverlee Leuven",
+    "Leuven": "Oud-Heverlee Leuven",
+    "Royal Charleroi SC": "Charleroi",
+    "charleroi": "Charleroi",
+    "Waasland-Beveren": "Beveren",
+    "Beveren": "Beveren",
+    "Standard": "Standard",
+    "Charleroi": "Charleroi",
+    "Oud-Heverlee Leuven": "Oud-Heverlee Leuven",
+    "Waregem": "Waregem"
+  },
   "Argentina/Primera Division": {},
   "Japan/J1 League": {},
   "Brazil/Brasileirão": {},
@@ -311,7 +331,18 @@
     "FC Alverca": "Alverca",
     "Académico de Viseu FC": "Academico Viseu",
     "Academico Viseu": "Academico Viseu",
-    "Académico de Viseu": "Academico Viseu"
+    "Académico de Viseu": "Academico Viseu",
+    "Maritamo": "Maritimo",
+    "Viseu": "Academico Viseu",
+    "C.D. Nacional": "Nacional",
+    "CD Nacional": "Nacional",
+    "Vitoria de Guimaraes": "Guimaraes",
+    "Vitória de Guimaraes": "Guimaraes",
+    "Vitória Guimarães": "Guimaraes",
+    "Vitória SC": "Guimaraes",
+    "Nacional": "Nacional",
+    "Maritimo": "Maritimo",
+    "Guimaraes": "Guimaraes"
   },
   "Germany/Bundesliga": {
     "SV 07 Elversberg": "Elversberg",
@@ -495,7 +526,8 @@
     "Violaines": "",
     "Vermelles": "",
     "Vitre": "",
-    "Saint-Pierre Milizac": ""
+    "Saint-Pierre Milizac": "",
+    "Nîmes Olympique": "Nimes"
   },
   "United States/MLS": {
     "TBD Away": "",
@@ -663,7 +695,8 @@
     "Violaines": "",
     "Vermelles": "",
     "Vitre": "",
-    "Saint-Pierre Milizac": ""
+    "Saint-Pierre Milizac": "",
+    "Nîmes Olympique": "Nimes"
   },
   "Spain/La Liga 2": {
     "Celta B": "Celta B",
@@ -854,7 +887,9 @@
   "Sweden/Allsvenskan": {
     "Orgryte": "Orgryte"
   },
-  "Austria/Bundesliga": {},
+  "Austria/Bundesliga": {
+    "Austria Lustenau": "A. Lustenau"
+  },
   "Mexico/Liga MX": {},
   "Switzerland/Super League": {},
   "Ukraine/Premier League": {},
@@ -1357,7 +1392,9 @@
     "Chambéry SF": "",
     "Le Puy-en-Velay": "",
     "Pays Neslois": "",
-    "Riom": ""
+    "Riom": "",
+    "Club Franciscain": "",
+    "Nîmes Olympique": "Nimes"
   },
   "Italy/Coppa Italia": {
     "Internazionale": "Inter",
@@ -2060,5 +2097,39 @@
     "London City": "London City Lionesses",
     "London City Lionesses Women": "London City Lionesses",
     "Brighton & Hove Albion Women": "Brighton Women"
+  },
+  "North America/Concacaf Nations League": {
+    "St. Kitts and Nevis": "St Kitts and Nevis",
+    "St. Lucia": "St Lucia",
+    "St. Vincent and the Grenadines": "St Vincent and the Grenadines",
+    "Slovan Bratislava": "",
+    "Sabah FK": "",
+    "Shakhtar Donetsk": "",
+    "Slavia Prague": "",
+    "FC Thun": "",
+    "Borac Banja Luka": "",
+    "KuPS Kuopio": "",
+    "CSKA Sofia": "",
+    "Dinamo Zagreb": "",
+    "Egnatia": "",
+    "FC Nordsjælland": "",
+    "Ferencvaros": "",
+    "NK Celje": "",
+    "Hajduk Split": "",
+    "Iberia 1999": "",
+    "Jablonec": "",
+    "FC Lugano": "",
+    "Omonia Nicosia": "",
+    "Kairat Almaty": "",
+    "Kauno Zalgiris": "",
+    "Riga FC": "",
+    "Levski Sofia": "",
+    "Pafos": "",
+    "FC Midtjylland": "",
+    "Ararat-Armenia": "",
+    "AGF": "",
+    "Sparta Prague": "",
+    "Torreense": "",
+    "Viktoria Plzen": ""
   }
 }

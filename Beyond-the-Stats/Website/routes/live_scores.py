@@ -251,7 +251,7 @@ def _enrich_with_upcoming_prediction(entry: dict, mid: str) -> dict:
         "prob_both_score", "prob_over_1_5", "prob_over_2_5", "prob_over_3_5",
         "prob_home_goals_0", "prob_home_goals_1plus", "prob_home_goals_2plus",
         "prob_away_goals_0", "prob_away_goals_1plus", "prob_away_goals_2plus",
-        "correct_score_dist", "double_chance", "asian_handicap", "total_goals_dist",
+        "correct_score_dist", "double_chance", "total_goals_dist",
         "first_to_score", "clean_sheet",
         "expected_points", "xpts_home", "xpts_away",
         "halftime_prediction", "pred_home_goals_ht", "pred_away_goals_ht",
@@ -343,17 +343,6 @@ def _enrich_with_upcoming_prediction(entry: dict, mid: str) -> dict:
         try:
             from math_utils import _compute_correct_score_dist
             entry["correct_score_dist"] = _compute_correct_score_dist(hg, ag)
-        except Exception:
-            pass
-
-    # Asian handicap
-    if not entry.get("asian_handicap") and (hg is not None and ag is not None):
-        try:
-            from math_utils import _compute_asian_handicap
-            ph_val = (float(ph) / 100.0 if float(ph) > 1.0 else float(ph)) if ph is not None else None
-            pd_val = (float(pdv) / 100.0 if float(pdv) > 1.0 else float(pdv)) if pdv is not None else None
-            pa_val = (float(pa) / 100.0 if float(pa) > 1.0 else float(pa)) if pa is not None else None
-            entry["asian_handicap"] = _compute_asian_handicap(hg, ag, prob_home=ph_val, prob_draw=pd_val, prob_away=pa_val)
         except Exception:
             pass
 
@@ -1637,6 +1626,54 @@ def api_end_live_activity():
     return jsonify({"ok": True, "sent": sent, "deregistered": True})
 
 
+_STARTUP_UPCOMING_TTL_S = 60.0
+_startup_upcoming_memo: dict[str, tuple[float, list]] = {}
+_startup_upcoming_lock = threading.Lock()
+
+
+def _startup_upcoming_today(today_str: str) -> list[dict]:
+    """Today's compact upcoming rows for ``/api/startup`` (memoized 60 s).
+
+    The slow part of the endpoint (every prediction CSV + the ESPN schedule
+    fallback). ``_ALL_UPCOMING_SOURCES`` / ``regional_espn_schedule_fallback``
+    come from routes.helpers (module import).
+    """
+    now = time.monotonic()
+    with _startup_upcoming_lock:
+        hit = _startup_upcoming_memo.get(today_str)
+        if hit and now - hit[0] < _STARTUP_UPCOMING_TTL_S:
+            return [dict(r) for r in hit[1]]
+    from predictions import _load_upcoming_rows
+    from routes.predictions import _to_compact_upcoming_row
+
+    feed = []
+    seen_keys = set()
+    for source, csv_path in _ALL_UPCOMING_SOURCES:
+        rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
+        for row in rows:
+            key = "|".join(
+                str(row.get(f, "")).strip().lower()
+                for f in ("match_date_iso", "competition", "home_team", "away_team")
+            )
+            if key not in seen_keys:
+                seen_keys.add(key)
+                feed.append(row)
+    if not feed:
+        from shared import sqlite_store
+        db_rows = sqlite_store.load_upcoming_games(from_date=today_str, to_date=today_str)
+        if db_rows:
+            feed = list(db_rows)
+    feed = regional_espn_schedule_fallback(feed)
+    out = [
+        _to_compact_upcoming_row(r) for r in feed
+        if str(r.get("match_date_iso", "")).strip() == today_str
+    ]
+    with _startup_upcoming_lock:
+        _startup_upcoming_memo.clear()
+        _startup_upcoming_memo[today_str] = (now, out)
+    return [dict(r) for r in out]
+
+
 @live_scores_bp.get("/api/startup")
 @live_scores_bp.get("/api/bootstrap")
 def api_startup():
@@ -1658,37 +1695,9 @@ def api_startup():
     today_str = today_et.isoformat()
     upcoming_today = []
     try:
-        # _ALL_UPCOMING_SOURCES / regional_espn_schedule_fallback come from
-        # routes.helpers (module import). They were previously referenced
-        # without an import / imported from the wrong module, so this block
-        # always raised and /api/startup returned an empty upcoming list.
-        from predictions import _load_upcoming_rows
-        from routes.predictions import _to_compact_upcoming_row
-
-        feed = []
-        seen_keys = set()
-        for source, csv_path in _ALL_UPCOMING_SOURCES:
-            rows, _, _ = _load_upcoming_rows(csv_path, source, date_range="all")
-            for row in rows:
-                key = "|".join(
-                    str(row.get(f, "")).strip().lower()
-                    for f in ("match_date_iso", "competition", "home_team", "away_team")
-                )
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    feed.append(row)
-
-        if not feed:
-            from shared import sqlite_store
-            db_rows = sqlite_store.load_upcoming_games()
-            if db_rows:
-                feed = list(db_rows)
-
-        feed = regional_espn_schedule_fallback(feed)
-        for r in feed:
-            d_iso = str(r.get("match_date_iso", "")).strip()
-            if d_iso == today_str:
-                upcoming_today.append(_to_compact_upcoming_row(r))
+        # Prediction CSVs + ESPN schedule fallback, memoized 60 s (live
+        # scores above are always read fresh).
+        upcoming_today = _startup_upcoming_today(today_str)
 
         # Ensure match_id from active live games is propagated onto upcoming_today
         live_id_by_sync = {}

@@ -100,61 +100,6 @@ def _compute_clean_sheet(pred_home_goals, pred_away_goals):
     }
 
 
-def _compute_asian_handicap(pred_home_goals, pred_away_goals, prob_home=None, prob_draw=None, prob_away=None, max_goals=5):
-    """Compute key Asian handicap lines."""
-    lines = {}
-
-    # Simple lines from match probabilities
-    ph = _safe_float(prob_home, None)
-    pdv = _safe_float(prob_draw, None)
-    pa = _safe_float(prob_away, None)
-    if ph is not None and pdv is not None and pa is not None:
-        total = ph + pdv + pa
-        if total > 0:
-            lines["0"] = {"home": round((ph + pdv * 0.5) / total, 6), "away": round((pa + pdv * 0.5) / total, 6)}
-            lines["-0.5"] = {"home": round(ph / total, 6), "away": round((pdv + pa) / total, 6)}
-            lines["+0.5"] = {"home": round((ph + pdv) / total, 6), "away": round(pa / total, 6)}
-
-    # Margin-dependent lines from Poisson distribution
-    hg = max(0.01, _safe_float(pred_home_goals, 0.0))
-    ag = max(0.01, _safe_float(pred_away_goals, 0.0))
-    dist = {}
-    total_p = 0.0
-    for h in range(max_goals + 1):
-        php = _poisson_pmf(h, hg)
-        for a in range(max_goals + 1):
-            p = php * _poisson_pmf(a, ag)
-            gd = h - a
-            dist[gd] = dist.get(gd, 0.0) + p
-            total_p += p
-    if total_p > 0:
-        dist = {k: v / total_p for k, v in dist.items()}
-
-    def _gd_prob(cmp):
-        return sum(p for gd, p in dist.items() if cmp(gd))
-
-    for line in [-2.0, -1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0]:
-        if str(line) in lines:
-            continue
-        if line <= 0:
-            need = abs(line)
-            if need == int(need):
-                p_h = _gd_prob(lambda g, n=need: g > n) + _gd_prob(lambda g, n=need: g == n) * 0.5
-                p_a = _gd_prob(lambda g, n=need: g < n) + _gd_prob(lambda g, n=need: g == n) * 0.5
-            else:
-                p_h = _gd_prob(lambda g, n=need: g > n)
-                p_a = _gd_prob(lambda g, n=need: g < n)
-        else:
-            if line == int(line):
-                p_h = _gd_prob(lambda g, n=line: g > -n) + _gd_prob(lambda g, n=line: g == -n) * 0.5
-                p_a = _gd_prob(lambda g, n=line: g < -n) + _gd_prob(lambda g, n=line: g == -n) * 0.5
-            else:
-                p_h = _gd_prob(lambda g, n=line: g > -n)
-                p_a = _gd_prob(lambda g, n=line: g < -n)
-        lines[str(line)] = {"home": round(p_h, 6), "away": round(p_a, 6)}
-    return lines
-
-
 def _compute_goal_probabilities(pred_home_goals, pred_away_goals) -> dict:
     """Compute Poisson-based goal event probabilities from expected goals."""
     hg = max(0.01, _safe_float(pred_home_goals, 0.0))

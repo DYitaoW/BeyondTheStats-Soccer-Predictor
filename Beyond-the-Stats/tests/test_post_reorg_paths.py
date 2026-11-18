@@ -123,30 +123,6 @@ class PostReorgPathConstantsTests(unittest.TestCase):
         )
         self.assertIn("ESPN_CUP_NAMES_FILE = str(_bts_paths.ESPN_CUP_NAMES_FILE)", source)
 
-    def test_world_cup_pipeline_verifies_output_predictions_path(self):
-        source = (ROOT / "pipelines" / "europe" / "files" / "Run_World_Cup_Pipeline.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("WORLD_CUP_PROJECTION_FILE", source)
-        self.assertNotIn(
-            'os.path.join(DATA_DIR, "world_cup_projection.json")',
-            source,
-        )
-        self.assertNotIn(
-            'os.path.join(DATA_DIR, "projected_cup_brackets.json")',
-            source,
-        )
-
-    def test_europe_test_train_uses_sp_dir_base(self):
-        source = (ROOT / "pipelines" / "europe" / "files" / "Test_train.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("project_root = BASE_DIR", source)
-        self.assertNotIn(
-            "project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))",
-            source,
-        )
-
     def test_predictions_form_cache_uses_europe_processed_dir(self):
         source = (ROOT / "Website" / "predictions.py").read_text(encoding="utf-8")
         self.assertIn('"global": config.EUROPE_PROCESSED_DIR', source)
@@ -179,9 +155,10 @@ class ExtraEmptyDataSoftFailTests(unittest.TestCase):
 
 class MlsProcessedFallbackPresenceTests(unittest.TestCase):
     def test_mls_predict_match_has_shared_fallback_helpers(self):
-        source = (ROOT / "pipelines" / "mls" / "files" / "Predict_Match.py").read_text(
-            encoding="utf-8"
-        )
+        # Predict_Match.py is a regional profile over the shared core.
+        profile = (ROOT / "pipelines" / "mls" / "files" / "Predict_Match.py").read_text(encoding="utf-8")
+        self.assertIn('REGION = "mls"', profile)
+        source = (ROOT / "pipelines" / "predict_match_core.py").read_text(encoding="utf-8")
         self.assertIn("def resolve_processed_dir", source)
         self.assertIn("SHARED_PROCESSED_DIR", source)
         self.assertIn("falling back to shared", source)

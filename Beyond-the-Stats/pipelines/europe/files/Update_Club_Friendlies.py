@@ -34,6 +34,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 import team_mapping_groups as tmg  # noqa: E402
 import espn_api_cache  # noqa: E402
+from shared.espn_status import is_not_played_status, is_played_final  # noqa: E402
 PREDICTIONS_FILE = os.path.join(PREDICTIONS_DIR, "upcoming_club_friendlies.csv")
 TEAM_MAPPING_FILE = str(_bts_paths.TEAM_NAME_MAPPING_MASTER)
 
@@ -147,8 +148,14 @@ def parse_event(event):
         return None
 
     status_type = ((comp0.get("status") or {}).get("type") or {})
+    if is_not_played_status(status_type):
+        # Cancelled / postponed: neither a fixture nor a result (a rescheduled
+        # game comes back as STATUS_SCHEDULED with its new date).
+        return None
     status_state = str(status_type.get("state", "")).strip().lower()
-    completed = bool(status_type.get("completed")) or status_state in {"post", "final"}
+    # Cancelled / postponed friendlies are "post" with a 0-0 placeholder:
+    # never a result.
+    completed = is_played_final(status_type)
 
     actual_result = ""
     if completed and home_score is not None and away_score is not None:
@@ -179,31 +186,33 @@ def load_fixtures_from_espn(lookahead_days=LOOKAHEAD_DAYS):
     today = pd.Timestamp(datetime.now(UTC).date())
     rows = []
     seen = set()
+    end = today + pd.Timedelta(days=max(1, int(lookahead_days)))
     for competition, espn_id in FRIENDLY_ESPN_SOURCES:
-        for offset in range(0, max(1, int(lookahead_days) + 1)):
-            day = today + pd.Timedelta(days=offset)
-            try:
-                data = espn_api_cache.fetch_scoreboard(espn_id, day.strftime("%Y%m%d"))
-            except Exception:
+        # Cached month scoreboards: ~13 requests per feed instead of one per
+        # day (732 per run). Far months are re-checked weekly; fixtures found
+        # earlier stay in the cached month payloads.
+        try:
+            events = espn_api_cache.fetch_scoreboard_range(espn_id, today.date(), end.date(), include_default=False)
+        except Exception:
+            continue
+        for event in events or []:
+            parsed = parse_event(event)
+            if parsed is None:
                 continue
-            for event in data.get("events", []) or []:
-                parsed = parse_event(event)
-                if parsed is None:
-                    continue
-                if parsed["match_date"] < today:
-                    continue
-                key = (
-                    competition,
-                    parsed["match_date"].strftime("%Y-%m-%d"),
-                    parsed["home_team"],
-                    parsed["away_team"],
-                )
-                if key in seen:
-                    continue
-                seen.add(key)
-                parsed = dict(parsed)
-                parsed["competition"] = competition
-                rows.append(parsed)
+            if parsed["match_date"] < today:
+                continue
+            key = (
+                competition,
+                parsed["match_date"].strftime("%Y-%m-%d"),
+                parsed["home_team"],
+                parsed["away_team"],
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            parsed = dict(parsed)
+            parsed["competition"] = competition
+            rows.append(parsed)
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame(rows).sort_values(

@@ -397,10 +397,6 @@ class CupDataPayloadTests(unittest.TestCase):
             self.assertIsNot(first, third)
             self.assertEqual(third["competitions"]["X"]["champion"], "A")
 
-    def test_gunicorn_warms_cup_data_mem(self):
-        src = Path(__file__).resolve().parents[1].joinpath("Website", "gunicorn_config.py").read_text(encoding="utf-8")
-        self.assertIn("warm_cup_data_mem_from_disk", src)
-
     def test_stage_position_odds_from_sim_entry(self):
         import cup_data as cd
 

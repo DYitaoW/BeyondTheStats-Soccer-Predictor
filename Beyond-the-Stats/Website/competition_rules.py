@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from collections import defaultdict, deque
 from datetime import date, datetime
@@ -199,6 +200,7 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
                     "group": str(g.get("group", "")).strip(),
                     "match_date": str(g.get("match_date", "")).strip()[:10],
                     "match_datetime_utc": str(g.get("match_datetime_utc", "")).strip(),
+                    "match_id": str(g.get("match_id") or "").strip(),
                     "source": "past_games",
                 })
 
@@ -248,6 +250,7 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
                     "group": str(row.get("group", "")).strip(),
                     "match_date": str(row.get("match_date", "")).strip()[:10],
                     "match_datetime_utc": str(row.get("match_datetime_utc", "")).strip(),
+                    "match_id": str(row.get("match_id") or "").strip(),
                     "source": "csv",
                 })
 
@@ -284,6 +287,7 @@ def _batch_load_all_games() -> dict[str, list[dict]]:
                         "stage": stage,
                         "match_date": str(row.get("match_date", "")).strip()[:10],
                         "match_datetime_utc": str(row.get("match_datetime_utc", "")).strip(),
+                        "match_id": str(row.get("match_id") or "").strip(),
                         "source": "national_csv",
                     })
 
@@ -581,11 +585,57 @@ def _load_display_mapping_file() -> dict:
     return payload
 
 
+_canonical_cache: dict = {}
+_canonical_cache_version: tuple | None = None
+_canonical_cache_lock = threading.Lock()
+_CANONICAL_CACHE_MAX = 250_000
+
+
 def canonical_team_name(name: str, competition: str = "") -> str:
+    """Canonical club name for ``name`` in ``competition`` (memoized).
+
+    The resolution scans every alias of the competition and its sibling
+    leagues; it ran ~200k times per cold ``/api/team`` / ``/api/upcoming``
+    request (12.6M ``normalize_team_key`` calls, the bulk of their 5-8 s).
+    Results are cached per (name, competition) and the cache is dropped
+    whenever the mapping file is reloaded (``_load_display_mapping`` returns a
+    new object) or the MLS roster cache changes.
+    """
+    global _canonical_cache_version
+    payload = _load_display_mapping()
+    version = (id(payload), id(_mls_name_cache))
+    key = ("" if name is None else str(name), "" if competition is None else str(competition))
+    with _canonical_cache_lock:
+        if version != _canonical_cache_version:
+            _canonical_cache.clear()
+            _canonical_cache_version = version
+        hit = _canonical_cache.get(key)
+    if hit is not None:
+        return hit
+    value = _canonical_team_name_uncached(name, competition or "")
+    with _canonical_cache_lock:
+        if _canonical_cache_version == version and len(_canonical_cache) < _CANONICAL_CACHE_MAX:
+            _canonical_cache[key] = value
+    return value
+
+
+def clear_canonical_team_name_cache() -> None:
+    """Drop memoized canonical names (tests / mapping edits within a second)."""
+    with _canonical_cache_lock:
+        _canonical_cache.clear()
+
+
+def _canonical_team_name_uncached(name: str, competition: str = "") -> str:
     text = str(name or "").strip()
     if not text:
         return ""
     base_comp, _view = resolve_competition_query(competition)
+    if base_comp and config.is_national_team_competition(base_comp):
+        try:
+            from shared.national_team_names import canonical_national_team
+            text = canonical_national_team(text)
+        except Exception:
+            pass
     # Leagues Cup / MLS: never let Serie A "Inter" win over Inter Miami.
     if base_comp in {"North America/Leagues Cup", "United States/MLS"} or str(base_comp).startswith("United States/MLS"):
         lower = text.lower()
@@ -740,10 +790,8 @@ def make_match_sync_key(
         date_str = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
     elif raw_date:
         try:
-            from zoneinfo import ZoneInfo
-            dt = pd.to_datetime(raw_date, utc=True, errors="coerce")
-            if pd.notna(dt):
-                date_str = dt.tz_convert(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+            from shared.fast_dates import et_date_str
+            date_str = et_date_str(raw_date)
         except Exception:
             pass
         if not date_str and len(raw_date) >= 10:
@@ -806,7 +854,16 @@ def _append_game(games: list[dict], seen: set, game: dict) -> None:
     })
     if key in seen:
         return
+    # The same ESPN game can reach us from several sources with different
+    # dates or name spellings (pipeline CSV, past_games, live history); one
+    # match id is one game.
+    match_id = str(game.get("match_id") or "").strip()
+    id_key = f"id:{comp}:{match_id}" if match_id and match_id.lower() not in ("nan", "none") else ""
+    if id_key and id_key in seen:
+        return
     seen.add(key)
+    if id_key:
+        seen.add(id_key)
     entry = dict(game)
     entry["home_team"] = home
     entry["away_team"] = away
@@ -1135,6 +1192,7 @@ def _csv_settled_games(comp_name: str) -> list[dict]:
                 "group": str(row.get("group", "")).strip(),
                 "match_date": str(row.get("match_date", "")).strip()[:10],
                 "match_datetime_utc": str(row.get("match_datetime_utc", "")).strip(),
+                "match_id": str(row.get("match_id") or "").strip(),
                 "source": "csv",
             })
     return rows
@@ -1164,6 +1222,7 @@ def _past_games(comp_name: str) -> list[dict]:
                     "group": str(g.get("group", "")).strip(),
                     "match_date": str(g.get("match_date", "")).strip()[:10],
                     "match_datetime_utc": str(g.get("match_datetime_utc", "")).strip(),
+                    "match_id": str(g.get("match_id") or "").strip(),
                     "source": "past_games",
                 })
             return rows
@@ -1199,6 +1258,7 @@ def _past_games(comp_name: str) -> list[dict]:
             "group": str(g.get("group", "")).strip(),
             "match_date": str(g.get("match_date", "")).strip()[:10],
             "match_datetime_utc": str(g.get("match_datetime_utc", "")).strip(),
+            "match_id": str(g.get("match_id") or "").strip(),
             "source": "past_games",
         })
     return rows
@@ -1237,6 +1297,7 @@ def _national_csv_games(comp_name: str) -> list[dict]:
             "stage": stage,
             "match_date": str(row.get("match_date", "")).strip()[:10],
             "match_datetime_utc": str(row.get("match_datetime_utc", "")).strip(),
+            "match_id": str(row.get("match_id") or "").strip(),
             "source": "national_csv",
         })
     return rows

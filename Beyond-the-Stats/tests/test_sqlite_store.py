@@ -290,7 +290,6 @@ class SqliteStoreTests(unittest.TestCase):
             "prediction_quality": "prediction",
             "correct_score_dist": {"1-0": 0.12},
             "double_chance": {"1X": 0.74},
-            "asian_handicap": {"line": -0.5},
             "last_5_home": [{"opp": "Fulham", "result": "W"}],
             "last_5_away": [{"opp": "Brighton", "result": "D"}],
             "home_attack_rating": 1.1,
